@@ -2,8 +2,8 @@ package bxmock
 
 import (
 	"crypto/ecdsa"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/bxmessage"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/types"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/bxmessage"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/types"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"

@@ -2,7 +2,7 @@ package utils
 
 import (
 	"fmt"
-	"github.com/bloXroute-Labs/bxgateway-private-go/test"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/test"
 	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"os"

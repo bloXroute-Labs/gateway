@@ -3,8 +3,8 @@ package bxmock
 import (
 	"crypto/tls"
 	"errors"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/types"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/utils"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/types"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/utils"
 	"net"
 	"strconv"
 	"strings"

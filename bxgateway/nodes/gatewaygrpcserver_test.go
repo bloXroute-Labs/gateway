@@ -2,11 +2,11 @@ package nodes
 
 import (
 	"context"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/config"
-	pb "github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/protobuf"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/rpc"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/version"
-	"github.com/bloXroute-Labs/bxgateway-private-go/test"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/config"
+	pb "github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/protobuf"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/rpc"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/version"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/test"
 	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"

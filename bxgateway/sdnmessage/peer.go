@@ -2,7 +2,7 @@ package sdnmessage
 
 import (
 	"fmt"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/types"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/types"
 )
 
 // Peer represents a peer returned by the SDN for a node to connect to

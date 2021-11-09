@@ -2,8 +2,8 @@ package eth
 
 import (
 	"context"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/blockchain/eth/test"
-	"github.com/bloXroute-Labs/bxgateway-private-go/test/bxmock"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/blockchain/eth/test"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/test/bxmock"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/forkid"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"

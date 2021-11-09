@@ -2,10 +2,10 @@ package services
 
 import (
 	"fmt"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway"
-	pbbase "github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/protobuf"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/types"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/utils"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway"
+	pbbase "github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/protobuf"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/types"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/utils"
 	"github.com/orcaman/concurrent-map"
 	log "github.com/sirupsen/logrus"
 	"runtime/debug"

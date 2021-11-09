@@ -1,8 +1,8 @@
 package bxmock
 
 import (
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/sdnmessage"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/types"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/sdnmessage"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/types"
 )
 
 // MockNetwork creates a mock network

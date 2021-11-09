@@ -2,9 +2,9 @@ package statistics
 
 import (
 	"encoding/binary"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/sdnmessage"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/types"
-	"github.com/bloXroute-Labs/bxgateway-private-go/test/bxmock"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/sdnmessage"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/types"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/test/bxmock"
 	"github.com/stretchr/testify/assert"
 	"math/rand"
 	"testing"

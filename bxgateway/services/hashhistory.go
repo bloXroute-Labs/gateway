@@ -1,7 +1,7 @@
 package services
 
 import (
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/utils"
+	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/utils"
 	cmap "github.com/orcaman/concurrent-map"
 	log "github.com/sirupsen/logrus"
 	"time"
