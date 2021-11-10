@@ -2,9 +2,9 @@ package services
 
 import (
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/bxgateway/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/bxgateway/types"
-	"github.com/bloXroute-Labs/gateway/bxgateway/utils"
+	"github.com/bloXroute-Labs/gateway/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/utils"
 	log "github.com/sirupsen/logrus"
 	"sync"
 	"time"

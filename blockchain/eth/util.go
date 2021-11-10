@@ -2,7 +2,7 @@ package eth
 
 import (
 	"crypto/ecdsa"
-	"github.com/bloXroute-Labs/gateway/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"os"

@@ -17,8 +17,12 @@ M = $(shell printf "\033[34;1m▶\033[0m")
 export GO111MODULE=on
 
 .PHONY: all
-all: proxy gateway
-
+all: gateway
+gateway: third_party_utils ; $(info $(M) building gateway executables…) @ ## Build program binary
+	$Q $(GO) build \
+		-tags release \
+		-ldflags '-X $(MODULE)/version.BuildVersion=$(VERSION) -X $(MODULE)/version.BuildDate=$(DATE)' \
+		-o $(BIN) ./cmd/...
 lambda:
 	env GOOS=linux $(GO) build -ldflags="-s -w" -o $(BIN)/txtrace_lambda ./cmd/txtrace_lambda/...
 

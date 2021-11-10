@@ -2,9 +2,9 @@ package bxmessage
 
 import (
 	"encoding/hex"
-	"github.com/bloXroute-Labs/gateway/bxgateway/types"
-	"github.com/bloXroute-Labs/gateway/test"
-	"github.com/bloXroute-Labs/gateway/test/fixtures"
+	"github.com/bloXroute-Labs/bxgateway-private-go/test"
+	"github.com/bloXroute-Labs/bxgateway-private-go/test/fixtures"
+	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )

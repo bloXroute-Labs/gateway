@@ -1,6 +1,6 @@
 package statistics
 
-import "github.com/bloXroute-Labs/gateway/bxgateway/types"
+import "github.com/bloXroute-Labs/gateway/types"
 
 // Record represents a bloxroute style stat type record
 type Record struct {

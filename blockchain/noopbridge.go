@@ -1,8 +1,8 @@
 package blockchain
 
 import (
-	"github.com/bloXroute-Labs/gateway/bxgateway/blockchain/network"
-	"github.com/bloXroute-Labs/gateway/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/blockchain/network"
+	"github.com/bloXroute-Labs/gateway/types"
 )
 
 // NoOpBxBridge is a placeholder bridge that still operates as a Converter

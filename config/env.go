@@ -2,7 +2,7 @@ package config
 
 import (
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/bxgateway/utils"
+	"github.com/bloXroute-Labs/gateway/utils"
 	"github.com/urfave/cli/v2"
 	"path"
 	"strconv"

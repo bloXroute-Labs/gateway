@@ -2,8 +2,8 @@ package bxmessage
 
 import (
 	"encoding/binary"
-	"github.com/bloXroute-Labs/gateway/bxgateway/bxmessage/utils"
-	"github.com/bloXroute-Labs/gateway/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/bxmessage/utils"
+	"github.com/bloXroute-Labs/gateway/types"
 	cmap "github.com/orcaman/concurrent-map"
 	log "github.com/sirupsen/logrus"
 	"math"

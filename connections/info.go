@@ -1,8 +1,8 @@
 package connections
 
 import (
-	"github.com/bloXroute-Labs/gateway/bxgateway/types"
-	"github.com/bloXroute-Labs/gateway/bxgateway/utils"
+	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/utils"
 )
 
 // Info represents various information fields about the connection.

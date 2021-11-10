@@ -2,7 +2,7 @@ package bxmessage
 
 import (
 	"encoding/hex"
-	"github.com/bloXroute-Labs/gateway/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )

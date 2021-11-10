@@ -3,8 +3,8 @@ package connections
 import (
 	"bytes"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/bxgateway/bxmessage"
-	"github.com/bloXroute-Labs/gateway/bxgateway/utils"
+	"github.com/bloXroute-Labs/gateway/bxmessage"
+	"github.com/bloXroute-Labs/gateway/utils"
 	log "github.com/sirupsen/logrus"
 	"sync"
 	"time"

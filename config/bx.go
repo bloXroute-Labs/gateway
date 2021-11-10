@@ -2,7 +2,7 @@ package config
 
 import (
 	"errors"
-	"github.com/bloXroute-Labs/gateway/bxgateway/utils"
+	"github.com/bloXroute-Labs/gateway/utils"
 	"github.com/urfave/cli/v2"
 	"time"
 )

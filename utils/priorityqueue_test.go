@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"github.com/bloXroute-Labs/gateway/bxgateway/bxmessage"
+	"github.com/bloXroute-Labs/gateway/bxmessage"
 	"testing"
 )
 

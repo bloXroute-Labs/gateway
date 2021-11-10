@@ -2,10 +2,10 @@ package servers
 
 import (
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/bxgateway"
-	"github.com/bloXroute-Labs/gateway/bxgateway/connections"
-	"github.com/bloXroute-Labs/gateway/bxgateway/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway"
+	"github.com/bloXroute-Labs/gateway/connections"
+	"github.com/bloXroute-Labs/gateway/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
 	"sync"

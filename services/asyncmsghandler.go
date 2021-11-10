@@ -1,9 +1,9 @@
 package services
 
 import (
-	"github.com/bloXroute-Labs/gateway/bxgateway"
-	"github.com/bloXroute-Labs/gateway/bxgateway/bxmessage"
-	"github.com/bloXroute-Labs/gateway/bxgateway/connections"
+	"github.com/bloXroute-Labs/gateway"
+	"github.com/bloXroute-Labs/gateway/bxmessage"
+	"github.com/bloXroute-Labs/gateway/connections"
 	log "github.com/sirupsen/logrus"
 )
 

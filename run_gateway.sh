@@ -16,7 +16,7 @@
 # 2. Modify line 25-29 to add correct values, then run command:
 # `./run_gateway.sh`
 #
-# It creates a container named bxgateway-go running in the background
+# It creates a container named -go running in the background
 # Websockets are accessible at ws://localhost:28333/ws
 # To test it you can use wscat -c ws://localhost:28333/ws -H "Authorization:<your auth header here>"
 
@@ -55,8 +55,8 @@ fi
 ARGS="${ARGS} --blockchain-network ${BLOCKCHAIN_NETWORK}"
 
 docker pull bloxroute/gateway:$IMAGE_TAG
-docker rm -f bxgateway-go
-docker run --name bxgateway-go -d -v "$LOGS_PATH":/app/bloxroute/logs \
+docker rm -f -go
+docker run --name -go -d -v "$LOGS_PATH":/app/bloxroute/logs \
   -v "$CERT_PATH":/app/bloxroute/ssl -v "$DATADIR_PATH":/app/bloxroute/datadir \
   -p 1801:1801 -p 127.0.0.1:6060:6060 \
   -p 28333:28333 bloxroute/gateway:$IMAGE_TAG "$ARGS"

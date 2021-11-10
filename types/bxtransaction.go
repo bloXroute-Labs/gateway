@@ -1,7 +1,7 @@
 package types
 
 import (
-	pbbase "github.com/bloXroute-Labs/gateway/bxgateway/protobuf"
+	pbbase "github.com/bloXroute-Labs/gateway/protobuf"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"sync"
 	"time"

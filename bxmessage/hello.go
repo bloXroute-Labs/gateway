@@ -3,7 +3,7 @@ package bxmessage
 import (
 	"encoding/binary"
 	"encoding/hex"
-	"github.com/bloXroute-Labs/gateway/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/types"
 	"strings"
 )
 

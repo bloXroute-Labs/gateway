@@ -2,9 +2,9 @@ package connections
 
 import (
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/bxgateway/bxmessage"
-	"github.com/bloXroute-Labs/gateway/bxgateway/types"
-	"github.com/bloXroute-Labs/gateway/bxgateway/utils"
+	"github.com/bloXroute-Labs/gateway/bxmessage"
+	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/utils"
 	log "github.com/sirupsen/logrus"
 	"time"
 )

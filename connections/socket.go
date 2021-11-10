@@ -2,7 +2,7 @@ package connections
 
 import (
 	"crypto/tls"
-	"github.com/bloXroute-Labs/gateway/bxgateway/utils"
+	"github.com/bloXroute-Labs/gateway/utils"
 	log "github.com/sirupsen/logrus"
 	"net"
 	"strconv"

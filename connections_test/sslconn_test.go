@@ -1,10 +1,10 @@
 package connections_test
 
 import (
-	"github.com/bloXroute-Labs/gateway/bxgateway/bxmessage"
-	"github.com/bloXroute-Labs/gateway/bxgateway/connections"
-	"github.com/bloXroute-Labs/gateway/bxgateway/utils"
-	"github.com/bloXroute-Labs/gateway/test/bxmock"
+	"github.com/bloXroute-Labs/bxgateway-private-go/test/bxmock"
+	"github.com/bloXroute-Labs/gateway/bxmessage"
+	"github.com/bloXroute-Labs/gateway/connections"
+	"github.com/bloXroute-Labs/gateway/utils"
 	"github.com/stretchr/testify/assert"
 	"runtime"
 	"testing"

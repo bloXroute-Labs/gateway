@@ -1,7 +1,7 @@
 package nodes
 
 import (
-	"github.com/bloXroute-Labs/gateway/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/evalphobia/logrus_fluent"
 	log "github.com/sirupsen/logrus"
 	"strings"

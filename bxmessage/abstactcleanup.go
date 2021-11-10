@@ -2,8 +2,8 @@ package bxmessage
 
 import (
 	"encoding/binary"
-	"github.com/bloXroute-Labs/gateway/bxgateway/bxmessage/utils"
-	"github.com/bloXroute-Labs/gateway/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/bxmessage/utils"
+	"github.com/bloXroute-Labs/gateway/types"
 	uuid "github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
 )

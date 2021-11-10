@@ -2,8 +2,8 @@ package blockchain
 
 import (
 	"errors"
-	"github.com/bloXroute-Labs/gateway/bxgateway/blockchain/network"
-	"github.com/bloXroute-Labs/gateway/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/blockchain/network"
+	"github.com/bloXroute-Labs/gateway/types"
 )
 
 // NoActiveBlockchainPeersAlert is used to send an alert to the gateway on initial liveliness check if no active blockchain peers
