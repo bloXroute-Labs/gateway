@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/bxgateway/types"
+	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/types"
 	"github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
 	"math"

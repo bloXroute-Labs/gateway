@@ -2,7 +2,7 @@ package nodes
 
 import (
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/bxgateway/config"
+	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/config"
 	"github.com/orandin/lumberjackrus"
 	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"

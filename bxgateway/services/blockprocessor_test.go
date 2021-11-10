@@ -1,10 +1,12 @@
 package services
 
 import (
-	"github.com/bloXroute-Labs/gateway/bxgateway/bxmessage"
-	"github.com/bloXroute-Labs/gateway/bxgateway/types"
-	"github.com/bloXroute-Labs/gateway/test"
-	"github.com/bloXroute-Labs/gateway/test/fixtures"
+	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway"
+	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/bxmessage"
+	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/types"
+	"github.com/bloXroute-Labs/bxgateway-private-go/test"
+	"github.com/bloXroute-Labs/bxgateway-private-go/test/bxmock"
+	"github.com/bloXroute-Labs/bxgateway-private-go/test/fixtures"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -17,11 +19,14 @@ import (
 func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 	store := newTestBxTxStore()
 	bp := NewRLPBlockProcessor(&store)
+	clock := bxmock.MockClock{}
+	clock.SetTime(time.Now())
 
 	blockHash := types.GenerateSHA256Hash()
 	header, _ := rlp.EncodeToBytes(test.GenerateBytes(300))
 	trailer, _ := rlp.EncodeToBytes(test.GenerateBytes(350))
 
+	// note that txs[0] is a huge tx
 	txs := []*types.BxBlockTransaction{
 		types.NewBxBlockTransaction(types.GenerateSHA256Hash(), test.GenerateBytes(25000)),
 		types.NewBxBlockTransaction(types.GenerateSHA256Hash(), test.GenerateBytes(250)),
@@ -30,9 +35,11 @@ func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 		types.NewBxBlockTransaction(types.GenerateSHA256Hash(), test.GenerateBytes(250)),
 	}
 
-	// note that txs[0] is a huge tx
-	store.Add(txs[0].Hash(), txs[0].Content(), 1, testNetworkNum, false, 0, time.Now(), 0)
-	store.Add(txs[3].Hash(), txs[3].Content(), 2, testNetworkNum, false, 0, time.Now(), 0)
+	// create delay the txs[0], so it passes the age check
+	store.Add(txs[0].Hash(), txs[0].Content(), 1, testNetworkNum, false, 0, clock.Now().Add(-bxgateway.MinTxAge), 0)
+
+	// The txs[2] will not be included in shortID since it's too recent
+	store.Add(txs[3].Hash(), txs[3].Content(), 2, testNetworkNum, false, 0, clock.Now(), 0)
 
 	bxBlock, err := types.NewBxBlock(blockHash, header, txs, trailer, big.NewInt(10000), big.NewInt(10))
 	assert.Nil(t, err)
@@ -40,10 +47,10 @@ func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 	broadcastMessage, shortIDs, err := bp.BxBlockToBroadcast(bxBlock, testNetworkNum)
 	assert.Nil(t, err)
 
-	// used short IDs are in the list
-	assert.Equal(t, 2, len(shortIDs))
+	// only the first shortID exists, the second Tx didn't get added into shortID
+	assert.Equal(t, 1, len(shortIDs))
 	assert.Contains(t, shortIDs, types.ShortID(1))
-	assert.Contains(t, shortIDs, types.ShortID(2))
+	assert.NotContains(t, shortIDs, types.ShortID(2))
 
 	// check that block is definitely compressed (tx 0 is huge)
 	assert.Less(t, len(broadcastMessage.Block()), 2000)

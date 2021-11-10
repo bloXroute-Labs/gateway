@@ -1,10 +1,10 @@
 package handler
 
 import (
-	"github.com/bloXroute-Labs/gateway/bxgateway/connections"
-	"github.com/bloXroute-Labs/gateway/bxgateway/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/bxgateway/utils"
-	"github.com/bloXroute-Labs/gateway/test/bxmock"
+	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/connections"
+	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/sdnmessage"
+	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/utils"
+	"github.com/bloXroute-Labs/bxgateway-private-go/test/bxmock"
 	"github.com/stretchr/testify/assert"
 	"runtime"
 	"testing"

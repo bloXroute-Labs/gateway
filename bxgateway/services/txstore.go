@@ -1,8 +1,8 @@
 package services
 
 import (
-	pbbase "github.com/bloXroute-Labs/gateway/bxgateway/protobuf"
-	"github.com/bloXroute-Labs/gateway/bxgateway/types"
+	pbbase "github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/protobuf"
+	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/types"
 	"time"
 )
 

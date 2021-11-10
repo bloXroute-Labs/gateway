@@ -2,9 +2,9 @@ package services
 
 import (
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/bxgateway/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/bxgateway/types"
-	"github.com/bloXroute-Labs/gateway/bxgateway/utils"
+	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/sdnmessage"
+	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/types"
+	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/utils"
 	cmap "github.com/orcaman/concurrent-map"
 	log "github.com/sirupsen/logrus"
 	"math/big"

@@ -53,3 +53,6 @@ const WSConnectionID = "WSConnectionID"
 
 // DeliverToNodePercent is the % of transactions that should be delivered to the connected blockchain node
 const DeliverToNodePercent = 20
+
+// MinTxAge restrict the transaction to be old enough to compress in to block
+const MinTxAge = 2 * time.Second

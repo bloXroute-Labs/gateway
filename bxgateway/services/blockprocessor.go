@@ -3,8 +3,9 @@ package services
 import (
 	"errors"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/bxgateway/bxmessage"
-	"github.com/bloXroute-Labs/gateway/bxgateway/types"
+	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway"
+	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/bxmessage"
+	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	log "github.com/sirupsen/logrus"
 	"math/big"
@@ -84,13 +85,14 @@ func (bp *rlpBlockProcessor) BxBlockToBroadcast(block *types.BxBlock, networkNum
 
 	usedShortIDs := make(types.ShortIDList, 0)
 	txs := make([]bxCompressedTransaction, 0, len(block.Txs))
+	maxTimestampForCompression := time.Now().Add(-bxgateway.MinTxAge)
 
 	// compress transactions in block if short ID is known
 	for _, tx := range block.Txs {
 		txHash := tx.Hash()
 
 		bxTransaction, ok := bp.txStore.Get(txHash)
-		if ok {
+		if ok && bxTransaction.AddTime().Before(maxTimestampForCompression) {
 			shortIDs := bxTransaction.ShortIDs()
 			if len(shortIDs) > 0 {
 				shortID := shortIDs[0]

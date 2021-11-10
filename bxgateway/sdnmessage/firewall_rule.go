@@ -1,7 +1,7 @@
 package sdnmessage
 
 import (
-	"github.com/bloXroute-Labs/gateway/bxgateway/types"
+	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/types"
 	"time"
 )
 

@@ -54,9 +54,9 @@ fi
 
 ARGS="${ARGS} --blockchain-network ${BLOCKCHAIN_NETWORK}"
 
-docker pull bloxroute/bloxroute-gateway-go:$IMAGE_TAG
+docker pull bloxroute/gateway:$IMAGE_TAG
 docker rm -f bxgateway-go
 docker run --name bxgateway-go -d -v "$LOGS_PATH":/app/bloxroute/logs \
   -v "$CERT_PATH":/app/bloxroute/ssl -v "$DATADIR_PATH":/app/bloxroute/datadir \
   -p 1801:1801 -p 127.0.0.1:6060:6060 \
-  -p 28333:28333 bloxroute/bloxroute-gateway-go:$IMAGE_TAG "$ARGS"
+  -p 28333:28333 bloxroute/gateway:$IMAGE_TAG "$ARGS"

@@ -1,6 +1,6 @@
 package services
 
-import "github.com/bloXroute-Labs/gateway/bxgateway/types"
+import "github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/types"
 
 // ShortIDAssigner - an interface for short ID assigner struct
 type ShortIDAssigner interface {
