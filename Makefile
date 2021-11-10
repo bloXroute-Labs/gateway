@@ -19,22 +19,6 @@ export GO111MODULE=on
 .PHONY: all
 all: proxy gateway
 
-proxy: fmt lint | $(BIN) ; $(info $(M) building proxy executables…) @ ## Build program binary
-	$Q $(GO) build \
-		-tags release \
-		-ldflags '-X $(MODULE)/version.BuildVersion=$(VERSION) -X $(MODULE)/version.BuildDate=$(DATE)' \
-		-o $(BIN) ./cmd/...
-gateway: third_party_utils ; $(info $(M) building gateway executables…) @ ## Build program binary
-	$Q $(GO) build \
-		-tags release \
-		-ldflags '-X $(MODULE)/bxgateway/version.BuildVersion=$(VERSION) -X $(MODULE)/bxgateway/version.BuildDate=$(DATE)' \
-		-o $(BIN) ./bxgateway/cmd/...
-systemchecker: fmt lint | $(BIN) ; $(info $(M) building system-checker executables…) @ ## Build program binary
-	$Q $(GO) build \
-		-tags release \
-		-ldflags '-X $(MODULE)/systemchecker/version.BuildVersion=$(VERSION) -X $(MODULE)/systemchecker/version.BuildDate=$(DATE)' \
-		-o $(BIN) ./systemchecker/cmd/...
-
 lambda:
 	env GOOS=linux $(GO) build -ldflags="-s -w" -o $(BIN)/txtrace_lambda ./cmd/txtrace_lambda/...
 

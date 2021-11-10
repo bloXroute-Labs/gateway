@@ -1,7 +1,7 @@
 package connections
 
 import (
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/bxmessage"
+	"github.com/bloXroute-Labs/gateway/bxgateway/bxmessage"
 	log "github.com/sirupsen/logrus"
 	"time"
 )

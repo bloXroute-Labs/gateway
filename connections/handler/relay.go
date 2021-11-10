@@ -1,11 +1,11 @@
 package handler
 
 import (
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/bxmessage"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/connections"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/sdnmessage"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/types"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/utils"
+	"github.com/bloXroute-Labs/gateway/bxgateway/bxmessage"
+	"github.com/bloXroute-Labs/gateway/bxgateway/connections"
+	"github.com/bloXroute-Labs/gateway/bxgateway/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/bxgateway/utils"
 	log "github.com/sirupsen/logrus"
 	"sync/atomic"
 )

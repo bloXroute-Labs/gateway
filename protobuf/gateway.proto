@@ -1,7 +1,7 @@
 syntax = "proto3";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/gateway";
+option go_package = "github.com/bloXroute-Labs/gateway/bxgateway/gateway";
 
 // The gateway service definition.
 package  gateway;

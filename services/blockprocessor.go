@@ -3,9 +3,9 @@ package services
 import (
 	"errors"
 	"fmt"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/bxmessage"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/bxgateway"
+	"github.com/bloXroute-Labs/gateway/bxgateway/bxmessage"
+	"github.com/bloXroute-Labs/gateway/bxgateway/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	log "github.com/sirupsen/logrus"
 	"math/big"

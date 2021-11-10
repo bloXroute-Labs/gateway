@@ -2,7 +2,7 @@ package utils
 
 import (
 	"container/heap"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/bxmessage"
+	"github.com/bloXroute-Labs/gateway/bxgateway/bxmessage"
 	"sync"
 	"time"
 )

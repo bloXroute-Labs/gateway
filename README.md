@@ -1,1 +1,1 @@
-# bxgateway-private-go
+# gateway

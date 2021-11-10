@@ -2,7 +2,7 @@ package utils
 
 import (
 	"crypto/x509"
-	"github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/bxgateway/types"
 	log "github.com/sirupsen/logrus"
 )
 
