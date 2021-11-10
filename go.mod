@@ -1,4 +1,4 @@
-module github.com/bloXroute-Labs/bloxroute-gateway-go
+module github.com/bloXroute-Labs/gateway
 
 go 1.14
 

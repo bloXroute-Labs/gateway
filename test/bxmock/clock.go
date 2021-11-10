@@ -1,7 +1,7 @@
 package bxmock
 
 import (
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/utils"
+	"github.com/bloXroute-Labs/gateway/bxgateway/utils"
 	"sync"
 	"time"
 )

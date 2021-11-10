@@ -2,8 +2,8 @@ package types
 
 import (
 	"encoding/hex"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/test"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/test/fixtures"
+	"github.com/bloXroute-Labs/gateway/test"
+	"github.com/bloXroute-Labs/gateway/test/fixtures"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/stretchr/testify/assert"
 	"math/big"

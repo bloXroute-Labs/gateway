@@ -2,7 +2,7 @@ package sdnmessage
 
 import (
 	"fmt"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/bxgateway/types"
 )
 
 // BlockchainNetwork represents network config for a given blockchain network being routed by bloxroute

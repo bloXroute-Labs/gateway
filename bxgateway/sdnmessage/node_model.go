@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/bxgateway/types"
 	log "github.com/sirupsen/logrus"
 )
 

@@ -1,7 +1,7 @@
 package sdnmessage
 
 import (
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/bxgateway/types"
 )
 
 // NodeEventType represents a type of node event being reported to the SDN

@@ -9,7 +9,7 @@ git checkout -b ${BRANCH}
 cd ../bxgateway-private-go
 git checkout develop
 git pull origin develop
-cd ../bloxroute-gateway-go
+cd ../gateway
 
 echo "copying bxgateway folder and files"
 cp -r ../bxgateway-private-go/bxgateway .

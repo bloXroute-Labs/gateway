@@ -1,8 +1,8 @@
 package bxmock
 
 import (
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/bxmessage"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/connections"
+	"github.com/bloXroute-Labs/gateway/bxgateway/bxmessage"
+	"github.com/bloXroute-Labs/gateway/bxgateway/connections"
 )
 
 // MockBxListener is a flexible struct that implements connections.BxListener

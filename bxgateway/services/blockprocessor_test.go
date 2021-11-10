@@ -1,10 +1,10 @@
 package services
 
 import (
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/bxmessage"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/types"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/test"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/test/fixtures"
+	"github.com/bloXroute-Labs/gateway/bxgateway/bxmessage"
+	"github.com/bloXroute-Labs/gateway/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/test"
+	"github.com/bloXroute-Labs/gateway/test/fixtures"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"

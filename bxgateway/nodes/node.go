@@ -2,7 +2,7 @@ package nodes
 
 import (
 	"fmt"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/services"
+	"github.com/bloXroute-Labs/gateway/bxgateway/services"
 	"github.com/urfave/cli/v2"
 )
 

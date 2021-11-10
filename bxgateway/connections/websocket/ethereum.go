@@ -3,7 +3,7 @@ package websocket
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/bxgateway/types"
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
 	"strconv"

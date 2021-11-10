@@ -1,9 +1,9 @@
 package services
 
 import (
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/sdnmessage"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/types"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/test/bxmock"
+	"github.com/bloXroute-Labs/gateway/bxgateway/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/test/bxmock"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"

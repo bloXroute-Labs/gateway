@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/config"
-	pb "github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/protobuf"
+	"github.com/bloXroute-Labs/gateway/bxgateway/config"
+	pb "github.com/bloXroute-Labs/gateway/bxgateway/protobuf"
 	"google.golang.org/grpc"
 )
 

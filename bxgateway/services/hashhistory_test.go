@@ -1,8 +1,8 @@
 package services
 
 import (
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/types"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/test/bxmock"
+	"github.com/bloXroute-Labs/gateway/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/test/bxmock"
 	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"

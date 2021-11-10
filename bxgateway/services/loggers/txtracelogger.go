@@ -1,9 +1,9 @@
 package loggers
 
 import (
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/connections"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/types"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/utils"
+	"github.com/bloXroute-Labs/gateway/bxgateway/connections"
+	"github.com/bloXroute-Labs/gateway/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/bxgateway/utils"
 	log "github.com/sirupsen/logrus"
 )
 

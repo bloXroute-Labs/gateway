@@ -1,8 +1,8 @@
 package connections
 
 import (
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/config"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/bxgateway/config"
+	"github.com/bloXroute-Labs/gateway/bxgateway/sdnmessage"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"testing"

@@ -2,8 +2,8 @@ package bxmessage
 
 import (
 	"encoding/binary"
-	utils2 "github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/bxmessage/utils"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/types"
+	utils2 "github.com/bloXroute-Labs/gateway/bxgateway/bxmessage/utils"
+	"github.com/bloXroute-Labs/gateway/bxgateway/types"
 )
 
 // GetTxs - represent the "gettxs" message

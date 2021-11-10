@@ -3,7 +3,7 @@ package services
 import (
 	"crypto/sha256"
 	"fmt"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/bxgateway/types"
 	"github.com/struCoder/pidusage"
 	"math/rand"
 	"os"

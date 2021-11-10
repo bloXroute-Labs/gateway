@@ -1,7 +1,7 @@
 package sdnmessage
 
 import (
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/bxgateway/types"
 )
 
 // ConnectedPeer represents info about a connected peer to a relay

@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway"
+	"github.com/bloXroute-Labs/gateway/bxgateway"
 	"github.com/urfave/cli/v2"
 )
 

@@ -2,8 +2,8 @@ package bxmock
 
 import (
 	"fmt"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/utils"
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/test"
+	"github.com/bloXroute-Labs/gateway/bxgateway/utils"
+	"github.com/bloXroute-Labs/gateway/test"
 	"io/ioutil"
 	"os"
 	"path"

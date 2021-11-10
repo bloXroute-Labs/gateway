@@ -1,7 +1,7 @@
 package sdnmessage
 
 import (
-	"github.com/bloXroute-Labs/bloxroute-gateway-go/bxgateway/types"
+	"github.com/bloXroute-Labs/gateway/bxgateway/types"
 )
 
 // DisconnectRelays represents the set of connections for the relay to disconnect, as sent down
