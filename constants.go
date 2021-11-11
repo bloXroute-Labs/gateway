@@ -39,8 +39,20 @@ const AsyncMsgChannelSize = 500
 // BxNotificationChannelSize - is the size of feed channels
 const BxNotificationChannelSize = 1000
 
+// MaxBlockBacklogToPublish - gateway should not publish blocks older than best height minus MaxBlockBacklogToPublish
+const MaxBlockBacklogToPublish = 10
+
+// BlockchainNetworksCacheFileName - blockchain networks cache file name
+const BlockchainNetworksCacheFileName = "blockchainNetworks.json"
+
+// CleanedShortIDsChannelSize is the size of cleaned short ids channel
+const CleanedShortIDsChannelSize = 100
+
 // WSConnectionID - special node ID to identify the websocket connection
 const WSConnectionID = "WSConnectionID"
+
+// DeliverToNodePercent is the % of transactions that should be delivered to the connected blockchain node
+const DeliverToNodePercent = 20
 
 // MinTxAge restrict the transaction to be old enough to compress in to block
 const MinTxAge = 2 * time.Second

@@ -1,11 +1,11 @@
 package services
 
 import (
-	"github.com/bloXroute-Labs/bxgateway-private-go/test"
-	"github.com/bloXroute-Labs/bxgateway-private-go/test/bxmock"
-	"github.com/bloXroute-Labs/bxgateway-private-go/test/fixtures"
 	"github.com/bloXroute-Labs/gateway"
 	"github.com/bloXroute-Labs/gateway/bxmessage"
+	"github.com/bloXroute-Labs/gateway/test"
+	test2 "github.com/bloXroute-Labs/gateway/test/bxmock"
+	"github.com/bloXroute-Labs/gateway/test/fixtues"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -19,7 +19,7 @@ import (
 func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 	store := newTestBxTxStore()
 	bp := NewRLPBlockProcessor(&store)
-	clock := bxmock.MockClock{}
+	clock := test2.MockClock{}
 	clock.SetTime(time.Now())
 
 	blockHash := types.GenerateSHA256Hash()
@@ -79,7 +79,7 @@ func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 
 func TestRLPBlockProcessor_BroadcastToBxBlockMissingShortIDs(t *testing.T) {
 	broadcast := &bxmessage.Broadcast{}
-	_ = broadcast.Unpack(common.Hex2Bytes(fixtures.BroadcastMessageWithShortIDs), 0)
+	_ = broadcast.Unpack(common.Hex2Bytes(fixtues.BroadcastMessageWithShortIDs), 0)
 
 	store := newTestBxTxStore()
 	bp := NewRLPBlockProcessor(&store)
@@ -96,15 +96,15 @@ func TestRLPBlockProcessor_BroadcastToBxBlockMissingShortIDs(t *testing.T) {
 
 func TestRLPBlockProcessor_BroadcastToBxBlockShortIDs(t *testing.T) {
 	broadcast := &bxmessage.Broadcast{}
-	_ = broadcast.Unpack(common.Hex2Bytes(fixtures.BroadcastMessageWithShortIDs), 0)
+	_ = broadcast.Unpack(common.Hex2Bytes(fixtues.BroadcastMessageWithShortIDs), 0)
 
 	store := newTestBxTxStore()
 	bp := NewRLPBlockProcessor(&store)
 
-	txHash1, _ := types.NewSHA256HashFromString(fixtures.BroadcastTransactionHash1)
-	txContent1 := common.Hex2Bytes(fixtures.BroadcastTransactionContent1)
-	txHash2, _ := types.NewSHA256HashFromString(fixtures.BroadcastTransactionHash2)
-	txContent2 := common.Hex2Bytes(fixtures.BroadcastTransactionContent2)
+	txHash1, _ := types.NewSHA256HashFromString(fixtues.BroadcastTransactionHash1)
+	txContent1 := common.Hex2Bytes(fixtues.BroadcastTransactionContent1)
+	txHash2, _ := types.NewSHA256HashFromString(fixtues.BroadcastTransactionHash2)
+	txContent2 := common.Hex2Bytes(fixtues.BroadcastTransactionContent2)
 
 	txContents := [][]byte{txContent1, txContent2}
 
@@ -136,10 +136,10 @@ func TestRLPBlockProcessor_BroadcastToBxBlockShortIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.Equal(t, 1, len(uncles))
-	assert.Equal(t, common.Hex2Bytes(fixtures.BroadcastUncleParentHash), uncles[0].ParentHash.Bytes())
+	assert.Equal(t, common.Hex2Bytes(fixtues.BroadcastUncleParentHash), uncles[0].ParentHash.Bytes())
 
-	assert.Equal(t, fixtures.BroadcastDifficulty, bxBlock.TotalDifficulty)
-	assert.Equal(t, fixtures.BroadcastBlockNumber, bxBlock.Number)
+	assert.Equal(t, fixtues.BroadcastDifficulty, bxBlock.TotalDifficulty)
+	assert.Equal(t, fixtues.BroadcastBlockNumber, bxBlock.Number)
 
 	// duplicate, skip this time
 	_, _, err = bp.BxBlockFromBroadcast(broadcast)
@@ -148,13 +148,13 @@ func TestRLPBlockProcessor_BroadcastToBxBlockShortIDs(t *testing.T) {
 
 func TestRLPBlockProcessor_BroadcastToBxBlockFullTxs(t *testing.T) {
 	broadcast := &bxmessage.Broadcast{}
-	_ = broadcast.Unpack(common.Hex2Bytes(fixtures.BroadcastMessageFullTxs), 0)
+	_ = broadcast.Unpack(common.Hex2Bytes(fixtues.BroadcastMessageFullTxs), 0)
 
 	store := newTestBxTxStore()
 	bp := NewRLPBlockProcessor(&store)
 
-	txHash1, _ := types.NewSHA256HashFromString(fixtures.BroadcastTransactionHash1)
-	txContent1 := common.Hex2Bytes(fixtures.BroadcastTransactionContent1)
+	txHash1, _ := types.NewSHA256HashFromString(fixtues.BroadcastTransactionHash1)
+	txContent1 := common.Hex2Bytes(fixtues.BroadcastTransactionContent1)
 
 	store.Add(txHash1, txContent1, 1, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
 
@@ -174,7 +174,7 @@ func TestRLPBlockProcessor_BroadcastToBxBlockFullTxs(t *testing.T) {
 	if err := rlp.DecodeBytes(bxBlock.Header, &ethHeader); err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, common.Hex2Bytes(fixtures.BroadcastMessageFullTxsBlockHash), ethHeader.Hash().Bytes())
+	assert.Equal(t, common.Hex2Bytes(fixtues.BroadcastMessageFullTxsBlockHash), ethHeader.Hash().Bytes())
 
 	var uncles []*ethtypes.Header
 	if err := rlp.DecodeBytes(bxBlock.Trailer, &uncles); err != nil {
@@ -182,18 +182,18 @@ func TestRLPBlockProcessor_BroadcastToBxBlockFullTxs(t *testing.T) {
 	}
 	assert.Equal(t, 2, len(uncles))
 
-	assert.Equal(t, fixtures.BroadcastDifficulty, bxBlock.TotalDifficulty)
-	assert.Equal(t, fixtures.BroadcastBlockNumber, bxBlock.Number)
+	assert.Equal(t, fixtues.BroadcastDifficulty, bxBlock.TotalDifficulty)
+	assert.Equal(t, fixtues.BroadcastBlockNumber, bxBlock.Number)
 }
 
 func TestRLPBlockProcessor_ProcessBroadcast(t *testing.T) {
 	broadcast := &bxmessage.Broadcast{}
-	_ = broadcast.Unpack(common.Hex2Bytes(fixtures.BroadcastMessageWithShortIDs), 0)
+	_ = broadcast.Unpack(common.Hex2Bytes(fixtues.BroadcastMessageWithShortIDs), 0)
 
-	txHash1, _ := types.NewSHA256HashFromString(fixtures.BroadcastTransactionHash1)
-	txContent1 := common.Hex2Bytes(fixtures.BroadcastTransactionContent1)
-	txHash2, _ := types.NewSHA256HashFromString(fixtures.BroadcastTransactionHash2)
-	txContent2 := common.Hex2Bytes(fixtures.BroadcastTransactionContent2)
+	txHash1, _ := types.NewSHA256HashFromString(fixtues.BroadcastTransactionHash1)
+	txContent1 := common.Hex2Bytes(fixtues.BroadcastTransactionContent1)
+	txHash2, _ := types.NewSHA256HashFromString(fixtues.BroadcastTransactionHash2)
+	txContent2 := common.Hex2Bytes(fixtues.BroadcastTransactionContent2)
 
 	store := newTestBxTxStore()
 	store.Add(txHash1, txContent1, 1, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)

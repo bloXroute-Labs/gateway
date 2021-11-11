@@ -2,8 +2,8 @@ package types
 
 import (
 	"encoding/hex"
-	"github.com/bloXroute-Labs/bxgateway-private-go/test"
-	"github.com/bloXroute-Labs/bxgateway-private-go/test/fixtures"
+	"github.com/bloXroute-Labs/gateway/test"
+	"github.com/bloXroute-Labs/gateway/test/fixtues"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/stretchr/testify/assert"
 	"math/big"
@@ -34,10 +34,10 @@ func ethTransaction(hashString string, txString string) (SHA256Hash, EthTransact
 }
 
 func TestLegacyTransaction(t *testing.T) {
-	expectedGasPrice := new(big.Int).SetInt64(fixtures.LegacyGasPrice)
-	expectedFromAddress := test.NewEthAddress(fixtures.LegacyFromAddress)
+	expectedGasPrice := new(big.Int).SetInt64(fixtues.LegacyGasPrice)
+	expectedFromAddress := test.NewEthAddress(fixtues.LegacyFromAddress)
 
-	hash, ethTx, _, err := ethTransaction(fixtures.LegacyTransactionHash, fixtures.LegacyTransaction)
+	hash, ethTx, _, err := ethTransaction(fixtues.LegacyTransactionHash, fixtues.LegacyTransaction)
 	assert.Nil(t, err)
 
 	// check decoding transaction structure
@@ -51,8 +51,8 @@ func TestLegacyTransaction(t *testing.T) {
 	// check JSON serialization
 	jsonMap, err := test.MarshallJSONToMap(ethTx)
 	assert.Nil(t, err)
-	assert.Equal(t, fixtures.LegacyFromAddress, jsonMap["from"])
-	assert.Equal(t, fixtures.LegacyTransactionHash, jsonMap["hash"])
+	assert.Equal(t, fixtues.LegacyFromAddress, jsonMap["from"])
+	assert.Equal(t, fixtues.LegacyTransactionHash, jsonMap["hash"])
 	assert.Equal(t, hexutil.EncodeBig(expectedGasPrice), jsonMap["gasPrice"])
 
 	assert.False(t, test.Contains(jsonMap, "maxFeePerGas"))
@@ -70,8 +70,8 @@ func TestLegacyTransaction(t *testing.T) {
 	})
 	assert.Nil(t, err)
 	assert.Equal(t, "0x0", jsonMap["type"])
-	assert.Equal(t, fixtures.LegacyFromAddress, filteredTx["from"])
-	assert.Equal(t, fixtures.LegacyGasPrice, filteredTx["gas_price"])
+	assert.Equal(t, fixtues.LegacyFromAddress, filteredTx["from"])
+	assert.Equal(t, fixtues.LegacyGasPrice, filteredTx["gas_price"])
 	// when chain ID is explicitly asked for it's included
 	assert.Equal(t, 1, filteredTx["chain_id"])
 	assert.Equal(t, -1, filteredTx["max_fee_per_gas"])
@@ -99,10 +99,10 @@ func TestLegacyTransaction(t *testing.T) {
 }
 
 func TestAccessListTransaction(t *testing.T) {
-	expectedGasPrice := new(big.Int).SetInt64(fixtures.AccessListGasPrice)
-	expectedFromAddress := test.NewEthAddress(fixtures.AccessListFromAddress)
+	expectedGasPrice := new(big.Int).SetInt64(fixtues.AccessListGasPrice)
+	expectedFromAddress := test.NewEthAddress(fixtues.AccessListFromAddress)
 
-	hash, ethTx, _, err := ethTransaction(fixtures.AccessListTransactionHash, fixtures.AccessListTransaction)
+	hash, ethTx, _, err := ethTransaction(fixtues.AccessListTransactionHash, fixtues.AccessListTransaction)
 	assert.Nil(t, err)
 
 	// check decoding transaction structure
@@ -116,11 +116,11 @@ func TestAccessListTransaction(t *testing.T) {
 	// check JSON serialization
 	jsonMap, err := test.MarshallJSONToMap(ethTx)
 	assert.Nil(t, err)
-	assert.Equal(t, fixtures.AccessListFromAddress, jsonMap["from"])
-	assert.Equal(t, fixtures.AccessListTransactionHash, jsonMap["hash"])
+	assert.Equal(t, fixtues.AccessListFromAddress, jsonMap["from"])
+	assert.Equal(t, fixtues.AccessListTransactionHash, jsonMap["hash"])
 	assert.Equal(t, hexutil.EncodeBig(expectedGasPrice), jsonMap["gasPrice"])
-	assert.Equal(t, hexutil.EncodeUint64(fixtures.AccessListChainID), jsonMap["chainId"])
-	assert.Equal(t, fixtures.AccessListLength, len(jsonMap["accessList"].([]interface{})))
+	assert.Equal(t, hexutil.EncodeUint64(fixtues.AccessListChainID), jsonMap["chainId"])
+	assert.Equal(t, fixtues.AccessListLength, len(jsonMap["accessList"].([]interface{})))
 
 	assert.False(t, test.Contains(jsonMap, "maxFeePerGas"))
 	assert.False(t, test.Contains(jsonMap, "maxPriorityFeePerGas"))
@@ -135,9 +135,9 @@ func TestAccessListTransaction(t *testing.T) {
 	})
 	assert.Nil(t, err)
 	assert.Equal(t, "0x1", jsonMap["type"])
-	assert.Equal(t, fixtures.AccessListFromAddress, filteredTx["from"])
-	assert.Equal(t, fixtures.AccessListGasPrice, filteredTx["gas_price"])
-	assert.Equal(t, fixtures.AccessListChainID, filteredTx["chain_id"])
+	assert.Equal(t, fixtues.AccessListFromAddress, filteredTx["from"])
+	assert.Equal(t, fixtues.AccessListGasPrice, filteredTx["gas_price"])
+	assert.Equal(t, fixtues.AccessListChainID, filteredTx["chain_id"])
 	assert.Equal(t, -1, filteredTx["max_fee_per_gas"])
 	assert.Equal(t, -1, filteredTx["max_priority_fee_per_gas"])
 
@@ -157,35 +157,35 @@ func TestAccessListTransaction(t *testing.T) {
 	assert.Equal(t, &expectedFromAddress, ethFieldsTx.From.Address)
 	assert.Equal(t, hash, ethFieldsTx.Hash.SHA256Hash)
 	assert.Equal(t, expectedGasPrice, ethFieldsTx.GasPrice.Int)
-	assert.Equal(t, int64(fixtures.AccessListChainID), ethFieldsTx.ChainID.Int64())
+	assert.Equal(t, int64(fixtues.AccessListChainID), ethFieldsTx.ChainID.Int64())
 	assert.Equal(t, EthBigInt{}, ethFieldsTx.GasFeeCap)
 	assert.Equal(t, EthBigInt{}, ethFieldsTx.GasTipCap)
 }
 
 func TestDynamicFeeTransaction(t *testing.T) {
-	expectedFromAddress := test.NewEthAddress(fixtures.DynamicFeeFromAddress)
+	expectedFromAddress := test.NewEthAddress(fixtues.DynamicFeeFromAddress)
 
-	hash, ethTx, _, err := ethTransaction(fixtures.DynamicFeeTransactionHash, fixtures.DynamicFeeTransaction)
+	hash, ethTx, _, err := ethTransaction(fixtues.DynamicFeeTransactionHash, fixtues.DynamicFeeTransaction)
 	assert.Nil(t, err)
 
 	// check decoding transaction structure
 	assert.Equal(t, DynamicFeeTransactionType, ethTx.TxType)
 	assert.Equal(t, hash, ethTx.Hash.SHA256Hash)
-	assert.Equal(t, int64(fixtures.DynamicFeeFeePerGas), ethTx.GasPrice.Int64())
-	assert.Equal(t, int64(fixtures.DynamicFeeFeePerGas), ethTx.GasFeeCap.Int64())
-	assert.Equal(t, int64(fixtures.DynamicFeeTipPerGas), ethTx.GasTipCap.Int64())
+	assert.Equal(t, int64(fixtues.DynamicFeeFeePerGas), ethTx.GasPrice.Int64())
+	assert.Equal(t, int64(fixtues.DynamicFeeFeePerGas), ethTx.GasFeeCap.Int64())
+	assert.Equal(t, int64(fixtues.DynamicFeeTipPerGas), ethTx.GasTipCap.Int64())
 	assert.Equal(t, expectedFromAddress.Bytes(), ethTx.From.Bytes())
 
 	// check JSON serialization
 	jsonMap, err := test.MarshallJSONToMap(ethTx)
 	assert.Nil(t, err)
 	assert.Equal(t, "0x2", jsonMap["type"])
-	assert.Equal(t, fixtures.DynamicFeeFromAddress, jsonMap["from"])
-	assert.Equal(t, fixtures.DynamicFeeTransactionHash, jsonMap["hash"])
-	assert.Equal(t, hexutil.EncodeUint64(fixtures.DynamicFeeChainID), jsonMap["chainId"])
-	assert.Equal(t, fixtures.DynamicFeeAccessListLength, len(jsonMap["accessList"].([]interface{})))
-	assert.Equal(t, hexutil.EncodeUint64(fixtures.DynamicFeeFeePerGas), jsonMap["maxFeePerGas"])
-	assert.Equal(t, hexutil.EncodeUint64(fixtures.DynamicFeeTipPerGas), jsonMap["maxPriorityFeePerGas"])
+	assert.Equal(t, fixtues.DynamicFeeFromAddress, jsonMap["from"])
+	assert.Equal(t, fixtues.DynamicFeeTransactionHash, jsonMap["hash"])
+	assert.Equal(t, hexutil.EncodeUint64(fixtues.DynamicFeeChainID), jsonMap["chainId"])
+	assert.Equal(t, fixtues.DynamicFeeAccessListLength, len(jsonMap["accessList"].([]interface{})))
+	assert.Equal(t, hexutil.EncodeUint64(fixtues.DynamicFeeFeePerGas), jsonMap["maxFeePerGas"])
+	assert.Equal(t, hexutil.EncodeUint64(fixtues.DynamicFeeTipPerGas), jsonMap["maxPriorityFeePerGas"])
 	assert.Equal(t, nil, jsonMap["gasPrice"])
 
 	// check Filters
@@ -197,11 +197,11 @@ func TestDynamicFeeTransaction(t *testing.T) {
 		"max_priority_fee_per_gas",
 	})
 	assert.Nil(t, err)
-	assert.Equal(t, fixtures.DynamicFeeFromAddress, filteredTx["from"])
-	assert.Equal(t, fixtures.DynamicFeeChainID, filteredTx["chain_id"])
+	assert.Equal(t, fixtues.DynamicFeeFromAddress, filteredTx["from"])
+	assert.Equal(t, fixtues.DynamicFeeChainID, filteredTx["chain_id"])
 	assert.Equal(t, -1, filteredTx["gas_price"])
-	assert.Equal(t, fixtures.DynamicFeeFeePerGas, filteredTx["max_fee_per_gas"])
-	assert.Equal(t, fixtures.DynamicFeeTipPerGas, filteredTx["max_priority_fee_per_gas"])
+	assert.Equal(t, fixtues.DynamicFeeFeePerGas, filteredTx["max_fee_per_gas"])
+	assert.Equal(t, fixtues.DynamicFeeTipPerGas, filteredTx["max_priority_fee_per_gas"])
 
 	// check WithFields
 	fieldsTx := ethTx.WithFields([]string{
@@ -218,14 +218,14 @@ func TestDynamicFeeTransaction(t *testing.T) {
 
 	assert.Equal(t, &expectedFromAddress, ethFieldsTx.From.Address)
 	assert.Equal(t, hash, ethFieldsTx.Hash.SHA256Hash)
-	assert.Equal(t, int64(fixtures.DynamicFeeChainID), ethFieldsTx.ChainID.Int64())
+	assert.Equal(t, int64(fixtues.DynamicFeeChainID), ethFieldsTx.ChainID.Int64())
 	assert.Equal(t, EthBigInt{}, ethFieldsTx.GasPrice)
-	assert.Equal(t, int64(fixtures.DynamicFeeFeePerGas), ethFieldsTx.GasFeeCap.Int64())
-	assert.Equal(t, int64(fixtures.DynamicFeeTipPerGas), ethFieldsTx.GasTipCap.Int64())
+	assert.Equal(t, int64(fixtues.DynamicFeeFeePerGas), ethFieldsTx.GasFeeCap.Int64())
+	assert.Equal(t, int64(fixtues.DynamicFeeTipPerGas), ethFieldsTx.GasTipCap.Int64())
 }
 
 func TestContractCreationTx(t *testing.T) {
-	hash, ethTx, _, err := ethTransaction(fixtures.ContractCreationTxHash, fixtures.ContractCreationTx)
+	hash, ethTx, _, err := ethTransaction(fixtues.ContractCreationTxHash, fixtues.ContractCreationTx)
 	assert.Nil(t, err)
 	assert.Equal(t, hash, ethTx.Hash.SHA256Hash)
 

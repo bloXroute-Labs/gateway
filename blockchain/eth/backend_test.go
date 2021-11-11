@@ -2,9 +2,9 @@ package eth
 
 import (
 	"context"
-	"github.com/bloXroute-Labs/bxgateway-private-go/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/blockchain"
 	"github.com/bloXroute-Labs/gateway/blockchain/eth/test"
+	test2 "github.com/bloXroute-Labs/gateway/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/forkid"
@@ -30,7 +30,7 @@ func TestHandler_HandleStatus(t *testing.T) {
 	_, handler, peer := setup(-1)
 	head := common.Hash{1, 2, 3}
 	headDifficulty := big.NewInt(100)
-	currentBlock := bxmock.NewEthBlock(2, head)
+	currentBlock := test2.NewEthBlock(2, head)
 
 	err := handler.Handle(peer, &eth.StatusPacket{
 		ProtocolVersion: eth.ETH66,
@@ -59,8 +59,8 @@ func TestHandler_HandleTransactions(t *testing.T) {
 	bridge, handler, peer := setup(-1)
 
 	txs := []*ethtypes.Transaction{
-		bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey),
-		bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 2, privateKey),
+		test2.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey),
+		test2.NewSignedEthTx(ethtypes.LegacyTxType, 2, privateKey),
 	}
 
 	txsPacket := eth.TransactionsPacket(txs)
@@ -115,7 +115,7 @@ func TestHandler_HandleNewBlock(t *testing.T) {
 	bridge, handler, peer := setup(-1)
 	blockHeight := uint64(1)
 
-	block := bxmock.NewEthBlock(blockHeight, common.Hash{})
+	block := test2.NewEthBlock(blockHeight, common.Hash{})
 	header := block.Header()
 	td := big.NewInt(10000)
 
@@ -149,7 +149,7 @@ func TestHandler_HandleNewBlockHashes(t *testing.T) {
 	bridge, handler, peer := setup(-1)
 
 	blockHeight := uint64(1)
-	block := bxmock.NewEthBlock(blockHeight, common.Hash{})
+	block := test2.NewEthBlock(blockHeight, common.Hash{})
 
 	newBlockHashesPacket := eth.NewBlockHashesPacket{
 		{
@@ -168,11 +168,11 @@ func TestHandler_HandleNewBlockHashes(t *testing.T) {
 func TestHandler_GetHeadersByNumber(t *testing.T) {
 	_, handler, _ := setup(-1)
 
-	header1 := bxmock.NewEthBlockHeader(1, common.Hash{})
-	header2 := bxmock.NewEthBlockHeader(2, header1.Hash())
-	header3a := bxmock.NewEthBlockHeader(3, header2.Hash())
-	header3b := bxmock.NewEthBlockHeader(3, header2.Hash())
-	header4 := bxmock.NewEthBlockHeader(4, header3b.Hash())
+	header1 := test2.NewEthBlockHeader(1, common.Hash{})
+	header2 := test2.NewEthBlockHeader(2, header1.Hash())
+	header3a := test2.NewEthBlockHeader(3, header2.Hash())
+	header3b := test2.NewEthBlockHeader(3, header2.Hash())
+	header4 := test2.NewEthBlockHeader(4, header3b.Hash())
 
 	handler.storeBlockHeader(header1)
 	handler.storeBlockHeader(header2)
@@ -241,11 +241,11 @@ func TestHandler_GetHeadersByNumber(t *testing.T) {
 func TestHandler_GetHeadersByHash(t *testing.T) {
 	_, handler, _ := setup(-1)
 
-	header1 := bxmock.NewEthBlockHeader(1, common.Hash{})
-	header2 := bxmock.NewEthBlockHeader(2, header1.Hash())
-	header3a := bxmock.NewEthBlockHeader(3, header2.Hash())
-	header3b := bxmock.NewEthBlockHeader(3, header2.Hash())
-	header4 := bxmock.NewEthBlockHeader(4, header3b.Hash())
+	header1 := test2.NewEthBlockHeader(1, common.Hash{})
+	header2 := test2.NewEthBlockHeader(2, header1.Hash())
+	header3a := test2.NewEthBlockHeader(3, header2.Hash())
+	header3b := test2.NewEthBlockHeader(3, header2.Hash())
+	header4 := test2.NewEthBlockHeader(4, header3b.Hash())
 
 	handler.storeBlockHeader(header1)
 	handler.storeBlockHeader(header2)
@@ -315,7 +315,7 @@ func TestHandler_processBDNBlock(t *testing.T) {
 	peerRW := peer.rw.(*test.MsgReadWriter)
 
 	// generate bx block for processing
-	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
+	ethBlock := test2.NewEthBlock(10, common.Hash{})
 	blockHash := ethBlock.Hash()
 	td := big.NewInt(10000)
 	bxBlock, _ := bridge.BlockBlockchainToBDN(NewBlockInfo(ethBlock, td))
@@ -356,14 +356,14 @@ func TestHandler_processBDNBlockResolveDifficulty(t *testing.T) {
 	peerRW := peer.rw.(*test.MsgReadWriter)
 
 	// preprocess a parent for calculating difficulty
-	parentBlock := bxmock.NewEthBlock(9, common.Hash{})
+	parentBlock := test2.NewEthBlock(9, common.Hash{})
 	parentHash := parentBlock.Hash()
 	parentTD := big.NewInt(1000)
 	err := handler.processBlock(peer, NewBlockInfo(parentBlock, parentTD))
 	assert.Nil(t, err)
 
 	// generate bx block for processing
-	ethBlock := bxmock.NewEthBlock(10, parentHash)
+	ethBlock := test2.NewEthBlock(10, parentHash)
 	blockHash := ethBlock.Hash()
 	bxBlock, _ := bridge.BlockBlockchainToBDN(NewBlockInfo(ethBlock, nil))
 
@@ -390,7 +390,7 @@ func TestHandler_processBDNBlockUnresolvableDifficulty(t *testing.T) {
 
 	// generate bx block for processing
 	height := uint64(10)
-	ethBlock := bxmock.NewEthBlock(height, common.Hash{})
+	ethBlock := test2.NewEthBlock(height, common.Hash{})
 	blockHash := ethBlock.Hash()
 	bxBlock, _ := bridge.BlockBlockchainToBDN(NewBlockInfo(ethBlock, nil))
 
@@ -416,7 +416,7 @@ func TestHandler_processBDNBlockRequest(t *testing.T) {
 	peerRW := peer.rw.(*test.MsgReadWriter)
 
 	// process parent block for calculating difficulty
-	parentBlock := bxmock.NewEthBlock(9, common.Hash{})
+	parentBlock := test2.NewEthBlock(9, common.Hash{})
 	parentHash := parentBlock.Hash()
 	parentTD := big.NewInt(1000)
 	err := handler.processBlock(peer, NewBlockInfo(parentBlock, parentTD))
@@ -426,7 +426,7 @@ func TestHandler_processBDNBlockRequest(t *testing.T) {
 	_ = <-bridge.ReceiveBlockFromNode()
 
 	blockHeight := uint64(2)
-	block := bxmock.NewEthBlock(blockHeight, parentHash)
+	block := test2.NewEthBlock(blockHeight, parentHash)
 
 	handler.processBDNBlockRequest(blockchain.BlockAnnouncement{
 		Hash:   NewSHA256Hash(block.Hash()),
@@ -494,7 +494,7 @@ func TestHandler_processBDNBlockRequestHandlingError(t *testing.T) {
 	peerRW := peer.rw.(*test.MsgReadWriter)
 
 	blockHeight := uint64(1)
-	block := bxmock.NewEthBlock(blockHeight, common.Hash{})
+	block := test2.NewEthBlock(blockHeight, common.Hash{})
 
 	handler.processBDNBlockRequest(blockchain.BlockAnnouncement{
 		Hash:   NewSHA256Hash(block.Hash()),
@@ -538,7 +538,7 @@ func TestHandler_processBDNBlockRequest66(t *testing.T) {
 	peerRW := peer.rw.(*test.MsgReadWriter)
 
 	blockHeight := uint64(1)
-	block := bxmock.NewEthBlock(blockHeight, common.Hash{})
+	block := test2.NewEthBlock(blockHeight, common.Hash{})
 
 	go handler.processBDNBlockRequest(blockchain.BlockAnnouncement{
 		Hash:   NewSHA256Hash(block.Hash()),
@@ -607,10 +607,10 @@ func TestHandler_processBDNBlockRequest66(t *testing.T) {
 func TestHandler_resolvedForkedHeaders(t *testing.T) {
 	_, handler, _ := setup(-1)
 
-	header1 := bxmock.NewEthBlockHeader(1, common.Hash{})
-	header2 := bxmock.NewEthBlockHeader(2, header1.Hash())
-	header2b := bxmock.NewEthBlockHeader(2, header1.Hash())
-	header3 := bxmock.NewEthBlockHeader(3, header2.Hash())
+	header1 := test2.NewEthBlockHeader(1, common.Hash{})
+	header2 := test2.NewEthBlockHeader(2, header1.Hash())
+	header2b := test2.NewEthBlockHeader(2, header1.Hash())
+	header3 := test2.NewEthBlockHeader(3, header2.Hash())
 
 	handler.storeBlockHeader(header1)
 	handler.storeBlockHeader(header2)
@@ -627,9 +627,9 @@ func TestHandler_resolvedForkedHeaders(t *testing.T) {
 	canonicalHeader, err = handler.resolveForkedHeaders(candidateHeaders, 3)
 	assert.NotNil(t, err)
 
-	header4 := bxmock.NewEthBlockHeader(4, common.Hash{})
-	header4b := bxmock.NewEthBlockHeader(4, common.Hash{})
-	header5 := bxmock.NewEthBlockHeader(5, header4.Hash())
+	header4 := test2.NewEthBlockHeader(4, common.Hash{})
+	header4b := test2.NewEthBlockHeader(4, common.Hash{})
+	header5 := test2.NewEthBlockHeader(5, header4.Hash())
 
 	handler.storeBlockHeader(header4)
 	handler.storeBlockHeader(header4b)
@@ -654,25 +654,25 @@ func TestHandler_clean(t *testing.T) {
 	_, handler, _ := setup(-1)
 
 	for i := 0; i < 100; i++ {
-		handler.storeBlock(bxmock.NewEthBlock(uint64(i), common.Hash{}), big.NewInt(int64(i)))
+		handler.storeBlock(test2.NewEthBlock(uint64(i), common.Hash{}), big.NewInt(int64(i)))
 	}
 
-	block101 := bxmock.NewEthBlock(101, common.Hash{})
+	block101 := test2.NewEthBlock(101, common.Hash{})
 	header101 := block101.Header()
 	handler.storeBlock(block101, big.NewInt(110))
 
-	block102 := bxmock.NewEthBlock(102, header101.Hash())
+	block102 := test2.NewEthBlock(102, header101.Hash())
 	header102 := block102.Header()
 	handler.storeBlock(block102, big.NewInt(120))
 
-	block103a := bxmock.NewEthBlock(103, header102.Hash())
+	block103a := test2.NewEthBlock(103, header102.Hash())
 	handler.storeBlock(block103a, big.NewInt(131))
 
-	block103b := bxmock.NewEthBlock(103, header102.Hash())
+	block103b := test2.NewEthBlock(103, header102.Hash())
 	header103b := block103b.Header()
 	handler.storeBlock(block103b, big.NewInt(132))
 
-	block104 := bxmock.NewEthBlock(104, header103b.Hash())
+	block104 := test2.NewEthBlock(104, header103b.Hash())
 	handler.storeBlock(block104, big.NewInt(140))
 
 	var (
