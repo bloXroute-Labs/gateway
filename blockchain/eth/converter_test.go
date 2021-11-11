@@ -1,7 +1,7 @@
 package eth
 
 import (
-	bxmock2 "github.com/bloXroute-Labs/gateway/test/bxmock"
+	"github.com/bloXroute-Labs/gateway/test/bxmock"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -18,7 +18,7 @@ func TestConverter_Transactions(t *testing.T) {
 
 func testTransactionType(t *testing.T, txType uint8) {
 	c := Converter{}
-	tx := bxmock2.NewSignedEthTx(txType, 1, nil)
+	tx := bxmock.NewSignedEthTx(txType, 1, nil)
 
 	bdnTx, err := c.TransactionBlockchainToBDN(tx)
 	assert.Nil(t, err)
@@ -37,7 +37,7 @@ func testTransactionType(t *testing.T, txType uint8) {
 
 func TestConverter_Block(t *testing.T) {
 	c := Converter{}
-	block := bxmock2.NewEthBlock(10, common.Hash{})
+	block := bxmock.NewEthBlock(10, common.Hash{})
 	td := big.NewInt(100)
 
 	bxBlock, err := c.BlockBlockchainToBDN(NewBlockInfo(block, td))

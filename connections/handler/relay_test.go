@@ -3,7 +3,7 @@ package handler
 import (
 	"github.com/bloXroute-Labs/gateway/connections"
 	"github.com/bloXroute-Labs/gateway/sdnmessage"
-	bxmock2 "github.com/bloXroute-Labs/gateway/test/bxmock"
+	"github.com/bloXroute-Labs/gateway/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/utils"
 	"github.com/stretchr/testify/assert"
 	"runtime"
@@ -63,13 +63,13 @@ func TestRelay_ClosingFromRemote(t *testing.T) {
 	assert.Equal(t, startCount+1, runtime.NumGoroutine())
 }
 
-func relayConn() (bxmock2.MockTLS, *Relay) {
+func relayConn() (bxmock.MockTLS, *Relay) {
 	ip := "127.0.0.1"
 	port := int64(3000)
 
-	tls := bxmock2.NewMockTLS(ip, port, "", utils.ExternalGateway, "")
-	certs := bxmock2.TestCerts()
-	r := NewRelay(bxmock2.MockBxListener{},
+	tls := bxmock.NewMockTLS(ip, port, "", utils.ExternalGateway, "")
+	certs := bxmock.TestCerts()
+	r := NewRelay(bxmock.MockBxListener{},
 		func() (connections.Socket, error) {
 			return tls, nil
 		},

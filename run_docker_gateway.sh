@@ -22,7 +22,7 @@ if [[ "${TYPE}" == "relay" ]]; then
   docker run --name bxrelay-proxy -d \
     -m 5g \
     --restart unless-stopped \
-    -v /home/ec2-user/bxgateway-private-go/logs:/app/bxrelay-proxy/logs \
+    -v /home/ec2-user/gateway/logs:/app/bxrelay-proxy/logs \
     -v /home/ec2-user/ssl:/app/bxrelay-proxy/ssl \
     -v /home/ec2-user/proxypeers:/app/bxrelay-proxy/proxypeers \
     -v /home/ec2-user/datadir:/app/bxrelay-proxy/datadir \
@@ -48,7 +48,7 @@ else
 
   docker rm -f bxgateway-go
   docker run --name bxgateway-go -d \
-  -v /home/ec2-user/bxgateway-private-go/logs:/app/bloxroute/logs \
+  -v /home/ec2-user/gateway/logs:/app/bloxroute/logs \
   -p 1801:1801 \
   -p 127.0.0.1:6060:6060 \
   -p 127.0.0.1:5001:5001 \

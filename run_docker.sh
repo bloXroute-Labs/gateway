@@ -8,7 +8,7 @@
 # EXTERNAL_IP: Optional argument for certain regions of china where you need to set external ip manually
 # Example usage:
 #
-# ./run_gateway.sh /home/ubuntu/gw /home/ubuntu/gw/logs
+# ./run_docker.sh /home/ubuntu/gw /home/ubuntu/gw/logs
 #
 # It creates a container named bxgateway-go running in the background
 # Websockets are accessible at ws://localhost:28334/ws

@@ -3,7 +3,7 @@ package handler
 import (
 	"github.com/bloXroute-Labs/gateway/bxmessage"
 	"github.com/bloXroute-Labs/gateway/connections"
-	bxmock2 "github.com/bloXroute-Labs/gateway/test/bxmock"
+	"github.com/bloXroute-Labs/gateway/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/utils"
 	"github.com/stretchr/testify/assert"
 	"runtime"
@@ -54,13 +54,13 @@ func TestBxConn_ClosingFromHandler(t *testing.T) {
 	assert.Equal(t, startCount, endCount)
 }
 
-func bxConn(handler connections.ConnHandler) (bxmock2.MockTLS, *BxConn) {
+func bxConn(handler connections.ConnHandler) (bxmock.MockTLS, *BxConn) {
 	ip := "127.0.0.1"
 	port := int64(3000)
 
-	tls := bxmock2.NewMockTLS(ip, port, "", utils.ExternalGateway, "")
-	certs := bxmock2.TestCerts()
-	b := NewBxConn(bxmock2.MockBxListener{},
+	tls := bxmock.NewMockTLS(ip, port, "", utils.ExternalGateway, "")
+	certs := bxmock.TestCerts()
+	b := NewBxConn(bxmock.MockBxListener{},
 		func() (connections.Socket, error) {
 			return tls, nil
 		},

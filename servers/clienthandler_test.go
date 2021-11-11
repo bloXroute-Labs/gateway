@@ -6,7 +6,7 @@ import (
 	"github.com/bloXroute-Labs/gateway"
 	"github.com/bloXroute-Labs/gateway/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/test/bxmock"
-	"github.com/bloXroute-Labs/gateway/test/fixtues"
+	"github.com/bloXroute-Labs/gateway/test/fixtures"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
@@ -61,27 +61,27 @@ func handlePingRequest(t *testing.T, ws *websocket.Conn) {
 }
 
 func handleBlxrTxRequestLegacyTx(t *testing.T, ws *websocket.Conn) {
-	reqPayload := fmt.Sprintf(`{"id": "1", "method": "blxr_tx", "params": {"transaction": "%s"}}`, fixtues.LegacyTransaction)
+	reqPayload := fmt.Sprintf(`{"id": "1", "method": "blxr_tx", "params": {"transaction": "%s"}}`, fixtures.LegacyTransaction)
 	msg := writeMsgToWsAndReadResponse(ws, []byte(reqPayload))
 	clientRes := getClientResponse(msg)
 	res := parseBlxrTxResult(clientRes.Result)
-	assert.Equal(t, fixtues.LegacyTransactionHash[2:], res.TxHash)
+	assert.Equal(t, fixtures.LegacyTransactionHash[2:], res.TxHash)
 }
 
 func handleBlxrTxRequestAccessListTx(t *testing.T, ws *websocket.Conn) {
-	reqPayload := fmt.Sprintf(`{"id": "1", "method": "blxr_tx", "params": {"transaction": "%s"}}`, fixtues.AccessListTransactionForRPCInterface)
+	reqPayload := fmt.Sprintf(`{"id": "1", "method": "blxr_tx", "params": {"transaction": "%s"}}`, fixtures.AccessListTransactionForRPCInterface)
 	msg := writeMsgToWsAndReadResponse(ws, []byte(reqPayload))
 	clientRes := getClientResponse(msg)
 	res := parseBlxrTxResult(clientRes.Result)
-	assert.Equal(t, fixtues.AccessListTransactionHash[2:], res.TxHash)
+	assert.Equal(t, fixtures.AccessListTransactionHash[2:], res.TxHash)
 }
 
 func handleBlxrTxRequestDynamicFeeTx(t *testing.T, ws *websocket.Conn) {
-	reqPayload := fmt.Sprintf(`{"id": "1", "method": "blxr_tx", "params": {"transaction": "%s"}}`, fixtues.DynamicFeeTransactionForRPCInterface)
+	reqPayload := fmt.Sprintf(`{"id": "1", "method": "blxr_tx", "params": {"transaction": "%s"}}`, fixtures.DynamicFeeTransactionForRPCInterface)
 	msg := writeMsgToWsAndReadResponse(ws, []byte(reqPayload))
 	clientRes := getClientResponse(msg)
 	res := parseBlxrTxResult(clientRes.Result)
-	assert.Equal(t, fixtues.DynamicFeeTransactionHash[2:], res.TxHash)
+	assert.Equal(t, fixtures.DynamicFeeTransactionHash[2:], res.TxHash)
 }
 
 type clientResponse struct {

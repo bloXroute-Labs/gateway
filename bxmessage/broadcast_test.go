@@ -3,7 +3,7 @@ package bxmessage
 import (
 	"encoding/hex"
 	"github.com/bloXroute-Labs/gateway/test"
-	"github.com/bloXroute-Labs/gateway/test/fixtues"
+	"github.com/bloXroute-Labs/gateway/test/fixtures"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/stretchr/testify/assert"
 	"testing"
@@ -31,8 +31,8 @@ func TestBroadcastPackUnpack(t *testing.T) {
 }
 
 func TestBroadcastUnpackFixtureWithShortIDs(t *testing.T) {
-	b, _ := hex.DecodeString(fixtues.BroadcastMessageWithShortIDs)
-	h, _ := types.NewSHA256HashFromString(fixtues.BroadcastShortIDsMessageHash)
+	b, _ := hex.DecodeString(fixtures.BroadcastMessageWithShortIDs)
+	h, _ := types.NewSHA256HashFromString(fixtures.BroadcastShortIDsMessageHash)
 
 	var broadcast Broadcast
 	err := broadcast.Unpack(b, 0)
@@ -47,8 +47,8 @@ func TestBroadcastUnpackFixtureWithShortIDs(t *testing.T) {
 }
 
 func TestBroadcastUnpackFixtureEmptyBlock(t *testing.T) {
-	b, _ := hex.DecodeString(fixtues.BroadcastEmptyBlock)
-	h, _ := types.NewSHA256HashFromString(fixtues.BroadcastEmptyBlockHash)
+	b, _ := hex.DecodeString(fixtures.BroadcastEmptyBlock)
+	h, _ := types.NewSHA256HashFromString(fixtures.BroadcastEmptyBlockHash)
 
 	var broadcast Broadcast
 	err := broadcast.Unpack(b, 0)

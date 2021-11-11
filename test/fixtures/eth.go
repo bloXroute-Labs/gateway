@@ -1,4 +1,4 @@
-package fixtues
+package fixtures
 
 // ContractCreationTxHash is the hash of ContractCreationTx
 const ContractCreationTxHash = "7df870e552898df04761d6ea87ac848e3c60bfa35a9036b2b4d53ac64730a5b6"

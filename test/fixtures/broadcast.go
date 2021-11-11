@@ -1,4 +1,4 @@
-package fixtues
+package fixtures
 
 import "math/big"
 

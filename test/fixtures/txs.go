@@ -1,4 +1,4 @@
-package fixtues
+package fixtures
 
 // reference bxmessage.Txs from Python code for testing
 const (

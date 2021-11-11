@@ -2,7 +2,7 @@ package services
 
 import (
 	"github.com/bloXroute-Labs/gateway/sdnmessage"
-	bxmock2 "github.com/bloXroute-Labs/gateway/test/bxmock"
+	"github.com/bloXroute-Labs/gateway/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -23,10 +23,10 @@ var blockchainNetwork = sdnmessage.BlockchainNetwork{
 }
 
 func TestEthTxStore_InvalidChainID(t *testing.T) {
-	store := NewEthTxStore(&bxmock2.MockClock{}, 30*time.Second, 30*time.Second, 30*time.Second,
+	store := NewEthTxStore(&bxmock.MockClock{}, 30*time.Second, 30*time.Second, 30*time.Second,
 		NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{testNetworkNum: &blockchainNetwork})
 	hash := types.SHA256Hash{1}
-	tx := bxmock2.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey)
+	tx := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey)
 	content, _ := rlp.EncodeToBytes(&tx)
 
 	// first time seeing valid tx
@@ -41,10 +41,10 @@ func TestEthTxStore_InvalidChainID(t *testing.T) {
 }
 
 func TestEthTxStore_Add(t *testing.T) {
-	store := NewEthTxStore(&bxmock2.MockClock{}, 30*time.Second, 30*time.Second, 30*time.Second,
+	store := NewEthTxStore(&bxmock.MockClock{}, 30*time.Second, 30*time.Second, 30*time.Second,
 		NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{testNetworkNum: &blockchainNetwork})
 	hash := types.SHA256Hash{1}
-	tx := bxmock2.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey)
+	tx := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey)
 	content, _ := rlp.EncodeToBytes(&tx)
 
 	// first time seeing valid tx
@@ -73,30 +73,30 @@ func TestEthTxStore_Add(t *testing.T) {
 }
 
 func TestEthTxStore_AddReuseSenderNonce(t *testing.T) {
-	mc := bxmock2.MockClock{}
+	mc := bxmock.MockClock{}
 	nc := blockchainNetwork
 	nc.AllowTimeReuseSenderNonce = 10
 	store := NewEthTxStore(&mc, 30*time.Second, 30*time.Second, 20*time.Second, NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{testNetworkNum: &nc})
 
 	// original transaction
 	hash1 := types.SHA256Hash{1}
-	tx1 := bxmock2.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey)
+	tx1 := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey)
 	content1, _ := rlp.EncodeToBytes(&tx1)
 
 	// transaction that reuses nonce
 	hash2 := types.SHA256Hash{2}
-	tx2 := bxmock2.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey)
+	tx2 := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey)
 	content2, _ := rlp.EncodeToBytes(&tx2)
 
 	// incremented nonce
 	hash3 := types.SHA256Hash{3}
-	tx3 := bxmock2.NewSignedEthTx(ethtypes.LegacyTxType, 2, privateKey)
+	tx3 := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 2, privateKey)
 	content3, _ := rlp.EncodeToBytes(&tx3)
 
 	// different sender
 	privateKey2, _ := crypto.GenerateKey()
 	hash4 := types.SHA256Hash{4}
-	tx4 := bxmock2.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey2)
+	tx4 := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey2)
 	content4, _ := rlp.EncodeToBytes(&tx4)
 
 	// add original transaction
@@ -159,7 +159,7 @@ func TestEthTxStore_AddReuseSenderNonce(t *testing.T) {
 }
 
 func TestEthTxStore_AddInvalidTx(t *testing.T) {
-	store := NewEthTxStore(&bxmock2.MockClock{}, 30*time.Second, 30*time.Second, 10*time.Second,
+	store := NewEthTxStore(&bxmock.MockClock{}, 30*time.Second, 30*time.Second, 10*time.Second,
 		NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{blockchainNetwork.NetworkNum: &blockchainNetwork})
 	hash := types.SHA256Hash{1}
 	content := types.TxContent{1, 2, 3}
@@ -175,7 +175,7 @@ func TestEthTxStore_AddInvalidTx(t *testing.T) {
 }
 
 func TestNonceTracker_track(t *testing.T) {
-	c := bxmock2.MockClock{}
+	c := bxmock.MockClock{}
 	nc := blockchainNetwork
 	nc.AllowTimeReuseSenderNonce = 1
 	nc.NetworkNum = testNetworkNum
@@ -226,7 +226,7 @@ func TestNonceTracker_track(t *testing.T) {
 }
 
 func TestNonceTracker_clean(t *testing.T) {
-	c := bxmock2.MockClock{}
+	c := bxmock.MockClock{}
 	nc := blockchainNetwork
 	nc.AllowTimeReuseSenderNonce = 1
 	nc.NetworkNum = testNetworkNum
