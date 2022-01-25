@@ -1,0 +1,103 @@
+syntax = "proto3";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/gateway";
+
+// The gateway service definition.
+package  gateway;
+service Gateway {
+  rpc BlxrTx (BlxrTxRequest) returns (BlxrTxReply) {}
+  rpc Peers (PeersRequest) returns (PeersReply) {}
+  rpc TxStoreSummary(TxStoreRequest) returns (TxStoreReply) {}
+  rpc GetTx(GetBxTransactionRequest) returns (GetBxTransactionResponse) {}
+  rpc Stop (StopRequest) returns (StopReply){}
+  rpc Version (VersionRequest) returns (VersionReply){}
+}
+
+message VersionRequest{
+}
+
+message VersionReply{
+    string version = 1;
+    string build_date =2;
+}
+
+message StopRequest{
+}
+
+message StopReply{
+}
+
+message PeersRequest {
+  string type = 1;
+}
+
+message Peer {
+  string ip = 1;
+  string node_id = 2;
+  string type = 3;
+  string state = 4;
+  uint32 network = 5;
+  bool initiator = 6;
+  int64 min_ms_from_peer = 7;
+  int64 min_ms_to_peer = 8;
+  int64 slow_traffic_count = 9;
+  int64 min_ms_round_trip = 10;
+  string account_id = 11;
+  string account_tier = 12;
+  int64 port = 13;
+}
+
+
+message PeersReply {
+  repeated Peer peers = 1;
+}
+
+message SendTXRequest{
+}
+
+message Transaction {
+  string content = 1;
+}
+
+message Transactions {
+  repeated Transaction transactions = 1;
+}
+
+message BxTransaction {
+  string hash = 1;
+  repeated uint64 short_ids = 2;
+  google.protobuf.Timestamp add_time = 3;
+}
+
+message GetBxTransactionRequest {
+  string hash = 1;
+}
+
+message GetBxTransactionResponse {
+  BxTransaction tx = 1;
+}
+
+message TxStoreRequest {}
+
+message TxStoreNetworkData{
+  uint64 network = 4;
+  uint64 tx_count = 1;
+  uint64 short_id_count = 2;
+  BxTransaction oldest_tx = 3;
+}
+
+message TxStoreReply {
+  uint64 tx_count = 1;
+  uint64 short_id_count = 2;
+  repeated TxStoreNetworkData network_data = 3;
+
+}
+
+message BlxrTxRequest {
+  string transaction = 1;
+}
+
+message BlxrTxReply {
+  string tx_hash = 1;
+}
