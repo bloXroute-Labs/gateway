@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/bloXroute-Labs/gateway/utils"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
@@ -40,6 +41,8 @@ type Chain struct {
 	blockHashToDifficulty cmap.ConcurrentMap
 
 	chainState blockRefChain
+
+	clock utils.RealClock
 }
 
 // BlockSource indicates the origin of a block message in the blockchain
@@ -84,9 +87,10 @@ func (e BlockInfo) TotalDifficulty() *big.Int {
 }
 
 type blockMetadata struct {
-	height    uint64
-	sentToBDN bool
-	confirmed bool
+	height     uint64
+	sentToBDN  bool
+	confirmed  bool
+	cnfMsgSent bool
 }
 
 type ethHeader struct {
@@ -110,16 +114,17 @@ func newChain(ctx context.Context, maxReorg, minValidChain int, cleanInterval ti
 		chainState:            make([]blockRef, 0),
 		maxReorg:              maxReorg,
 		minValidChain:         minValidChain,
+		clock:                 utils.RealClock{},
 	}
 	go c.cleanBlockStorage(ctx, cleanInterval, maxSize)
 	return c
 }
 
 func (c *Chain) cleanBlockStorage(ctx context.Context, cleanInterval time.Duration, maxSize int) {
-	ticker := time.NewTicker(cleanInterval)
+	ticker := c.clock.Ticker(cleanInterval)
 	for {
 		select {
-		case <-ticker.C:
+		case <-ticker.Alert():
 			c.clean(maxSize)
 		case <-ctx.Done():
 			return
@@ -138,7 +143,7 @@ func (c *Chain) AddBlock(b *BlockInfo, source BlockSource) int {
 
 	// update metadata if block already stored, otherwise update all block info
 	if c.HasBlock(hash) {
-		c.storeBlockMetadata(hash, height, source == BSBlockchain)
+		c.storeBlockMetadata(hash, height, source == BSBlockchain, false)
 	} else {
 		c.storeBlock(b.Block, b.TotalDifficulty(), source)
 	}
@@ -274,7 +279,7 @@ func (c *Chain) MarkSentToBDN(hash ethcommon.Hash) {
 func (c *Chain) InitializeDifficulty(hash ethcommon.Hash, td *big.Int) {
 	c.storeBlockDifficulty(hash, td)
 	c.storeEthHeaderAtHeight(0, ethHeader{hash: hash})
-	c.storeBlockMetadata(hash, 0, true)
+	c.storeBlockMetadata(hash, 0, true, false)
 }
 
 // SetTotalDifficulty computes, sets, and stores the difficulty for a provided block
@@ -391,6 +396,24 @@ func (c *Chain) GetHeaders(start eth.HashOrNumber, count int, skip int, reverse 
 	}
 
 	return requestedHeaders, nil
+}
+
+// BlockAtDepth returns the blockRefChain with depth from the head of the chain
+func (c *Chain) BlockAtDepth(chainDepth int) (*ethtypes.Block, error) {
+	if len(c.chainState) <= chainDepth {
+		return nil, fmt.Errorf("not enough block in the chain state for depth lookup wtih depth of %v", chainDepth)
+	}
+	ref := c.chainState[chainDepth]
+	header, err := c.getHeaderAtHeight(ref.height)
+	if err != nil {
+		return nil, err
+	}
+	body, ok := c.getBlockBody(ref.hash)
+	if !ok {
+		return nil, fmt.Errorf("cannot get block body for block %v with height %v in the chain state ", ref.hash, ref.height)
+	}
+	block := ethtypes.NewBlockWithHeader(header).WithBody(body.Transactions, body.Uncles)
+	return block, nil
 }
 
 // should be called with c.chainLock held
@@ -533,7 +556,7 @@ func (c *Chain) storeBlockHeader(header *ethtypes.Header, source BlockSource) {
 	blockHash := header.Hash()
 	height := header.Number.Uint64()
 	c.storeHeaderAtHeight(height, header)
-	c.storeBlockMetadata(blockHash, height, source == BSBlockchain)
+	c.storeBlockMetadata(blockHash, height, source == BSBlockchain, false)
 }
 
 func (c *Chain) getBlockMetadata(hash ethcommon.Hash) (blockMetadata, bool) {
@@ -544,8 +567,8 @@ func (c *Chain) getBlockMetadata(hash ethcommon.Hash) (blockMetadata, bool) {
 	return bm.(blockMetadata), ok
 }
 
-func (c *Chain) storeBlockMetadata(hash ethcommon.Hash, height uint64, confirmed bool) {
-	set := c.blockHashMetadata.SetIfAbsent(hash.String(), blockMetadata{height, false, confirmed})
+func (c *Chain) storeBlockMetadata(hash ethcommon.Hash, height uint64, confirmed bool, cnfMsgSent bool) {
+	set := c.blockHashMetadata.SetIfAbsent(hash.String(), blockMetadata{height, false, confirmed, cnfMsgSent})
 	if !set {
 		bm, _ := c.getBlockMetadata(hash)
 		bm.confirmed = bm.confirmed || confirmed

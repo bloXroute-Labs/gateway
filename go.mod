@@ -1,4 +1,4 @@
-module github.com/bloXroute-Labs/bxgateway-private-go/bxgateway
+module github.com/bloXroute-Labs/gateway
 
 go 1.16
 

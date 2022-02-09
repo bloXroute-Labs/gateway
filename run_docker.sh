@@ -16,7 +16,7 @@
 # If you see Connected, websockets are available
 
 CERT_PATH=${1:-/home/ec2-user/ssl}
-LOGS_PATH=${2:-/home/ec2-user/bxgateway-private-go/logs}
+LOGS_PATH=${2:-/home/ec2-user/gateway/logs}
 BLOCKCHAIN_NETWORK=${3:-"Mainnet"}
 EXTERNAL_IP=${4:-""}
 

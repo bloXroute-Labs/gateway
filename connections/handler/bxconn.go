@@ -70,7 +70,7 @@ func NewBxConn(node connections.BxListener, connect func() (connections.Socket, 
 		privateNetwork: privateNetwork,
 		localPort:      localPort,
 		log: log.WithFields(log.Fields{
-			"connType":   connectionType,
+			"connType":   connectionType.String(),
 			"remoteAddr": "<connecting>",
 		}),
 		clock:      clock,
@@ -148,7 +148,7 @@ func (b *BxConn) Connect() error {
 
 	b.stringRepresentation = fmt.Sprintf("%v/%v@%v{%v}", b.connectionType, b.Conn, b.accountID, b.peerID)
 	b.log = log.WithFields(log.Fields{
-		"connType":   b.connectionType,
+		"connType":   b.connectionType.String(),
 		"remoteAddr": fmt.Sprint(b.Conn),
 		"accountID":  b.accountID,
 		"peerID":     b.peerID,
@@ -165,8 +165,8 @@ func (b *BxConn) Close(reason string) error {
 		return nil
 	}
 
-	err := b.closeWithRetry(reason)
 	b.closed = true
+	err := b.closeWithRetry(reason)
 
 	return err
 }
@@ -179,21 +179,26 @@ func (b *BxConn) ProcessMessage(msg bxmessage.MessageBytes) {
 	case bxmessage.HelloType:
 		helloMsg := &bxmessage.Hello{}
 		_ = helloMsg.Unpack(msg, 0)
-		if helloMsg.Protocol < bxmessage.MinProtocol {
-			b.Log().Warnf("can't establish connection - proposed protocol %v is below the minimum supported %v",
-				helloMsg.Protocol, bxmessage.MinProtocol)
-			_ = b.Close("protocol version not supported")
+		err := b.Node.HandleMsg(helloMsg, b, connections.RunForeground)
+		if err != nil {
 			return
 		}
 		if b.Protocol() > helloMsg.Protocol {
 			b.SetProtocol(helloMsg.Protocol)
 		}
 		b.networkNum = helloMsg.GetNetworkNum()
-
 		b.capabilities = helloMsg.Capabilities
 		b.clientVersion = helloMsg.ClientVersion
 
 		b.Log().Debugf("completed handshake: network %v, protocol %v, peer id %v ", b.networkNum, b.Protocol(), b.peerID)
+
+		err = b.Node.ValidateConnection(b)
+		if err != nil {
+			// invalid connection has been disabled
+			b.setConnectionEstablished()
+			return
+		}
+
 		ack := bxmessage.Ack{}
 		_ = b.Send(&ack)
 		if !b.Info().FromMe {
@@ -246,7 +251,9 @@ func (b *BxConn) ProcessMessage(msg bxmessage.MessageBytes) {
 			b.Log().Errorf("could not unpack broadcast message: %v. Failed bytes: %v", err, msg)
 			return
 		}
-		_ = b.Node.HandleMsg(block, b, connections.RunBackground)
+		// broadcast message should not be processed in background.
+		// Background may be delayed by cleanup messages and sync requests from gws
+		_ = b.Node.HandleMsg(block, b, connections.RunForeground)
 
 	case bxmessage.TxCleanupType:
 		txcleanup := &bxmessage.TxCleanup{}
@@ -264,11 +271,15 @@ func (b *BxConn) ProcessMessage(msg bxmessage.MessageBytes) {
 	case bxmessage.MEVBundleType:
 		mevBundle := &bxmessage.MEVBundle{}
 		_ = mevBundle.Unpack(msg, b.Protocol())
-		_ = b.Node.HandleMsg(mevBundle, b, connections.RunBackground)
+		_ = b.Node.HandleMsg(mevBundle, b, connections.RunForeground)
 	case bxmessage.MEVSearcherType:
 		mevSearcher := &bxmessage.MEVSearcher{}
 		_ = mevSearcher.Unpack(msg, b.Protocol())
-		_ = b.Node.HandleMsg(mevSearcher, b, connections.RunBackground)
+		_ = b.Node.HandleMsg(mevSearcher, b, connections.RunForeground)
+	case bxmessage.ErrorNotificationType:
+		errorNotification := &bxmessage.ErrorNotification{}
+		_ = errorNotification.Unpack(msg, b.Protocol())
+		_ = b.Node.HandleMsg(errorNotification, b, connections.RunForeground)
 	default:
 		b.Log().Debugf("read %v (%d bytes)", msgType, len(msg))
 	}

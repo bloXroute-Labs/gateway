@@ -2,6 +2,7 @@ package bxmessage
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"github.com/bloXroute-Labs/gateway/test/fixtures"
 	"github.com/stretchr/testify/assert"
@@ -39,25 +40,14 @@ func TestMEVBundleNewFailedMinerNamesToLong(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("number of mev builders names %v exceeded the limit (%v)", len(mevSearchersAuthorization), mevBundleNameMaxSize), err.Error())
 }
 
-func TestMEVSearcherPackFailedMinerNamesLengthNotEnough(t *testing.T) {
-	mevSearchersAuthorization := MEVMinerNames{}
-	params := []byte("content test")
-	_, err := NewMEVBundle("eth_sendMegabundle", mevSearchersAuthorization, params)
-	require.Error(t, err)
-	assert.Equal(t, "at least 1 mev miner must be present", err.Error())
-}
-
 func TestMEVBundleUnpackSuccess(t *testing.T) {
 	mevSearcher := MEVBundle{}
 	buf, err := hex.DecodeString(fixtures.MEVBundlePayload)
 	assert.NoError(t, err)
-	params, err := hex.DecodeString("7465737420706172616d73")
-	assert.NoError(t, err)
 
-	assert.NoError(t, err)
 	err = mevSearcher.Unpack(buf, 0)
 	require.NoError(t, err)
-	assert.Equal(t, params, mevSearcher.Params)
+	assert.Equal(t, json.RawMessage(`{"test":"test"}`), mevSearcher.Params)
 	assert.Equal(t, "eth_sendBundle", mevSearcher.Method)
 	assert.Equal(t, MEVMinerNames{"test miner1", "test miner2"}, mevSearcher.Names())
 }

@@ -121,7 +121,7 @@ func BenchmarkTxService(b *testing.B) {
 				fmt.Println("len list hash after removing: ", len(testManager.listTxHashes))
 				fmt.Println("len map before removing: ", txManager.Count())
 				currTime = time.Now()
-				txManager.RemoveHashes(&newList, ReEntryProtection, "test")
+				txManager.RemoveHashes(&newList, FullReEntryProtection, "test")
 				fmt.Println("len map after removing: ", txManager.Count())
 				after := time.Now().Sub(currTime)
 				fmt.Printf("time take to remove %v hash %v:\n ", len(newList), after)
@@ -156,7 +156,7 @@ func TestRemoveTxsByShortIDs(t *testing.T) {
 		t.Error("Failed to add transaction")
 	}
 	// remove some not existing transactions
-	txService.RemoveShortIDs(&types.ShortIDList{1, 3, 5, 6}, ReEntryProtection, "test")
+	txService.RemoveShortIDs(&types.ShortIDList{1, 3, 5, 6}, FullReEntryProtection, "test")
 	if txService.Count() != 1 {
 		t.Error("Incorrect number of transactions in BxTxStore")
 	}
@@ -168,7 +168,7 @@ func TestRemoveTxsByShortIDs(t *testing.T) {
 		t.Error("something went wrong")
 	}
 
-	txService.RemoveShortIDs(&types.ShortIDList{1002}, ReEntryProtection, "test")
+	txService.RemoveShortIDs(&types.ShortIDList{1002}, FullReEntryProtection, "test")
 	if txService.Count() != 0 {
 		t.Error("Failed to remove transaction by shortId")
 	}

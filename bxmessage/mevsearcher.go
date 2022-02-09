@@ -2,6 +2,7 @@ package bxmessage
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"github.com/bloXroute-Labs/gateway/bxmessage/utils"
 	"github.com/bloXroute-Labs/gateway/types"
@@ -12,8 +13,9 @@ const maxAuthNames = 255
 // MEVSearcherAuth alias for map[string]string
 type MEVSearcherAuth map[string]string
 
-// MEVSearcherParams alias for []byte
-type MEVSearcherParams = []byte
+// MEVSearcherParams alias for json.RawMessage
+// TODO: think about implement SendBundleArgs flashbot struct instead of json.RawMessage
+type MEVSearcherParams = json.RawMessage
 
 // MEVSearcher represents data that we receive from searcher and send to BDN
 type MEVSearcher struct {
@@ -49,6 +51,16 @@ func (m *MEVSearcher) SetHash() {
 	m.hash = utils.DoubleSHA256(buf[:])
 }
 
+// Clone create new MEVSearcher entity based on auth
+func (m MEVSearcher) Clone(auth MEVSearcherAuth) MEVSearcher {
+	return MEVSearcher{
+		BroadcastHeader: m.BroadcastHeader,
+		Method:          m.Method,
+		auth:            auth,
+		Params:          m.Params,
+	}
+}
+
 // Auth gets the message MEVSearcherAuth
 func (m MEVSearcher) Auth() MEVSearcherAuth {
 	return m.auth
@@ -63,7 +75,7 @@ func (m MEVSearcher) size() uint32 {
 	return size + types.UInt16Len + uint32(len(m.Method)) + types.UInt8Len + uint32(len(m.Params)) + m.BroadcastHeader.Size()
 }
 
-// Pack serializes a MevBundle into a buffer for sending
+// Pack serializes a MEVBundle into a buffer for sending
 func (m MEVSearcher) Pack(_ Protocol) ([]byte, error) {
 	bufLen := m.size()
 	buf := make([]byte, bufLen)
@@ -103,7 +115,7 @@ func (m MEVSearcher) Pack(_ Protocol) ([]byte, error) {
 	return buf, nil
 }
 
-// Unpack deserializes a MevBundle from a buffer
+// Unpack deserializes a MEVBundle from a buffer
 func (m *MEVSearcher) Unpack(buf []byte, _ Protocol) error {
 	err := m.BroadcastHeader.Unpack(buf, 0)
 	if err != nil {
@@ -164,11 +176,12 @@ func (m *MEVSearcher) Unpack(buf []byte, _ Protocol) error {
 }
 
 func checkAuthSize(authSize int) error {
-	if authSize > maxAuthNames {
-		return fmt.Errorf("number of mev builders names %v exceeded the limit (%v)", authSize, maxAuthNames)
-	}
 	if authSize == 0 {
 		return fmt.Errorf("at least 1 mev builder must be present")
+	}
+
+	if authSize > maxAuthNames {
+		return fmt.Errorf("number of mev builders names %v exceeded the limit (%v)", authSize, maxAuthNames)
 	}
 
 	return nil

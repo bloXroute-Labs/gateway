@@ -6,11 +6,18 @@ import (
 	"time"
 )
 
-// ReEntryProtection - protect against hash re-entrance
-const ReEntryProtection = true
+// ReEntryProtectionFlags protect against hash re-entrance
+type ReEntryProtectionFlags uint8
 
-// NoReEntryProtection - no re-entrance protection needed
-const NoReEntryProtection = false
+// flag constant values
+const (
+	NoReEntryProtection ReEntryProtectionFlags = iota
+	ShortReEntryProtection
+	FullReEntryProtection
+)
+
+// ShortReEntryProtectionDuration defines the short duration for TxStore reentry protection
+const ShortReEntryProtectionDuration = 30 * time.Minute
 
 // TxStore is the service interface for transaction storage and processing
 type TxStore interface {
@@ -20,10 +27,11 @@ type TxStore interface {
 	Add(hash types.SHA256Hash, content types.TxContent, shortID types.ShortID, network types.NetworkNum,
 		validate bool, flags types.TxFlags, timestamp time.Time, networkChainID int64) TransactionResult
 	Get(hash types.SHA256Hash) (*types.BxTransaction, bool)
+	Known(hash types.SHA256Hash) bool
 	HasContent(hash types.SHA256Hash) bool
 
-	RemoveShortIDs(*types.ShortIDList, bool, string)
-	RemoveHashes(*types.SHA256HashList, bool, string)
+	RemoveShortIDs(*types.ShortIDList, ReEntryProtectionFlags, string)
+	RemoveHashes(*types.SHA256HashList, ReEntryProtectionFlags, string)
 	GetTxByShortID(types.ShortID) (*types.BxTransaction, error)
 
 	Clear()

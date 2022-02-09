@@ -9,7 +9,7 @@ import (
 type BlockchainNetwork struct {
 	AllowTimeReuseSenderNonce           float64 `json:"allowed_time_reuse_sender_nonce"`
 	AllowGasPriceChangeReuseSenderNonce float64 `json:"allowed_gas_price_change_reuse_sender_nonce"`
-	BlockConfirmationsCount             int64   `json:"block_confirmations_count"`
+	BlockConfirmationsCount             int     `json:"block_confirmations_count"`
 	BlockHoldTimeoutS                   float64 `json:"block_hold_timeout_s"`
 	BlockInterval                       int64   `json:"block_interval"`
 	BlockRecoveryTimeoutS               int64   `json:"block_recovery_timeout_s"`

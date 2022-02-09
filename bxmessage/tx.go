@@ -116,6 +116,7 @@ func (m *Tx) ClearInternalAttributes() {
 	m.flags &= ^types.TFEnterpriseSender
 	m.flags &= ^types.TFEliteSender
 	m.flags &= ^types.TFPaidTx
+	m.flags &= ^types.TFValidatorsOnly
 }
 
 // Flags returns the transaction flags

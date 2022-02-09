@@ -55,7 +55,7 @@ const (
 	BDNPerformanceStatsType      = "bdnstats"
 	MEVBundleType                = "mevbundle"
 	MEVSearcherType              = "mevsearcher"
-	ErrorNotificationType        = "errnotify"
+	ErrorNotificationType        = "notify"
 )
 
 // TimestampLen is the byte length of timestamps
@@ -79,8 +79,8 @@ const CurrentProtocol = 24
 // MinFastSyncProtocol is the minimum protocol version that supports fast sync
 const MinFastSyncProtocol = 24
 
-// MevProtocol add to hello msg indication for the mev service
-const MevProtocol = 24
+// MEVProtocol add to hello msg indication for the mev service
+const MEVProtocol = 24
 
 // UnifiedRelayProtocol is the version of gateways that expects broadcast messages from relay proxy and discontinues split relays
 const UnifiedRelayProtocol = 23

@@ -29,7 +29,6 @@ COPY go.mod .
 COPY go.sum .
 RUN go mod download
 COPY --chown=bloxroute:bloxroute Makefile .
-RUN make third_party_utils
 
 COPY --chown=bloxroute:bloxroute . .
 RUN make gateway

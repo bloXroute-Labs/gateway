@@ -34,11 +34,13 @@ type Bx struct {
 	WebsocketHost       string
 	WebsocketPort       int
 	ManageWSServer      bool
+	HTTPPort            int
 
-	BlocksOnly      bool
-	AllTransactions bool
-	MevBuilderURI   string
-	MevMinerURI     string
+	BlocksOnly       bool
+	AllTransactions  bool
+	SendConfirmation bool
+	MEVBuilderURI    string
+	MEVMinerURI      string
 
 	*GRPC
 	*Env
@@ -80,11 +82,14 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		WebsocketPort:       ctx.Int(utils.WSPortFlag.Name),
 		ManageWSServer:      ctx.Bool(utils.ManageWSServer.Name),
 
-		BlocksOnly:      ctx.Bool(utils.BlocksOnlyFlag.Name),
-		AllTransactions: ctx.Bool(utils.AllTransactionsFlag.Name),
+		HTTPPort: ctx.Int(utils.HTTPPortFlag.Name),
 
-		MevBuilderURI: ctx.String(utils.MevBuilderURIFlag.Name),
-		MevMinerURI:   ctx.String(utils.MevMinerURIFlag.Name),
+		BlocksOnly:       ctx.Bool(utils.BlocksOnlyFlag.Name),
+		SendConfirmation: ctx.Bool(utils.SendBlockConfirmation.Name),
+		AllTransactions:  ctx.Bool(utils.AllTransactionsFlag.Name),
+
+		MEVBuilderURI: ctx.String(utils.MEVBuilderURIFlag.Name),
+		MEVMinerURI:   ctx.String(utils.MEVMinerURIFlag.Name),
 
 		GRPC: grpcConfig,
 		Env:  env,

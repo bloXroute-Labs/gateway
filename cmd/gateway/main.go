@@ -25,7 +25,7 @@ import (
 func main() {
 	app := &cli.App{
 		Name:  "gateway",
-		Usage: "run a NG gateway",
+		Usage: "run a GO gateway",
 		Flags: []cli.Flag{
 			utils.ExternalIPFlag,
 			utils.PortFlag,
@@ -34,6 +34,7 @@ func main() {
 			utils.RegistrationCertDirFlag,
 			utils.WSFlag,
 			utils.WSPortFlag,
+			utils.HTTPPortFlag,
 			utils.EnvFlag,
 			utils.LogLevelFlag,
 			utils.LogFileLevelFlag,
@@ -64,8 +65,9 @@ func main() {
 			utils.ManageWSServer,
 			utils.LogNetworkContentFlag,
 			utils.WSTLSFlag,
-			utils.MevBuilderURIFlag,
-			utils.MevMinerURIFlag,
+			utils.MEVBuilderURIFlag,
+			utils.MEVMinerURIFlag,
+			utils.SendBlockConfirmation,
 		},
 		Action: runGateway,
 	}
@@ -137,7 +139,9 @@ func runGateway(c *cli.Context) error {
 	go func() {
 		err = gateway.Run()
 		if err != nil {
-			panic(err)
+			// TODO close the gateway while notify all other go routine (bridge, ws server, ...)
+			log.Errorf("closing gateway with err %v", err)
+			os.Exit(0)
 		}
 	}()
 

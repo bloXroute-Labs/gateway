@@ -1,7 +1,7 @@
 syntax = "proto3";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/gateway";
+option go_package = "github.com/bloXroute-Labs/gateway/gateway";
 
 // The gateway service definition.
 package  gateway;
@@ -46,8 +46,13 @@ message Peer {
   string account_id = 11;
   string account_tier = 12;
   int64 port = 13;
+  bool disabled = 14;
+  string mev_miner = 15;
+  string mev_builder = 16;
+  uint32 capability = 17;
+  int64 unpaid_tx_burst_limit = 18;
+  int64 paid_tx_burst_limit = 19;
 }
-
 
 message PeersReply {
   repeated Peer peers = 1;

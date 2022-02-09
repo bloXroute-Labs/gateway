@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/bloXroute-Labs/gateway"
 	"github.com/bloXroute-Labs/gateway/blockchain"
@@ -14,6 +15,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/bloXroute-Labs/gateway/utils"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -32,8 +34,9 @@ import (
 )
 
 type clientHandler struct {
-	feedManager *FeedManager
-	server      *http.Server
+	feedManager     *FeedManager
+	websocketServer *http.Server
+	httpServer      *HTTPServer
 }
 
 // TxResponse - response of the jsonrpc params
@@ -175,7 +178,7 @@ var availableFeeds = []types.FeedType{types.NewTxsFeed, types.NewBlocksFeed, typ
 func NewWSServer(feedManager *FeedManager) *http.Server {
 	handler := http.NewServeMux()
 	handler.HandleFunc("/ws", func(responseWriter http.ResponseWriter, request *http.Request) {
-		connectionAccountID, connectionSecretHash := getAccountIDSecretHashFromReq(request, feedManager.websocketTLSEnabled)
+		connectionAccountID, connectionSecretHash := getAccountIDSecretHashFromReq(request, feedManager.cfg.WebsocketTLSEnabled)
 		connectionAccountModel := sdnmessage.Account{}
 		serverAccountID := feedManager.accountModel.AccountID
 		// if gateway received request from a customer with a different account id, it should verify it with the SDN.
@@ -209,9 +212,8 @@ func NewWSServer(feedManager *FeedManager) *http.Server {
 		}
 		handleWSClientConnection(feedManager, responseWriter, request, connectionAccountModel)
 	})
-
 	server := http.Server{
-		Addr:    feedManager.addr,
+		Addr:    fmt.Sprintf(":%v", feedManager.cfg.WebsocketPort),
 		Handler: handler,
 	}
 	return &server
@@ -259,25 +261,25 @@ func getAccountIDSecretHashFromReq(request *http.Request, websocketTLSEnabled bo
 func (ch *clientHandler) runWSServer() {
 	log.Infof("starting websocket server")
 	var err error
-	if ch.feedManager.websocketTLSEnabled {
-		ch.server.TLSConfig = &tls.Config{
+	if ch.feedManager.cfg.WebsocketTLSEnabled {
+		ch.websocketServer.TLSConfig = &tls.Config{
 			ClientAuth: tls.RequestClientCert,
 		}
-		err = ch.server.ListenAndServeTLS(ch.feedManager.certFile, ch.feedManager.keyFile)
+		err = ch.websocketServer.ListenAndServeTLS(ch.feedManager.certFile, ch.feedManager.keyFile)
 	} else {
-		err = ch.server.ListenAndServe()
+		err = ch.websocketServer.ListenAndServe()
 	}
 	if err != nil {
-		log.Errorf("could not listen on %v. error: %v", ch.feedManager.addr, err)
+		log.Errorf("could not listen on %v. error: %v", ch.feedManager.cfg.WebsocketPort, err)
 	}
 }
 
 func (ch *clientHandler) shutdownWSServer() {
 	log.Infof("shutting down websocket server")
 	ch.feedManager.UnsubscribeAll()
-	err := ch.server.Shutdown(ch.feedManager.context)
+	err := ch.websocketServer.Shutdown(ch.feedManager.context)
 	if err != nil {
-		log.Errorf("encountered error shutting down websocket server %v: %v", ch.feedManager.addr, err)
+		log.Errorf("encountered error shutting down websocket server %v: %v", ch.feedManager.cfg.WebsocketPort, err)
 	}
 }
 
@@ -288,11 +290,17 @@ func (ch *clientHandler) manageWSServer() {
 			if syncStatus == blockchain.Unsynced {
 				ch.shutdownWSServer()
 			} else {
-				ch.server = NewWSServer(ch.feedManager)
+				ch.websocketServer = NewWSServer(ch.feedManager)
 				go ch.runWSServer()
 			}
 		}
 	}
+}
+
+func (ch *clientHandler) manageHTTPServer(ctx context.Context) {
+	ch.httpServer.Start()
+	<-ctx.Done()
+	ch.httpServer.Stop()
 }
 
 // SendErrorMsg formats and sends an RPC error message back to the client
@@ -361,7 +369,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		defer h.FeedManager.Unsubscribe(*subscriptionID)
 		if err = reply(ctx, conn, req.ID, subscriptionID); err != nil {
 			log.Errorf("error reply to subscriptionID: %v : %v ", subscriptionID, err)
-			SendErrorMsg(ctx, InternalError, string(rune(websocket.CloseMessage)), conn, req)
+			SendErrorMsg(ctx, InternalError, err.Error(), conn, req)
 			return
 		}
 
@@ -470,6 +478,11 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		uid, _ := uuid.FromString(params[0])
 		if err := h.FeedManager.Unsubscribe(uid); err != nil {
 			log.Infof("subscription id %v was not found", uid)
+			return
+		}
+		if err := reply(ctx, conn, req.ID, true); err != nil {
+			log.Errorf("error reply connection established: %v : %v", h.remoteAddress, err)
+			return
 		}
 	case RPCTx:
 		if h.FeedManager.accountModel.AccountID != h.connectionAccount.AccountID {
@@ -479,7 +492,8 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 			return
 		}
 		var params struct {
-			Transaction string `json:"transaction"`
+			Transaction    string `json:"transaction"`
+			ValidatorsOnly bool   `json:"validators_only"`
 		}
 		err := json.Unmarshal(*req.Params, &params)
 		if err != nil {
@@ -506,10 +520,15 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		}
 		txContent, _ := rlp.EncodeToBytes(&ethTx)
 
+		var txFlags = types.TFPaidTx | types.TFLocalRegion | types.TFDeliverToNode
+		if params.ValidatorsOnly {
+			txFlags |= types.TFValidatorsOnly
+		}
+
 		var hash types.SHA256Hash
 		copy(hash[:], ethTx.Hash().Bytes())
 
-		tx := bxmessage.NewTx(hash, txContent, h.FeedManager.networkNum, types.TFPaidTx|types.TFLocalRegion|types.TFDeliverToNode, h.connectionAccount.AccountID)
+		tx := bxmessage.NewTx(hash, txContent, h.FeedManager.networkNum, txFlags, h.connectionAccount.AccountID)
 		ws := connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.FeedManager.networkNum, utils.Websocket)
 
 		// call the Handler. Don't invoke in a go routine
@@ -530,12 +549,19 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		if err := reply(ctx, conn, req.ID, response); err != nil {
 			log.Errorf("%v reply error - %v", RPCPing, err)
 		}
-	case RPCMevSearcher:
+	case RPCMEVSearcher:
 		params := struct {
-			MevMethod   string            `json:"mev_method"`
+			MEVMethod   string            `json:"mev_method"`
 			Payload     json.RawMessage   `json:"payload"`
-			MevBuilders map[string]string `json:"mev_builders"`
+			MEVBuilders map[string]string `json:"mev_builders"`
 		}{}
+
+		if req.Params == nil {
+			err := errors.New("failed to unmarshal req.Params for mevSearcher, params not found")
+			log.Warn(err)
+			SendErrorMsg(ctx, InvalidParams, err.Error(), conn, req)
+			return
+		}
 
 		err := json.Unmarshal(*req.Params, &params)
 		if err != nil {
@@ -544,7 +570,28 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 			return
 		}
 
-		mevSearcher, err := bxmessage.NewMEVSearcher(params.MevMethod, params.MevBuilders, params.Payload)
+		sendBundleArgs := []sendBundleArgs{}
+		err = json.Unmarshal(params.Payload, &sendBundleArgs)
+		if err != nil {
+			log.Errorf("failed to unmarshal req.Params for mevSearcher, error: %v", err.Error())
+			SendErrorMsg(ctx, InvalidParams, err.Error(), conn, req)
+			return
+		}
+
+		if len(sendBundleArgs) != 1 {
+			log.Errorf("received invalid number of mevSearcher payload, must be 1 element")
+			SendErrorMsg(ctx, InvalidParams, err.Error(), conn, req)
+			return
+		}
+
+		if err := sendBundleArgs[0].validate(); err != nil {
+			log.Errorf("mevSearcher payload validation failed: %v", err)
+			SendErrorMsg(ctx, InvalidParams, err.Error(), conn, req)
+			return
+
+		}
+
+		mevSearcher, err := bxmessage.NewMEVSearcher(params.MEVMethod, params.MEVBuilders, params.Payload)
 		if err != nil {
 			log.Errorf("failed to create new mevSearcher: %v", err)
 			SendErrorMsg(ctx, InvalidParams, err.Error(), conn, req)
@@ -552,6 +599,9 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		}
 
 		ws := connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.FeedManager.networkNum, utils.Websocket)
+
+		mevSearcher.SetHash()
+		mevSearcher.SetNetworkNum(h.FeedManager.networkNum)
 		err = h.FeedManager.node.HandleMsg(&mevSearcher, ws, connections.RunForeground)
 		if err != nil {
 			log.Errorf("failed to process mevSearcher message: %v", err)
@@ -560,39 +610,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		}
 
 		if err := reply(ctx, conn, req.ID, map[string]string{"status": "ok"}); err != nil {
-			log.Errorf("%v mev searcher error: %v", RPCMevSearcher, err)
-		}
-	case RPCMevBuilder:
-		params := struct {
-			MevMethod     string          `json:"mev_method"`
-			Payload       json.RawMessage `json:"payload"`
-			MevMinerNames []string        `json:"mev_miner_names"`
-		}{}
-
-		err := json.Unmarshal(*req.Params, &params)
-		if err != nil {
-			log.Errorf("failed to unmarshal req.Params for mevBundle from mev-builder, error: %v", err.Error())
-			SendErrorMsg(ctx, InvalidParams, err.Error(), conn, req)
-			return
-		}
-
-		mevBundle, err := bxmessage.NewMEVBundle(params.MevMethod, params.MevMinerNames, params.Payload)
-		if err != nil {
-			log.Errorf("failed to create new mevBundle: %v", err)
-			SendErrorMsg(ctx, InvalidParams, err.Error(), conn, req)
-			return
-		}
-
-		ws := connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.FeedManager.networkNum, utils.Websocket)
-		err = h.FeedManager.node.HandleMsg(&mevBundle, ws, connections.RunForeground)
-		if err != nil {
-			log.Errorf("failed to process mevBundle message: %v", err)
-			SendErrorMsg(ctx, InvalidParams, err.Error(), conn, req)
-			return
-		}
-
-		if err := reply(ctx, conn, req.ID, map[string]string{"status": "ok"}); err != nil {
-			log.Errorf("%v mev builder error: %v", RPCMevBuilder, err)
+			log.Errorf("%v mev searcher error: %v", RPCMEVSearcher, err)
 		}
 
 	default:
@@ -882,4 +900,36 @@ func (h *handlerObj) evaluateFilters(expr conditions.Expr) error {
 	//Evaluate if we should send the tx
 	_, err := conditions.Evaluate(expr, types.EmptyFilteredTransactionMap)
 	return err
+}
+
+type sendBundleArgs struct {
+	Txs               []hexutil.Bytes `json:"txs"`
+	BlockNumber       string          `json:"blockNumber"`
+	MinTimestamp      uint64          `json:"minTimestamp"`
+	MaxTimestamp      uint64          `json:"maxTimestamp"`
+	RevertingTxHashes []common.Hash   `json:"revertingTxHashes"`
+}
+
+func (s *sendBundleArgs) validate() error {
+	if len(s.Txs) == 0 {
+		return errors.New("bundle missing txs")
+	}
+
+	if s.BlockNumber == "" {
+		return errors.New("bundle missing blockNumber")
+	}
+
+	for _, encodedTx := range s.Txs {
+		tx := new(ethtypes.Transaction)
+		if err := tx.UnmarshalBinary(encodedTx); err != nil {
+			return err
+		}
+	}
+
+	_, err := hexutil.DecodeUint64(s.BlockNumber)
+	if err != nil {
+		return fmt.Errorf("blockNumber must be hex, %v", err)
+	}
+
+	return nil
 }

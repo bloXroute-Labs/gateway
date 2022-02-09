@@ -33,7 +33,7 @@ func newHashHistory(name string, clock utils.Clock, cleanupFreq time.Duration) H
 
 // Add adds the hash for the duration
 func (hh HashHistory) Add(hash string, expiration time.Duration) {
-	hh.data.Set(hash, hh.clock.Now().Add(expiration))
+	hh.data.Set(hash, hh.clock.Now().Add(expiration).UnixNano())
 }
 
 // Remove removes the hash from the data
@@ -43,14 +43,14 @@ func (hh HashHistory) Remove(hash string) {
 
 // SetIfAbsent Sets the given value under the specified key if no value was associated with it.
 func (hh HashHistory) SetIfAbsent(hash string, expiration time.Duration) bool {
-	return hh.data.SetIfAbsent(hash, hh.clock.Now().Add(expiration))
+	return hh.data.SetIfAbsent(hash, hh.clock.Now().Add(expiration).UnixNano())
 }
 
 // Exists checks if hash is in history
 func (hh HashHistory) Exists(hash string) bool {
 	if val, ok := hh.data.Get(hash); ok {
-		expiration := val.(time.Time)
-		if hh.clock.Now().Before(expiration) {
+		expiration := val.(int64)
+		if hh.clock.Now().UnixNano() < expiration {
 			return true
 		}
 	}
@@ -63,22 +63,22 @@ func (hh HashHistory) Count() int {
 }
 
 func (hh HashHistory) cleanup() {
-	ticker := time.NewTicker(hh.cleanupFreq)
+	ticker := hh.clock.Ticker(hh.cleanupFreq)
 	for {
 		select {
-		case <-ticker.C:
+		case <-ticker.Alert():
 			itemsCleaned := hh.clean()
-			log.Debugf("cleaned %v entries in HashHistory[%v]", itemsCleaned, hh.name)
+			log.Debugf("cleaned %v entries in HashHistory[%v], the remaining entries are %v", itemsCleaned, hh.name, hh.Count())
 		}
 	}
 }
 
 func (hh HashHistory) clean() int {
 	historyCleaned := 0
-	timeNow := hh.clock.Now()
+	timeNow := hh.clock.Now().UnixNano()
 	for item := range hh.data.IterBuffered() {
-		expiration := item.Val.(time.Time)
-		if timeNow.After(expiration) {
+		expiration := item.Val.(int64)
+		if timeNow > expiration {
 			hh.data.Remove(item.Key)
 			historyCleaned++
 		}

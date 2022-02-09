@@ -40,7 +40,7 @@ import (
 
 const (
 	flasbotAuthHeader  = "X-Flashbots-Signature"
-	timeToAvoidReEntry = 30 * time.Minute
+	timeToAvoidReEntry = 6 * time.Hour
 )
 
 type gateway struct {
@@ -64,11 +64,16 @@ type gateway struct {
 	bdnBlocks          services.HashHistory
 	wsProvider         blockchain.WSProvider
 	syncedWithRelay    atomic.Bool
+	clock              utils.Clock
+	burstLimiter       services.AccountBurstLimiter
 
-	bestBlockHeight     int
-	bdnBlocksSkipCount  int
-	seenMEVMinerBundles baseservices.HashHistory
-	seenMEVSearchers    baseservices.HashHistory
+	bestBlockHeight       int
+	bdnBlocksSkipCount    int
+	seenMEVMinerBundles   baseservices.HashHistory
+	seenMEVSearchers      baseservices.HashHistory
+	seenBlockConfirmation baseservices.HashHistory
+
+	mevClient *http.Client
 }
 
 // NewGateway returns a new gateway node to send messages from a blockchain node to the relay network
@@ -76,19 +81,30 @@ func NewGateway(parent context.Context, bxConfig *config.Bx, bridge blockchain.B
 	ctx, cancel := context.WithCancel(parent)
 
 	g := &gateway{
-		Bx:                  NewBx(bxConfig, "datadir"),
-		bridge:              bridge,
-		wsProvider:          ws,
-		context:             ctx,
-		cancel:              cancel,
-		blockchainPeers:     blockchainPeers,
-		pendingTxs:          services.NewHashHistory("pendingTxs", 15*time.Minute),
-		possiblePendingTxs:  services.NewHashHistory("possiblePendingTxs", 15*time.Minute),
-		bdnBlocks:           services.NewHashHistory("bdnBlocks", 15*time.Minute),
-		seenMEVMinerBundles: baseservices.NewHashHistory("mevMinerBundle", 30*time.Minute),
-		seenMEVSearchers:    baseservices.NewHashHistory("mevSearcher", 30*time.Minute),
+		Bx:                    NewBx(bxConfig, "datadir"),
+		bridge:                bridge,
+		wsProvider:            ws,
+		context:               ctx,
+		cancel:                cancel,
+		blockchainPeers:       blockchainPeers,
+		pendingTxs:            services.NewHashHistory("pendingTxs", 15*time.Minute),
+		possiblePendingTxs:    services.NewHashHistory("possiblePendingTxs", 15*time.Minute),
+		bdnBlocks:             services.NewHashHistory("bdnBlocks", 15*time.Minute),
+		seenMEVMinerBundles:   baseservices.NewHashHistory("mevMinerBundle", 30*time.Minute),
+		seenMEVSearchers:      baseservices.NewHashHistory("mevSearcher", 30*time.Minute),
+		seenBlockConfirmation: baseservices.NewHashHistory("blockConfirmation", 30*time.Minute),
+		clock:                 utils.RealClock{},
 	}
 	g.asyncMsgChannel = services.NewAsyncMsgChannel(g)
+	g.mevClient = &http.Client{
+		Transport: &http.Transport{
+			MaxConnsPerHost:     10,
+			MaxIdleConnsPerHost: 10,
+			MaxIdleConns:        10,
+			IdleConnTimeout:     0 * time.Second,
+		},
+		Timeout: 60 * time.Second,
+	}
 
 	// create tx store service pass to eth client
 	assigner := services.NewEmptyShortIDAssigner()
@@ -96,6 +112,7 @@ func NewGateway(parent context.Context, bxConfig *config.Bx, bridge blockchain.B
 	g.TxStore = &txStore
 	g.bdnStats = bxmessage.NewBDNStats()
 	g.blockProcessor = services.NewRLPBlockProcessor(g.TxStore)
+	g.burstLimiter = services.NewAccountBurstLimiter(g.clock)
 
 	// set empty default stats, Run function will override it
 	g.stats = statistics.NewStats(false, "127.0.0.1", "", nil, false)
@@ -162,16 +179,19 @@ func (g *gateway) Run() error {
 		return err
 	}
 
-	if g.BxConfig.MevBuilderURI != "" && g.sdn.AccountModel().MevBuilder == "" {
+	if g.BxConfig.MEVBuilderURI != "" && g.sdn.AccountModel().MEVBuilder == "" {
 		panic(fmt.Errorf("account %v is not allowed for mev builder service, closing the gateway. Please contact support@bloxroute.com to enable running as mev builder", g.sdn.AccountModel().AccountID))
 	}
 
-	if g.BxConfig.MevMinerURI != "" && g.sdn.AccountModel().MevMiner == "" {
+	if g.BxConfig.MEVMinerURI != "" && g.sdn.AccountModel().MEVMiner == "" {
 		panic(fmt.Errorf(
 			"account %v is not allowed for mev miner service, closing the gateway. Please contact support@bloxroute.com to enable running as mev miner",
 			g.sdn.AccountModel().AccountID,
 		))
 	}
+
+	accountModel := g.sdn.AccountModel()
+	g.burstLimiter.Register(&accountModel)
 
 	var txTraceLogger *log.Logger = nil
 	if g.BxConfig.TxTrace.Enabled {
@@ -191,7 +211,7 @@ func (g *gateway) Run() error {
 	g.txTrace = loggers.NewTxTrace(txTraceLogger)
 
 	if g.sdn.AccountTier() != sdnmessage.ATierElite && len(g.blockchainPeers) == 0 {
-		panic("No blockchain node specified. Enterprise-Elite account is required in order to run gateway without a blockchain node.")
+		return fmt.Errorf("no blockchain node specified. Enterprise-Elite account is required in order to run gateway without a blockchain node")
 	}
 
 	networkNum := g.sdn.NetworkNum()
@@ -208,11 +228,9 @@ func (g *gateway) Run() error {
 	group.Go(g.TxStore.Start)
 
 	g.feedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
-	accountModel := g.sdn.AccountModel()
-	feedProvider := servers.NewFeedManager(g.context, g, g.feedChan,
-		fmt.Sprintf(":%v", g.BxConfig.WebsocketPort), networkNum,
-		g.wsProvider, g.BxConfig.ManageWSServer, accountModel, g.sdn.GetCustomerAccountModel,
-		g.BxConfig.WebsocketTLSEnabled, privateCertFile, privateKeyFile)
+	feedProvider := servers.NewFeedManager(g.context, g, g.feedChan, networkNum,
+		g.wsProvider, accountModel, g.sdn.GetCustomerAccountModel,
+		privateCertFile, privateKeyFile, *g.BxConfig)
 	if g.BxConfig.WebsocketEnabled || g.BxConfig.WebsocketTLSEnabled {
 		group.Go(feedProvider.Start)
 	}
@@ -271,9 +289,12 @@ func (g *gateway) broadcast(msg bxmessage.Message, source connections.Conn, to u
 			results.ErrorPeers++
 			continue
 		}
+
 		if conn.Info().IsGateway() {
 			results.SentGatewayPeers++
 		}
+
+		results.SentPeers++
 	}
 	return results
 }
@@ -296,12 +317,14 @@ func (g *gateway) pushBlockchainConfig() error {
 
 	genesis := common.HexToHash(blockchainAttributes.GenesisHash)
 	ignoreBlockTimeout := time.Second * time.Duration(blockchainNetwork.BlockInterval*blockchainNetwork.IgnoreBlockIntervalCount)
+	blockConfirmationsCount := blockchainNetwork.BlockConfirmationsCount
 	ethConfig := network.EthConfig{
-		Network:            uint64(blockchainAttributes.NetworkID),
-		TotalDifficulty:    td,
-		Head:               genesis,
-		Genesis:            genesis,
-		IgnoreBlockTimeout: ignoreBlockTimeout,
+		Network:                 uint64(blockchainAttributes.NetworkID),
+		TotalDifficulty:         td,
+		Head:                    genesis,
+		Genesis:                 genesis,
+		IgnoreBlockTimeout:      ignoreBlockTimeout,
+		BlockConfirmationsCount: blockConfirmationsCount,
 	}
 
 	return g.bridge.UpdateNetworkConfig(ethConfig)
@@ -404,7 +427,7 @@ func (g *gateway) handleBridgeMessages() error {
 			requests := make([]types.SHA256Hash, 0)
 			for _, hash := range txAnnouncement.Hashes {
 				bxTx, exists := g.TxStore.Get(hash)
-				if !exists {
+				if !exists && !g.TxStore.Known(hash) {
 					log.Tracef("msgTx: from Blockchain, hash %v, event TxAnnouncedByBlockchainNode, peerID: %v", hash, txAnnouncement.PeerID)
 					requests = append(requests, hash)
 				} else {
@@ -418,8 +441,7 @@ func (g *gateway) handleBridgeMessages() error {
 				if err == blockchain.ErrChannelFull {
 					log.Warnf("transaction requests channel is full, skipping request for %v hashes", len(requests))
 				} else if err != nil {
-					log.Errorf("could not request transactions over bridge: %v", err)
-					return err
+					panic(fmt.Errorf("could not request transactions over bridge: %v", err))
 				}
 			}
 		case blockFromNode := <-g.bridge.ReceiveBlockFromNode():
@@ -427,20 +449,35 @@ func (g *gateway) handleBridgeMessages() error {
 			g.processBlockFromBlockchain(blockFromNode.Block, blockchainConnection)
 		case _ = <-g.bridge.ReceiveNoActiveBlockchainPeersAlert():
 			if g.sdn.AccountTier() != sdnmessage.ATierElite {
-				panic("Gateway does not have an active blockchain connection. Enterprise-Elite account is required in order to run gateway without a blockchain node.")
+				// TODO should fix code to stop gateway appropriately
+				log.Errorf("Gateway does not have an active blockchain connection. Enterprise-Elite account is required in order to run gateway without a blockchain node.")
+				os.Exit(0)
 			}
+		case confirmBlock := <-g.bridge.ReceiveConfirmedBlockFromNode():
+			bcnfMsg := bxmessage.BlockConfirmation{}
+			txList := make(types.SHA256HashList, 0, len(confirmBlock.Txs))
+			for _, tx := range confirmBlock.Txs {
+				txList = append(txList, tx.Hash())
+			}
+
+			bcnfMsg.Hashes = txList
+			bcnfMsg.SetNetworkNum(g.sdn.NetworkNum())
+			bcnfMsg.SetHash(confirmBlock.Hash())
+			blockchainConnection := connections.NewBlockchainConn(g.blockchainPeers[0])
+			g.HandleMsg(&bcnfMsg, blockchainConnection, connections.RunBackground)
 		}
 	}
 }
 
 func (g *gateway) NodeStatus() connections.NodeStatus {
 	var capabilities types.CapabilityFlags
-	if g.BxConfig.MevBuilderURI != "" {
-		capabilities |= types.CapabilityMevBuilder
+
+	if g.BxConfig.MEVBuilderURI != "" {
+		capabilities |= types.CapabilityMEVBuilder
 	}
 
-	if g.BxConfig.MevMinerURI != "" {
-		capabilities |= types.CapabilityMevMiner
+	if g.BxConfig.MEVMinerURI != "" {
+		capabilities |= types.CapabilityMEVMiner
 	}
 
 	return connections.NodeStatus{
@@ -450,7 +487,6 @@ func (g *gateway) NodeStatus() connections.NodeStatus {
 }
 
 func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, background connections.MsgHandlingOptions) error {
-	startTime := time.Now()
 	var err error
 	if background {
 		g.asyncMsgChannel <- services.MsgInfo{Msg: msg, Source: source}
@@ -462,34 +498,8 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 		g.processTransaction(tx, source)
 	case *bxmessage.Broadcast:
 		broadcastMsg := msg.(*bxmessage.Broadcast)
-		blockHash := broadcastMsg.Hash()
-
-		bxBlock, missingShortIDsCount, err := g.blockProcessor.ProcessBroadcast(broadcastMsg)
-		switch {
-		case err == services.ErrAlreadyProcessed:
-			source.Log().Debugf("received duplicate block %v, skipping", blockHash)
-			g.stats.AddGatewayBlockEvent("GatewayProcessBlockFromBDNIgnoreSeen", source, blockHash, broadcastMsg.GetNetworkNum(), 1, startTime, 0, len(broadcastMsg.Block()), 0, len(broadcastMsg.ShortIDs()), 0, 0, bxBlock)
-			return nil
-		case err == services.ErrMissingShortIDs:
-			if !g.isSyncWithRelay() {
-				source.Log().Debugf("TxStore sync is in progress - Ignoring block %v from bdn with unknown %v shortIDs", blockHash, missingShortIDsCount)
-				return nil
-			}
-			// TODO - list the missing shortIDs in trace.
-			source.Log().Debugf("could not decompress block %v, missing shortIDs count: %v", blockHash, missingShortIDsCount)
-			g.stats.AddGatewayBlockEvent("GatewayProcessBlockFromBDNRequiredRecovery", source, blockHash, broadcastMsg.GetNetworkNum(), 1, startTime, 0, len(broadcastMsg.Block()), 0, len(broadcastMsg.ShortIDs()), 0, missingShortIDsCount, bxBlock)
-			return nil
-		case err != nil:
-			source.Log().Errorf("could not decompress block %v, err: %v", blockHash, err)
-			broadcastBlockHex := hex.EncodeToString(broadcastMsg.Block())
-			source.Log().Debugf("could not decompress block %v, err: %v, contents: %v", blockHash, err, broadcastBlockHex)
-			return nil
-		}
-
-		source.Log().Infof("processing block %v from BDN, block number: %v, txs count: %v", blockHash, bxBlock.Number, len(bxBlock.Txs))
-		g.processBlockFromBDN(bxBlock)
-		// TODO decompress should not be 0 - calculate it in the BxBlock struct or add the original size in the broadcast msg
-		g.stats.AddGatewayBlockEvent("GatewayProcessBlockFromBDN", source, blockHash, broadcastMsg.GetNetworkNum(), 1, startTime, 0, len(broadcastMsg.Block()), 0, len(broadcastMsg.ShortIDs()), len(bxBlock.Txs), 0, bxBlock)
+		// handle in a go-routing so tx flow from relay will not be delayed
+		go g.processBroadcast(broadcastMsg, source)
 	case *bxmessage.RefreshBlockchainNetwork:
 		go g.sdn.GetBlockchainNetwork()
 	case *bxmessage.Txs:
@@ -509,19 +519,60 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 		go g.handleMEVSearcherMessage(*mevSearcher, source)
 	case *bxmessage.ErrorNotification:
 		errorNotification := msg.(*bxmessage.ErrorNotification)
+		source.Log().Errorf("received an error notification %v. terminating the gateway", errorNotification.Reason)
+		// TODO should also close the gateway while notify the bridge and other go routine (web socket server, ...)
+		os.Exit(0)
+	case *bxmessage.Hello:
+		source.Log().Tracef("received hello msg")
 
-		if errorNotification.ErrorType == types.ErrorTypeTemporary {
-			panic(fmt.Errorf("gateway received temporary error notification from relay %v with error %v", source, errorNotification.Reason))
-		} else if errorNotification.ErrorType == types.ErrorTypePermanent {
-			log.Errorf("received permanent error notification from relay %v, with error %v. closing the connection", source, errorNotification.Reason)
-			// TODO should also close the gateway while notify the bridge and other go routine (web socket server, ...)
-			os.Exit(0)
+	case *bxmessage.BlockConfirmation:
+		blockConfirmation := msg.(*bxmessage.BlockConfirmation)
+		hashString := blockConfirmation.Hash().String()
+		if g.seenBlockConfirmation.SetIfAbsent(hashString, 30*time.Minute) {
+			if !g.BxConfig.SendConfirmation {
+				log.Debug("gateway will not send block confirm message to relay without --send-block-confirmation flag")
+			} else if source.Info().ConnectionType == utils.Blockchain {
+				log.Tracef("gateway broadcasting block confirmation of block %v to relays", hashString)
+				g.broadcast(blockConfirmation, source, utils.Relay)
+			}
+			_ = g.Bx.HandleMsg(msg, source)
 		}
 
 	default:
 		err = g.Bx.HandleMsg(msg, source)
 	}
 	return err
+}
+
+func (g *gateway) processBroadcast(broadcastMsg *bxmessage.Broadcast, source connections.Conn) {
+	startTime := time.Now()
+	blockHash := broadcastMsg.Hash()
+	bxBlock, missingShortIDsCount, err := g.blockProcessor.ProcessBroadcast(broadcastMsg)
+	switch {
+	case err == services.ErrAlreadyProcessed:
+		source.Log().Debugf("received duplicate block %v, skipping", blockHash)
+		g.stats.AddGatewayBlockEvent("GatewayProcessBlockFromBDNIgnoreSeen", source, blockHash, broadcastMsg.GetNetworkNum(), 1, startTime, 0, len(broadcastMsg.Block()), 0, len(broadcastMsg.ShortIDs()), 0, 0, bxBlock)
+		return
+	case err == services.ErrMissingShortIDs:
+		if !g.isSyncWithRelay() {
+			source.Log().Debugf("TxStore sync is in progress - Ignoring block %v from bdn with unknown %v shortIDs", blockHash, missingShortIDsCount)
+			return
+		}
+		// TODO - list the missing shortIDs in trace.
+		source.Log().Debugf("could not decompress block %v, missing shortIDs count: %v", blockHash, missingShortIDsCount)
+		g.stats.AddGatewayBlockEvent("GatewayProcessBlockFromBDNRequiredRecovery", source, blockHash, broadcastMsg.GetNetworkNum(), 1, startTime, 0, len(broadcastMsg.Block()), 0, len(broadcastMsg.ShortIDs()), 0, missingShortIDsCount, bxBlock)
+		return
+	case err != nil:
+		source.Log().Errorf("could not decompress block %v, err: %v", blockHash, err)
+		broadcastBlockHex := hex.EncodeToString(broadcastMsg.Block())
+		source.Log().Debugf("could not decompress block %v, err: %v, contents: %v", blockHash, err, broadcastBlockHex)
+		return
+	}
+
+	source.Log().Infof("processing block %v from BDN, block number: %v, txs count: %v", blockHash, bxBlock.Number, len(bxBlock.Txs))
+	g.processBlockFromBDN(bxBlock)
+	// TODO decompress should not be 0 - calculate it in the BxBlock struct or add the original size in the broadcast msg
+	g.stats.AddGatewayBlockEvent("GatewayProcessBlockFromBDN", source, blockHash, broadcastMsg.GetNetworkNum(), 1, startTime, 0, len(broadcastMsg.Block()), 0, len(broadcastMsg.ShortIDs()), len(bxBlock.Txs), 0, bxBlock)
 }
 
 func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) {
@@ -543,10 +594,32 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 		}
 
 		if !source.Info().IsRelay() {
-			broadcastRes = g.broadcast(tx, source, utils.RelayTransaction)
-			sentToBDN = true
 			if !txResult.Reprocess {
 				g.bdnStats.LogNewTxFromNode(types.NodeEndpoint{IP: source.Info().PeerIP, Port: int(source.Info().PeerPort)})
+			}
+
+			paidTx := tx.Flags().IsPaid()
+			allowed, behavior := g.burstLimiter.AllowTransaction(g.accountID, paidTx)
+
+			switch behavior {
+			case sdnmessage.BehaviorBlock:
+			case sdnmessage.BehaviorAlert:
+				// disabled for now so users will not see any of these messages
+				//if paidTx {
+				//	source.Log().Warnf("account burst limits exceeded: your account is limited to %v paid txs per 5 seconds", g.burstLimiter.BurstLimit(g.accountID, paidTx))
+				//} else {
+				//	source.Log().Debugf("account burst limits exceeded: your account is limited to %v unpaid txs per 5 seconds", g.burstLimiter.BurstLimit(g.accountID, paidTx))
+				//}
+				fallthrough
+			case sdnmessage.BehaviorNoAction:
+				fallthrough
+			default:
+				allowed = true
+			}
+
+			if allowed {
+				broadcastRes = g.broadcast(tx, source, utils.RelayTransaction)
+				sentToBDN = true
 			}
 		}
 
@@ -638,70 +711,72 @@ func (g *gateway) notify(notification types.Notification) {
 }
 
 func (g gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source connections.Conn) {
-	if source.Info().IsRelay() {
-		if g.BxConfig.MevMinerURI == "" {
-			log.Warnf("received mevBundle message, but mev miner uri is empty. Message %v from %v in network %v", mevBundle.Hash(), mevBundle.SourceID(), mevBundle.GetNetworkNum())
-			return
-		}
-		if g.seenMEVMinerBundles.SetIfAbsent(mevBundle.Hash().String(), time.Minute*30) {
+	start := time.Now()
+	event := "ignore seen"
+	broadcastRes := types.BroadcastResults{}
+
+	if g.seenMEVMinerBundles.SetIfAbsent(mevBundle.Hash().String(), time.Minute*30) {
+		event = "broadcast"
+		if source.Info().IsRelay() {
+			if g.BxConfig.MEVMinerURI == "" {
+				log.Warnf("received mevBundle message, but mev miner uri is empty. Message %v from %v in network %v", mevBundle.Hash(), mevBundle.SourceID(), mevBundle.GetNetworkNum())
+				return
+			}
+
+			// TODO: check the usage of mevBundle.ID and is it ok to set it to "1"
 			mevBundle.ID, mevBundle.JSONRPC = "1", "2.0"
 			mevRPC, err := json.Marshal(mevBundle)
 			if err != nil {
-				log.Errorf("failed to marshal mevBundle payload for: %v, hash: %v, params: %v, error: %v", g.BxConfig.MevMinerURI, mevBundle.Hash(), string(mevBundle.Params), err)
+				log.Errorf("failed to marshal mevBundle payload for: %v, hash: %v, params: %v, error: %v", g.BxConfig.MEVMinerURI, mevBundle.Hash(), string(mevBundle.Params), err)
 				return
 			}
 
-			httpClient := http.Client{}
-			defer httpClient.CloseIdleConnections()
-
-			req, err := http.NewRequest(http.MethodPost, g.BxConfig.MevMinerURI, bytes.NewReader(mevRPC))
+			resp, err := g.mevClient.Post(g.BxConfig.MEVMinerURI, "application/json", bytes.NewReader(mevRPC))
 			if err != nil {
-				log.Errorf("failed to create new mevBundle http request for: %v, hash: %v, %v", g.BxConfig.MevMinerURI, mevBundle.Hash(), err)
-				return
-			}
-			req.Header.Add("Content-Type", "application/json")
-
-			resp, err := httpClient.Do(req)
-			if err != nil {
-				log.Errorf("failed to perform mevBundle request for: %v, hash: %v, %v", g.BxConfig.MevMinerURI, mevBundle.Hash(), err)
+				log.Errorf("failed to perform mevBundle request for: %v, hash: %v, %v", g.BxConfig.MEVMinerURI, mevBundle.Hash(), err)
 				return
 			}
 
 			if resp.StatusCode != http.StatusOK {
-				log.Errorf("invalid mevBundle status code from: %v, hash: %v,code: %v", g.BxConfig.MevMinerURI, mevBundle.Hash(), resp.StatusCode)
+				log.Errorf("invalid mevBundle status code from: %v, hash: %v,code: %v", g.BxConfig.MEVMinerURI, mevBundle.Hash(), resp.StatusCode)
 				return
 			}
+
+			source.Log().Tracef("%v mevBundle message hash %v to mev relay, duration: %v", event, mevBundle.Hash(), time.Since(start).Milliseconds())
+			return
 		}
-		return
+
+		// sending message from mev-relay to BDN. Gateway set the hash and network that relays will use.
+		broadcastRes = g.broadcast(&mevBundle, source, utils.RelayTransaction)
 	}
 
-	mevBundle.SetHash()
-	mevBundle.SetNetworkNum(g.sdn.NetworkNum())
-	broadcastRes := g.broadcast(&mevBundle, source, utils.RelayTransaction)
-	log.Tracef("broadcast mevBundle message msg: %v in network %v to relays, result: [%v]", mevBundle.Hash(), mevBundle.GetNetworkNum(), broadcastRes)
+	source.Log().Tracef("%v mevBundle message msg: %v in network %v to relays, result: [%v], duration: %v", event, mevBundle.Hash(), mevBundle.GetNetworkNum(), broadcastRes, time.Since(start).Milliseconds())
 }
 
 // TODO: think about remove code duplication and merge this func with handleMEVBundleMessage
 func (g gateway) handleMEVSearcherMessage(mevSearcher bxmessage.MEVSearcher, source connections.Conn) {
-	if source.Info().IsRelay() {
-		if g.BxConfig.MevBuilderURI == "" {
-			log.Warnf("received mevSearcher message, but mev-builder-uri is empty. Message %v from %v in network %v", mevSearcher.Hash(), mevSearcher.SourceID(), mevSearcher.GetNetworkNum())
-			return
-		}
-		if g.seenMEVSearchers.SetIfAbsent(mevSearcher.Hash().String(), time.Minute*30) {
-			mevSearcher.ID, mevSearcher.JSONRPC = "1", "2.0"
-			mevRPC, err := json.Marshal(mevSearcher)
-			if err != nil {
-				log.Errorf("failed to marshal mevSearcher payload for: %v, hash: %v, params: %v, error: %v", g.BxConfig.MevBuilderURI, mevSearcher.Hash(), string(mevSearcher.Params), err)
+	start := time.Now()
+	event := "ignore seen"
+	broadcastRes := types.BroadcastResults{}
+
+	if g.seenMEVSearchers.SetIfAbsent(mevSearcher.Hash().String(), time.Minute*30) {
+		event = "broadcast"
+		if source.Info().IsRelay() {
+			if g.BxConfig.MEVBuilderURI == "" {
+				log.Warnf("received mevSearcher message, but mev-builder-uri is empty. Message %v from %v in network %v", mevSearcher.Hash(), mevSearcher.SourceID(), mevSearcher.GetNetworkNum())
 				return
 			}
 
-			httpClient := http.Client{}
-			defer httpClient.CloseIdleConnections()
-
-			req, err := http.NewRequest(http.MethodPost, g.BxConfig.MevBuilderURI, bytes.NewReader(mevRPC))
+			mevSearcher.ID, mevSearcher.JSONRPC = "1", "2.0"
+			mevRPC, err := json.Marshal(mevSearcher)
 			if err != nil {
-				log.Errorf("failed to create new mevSearcher http request for: %v, hash: %v, %v", g.BxConfig.MevBuilderURI, mevSearcher.Hash(), err)
+				log.Errorf("failed to marshal mevSearcher payload for: %v, hash: %v, params: %v, error: %v", g.BxConfig.MEVBuilderURI, mevSearcher.Hash(), string(mevSearcher.Params), err)
+				return
+			}
+
+			req, err := http.NewRequest(http.MethodPost, g.BxConfig.MEVBuilderURI, bytes.NewReader(mevRPC))
+			if err != nil {
+				log.Errorf("failed to create new mevSearcher http request for: %v, hash: %v, %v", g.BxConfig.MEVBuilderURI, mevSearcher.Hash(), err)
 				return
 			}
 			req.Header.Add("Content-Type", "application/json")
@@ -714,24 +789,26 @@ func (g gateway) handleMEVSearcherMessage(mevSearcher bxmessage.MEVSearcher, sou
 			}
 
 			req.Header.Add(flasbotAuthHeader, mevSearcherAuth)
-			resp, err := httpClient.Do(req)
+			resp, err := g.mevClient.Do(req)
 			if err != nil {
-				log.Errorf("failed to perform mevSearcher request for: %v, hash: %v, %v", g.BxConfig.MevBuilderURI, mevSearcher.Hash(), err)
+				log.Errorf("failed to perform mevSearcher request for: %v, hash: %v, %v", g.BxConfig.MEVBuilderURI, mevSearcher.Hash(), err)
 				return
 			}
 
 			if resp.StatusCode != http.StatusOK {
-				log.Errorf("invalid mevSearcher status code from: %v, hash: %v,code: %v", g.BxConfig.MevBuilderURI, mevSearcher.Hash(), resp.StatusCode)
+				log.Errorf("invalid mevSearcher status code from: %v, hash: %v,code: %v", g.BxConfig.MEVBuilderURI, mevSearcher.Hash(), resp.StatusCode)
 				return
 			}
+
+			source.Log().Tracef("%v mevSearcher message hash %v to mev relay, duration: %v", event, mevSearcher.Hash(), time.Since(start).Milliseconds())
+			return
 		}
-		return
+
+		// sending message from searcher to BDN. Gateway set the hash and network that relays will use.
+		broadcastRes = g.broadcast(&mevSearcher, source, utils.RelayTransaction)
 	}
 
-	mevSearcher.SetHash()
-	mevSearcher.SetNetworkNum(g.sdn.NetworkNum())
-	broadcastRes := g.broadcast(&mevSearcher, source, utils.RelayTransaction)
-	log.Tracef("broadcast mevSearcher message msg: %v in network %v to relays, result: [%v]", mevSearcher.Hash(), mevSearcher.GetNetworkNum(), broadcastRes)
+	source.Log().Tracef("%v mevSearcher message msg: %v in network %v to relays, result: [%v], durarion: %v", event, mevSearcher.Hash(), mevSearcher.GetNetworkNum(), broadcastRes, time.Since(start).Milliseconds())
 }
 
 func (g *gateway) Peers(ctx context.Context, req *pb.PeersRequest) (*pb.PeersReply, error) {
@@ -772,10 +849,10 @@ func (g *gateway) BlxrTx(_ context.Context, req *pb.BlxrTxRequest) (*pb.BlxrTxRe
 }
 
 func (g *gateway) sendStatsOnInterval(interval time.Duration, relayConn *handler.BxConn) {
-	ticker := time.NewTicker(interval)
+	ticker := g.clock.Ticker(interval)
 	for {
 		select {
-		case <-ticker.C:
+		case <-ticker.Alert():
 			rss, err := utils.GetAppMemoryUsage()
 			if err != nil {
 				log.Tracef("Failed to get Process RSS size: %v", err)

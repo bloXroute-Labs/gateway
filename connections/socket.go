@@ -14,6 +14,7 @@ type Socket interface {
 	Read(b []byte) (int, error)
 	Write(b []byte) (int, error)
 	Close(string) error
+	Equals(s Socket) bool
 
 	SetReadDeadline(t time.Time) error
 	LocalAddr() net.Addr
@@ -74,4 +75,9 @@ func (t TLS) Properties() (utils.BxSSLProperties, error) {
 // Close closes the underlying TLS connection
 func (t TLS) Close(reason string) error {
 	return t.Conn.Close()
+}
+
+// Equals compares two connection IDs
+func (t TLS) Equals(s Socket) bool {
+	return t == s
 }

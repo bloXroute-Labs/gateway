@@ -51,11 +51,11 @@ func NewSignedEthTxBytes(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKe
 }
 
 // NewSignedEthTxMessage generates a valid Ethereum transaction, and packs it into a bloxroute tx message
-func NewSignedEthTxMessage(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey, networkNum types.NetworkNum) (*ethtypes.Transaction, *bxmessage.Tx) {
+func NewSignedEthTxMessage(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey, networkNum types.NetworkNum, flags types.TxFlags) (*ethtypes.Transaction, *bxmessage.Tx) {
 	ethTx, ethTxBytes := NewSignedEthTxBytes(txType, nonce, privateKey)
 	var hash types.SHA256Hash
 	copy(hash[:], ethTx.Hash().Bytes())
-	return ethTx, bxmessage.NewTx(hash, ethTxBytes, networkNum, 0, "")
+	return ethTx, bxmessage.NewTx(hash, ethTxBytes, networkNum, flags, "")
 }
 
 // newEthLegacyTx generates a valid signed Ethereum transaction from a provided private key. nil can be specified to use a hardcoded private key.

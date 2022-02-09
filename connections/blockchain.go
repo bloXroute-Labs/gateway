@@ -49,6 +49,11 @@ func (b Blockchain) IsOpen() bool {
 	return false
 }
 
+// IsDisabled indicates that Blockchain is never disabled
+func (b Blockchain) IsDisabled() bool {
+	return false
+}
+
 // Protocol indicates that the Blockchain does not have a protocol
 func (b Blockchain) Protocol() bxmessage.Protocol {
 	return bxmessage.EmptyProtocol
@@ -86,6 +91,11 @@ func (b Blockchain) SendWithDelay(msg bxmessage.Message, delay time.Duration) er
 // Close is a no-op
 func (b Blockchain) Close(reason string) error {
 	return nil
+}
+
+// Disable is a no-op
+func (b Blockchain) Disable(reason string) {
+	return
 }
 
 // String returns the formatted representation of this placeholder connection

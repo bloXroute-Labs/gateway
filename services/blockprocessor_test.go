@@ -3,9 +3,9 @@ package services
 import (
 	"github.com/bloXroute-Labs/gateway/bxmessage"
 	"github.com/bloXroute-Labs/gateway/test"
-	"github.com/bloXroute-Labs/gateway/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/test/fixtures"
 	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/utils"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -18,7 +18,7 @@ import (
 func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 	store := newTestBxTxStore()
 	bp := NewRLPBlockProcessor(&store)
-	clock := bxmock.MockClock{}
+	clock := utils.MockClock{}
 	clock.SetTime(time.Now())
 
 	blockHash := types.GenerateSHA256Hash()

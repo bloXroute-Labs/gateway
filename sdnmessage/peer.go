@@ -21,13 +21,13 @@ type Peer struct {
 
 // Attributes - contains peer attributes
 type Attributes struct {
-	Continent        string      `json:"continent"`
-	Country          string      `json:"country"`
-	NodePublicKey    interface{} `json:"node_public_key"`
-	Region           string      `json:"region"`
-	PlatformProvider string      `json:"platform_provider"`
-	PrivateNode      bool        `json:"private_node"`
-	RelayType        string      `json:"relay_type"`
+	Continent        string          `json:"continent"`
+	Country          string          `json:"country"`
+	NodePublicKey    interface{}     `json:"node_public_key"`
+	Region           string          `json:"region"`
+	PlatformProvider string          `json:"platform_provider"`
+	PrivateNode      bool            `json:"private_node"`
+	RelayType        types.RelayType `json:"relay_type"`
 }
 
 // Matches return if a given peer is equal on ip/port/nodeID fields (generally good enough for an equals-type comparison)

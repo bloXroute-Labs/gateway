@@ -14,6 +14,7 @@ const (
 	NeOffline             NodeEventType = "OFFLINE"
 	NePeerConnEstablished NodeEventType = "PEER_CONN_ESTABLISHED"
 	NePeerConnClosed      NodeEventType = "PEER_CONN_CLOSED"
+	NePeerConnDisabled    NodeEventType = "PEER_CONN_DISABLED"
 )
 
 // NodeEvent represents a node event and its context being reported to the SDN
@@ -42,5 +43,14 @@ func NewNodeDisconnectionEvent(peerID types.NodeID) NodeEvent {
 	return NodeEvent{
 		NodeID:    peerID,
 		EventType: NePeerConnClosed,
+	}
+}
+
+// NewNodeDisabledEvent returns a disabled NodeEvent for a peer.
+func NewNodeDisabledEvent(peerID types.NodeID, reason string) NodeEvent {
+	return NodeEvent{
+		NodeID:    peerID,
+		EventType: NePeerConnDisabled,
+		Payload:   reason,
 	}
 }
