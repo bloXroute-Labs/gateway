@@ -13,9 +13,11 @@ import (
 	"github.com/bloXroute-Labs/gateway/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/services"
 	"github.com/bloXroute-Labs/gateway/services/loggers"
+	"github.com/bloXroute-Labs/gateway/test"
 	"github.com/bloXroute-Labs/gateway/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/bloXroute-Labs/gateway/utils"
+	"github.com/bloXroute-Labs/gateway/utils/utilmock"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/sirupsen/logrus"
@@ -38,7 +40,7 @@ func setup() (blockchain.Bridge, *gateway) {
 		BlockchainNetworkNum: networkNum,
 		ExternalIP:           "172.0.0.1",
 	}
-
+	utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
 	sdn := connections.NewSDNHTTP(&sslCerts, "", nm, "")
 	sdn.Networks = sdnmessage.BlockchainNetworks{5: bxmock.MockNetwork(networkNum, "Ethereum", "Mainnet", 0)}
 
@@ -131,6 +133,36 @@ func bxBlockFromEth(b blockchain.Bridge, height uint64, parentHash types.SHA256H
 	return bxBlock
 }
 
+func processEthTxOnBridge(t *testing.T, bridge blockchain.Bridge, ethTx *ethtypes.Transaction) {
+	bdnTx, err := bridge.TransactionBlockchainToBDN(ethTx)
+	assert.Nil(t, err)
+
+	// send transactions over bridge from blockchain connection
+	txs := []*types.BxTransaction{bdnTx}
+	err = bridge.SendTransactionsToBDN(txs, blockchainIPEndpoint)
+	assert.Nil(t, err)
+}
+
+func assertTransactionSentToRelay(t *testing.T, ethTx *ethtypes.Transaction, ethTxBytes []byte, relayTLS bxmock.MockTLS, relayConn *handler.Relay) {
+	msgBytes, err := relayTLS.MockAdvanceSent()
+	if err != nil {
+		assert.FailNow(t, "no messages sent on relay connection")
+	}
+
+	// transaction is broadcast to relays
+	var sentTx bxmessage.Tx
+	err = sentTx.Unpack(msgBytes, relayConn.Protocol())
+	assert.Nil(t, err)
+
+	assert.Equal(t, ethTx.Hash().Bytes(), sentTx.Hash().Bytes())
+	assert.Equal(t, ethTxBytes, sentTx.Content())
+}
+
+func assertNoTransactionSentToRelay(t *testing.T, relayTLS bxmock.MockTLS) {
+	_, err := relayTLS.MockAdvanceSent()
+	assert.NotNil(t, err)
+}
+
 func TestGateway_PushBlockchainConfig(t *testing.T) {
 	networkID := int64(1)
 	td := "40000"
@@ -179,24 +211,75 @@ func TestGateway_HandleTransactionFromBlockchain(t *testing.T) {
 	}()
 
 	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil)
-	bdnTx, err := bridge.TransactionBlockchainToBDN(ethTx)
+	processEthTxOnBridge(t, bridge, ethTx)
+	assertTransactionSentToRelay(t, ethTx, ethTxBytes, mockTLS, relayConn)
+}
+
+func TestGateway_HandleTransactionFromBlockchain_BurstLimit(t *testing.T) {
+	bridge, g := setup()
+	mockTLS, relayConn := addRelayConn(g)
+	test.ConfigureLogger(logrus.DebugLevel)
+
+	mockClock := &utils.MockClock{}
+	g.accountID = "foobar"
+	g.burstLimiter = services.NewAccountBurstLimiter(mockClock)
+	limit := 50
+
+	account := &sdnmessage.Account{
+		AccountInfo: sdnmessage.AccountInfo{
+			AccountID: g.accountID,
+		},
+		UnpaidTransactionBurstLimit: sdnmessage.BDNQuotaService{
+			ExpireDateTime: time.Now().Add(12 * time.Hour),
+			MsgQuota: sdnmessage.BDNService{
+				Limit:             limit,
+				BehaviorLimitFail: sdnmessage.BehaviorBlock,
+			},
+		},
+		PaidTransactionBurstLimit: sdnmessage.BDNQuotaService{
+			ExpireDateTime: time.Now().Add(12 * time.Hour),
+			MsgQuota: sdnmessage.BDNService{
+				Limit:             limit,
+				BehaviorLimitFail: sdnmessage.BehaviorBlock,
+			},
+		},
+	}
+	g.burstLimiter.Register(account)
+
+	go func() {
+		err := g.handleBridgeMessages()
+		assert.Nil(t, err)
+	}()
+
+	for i := uint64(1); i <= uint64(limit); i++ {
+		ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, i, nil)
+		processEthTxOnBridge(t, bridge, ethTx)
+		assertTransactionSentToRelay(t, ethTx, ethTxBytes, mockTLS, relayConn)
+	}
+
+	ethTx, _ := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, uint64(limit+1), nil)
+	processEthTxOnBridge(t, bridge, ethTx)
+	assertNoTransactionSentToRelay(t, mockTLS)
+}
+
+func TestGateway_HandleBlockConfirmationFromBackend(t *testing.T) {
+	bridge, g := setup()
+	mockTLS, _ := addRelayConn(g)
+	go func() {
+		err := g.handleBridgeMessages()
+		assert.Nil(t, err)
+	}()
+
+	g.BxConfig.SendConfirmation = true
+
+	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
+	bxBlock, err := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
 	assert.Nil(t, err)
 
-	// send transactions over bridge from blockchain connection
-	txs := []*types.BxTransaction{bdnTx}
-	err = bridge.SendTransactionsToBDN(txs, blockchainIPEndpoint)
-	assert.Nil(t, err)
+	bridge.SendConfirmedBlockToGateway(bxBlock)
 
-	msgBytes, err := mockTLS.MockAdvanceSent()
+	_, err = mockTLS.MockAdvanceSent()
 	assert.Nil(t, err)
-
-	// transaction is broadcast to relays
-	var sentTx bxmessage.Tx
-	err = sentTx.Unpack(msgBytes, relayConn.Protocol())
-	assert.Nil(t, err)
-
-	assert.Equal(t, ethTx.Hash().Bytes(), sentTx.Hash().Bytes())
-	assert.Equal(t, ethTxBytes, sentTx.Content())
 }
 
 func TestGateway_HandleTransactionHashesFromBlockchain(t *testing.T) {
@@ -235,7 +318,7 @@ func TestGateway_HandleTransactionFromRPC(t *testing.T) {
 	bridge, g := setup()
 	mockTLS, relayConn := addRelayConn(g)
 
-	ethTx, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum)
+	ethTx, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0)
 	txMessage.SetFlags(types.TFDeliverToNode)
 
 	err := g.HandleMsg(txMessage, connections.NewRPCConn("", "", networkNum, utils.Websocket), connections.RunForeground)
@@ -261,7 +344,7 @@ func TestGateway_HandleTransactionFromRelay(t *testing.T) {
 	bridge, g := setup()
 	_, relayConn := addRelayConn(g)
 
-	deliveredEthTx, deliveredTxMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum)
+	deliveredEthTx, deliveredTxMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0)
 	deliveredTxMessage.SetFlags(types.TFDeliverToNode)
 
 	err := g.HandleMsg(deliveredTxMessage, relayConn, connections.RunForeground)
@@ -273,7 +356,7 @@ func TestGateway_HandleTransactionFromRelay(t *testing.T) {
 	bdnTx := bdnTxs[0]
 	assert.Equal(t, deliveredEthTx.Hash().Bytes(), bdnTx.Hash().Bytes())
 
-	_, undeliveredTxMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum)
+	_, undeliveredTxMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0)
 
 	err = g.HandleMsg(undeliveredTxMessage, relayConn, connections.RunForeground)
 	assert.Nil(t, err)
@@ -290,7 +373,7 @@ func TestGateway_ReprocessTransactionFromRelay(t *testing.T) {
 	_, relayConn := addRelayConn(g)
 
 	// send new tx
-	ethTx, ethTxMsg := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum)
+	ethTx, ethTxMsg := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0)
 	err := g.HandleMsg(ethTxMsg, relayConn, connections.RunForeground)
 	assert.Nil(t, err)
 
@@ -324,10 +407,10 @@ func TestGateway_HandleTransactionFromRelayBlocksOnly(t *testing.T) {
 	_, relayConn := addRelayConn(g)
 	g.BxConfig.BlocksOnly = true
 
-	_, freeTx := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum)
+	_, freeTx := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0)
 	freeTx.SetFlags(types.TFDeliverToNode)
 
-	_, paidTx := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 2, nil, networkNum)
+	_, paidTx := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 2, nil, networkNum, 0)
 	paidTx.SetFlags(types.TFPaidTx | types.TFDeliverToNode)
 
 	err := g.HandleMsg(paidTx, relayConn, connections.RunForeground)

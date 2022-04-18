@@ -90,7 +90,7 @@ func newPeer(parent context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version 
 	peerID := p.ID()
 	peer.log = log.WithFields(log.Fields{
 		"connType":   "ETH",
-		"remoteAddr": p.RemoteAddr(),
+		"remoteAddr": p.RemoteAddr().String(),
 		"id":         fmt.Sprintf("%x", peerID[:8]),
 	})
 	return peer
@@ -515,38 +515,32 @@ func (ep *Peer) sendNewBlock(packet *eth.NewBlockPacket) error {
 		go func() {
 			blockNumber := packet.Block.NumberU64()
 			blockHash := packet.Block.Hash()
-
-			timer := ep.clock.Timer(fastBlockConfirmationInterval)
 			count := 0
 
-			wait := func(d time.Duration) bool {
-				timer.Reset(d)
-				<-timer.Alert()
-
+			// check for fast confirmation
+			ticker := ep.clock.Ticker(fastBlockConfirmationInterval)
+			defer ticker.Stop()
+			for count < fastBlockConfirmationAttempts {
+				<-ticker.Alert()
 				if ep.confirmedHead.height >= blockNumber {
-					return true
+					return
 				}
-
 				err := ep.RequestBlockHeader(blockHash)
 				if err != nil {
-					return true
-				}
-
-				// TODO: implement ticker for clock
-				return false
-			}
-
-			// check for fast confirmation
-			for count < fastBlockConfirmationAttempts {
-				if wait(fastBlockConfirmationInterval) {
 					return
 				}
 				count++
 			}
 
 			// check for slower confirmation
+			ticker = ep.clock.Ticker(slowBlockConfirmationInterval)
 			for {
-				if wait(slowBlockConfirmationInterval) {
+				<-ticker.Alert()
+				if ep.confirmedHead.height >= blockNumber {
+					return
+				}
+				err := ep.RequestBlockHeader(blockHash)
+				if err != nil {
 					return
 				}
 			}

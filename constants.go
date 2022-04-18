@@ -24,6 +24,9 @@ const TxStoreMaxSize = 200000
 // BlockRecoveryTimeout - max time to wait for block recovery before canceling block
 const BlockRecoveryTimeout = 10 * time.Second
 
+// ConnectionDisabledDuration - the duration for which an invalid connection is disabled before closing
+const ConnectionDisabledDuration = 15 * time.Minute
+
 // Ethereum - string representation for the Ethereum protocol
 const Ethereum = "Ethereum"
 
@@ -83,3 +86,19 @@ const GetMethod = "GET"
 
 // PostMethod - post method for http
 const PostMethod = "POST"
+
+// TimeToWaitBeforeClosing - set time to wait before closing the connection
+const TimeToWaitBeforeClosing = 500 * time.Millisecond
+
+const (
+	// InternalError - status Code for an unexpected condition was encountered
+	InternalError = 500
+	// NotImplemented - Status for the server does not recognize the request method
+	NotImplemented = 501
+	// BadGateway - status Code for a gateway which did not receive a timely response from the server
+	BadGateway = 502
+	// ServiceUnavailable - status Code for server unavailable on sdn
+	ServiceUnavailable = 503
+	// GatewayTimeout - status Code for invalid response from server
+	GatewayTimeout = 504
+)

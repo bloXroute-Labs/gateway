@@ -19,6 +19,7 @@ func InitFluentD(fluentDEnabled bool, fluentDHost string, nodeID types.NodeID) e
 			Host:          fluentDHost,
 			Port:          24224,
 			MarshalAsJSON: true,
+			AsyncConnect:  true,
 		})
 		if err != nil {
 			log.Warnf("Failed to create fluentd config with error %v", err)

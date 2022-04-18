@@ -3,6 +3,7 @@ package utils
 import (
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	"github.com/bloXroute-Labs/gateway/types"
 	log "github.com/sirupsen/logrus"
 )
@@ -14,6 +15,9 @@ type BxSSLProperties struct {
 	AccountID      types.AccountID
 	NodePrivileges string // not currently used in Ethereum
 }
+
+// ErrNodeIDNotEmbedded indicates that the provided certificate does not have a node ID. This is an important error e.g. when establishing connections
+var ErrNodeIDNotEmbedded = errors.New("node ID not embedded")
 
 // Extension ID types encoded in TLS certificates
 const (
@@ -66,9 +70,8 @@ func ParseBxCertificate(certificate *x509.Certificate) (BxSSLProperties, error) 
 		}
 	}
 
-	// TODO maybe need to return proper error?
 	if nodeID == "" {
-		return bxSSLExtensions, err
+		err = ErrNodeIDNotEmbedded
 	}
 	bxSSLExtensions = BxSSLProperties{
 		NodeType:       nodeType,
@@ -76,7 +79,7 @@ func ParseBxCertificate(certificate *x509.Certificate) (BxSSLProperties, error) 
 		AccountID:      accountID,
 		NodePrivileges: nodePrivileges,
 	}
-	return bxSSLExtensions, nil
+	return bxSSLExtensions, err
 }
 
 // GetAccountIDFromBxCertificate get account ID from cert

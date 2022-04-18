@@ -66,7 +66,7 @@ func (t *EthTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID
 		// remove the tx from the TxStore but allow it to get back in
 		hashToRemove := make(types.SHA256HashList, 1)
 		hashToRemove[0] = result.Transaction.Hash()
-		t.BxTxStore.RemoveHashes(&hashToRemove, ReEntryProtection, "chainID mismatch")
+		t.BxTxStore.RemoveHashes(&hashToRemove, FullReEntryProtection, "chainID mismatch")
 		result.FailedValidation = true
 		return result
 
@@ -194,10 +194,10 @@ func (nt *nonceTracker) track(tx *types.EthTransaction, network types.NetworkNum
 }
 
 func (nt *nonceTracker) cleanLoop() {
-	ticker := time.NewTicker(nt.cleanInterval)
+	ticker := nt.clock.Ticker(nt.cleanInterval)
 	for {
 		select {
-		case <-ticker.C:
+		case <-ticker.Alert():
 			nt.clean()
 		case <-nt.quit:
 			ticker.Stop()

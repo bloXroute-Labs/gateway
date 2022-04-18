@@ -88,11 +88,5 @@ const GoGatewayVersion = "2.0.1"
 // AllNetworkNum is the network number for relays that facilitate transactions from all networks
 const AllNetworkNum NetworkNum = 0
 
-// ErrorNotificationCode len of code
-type ErrorNotificationCode uint32
-
-// ErrorTypeLen represents len of error type
-const ErrorTypeLen = 2
-
 // ErrorNotificationCodeLen represents len of code
 const ErrorNotificationCodeLen = 4

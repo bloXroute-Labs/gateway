@@ -582,6 +582,29 @@ func (h *Handler) sendConfirmedBlocksToBDN(count int, peerEndpoint types.NodeEnd
 		}
 		h.chain.MarkSentToBDN(newHead.Block.Hash())
 	}
+
+	b, err := h.blockAtDepth(h.config.BlockConfirmationsCount)
+	if err != nil {
+		log.Debugf("cannot retrieve bxblock at depth %v, %v", h.config.BlockConfirmationsCount, err)
+		return
+	}
+	blockHash := ethcommon.BytesToHash(b.Hash().Bytes())
+	metadata, ok := h.chain.getBlockMetadata(blockHash)
+	if !ok {
+		log.Debugf("cannot retrieve block metadata at depth %v, with hash %v", h.config.BlockConfirmationsCount, blockHash)
+		return
+	}
+	if metadata.cnfMsgSent {
+		log.Debugf("block has already been sent in a block confirm message to gateway")
+		return
+	}
+	log.Tracef("sending block (%v) confirm message to gateway from backend", b.Hash())
+	err = h.bridge.SendConfirmedBlockToGateway(b)
+	if err != nil {
+		log.Debugf("failed sending block(%v) confirmation message to gateway, %v", b.Hash(), err)
+		return
+	}
+	h.chain.storeBlockMetadata(blockHash, metadata.height, metadata.confirmed, true)
 }
 
 // GetBodies assembles and returns a set of block bodies
@@ -653,4 +676,19 @@ func logBlockConverterFailure(err error, bdnBlock *types.BxBlock) {
 		blockHex = hexutil.Encode(b)
 	}
 	log.Errorf("could not convert block (hash: %v) from BDN to Ethereum block: %v. contents: %v", bdnBlock.Hash(), err, blockHex)
+}
+
+func (h *Handler) blockAtDepth(chainDepth int) (*types.BxBlock, error) {
+	block, err := h.chain.BlockAtDepth(chainDepth)
+	if err != nil {
+		log.Debugf("cannot retrieve block with chain depth %v, %v", chainDepth, err)
+		return nil, err
+	}
+	blockInfo := NewBlockInfo(block, block.Header().Difficulty)
+	bxBlock, err := h.bridge.BlockBlockchainToBDN(blockInfo)
+	if err != nil {
+		log.Debugf("cannot convert eth block to BDN block at the chain depth %v with hash %v, %v", chainDepth, block.Hash(), err)
+		return nil, err
+	}
+	return bxBlock, err
 }

@@ -37,7 +37,7 @@ func (amh AsyncMsgHandler) HandleMsgAsync() {
 			log.Error("unexpected termination of AsyncMsgHandler. AsyncMsgChannel was closed.")
 			return
 		}
-		log.Tracef("async handling of %v from %v", messageInfo.Msg, messageInfo.Source.ID().RemoteAddr())
+		log.Tracef("async handling of %v from %v", messageInfo.Msg, messageInfo.Source)
 		_ = amh.listener.HandleMsg(messageInfo.Msg, messageInfo.Source, connections.RunForeground)
 	}
 }

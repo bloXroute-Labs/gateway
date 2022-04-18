@@ -2,8 +2,8 @@ package services
 
 import (
 	"github.com/bloXroute-Labs/gateway/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/utils"
 	uuid "github.com/satori/go.uuid"
 	"github.com/stretchr/testify/assert"
 	"testing"
@@ -11,7 +11,7 @@ import (
 )
 
 func TestFirewall_Add(t *testing.T) {
-	clock := &bxmock.MockClock{}
+	clock := &utils.MockClock{}
 	firewall := newFirewall(clock, 30*time.Minute)
 
 	firewall.AddRule(sdnmessage.FirewallRule{AccountID: generateRandAccountID(), PeerID: generateRandNodeID(), Duration: 10})
@@ -44,7 +44,7 @@ func TestFirewall_Add(t *testing.T) {
 }
 
 func TestFirewall_ConnectionAllowed(t *testing.T) {
-	clock := &bxmock.MockClock{}
+	clock := &utils.MockClock{}
 	firewall := newFirewall(clock, 30*time.Minute)
 
 	accountID1 := types.AccountID("")

@@ -132,7 +132,11 @@ type Account struct {
 	TransactionReceiptFeed      BDNFeedService         `json:"transaction_receipts_feed"`
 	PrivateRelay                BDNPrivateRelayService `json:"private_relays"`
 	PrivateTransaction          BDNQuotaService        `json:"private_transaction"`
-	TxTraceRateLimitation       BDNQuotaService        `json:"tx_trace_rate_limitation"`
+	TxTraceRateLimit            BDNQuotaService        `json:"tx_trace_rate_limitation"`
+
+	// txs allowed per 5s
+	UnpaidTransactionBurstLimit BDNQuotaService `json:"unpaid_tx_burst_limit"`
+	PaidTransactionBurstLimit   BDNQuotaService `json:"paid_tx_burst_limit"`
 }
 
 // AccountInfo represents basic info about the account model
@@ -146,8 +150,8 @@ type AccountInfo struct {
 	BlockchainNetwork  string          `json:"blockchain_network"`
 	TierName           AccountTier     `json:"tier_name"`
 	Miner              bool            `json:"is_miner"`
-	MevBuilder         string          `json:"mev_builder"`
-	MevMiner           string          `json:"mev_miner"`
+	MEVBuilder         string          `json:"mev_builder"`
+	MEVMiner           string          `json:"mev_miner"`
 }
 
 // DefaultEnterpriseAccount default enterprise account
@@ -233,12 +237,32 @@ var DefaultEnterpriseAccount = Account{
 		},
 		ExpireDateTime: time.Now().Add(time.Hour),
 	},
-	TxTraceRateLimitation: BDNQuotaService{
+	TxTraceRateLimit: BDNQuotaService{
 		ExpireDate: "2999-12-31",
 		MsgQuota: BDNService{
 			TimeInterval: TimeIntervalDaily,
 			ServiceType:  BDNServiceMsgQuota,
 			Limit:        1,
+		},
+		ExpireDateTime: time.Now().Add(time.Hour),
+	},
+	UnpaidTransactionBurstLimit: BDNQuotaService{
+		ExpireDate: "2999-12-31",
+		MsgQuota: BDNService{
+			ServiceType:       BDNServiceMsgQuota,
+			Limit:             20,
+			BehaviorLimitOK:   BehaviorNoAction,
+			BehaviorLimitFail: BehaviorNoAction,
+		},
+		ExpireDateTime: time.Now().Add(time.Hour),
+	},
+	PaidTransactionBurstLimit: BDNQuotaService{
+		ExpireDate: "2999-12-31",
+		MsgQuota: BDNService{
+			ServiceType:       BDNServiceMsgQuota,
+			Limit:             50,
+			BehaviorLimitOK:   BehaviorNoAction,
+			BehaviorLimitFail: BehaviorAlert,
 		},
 		ExpireDateTime: time.Now().Add(time.Hour),
 	},

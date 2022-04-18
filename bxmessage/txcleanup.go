@@ -1,6 +1,9 @@
 package bxmessage
 
 import (
+	"encoding/binary"
+	"github.com/bloXroute-Labs/gateway/bxmessage/utils"
+	"github.com/bloXroute-Labs/gateway/types"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -24,4 +27,23 @@ func (m *TxCleanup) Unpack(buf []byte, protocol Protocol) error {
 	err := m.abstractCleanup.Unpack(buf, protocol)
 	log.Tracef("%v: network %v, sids %v, hashes %v", TxCleanupType, m.networkNumber, len(m.ShortIDs), len(m.Hashes))
 	return err
+}
+
+// SetHash sets hash
+func (m *TxCleanup) SetHash() {
+	bufLen := (len(m.ShortIDs) * types.UInt32Len) + (len(m.Hashes) * types.SHA256HashLen)
+	buf := make([]byte, bufLen)
+
+	offset := 0
+	for i := 0; i < len(m.ShortIDs); i++ {
+		binary.LittleEndian.PutUint32(buf[offset:], uint32(m.ShortIDs[i]))
+		offset += types.UInt32Len
+	}
+
+	for i := 0; i < len(m.Hashes); i++ {
+		copy(buf[offset:], m.Hashes[i][:])
+		offset += types.SHA256HashLen
+	}
+
+	m.hash = utils.DoubleSHA256(buf[:])
 }

@@ -24,6 +24,9 @@ import (
 	"time"
 )
 
+// ErrSDNUnavailable - represents sdn service unavailable
+var ErrSDNUnavailable = errors.New("SDN service unavailable")
+
 // SDN Http type constants
 const (
 	PingTimeout                     = 2000.0
@@ -55,11 +58,15 @@ type nodeLatencyInfo struct {
 	Latency float64
 }
 
+func init() {
+	utils.IPResolverHolder = &utils.PublicIPResolver{}
+}
+
 // NewSDNHTTP creates a new connection to the bloxroute API
 func NewSDNHTTP(sslCerts *utils.SSLCerts, sdnURL string, nodeModel sdnmessage.NodeModel, dataDir string) *SDNHTTP {
 	if nodeModel.ExternalIP == "" {
 		var err error
-		nodeModel.ExternalIP, err = utils.GetPublicIP()
+		nodeModel.ExternalIP, err = utils.IPResolverHolder.GetPublicIP()
 		if err != nil {
 			panic(fmt.Errorf("could not determine node's public ip: %v. consider specifying an --external-ip address", err))
 		}
@@ -298,22 +305,26 @@ func (s *SDNHTTP) getRelays(nodeID types.NodeID, networkNum types.NetworkNum) er
 }
 
 func (s *SDNHTTP) httpWithCache(uri string, method string, fileName string, body io.Reader) ([]byte, error) {
+	var err error
 	data, httpErr := s.http(uri, method, body)
-	if httpErr == nil {
-		err := utils.UpdateCacheFile(s.dataDir, fileName, data)
-		if err != nil {
-			log.Warnf("can not update cache file %v with data %s. error %v", fileName, data, err)
+	if httpErr != nil {
+		if httpErr == ErrSDNUnavailable {
+			// we can't get the data from http - try to read from cache file
+			data, err = utils.LoadCacheFile(s.dataDir, fileName)
+			if err != nil {
+				return nil, fmt.Errorf("got error from http request: %v and can't load cache file %v: %v", httpErr, fileName, err)
+			}
+			// we managed to read the data from cache file - issue a warning
+			log.Warnf("got error from http request: %v but loaded cache file %v", httpErr, fileName)
+			return data, nil
 		}
-		return data, nil
-	}
-	// we can't get the data from http - try to read from cache file
-	data, err := utils.LoadCacheFile(s.dataDir, fileName)
-	if err != nil {
-		return nil, fmt.Errorf("got error from http request: %v and can't load cache file %v: %v", httpErr, fileName, err)
+		return nil, httpErr
 	}
 
-	// we managed to read the data from cache file - issue a warning
-	log.Warnf("got error from http request: %v but loaded cache file %v", httpErr, fileName)
+	err = utils.UpdateCacheFile(s.dataDir, fileName, data)
+	if err != nil {
+		log.Warnf("can not update cache file %v with data %s. error %v", fileName, data, err)
+	}
 	return data, nil
 }
 
@@ -334,17 +345,36 @@ func (s *SDNHTTP) http(uri string, method string, body io.Reader) ([]byte, error
 	case bxgateway.PostMethod:
 		resp, err = client.Post(uri, "application/json", body)
 	}
-	if err == nil && resp != nil && resp.StatusCode != 200 {
-		if body != nil {
-			err = fmt.Errorf("doing %v on %v recv and error %v, payload %v", method, uri, resp.Status, s.nodeModel)
-		} else {
-			err = fmt.Errorf("doing %v on %v recv and error %v", method, uri, resp.Status)
-		}
-	}
 	if err != nil {
 		return nil, err
 	}
-	return ioutil.ReadAll(resp.Body)
+	if resp != nil && resp.StatusCode != 200 {
+		if resp.StatusCode == bxgateway.ServiceUnavailable {
+			log.Debugf("got error from http request: sdn is down")
+			return nil, ErrSDNUnavailable
+		}
+		if resp.Body != nil {
+			b, errMsg := ioutil.ReadAll(resp.Body)
+			if errMsg != nil {
+				return nil, fmt.Errorf("%v on %v could not read response %v, error %v", method, uri, resp.Status, errMsg.Error())
+			}
+			var errorMessage sdnmessage.ErrorMessage
+			if err := json.Unmarshal(b, &errorMessage); err != nil {
+				return nil, fmt.Errorf("could not deserialize: %v", err)
+			}
+			err = fmt.Errorf("%v to %v received a [%v]: %v", method, uri, resp.Status, errorMessage.Details)
+		} else {
+			err = fmt.Errorf("%v on %v recv and error %v", method, uri, resp.Status)
+		}
+		return nil, err
+	}
+
+	b, errMsg := ioutil.ReadAll(resp.Body)
+	if errMsg != nil {
+		return nil, fmt.Errorf("%v on %v could not read response %v, error %v", method, uri, resp.Status, errMsg.Error())
+
+	}
+	return b, nil
 }
 
 func (s *SDNHTTP) getBlockchainNetworks() error {

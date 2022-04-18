@@ -39,6 +39,16 @@ func (ci Info) IsGateway() bool {
 	return ci.ConnectionType&utils.Gateway != 0
 }
 
+// IsMevMinerGateway indicates if the connection is a mev-miner gateway
+func (ci Info) IsMevMinerGateway() bool {
+	return ci.Capabilities&types.CapabilityMEVMiner != 0
+}
+
+// IsMevBuilderGateway indicates if the connection is a mev-builder gateway
+func (ci Info) IsMevBuilderGateway() bool {
+	return ci.Capabilities&types.CapabilityMEVBuilder != 0
+}
+
 // IsCloudAPI indicates if the connection is a cloud-api
 func (ci Info) IsCloudAPI() bool {
 	return ci.ConnectionType&utils.CloudAPI != 0

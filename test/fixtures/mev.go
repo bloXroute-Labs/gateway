@@ -19,11 +19,11 @@ var MEVBundlePayload =
 	// mev miner name 2
 	"74657374206d696e657232" +
 	// Params
-	"7465737420706172616d73" +
+	"7b2274657374223a2274657374227d" +
 	// Control digit
 	"01"
 
-// MEVSearcherPayload valid payload for MevSearcher message
+// MEVSearcherPayload valid payload for MEVSearcher message
 var MEVSearcherPayload =
 // Header
 "fffefdfc6d65767365617263686572005800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" +
@@ -31,7 +31,7 @@ var MEVSearcherPayload =
 	"1200" +
 	// mev miner method
 	"6574685f73656e644d65676162756e646c65" +
-	// Mev builders
+	// mev builders
 	"01" +
 	// Miner name length
 	"0900" +
@@ -42,6 +42,6 @@ var MEVSearcherPayload =
 	// Miner auth
 	"617574682074657374" +
 	// Params
-	"636f6e74656e742074657374" +
+	"7b2274657374223a2274657374227d" +
 	// Control digit
 	"01"

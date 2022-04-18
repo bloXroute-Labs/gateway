@@ -36,10 +36,10 @@ type RPCRequestType string
 
 // RPCRequestType enumeration
 const (
-	RPCSubscribe   RPCRequestType = "subscribe"
-	RPCUnsubscribe RPCRequestType = "unsubscribe"
-	RPCTx          RPCRequestType = "blxr_tx"
-	RPCPing        RPCRequestType = "ping"
-	RPCMevSearcher RPCRequestType = "blxr_mev_searcher"
-	RPCMevBuilder  RPCRequestType = "blxr_mev_builder"
+	RPCSubscribe     RPCRequestType = "subscribe"
+	RPCUnsubscribe   RPCRequestType = "unsubscribe"
+	RPCTx            RPCRequestType = "blxr_tx"
+	RPCPing          RPCRequestType = "ping"
+	RPCMEVSearcher   RPCRequestType = "blxr_mev_searcher"
+	RPCEthSendBundle RPCRequestType = "eth_sendBundle"
 )

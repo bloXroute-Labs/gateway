@@ -60,7 +60,7 @@ type NodeModel struct {
 	UsingPrivateIPConnection  bool             `json:"using_private_ip_connection"`
 	PrivateNode               bool             `json:"private_node"`
 	ProgramName               string           `json:"program_name"`
-	RelayType                 string           `json:"relay_type"`
+	RelayType                 types.RelayType  `json:"relay_type"`
 }
 
 // Pack serializes a NodeModel into a buffer for sending

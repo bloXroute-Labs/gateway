@@ -29,7 +29,7 @@ func (m *Hello) SetNetworkNum(networkNum types.NetworkNum) {
 
 func (m *Hello) size() uint32 {
 	size := m.Header.Size() + ProtocolLen + types.NetworkNumLen + types.NodeIDLen
-	if m.Protocol >= MevProtocol {
+	if m.Protocol >= MEVProtocol {
 		size += ClientVersionLen + CapabilitiesLen
 	}
 
@@ -51,7 +51,7 @@ func (m *Hello) Pack(protocol Protocol) ([]byte, error) {
 	}
 	copy(buf[offset:], nodeID)
 	offset += types.NodeIDLen
-	if m.Protocol >= MevProtocol {
+	if m.Protocol >= MEVProtocol {
 		binary.LittleEndian.PutUint16(buf[offset:], uint16(m.Capabilities))
 		offset += CapabilitiesLen
 		copy(buf[offset:], m.ClientVersion)
@@ -71,7 +71,7 @@ func (m *Hello) Unpack(buf []byte, protocol Protocol) error {
 	offset += types.NetworkNumLen
 	m.NodeID = types.NodeID(buf[offset:])
 	offset += types.NodeIDLen
-	if m.Protocol >= MevProtocol {
+	if m.Protocol >= MEVProtocol {
 		m.Capabilities = types.CapabilityFlags(binary.LittleEndian.Uint16(buf[offset:]))
 		offset += CapabilitiesLen
 		m.ClientVersion = string(buf[offset:])

@@ -96,6 +96,11 @@ var (
 		Aliases: []string{"wsp", "rpc-port"},
 		Value:   28333,
 	}
+	HTTPPortFlag = &cli.IntFlag{
+		Name:  "http-port",
+		Usage: "port for HTTP server to run on",
+		Value: 28335,
+	}
 	CACertURLFlag = &cli.StringFlag{
 		Name:  "ca-cert-url",
 		Usage: "URL for retrieving CA certificates",
@@ -289,12 +294,17 @@ var (
 		Usage: "for gateways only, monitors blockchain node sync status and shuts down/restarts websocket server accordingly",
 		Value: false,
 	}
-	MevBuilderURIFlag = &cli.StringFlag{
+	MEVBuilderURIFlag = &cli.StringFlag{
 		Name:  "mev-builder-uri",
 		Usage: "set mev builder for gateway",
 	}
-	MevMinerURIFlag = &cli.StringFlag{
+	MEVMinerURIFlag = &cli.StringFlag{
 		Name:  "mev-miner-uri",
 		Usage: "set mev miner for gateway",
+	}
+	SendBlockConfirmation = &cli.BoolFlag{
+		Name:  "send-block-confirmation",
+		Usage: "sending block confirmation to relay",
+		Value: false,
 	}
 )

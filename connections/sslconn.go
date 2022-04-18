@@ -7,7 +7,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/bxmessage"
 	"github.com/bloXroute-Labs/gateway/utils"
 	log "github.com/sirupsen/logrus"
-	"sync"
 	"time"
 )
 
@@ -29,13 +28,15 @@ type SSLConn struct {
 	Socket
 	writer *bufio.Writer
 
-	connect         func() (Socket, error)
-	ip              string
-	port            int64
-	protocol        bxmessage.Protocol
-	sslCerts        *utils.SSLCerts
-	connectionOpen  bool
-	lock            *sync.Mutex
+	connect        func() (Socket, error)
+	ip             string
+	port           int64
+	protocol       bxmessage.Protocol
+	sslCerts       *utils.SSLCerts
+	connectionOpen bool
+	disabled       bool
+	// done is used to stop the sendLoop routine
+	done            chan bool
 	sendMessages    chan bxmessage.Message
 	sendChannelSize int
 	buf             bytes.Buffer
@@ -59,7 +60,6 @@ func NewSSLConnection(connect func() (Socket, error), sslCerts *utils.SSLCerts, 
 		buf:             bytes.Buffer{},
 		usePQ:           usePQ,
 		logMessages:     logMessages,
-		lock:            &sync.Mutex{},
 		sendChannelSize: sendChannelSize,
 		packet:          make([]byte, readPacketSize),
 		log:             log.WithField("remoteAddr", fmt.Sprintf("%v:%v", ip, port)),
@@ -74,22 +74,15 @@ func (s *SSLConn) sendLoop() {
 	s.Log().Trace("starting send loop")
 	for {
 		select {
-		case msg, ok := <-s.sendMessages:
-			if !ok {
-				s.Log().Trace("stopping send loop (channel closed)")
-				return
-			}
+		case <-s.done:
+			s.Log().Trace("stopping send loop (done)")
+			return
+		case msg := <-s.sendMessages:
 			s.packAndWrite(msg)
 			continueReading := true
 			for continueReading {
 				select {
-				case msg, ok = <-s.sendMessages:
-					if !ok {
-						s.Log().Trace("stopping send loop (channel closed)")
-						// before we close, try to send what is buffered
-						s.writer.Flush()
-						return
-					}
+				case msg = <-s.sendMessages:
 					s.packAndWrite(msg)
 				default:
 					continueReading = false
@@ -153,6 +146,11 @@ func (s SSLConn) IsOpen() bool {
 	return s.connectionOpen
 }
 
+// IsDisabled indicates whether the socket connection is disabled (ping and pong only)
+func (s SSLConn) IsDisabled() bool {
+	return s.disabled
+}
+
 // Protocol provides the protocol version of the connection
 func (s *SSLConn) Protocol() bxmessage.Protocol {
 	return s.protocol
@@ -190,6 +188,7 @@ func (s *SSLConn) Connect() error {
 	s.connectionOpen = true
 	// start send loop now that connection is connected
 	s.sendMessages = make(chan bxmessage.Message, s.sendChannelSize)
+	s.done = make(chan bool)
 	go s.sendLoop()
 
 	return nil
@@ -223,6 +222,10 @@ func (s *SSLConn) ReadMessages(callBack func(msg bxmessage.MessageBytes), readDe
 			s.Log().Warnf("encountered error while reading message: %v, skipping", err)
 			continue
 		}
+		msgType := bxmessage.MessageBytes(msg).BxType()
+		if s.IsDisabled() && msgType != bxmessage.PingType && msgType != bxmessage.PongType {
+			continue
+		}
 		callBack(msg)
 	}
 	return n, nil
@@ -253,7 +256,7 @@ func (s *SSLConn) Send(msg bxmessage.Message) error {
 	}
 	// in order not to overload the python code - use priority queue and a gap of 0.5ms between sends
 	// this should be removed once relay/gw are in GOLANG
-	// Note: as of BX-2912 the pririty queue mechanism is disabled without an option to activate it
+	// Note: as of BX-2912 the priority queue mechanism is disabled without an option to activate it
 	// TODO: remove PQ from code base
 	if true || !s.usePQ || msg.GetPriority() == bxmessage.HighestPriority {
 		s.queueToMessageChan(msg)
@@ -280,26 +283,22 @@ func (s *SSLConn) SendWithDelay(msg bxmessage.Message, delay time.Duration) erro
 }
 
 func (s *SSLConn) queueToMessageChan(msg bxmessage.Message) {
-	// prevent a race with close
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	if !s.connectionOpen {
-		return
-	}
 	select {
 	case s.sendMessages <- msg:
 		// all good if we are here
 	default:
-		_ = s.close("cannot place message on channel without blocking")
+		_ = s.Close("cannot place message on channel without blocking")
 	}
+}
+
+// Disable marks the connection as disabled, meaning it sends/processes only ping/pong messages. Must be called in a go routine.
+func (s *SSLConn) Disable(reason string) {
+	s.Log().Errorf("disabling connection: %v", reason)
+	s.disabled = true
 }
 
 // Close shuts down a connection. If the connection was initiated by this node, it can be reopened with another Connect call. If the connection was initiated by the remote, it cannot be reopened.
 func (s *SSLConn) Close(reason string) error {
-	// prevent a race with writing to the sendMessages channel
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
 	return s.close(reason)
 }
 
@@ -324,10 +323,11 @@ func (s *SSLConn) close(reason string) error {
 	}
 
 	s.connectionOpen = false
-	if s.sendMessages != nil {
-		// close channel to stop send loop if running
-		close(s.sendMessages)
-	}
+	s.disabled = false
+	// don't close s.sendMessages - not needed and can create race with sendLoop
+
+	// stop sendLoop
+	s.done <- true
 
 	if s.Socket != nil {
 		err := s.Socket.Close(reason)

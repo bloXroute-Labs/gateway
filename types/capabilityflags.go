@@ -6,6 +6,6 @@ type CapabilityFlags uint16
 // flag constant values
 const (
 	CapabilityFastSync CapabilityFlags = 1 << iota
-	CapabilityMevBuilder
-	CapabilityMevMiner
+	CapabilityMEVBuilder
+	CapabilityMEVMiner
 )

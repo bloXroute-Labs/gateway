@@ -27,3 +27,8 @@ func (m MockBxListener) OnConnEstablished(conn connections.Conn) error {
 func (m MockBxListener) OnConnClosed(conn connections.Conn) error {
 	return nil
 }
+
+// ValidateConnection does nothing
+func (m MockBxListener) ValidateConnection(conn connections.Conn) error {
+	return nil
+}

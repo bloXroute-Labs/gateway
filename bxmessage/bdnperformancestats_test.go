@@ -14,15 +14,13 @@ func TestBdnPerformanceStats_Unpack(t *testing.T) {
 	err := bdnStats.Unpack(BDNStatsMsgBytes, 0)
 	assert.Nil(t, err)
 	assert.Equal(t, uint16(100), bdnStats.memoryUtilizationMb)
-	assert.Equal(t, 2, bdnStats.nodeStats.Count())
+	assert.Equal(t, 2, len(bdnStats.nodeStats))
 	ipEndpoint := types.NodeEndpoint{
 		IP:   "127.0.0.1",
 		Port: 8001,
 	}
 
-	val, _ := bdnStats.nodeStats.Get(ipEndpoint.IPPort())
-	nodeStats := val.(*BdnPerformanceStatsData)
-	assert.Equal(t, ipEndpoint.IPPort(), nodeStats.BlockchainNodeIPEndpoint)
+	nodeStats, _ := bdnStats.nodeStats[ipEndpoint.IPPort()]
 	assert.Equal(t, uint16(20), nodeStats.NewBlocksReceivedFromBlockchainNode)
 	assert.Equal(t, uint16(30), nodeStats.NewBlocksReceivedFromBdn)
 	assert.Equal(t, uint32(40), nodeStats.NewTxReceivedFromBlockchainNode)
@@ -37,9 +35,7 @@ func TestBdnPerformanceStats_Unpack(t *testing.T) {
 		IP:   "172.17.0.1",
 		Port: 8002,
 	}
-	val2, _ := bdnStats.nodeStats.Get(ipEndpoint2.IPPort())
-	nodeStats2 := val2.(*BdnPerformanceStatsData)
-	assert.Equal(t, ipEndpoint2.IPPort(), nodeStats2.BlockchainNodeIPEndpoint)
+	nodeStats2, _ := bdnStats.nodeStats[ipEndpoint2.IPPort()]
 	assert.Equal(t, uint16(21), nodeStats2.NewBlocksReceivedFromBlockchainNode)
 	assert.Equal(t, uint16(31), nodeStats2.NewBlocksReceivedFromBdn)
 	assert.Equal(t, uint32(41), nodeStats2.NewTxReceivedFromBlockchainNode)
@@ -61,7 +57,6 @@ func TestBdnPerformanceStats_Pack(t *testing.T) {
 	bdnStats.memoryUtilizationMb = 100
 	endpoint1 := types.NodeEndpoint{IP: "127.0.0.1", Port: 8001}
 	nodeStats1 := BdnPerformanceStatsData{
-		BlockchainNodeIPEndpoint:                endpoint1.IPPort(),
 		NewBlocksReceivedFromBlockchainNode:     20,
 		NewBlocksReceivedFromBdn:                30,
 		NewBlocksSeen:                           10,
@@ -72,11 +67,10 @@ func TestBdnPerformanceStats_Pack(t *testing.T) {
 		TxSentToNode:                            100,
 		DuplicateTxFromNode:                     50,
 	}
-	bdnStats.nodeStats.Set(nodeStats1.BlockchainNodeIPEndpoint, &nodeStats1)
+	bdnStats.nodeStats[endpoint1.IPPort()] = &nodeStats1
 
 	endpoint2 := types.NodeEndpoint{IP: "172.17.0.1", Port: 8002}
 	nodeStats2 := BdnPerformanceStatsData{
-		BlockchainNodeIPEndpoint:                endpoint2.IPPort(),
 		NewBlocksReceivedFromBlockchainNode:     21,
 		NewBlocksReceivedFromBdn:                31,
 		NewBlocksSeen:                           11,
@@ -87,7 +81,7 @@ func TestBdnPerformanceStats_Pack(t *testing.T) {
 		TxSentToNode:                            101,
 		DuplicateTxFromNode:                     51,
 	}
-	bdnStats.nodeStats.Set(nodeStats2.BlockchainNodeIPEndpoint, &nodeStats2)
+	bdnStats.nodeStats[endpoint2.IPPort()] = &nodeStats2
 	packed, err := bdnStats.Pack(0)
 
 	assert.Equal(t, BDNStatsMsgBytes, packed)

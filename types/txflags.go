@@ -14,6 +14,7 @@ const (
 	TFPrivateTx
 	TFEliteSender
 	TFDeliverToNode
+	TFValidatorsOnly
 
 	TFStatusTrack = TFStatusMonitoring | TFPaidTx
 	TFNonceTrack  = TFNonceMonitoring | TFStatusTrack
@@ -27,4 +28,9 @@ func (f TxFlags) IsPaid() bool {
 // ShouldDeliverToNode indicates whether the transaction should be forwarded to the blockchain node
 func (f TxFlags) ShouldDeliverToNode() bool {
 	return f&TFDeliverToNode != 0
+}
+
+// IsValidatorsOnly indicates whether the transaction should be forwarded to miner gateways only
+func (f TxFlags) IsValidatorsOnly() bool {
+	return f&TFValidatorsOnly != 0
 }

@@ -1,7 +1,7 @@
 MODULE   = $(shell env GO111MODULE=on $(GO) list -m)
 DATE    ?= $(shell date +%FT%T%z)
 VERSION ?= $(shell git describe --tags --always --dirty --match=v2* 2> /dev/null || \
-			cat $(CURDIR)/.version 2> /dev/null || echo v2.1.1.2)
+			sed '5!d' $(CURDIR)/version/version.go | grep -o '".*"' | sed 's/"//g' 2> /dev/null || echo v2.1.1.2)
 PKGS     = $(or $(PKG),$(shell env GO111MODULE=on $(GO) list ./...))
 TESTPKGS = $(shell env GO111MODULE=on $(GO) list -f \
 			'{{ if or .TestGoFiles .XTestGoFiles }}{{ .ImportPath }}{{ end }}' \
@@ -18,14 +18,11 @@ export GO111MODULE=on
 
 .PHONY: all
 all: gateway
-gateway: third_party_utils ; $(info $(M) building gateway executable) @ ## Build program binary
+gateway: $(BIN); $(info $(M) building gateway executable) @ ## Build program binary
 	$Q $(GO) build \
 		-tags release \
 		-ldflags '-X $(MODULE)/version.BuildVersion=$(VERSION) -X $(MODULE)/version.BuildDate=$(DATE)' \
 		-o $(BIN) ./cmd/...
-
-# Tools
-third_party_utils: $(BIN)/golint
 
 $(BIN):
 	@mkdir -p $@
@@ -34,9 +31,6 @@ $(BIN)/%: | $(BIN) ; $(info $(M) building $(PACKAGE))
 	   env GO111MODULE=off GOPATH=$$tmp GOBIN=$(BIN) $(GO) get $(PACKAGE) \
 		|| ret=$$?; \
 	   rm -rf $$tmp ; exit $$ret
-
-GOLINT = $(BIN)/golint
-$(BIN)/golint: PACKAGE=golang.org/x/lint/golint
 
 GOCOV = $(BIN)/gocov
 $(BIN)/gocov: PACKAGE=github.com/axw/gocov/...
@@ -84,9 +78,17 @@ test-coverage: fmt lint test-coverage-tools ; $(info $(M) running coverage tests
 	$Q $(GO) tool cover -html=$(COVERAGE_PROFILE) -o $(COVERAGE_HTML)
 	$Q $(GOCOV) convert $(COVERAGE_PROFILE) | $(GOCOVXML) > $(COVERAGE_XML)
 
+GOLANGCI_VERSION=v1.43.0
+GOLANGCI_REV=8cdecc968bf7b87ce85e09e42cabb3e3540e9344
+
 .PHONY: lint
-lint: | $(GOLINT) ; $(info $(M) running golint) @ ## Run golint
-	$Q $(GOLINT) -set_exit_status $(PKGS)
+lint: bin/golangci-lint-${GOLANGCI_VERSION}
+	@bin/golangci-lint-${GOLANGCI_VERSION} run
+
+bin/golangci-lint-${GOLANGCI_VERSION}:
+	@mkdir -p bin
+	@curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/${GOLANGCI_REV}/install.sh | BINARY=golangci-lint bash -s -- ${GOLANGCI_VERSION}
+	@mv bin/golangci-lint $@
 
 .PHONY: fmt
 fmt: ; $(info $(M) running gofmt) @ ## Run gofmt on all source files

@@ -19,10 +19,12 @@ type EthConfig struct {
 	StaticPeers []*enode.Node
 	PrivateKey  *ecdsa.PrivateKey
 
-	Network         uint64
-	TotalDifficulty *big.Int
-	Head            common.Hash
-	Genesis         common.Hash
+	Network                 uint64
+	TotalDifficulty         *big.Int
+	Head                    common.Hash
+	Genesis                 common.Hash
+	BlockConfirmationsCount int
+	SendBlockConfirmation   bool
 
 	IgnoreBlockTimeout time.Duration
 }
@@ -69,6 +71,11 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context) (*EthConfig, error) {
 		preset.PrivateKey = privateKey
 	}
 
+	if ctx.IsSet(utils.SendBlockConfirmation.Name) {
+		sendBCF := ctx.Bool(utils.SendBlockConfirmation.Name)
+		preset.SendBlockConfirmation = sendBCF
+	}
+
 	return &preset, nil
 }
 
@@ -78,4 +85,5 @@ func (ec *EthConfig) Update(otherConfig EthConfig) {
 	ec.TotalDifficulty = otherConfig.TotalDifficulty
 	ec.Head = otherConfig.Head
 	ec.Genesis = otherConfig.Genesis
+	ec.BlockConfirmationsCount = otherConfig.BlockConfirmationsCount
 }

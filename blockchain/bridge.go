@@ -70,9 +70,11 @@ type Bridge interface {
 
 	SendBlockToBDN(*types.BxBlock, types.NodeEndpoint) error
 	SendBlockToNode(*types.BxBlock) error
+	SendConfirmedBlockToGateway(block *types.BxBlock) error
 
 	ReceiveBlockFromBDN() <-chan *types.BxBlock
 	ReceiveBlockFromNode() <-chan BlockFromNode
+	ReceiveConfirmedBlockFromNode() <-chan *types.BxBlock
 
 	ReceiveNoActiveBlockchainPeersAlert() <-chan NoActiveBlockchainPeersAlert
 	SendNoActiveBlockchainPeersAlert() error
@@ -90,8 +92,9 @@ type BxBridge struct {
 	transactionHashesFromNode chan TransactionAnnouncement
 	transactionHashesRequests chan TransactionAnnouncement
 
-	blocksFromNode chan BlockFromNode
-	blocksFromBDN  chan *types.BxBlock
+	blocksFromNode         chan BlockFromNode
+	blocksFromBDN          chan *types.BxBlock
+	confirmedBlockFromNode chan *types.BxBlock
 
 	noActiveBlockchainPeers chan NoActiveBlockchainPeersAlert
 }
@@ -106,6 +109,7 @@ func NewBxBridge(converter Converter) Bridge {
 		transactionHashesRequests: make(chan TransactionAnnouncement, transactionHashesBacklog),
 		blocksFromNode:            make(chan BlockFromNode, blockBacklog),
 		blocksFromBDN:             make(chan *types.BxBlock, blockBacklog),
+		confirmedBlockFromNode:    make(chan *types.BxBlock, blockBacklog),
 		noActiveBlockchainPeers:   make(chan NoActiveBlockchainPeersAlert),
 		Converter:                 converter,
 	}
@@ -162,6 +166,16 @@ func (b BxBridge) SendTransactionsToBDN(txs []*types.BxTransaction, peerEndpoint
 	}
 }
 
+// SendConfirmedBlockToGateway sends a SHA256 of the block to be included in blockConfirm message
+func (b BxBridge) SendConfirmedBlockToGateway(block *types.BxBlock) error {
+	select {
+	case b.confirmedBlockFromNode <- block:
+		return nil
+	default:
+		return ErrChannelFull
+	}
+}
+
 // ReceiveNodeTransactions provides a channel that pushes transactions as they come in from nodes
 func (b BxBridge) ReceiveNodeTransactions() <-chan TransactionsFromNode {
 	return b.transactionsFromNode
@@ -210,6 +224,11 @@ func (b BxBridge) ReceiveBlockFromNode() <-chan BlockFromNode {
 // ReceiveBlockFromBDN provides a channel that pushes new blocks from the BDN
 func (b BxBridge) ReceiveBlockFromBDN() <-chan *types.BxBlock {
 	return b.blocksFromBDN
+}
+
+// ReceiveConfirmedBlockFromNode provides a channel that pushes confirmed blocks from nodes
+func (b BxBridge) ReceiveConfirmedBlockFromNode() <-chan *types.BxBlock {
+	return b.confirmedBlockFromNode
 }
 
 // SendNoActiveBlockchainPeersAlert sends alerts to the BDN when there is no active blockchain peer
