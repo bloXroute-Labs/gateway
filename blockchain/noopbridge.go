@@ -108,7 +108,7 @@ func (n NoOpBxBridge) ReceiveBlockFromNode() <-chan BlockFromNode {
 }
 
 // ReceiveConfirmedBlockFromNode is a no-op
-func (n NoOpBxBridge) ReceiveConfirmedBlockFromNode() <-chan *types.BxBlock {
+func (n NoOpBxBridge) ReceiveConfirmedBlockFromNode() <-chan BlockFromNode {
 	return nil
 }
 
@@ -123,6 +123,20 @@ func (n NoOpBxBridge) SendNoActiveBlockchainPeersAlert() error {
 }
 
 // SendConfirmedBlockToGateway is a no-op
-func (n NoOpBxBridge) SendConfirmedBlockToGateway(block *types.BxBlock) error {
+func (n NoOpBxBridge) SendConfirmedBlockToGateway(block *types.BxBlock, peerEndpoint types.NodeEndpoint) error {
 	return nil
+}
+
+// SendBlockchainStatusRequest is a no-op
+func (n NoOpBxBridge) SendBlockchainStatusRequest() error { return nil }
+
+// ReceiveBlockchainStatusRequest is a no-op
+func (n NoOpBxBridge) ReceiveBlockchainStatusRequest() <-chan struct{} { return make(chan struct{}) }
+
+// SendBlockchainStatusResponse is a no-op
+func (n NoOpBxBridge) SendBlockchainStatusResponse([]*types.NodeEndpoint) error { return nil }
+
+// ReceiveBlockchainStatusResponse is a no-op
+func (n NoOpBxBridge) ReceiveBlockchainStatusResponse() <-chan []*types.NodeEndpoint {
+	return make(chan []*types.NodeEndpoint)
 }

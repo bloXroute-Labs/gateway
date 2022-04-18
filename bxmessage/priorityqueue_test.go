@@ -1,16 +1,15 @@
-package utils
+package bxmessage
 
 import (
-	"github.com/bloXroute-Labs/gateway/bxmessage"
 	"testing"
 )
 
 func TestPriorityQueue(t *testing.T) {
-	var listItems []bxmessage.Message
-	priorities := []bxmessage.SendPriority{10, 20, 15, 100, 1, 0, 15}
+	var listItems []Message
+	priorities := []SendPriority{10, 20, 15, 100, 1, 0, 15}
 	// create by priorities
 	for _, priority := range priorities {
-		item := &bxmessage.Tx{}
+		item := &Tx{}
 		item.SetPriority(priority)
 		listItems = append(listItems, item)
 	}

@@ -2,8 +2,8 @@ package servers
 
 import (
 	"fmt"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/gorilla/websocket"
-	log "github.com/sirupsen/logrus"
 	"github.com/sourcegraph/jsonrpc2"
 	websocketjsonrpc2 "github.com/sourcegraph/jsonrpc2/websocket"
 	"net/http"

@@ -7,8 +7,9 @@ import (
 	"fmt"
 	"github.com/bloXroute-Labs/gateway/bxmessage"
 	"github.com/bloXroute-Labs/gateway/connections"
+	"github.com/bloXroute-Labs/gateway/jsonrpc"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/utils"
-	log "github.com/sirupsen/logrus"
 	"github.com/sourcegraph/jsonrpc2"
 	"net/http"
 )
@@ -33,13 +34,13 @@ func NewHTTPServer(feedManager *FeedManager, port int) *HTTPServer {
 // Start setup handlers and start http server
 func (s *HTTPServer) Start() {
 	if s.server == nil {
-		log.Fatalf("failed to start http server, server is not initialized")
+		log.Fatalf("failed to start HTTP RPC server, server is not initialized")
 	}
-	log.Infof("starting http server on addr %v", s.server.Addr)
+	log.Infof("starting HTTP RPC server at: %v", s.server.Addr)
 	s.server.Handler = s.setupHandlers()
 	err := s.server.ListenAndServe()
 	if err != nil {
-		log.Fatalf("failed to start http server: %v", err)
+		log.Fatalf("failed to start HTTP RPC server: %v", err)
 	}
 }
 
@@ -78,8 +79,8 @@ func (s HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	switch RPCRequestType(rpcRequest.Method) {
-	case RPCEthSendBundle:
+	switch jsonrpc.RPCRequestType(rpcRequest.Method) {
+	case jsonrpc.RPCEthSendBundle, jsonrpc.RPCEthSendMegaBundle:
 		params, _ := rpcRequest.Params.MarshalJSON()
 
 		sendBundleArgs := []sendBundleArgs{}
@@ -104,7 +105,7 @@ func (s HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// bxmessage.MEVMinerNames empty because that is the relay responsibility to add the correct MEVBuilderNames
-		mevBundle, err := bxmessage.NewMEVBundle(string(RPCEthSendBundle), bxmessage.MEVMinerNames{}, params)
+		mevBundle, err := bxmessage.NewMEVBundle(rpcRequest.Method, bxmessage.MEVMinerNames{}, params)
 		if err != nil {
 			err := fmt.Errorf("failed to create new mevBundle: %v", err)
 			log.Error(err)

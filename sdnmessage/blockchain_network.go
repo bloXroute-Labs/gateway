@@ -53,6 +53,7 @@ type BlockchainNetwork struct {
 	InjectPoa                              bool             `json:"inject_poa"`
 	AllowedFromTier                        string           `json:"allowed_from_tier"`
 	SendCrossGeo                           bool             `json:"send_cross_geo"`
+	DeliverToNodePercent                   uint64           `json:"deliver_to_node_percent"`
 }
 
 // BlockchainNetworks represents the full message returned from bxapi

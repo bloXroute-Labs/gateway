@@ -33,6 +33,7 @@ func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 		types.NewBxBlockTransaction(types.GenerateSHA256Hash(), test.GenerateBytes(250)),
 		types.NewBxBlockTransaction(types.GenerateSHA256Hash(), test.GenerateBytes(250)),
 	}
+	blockSize := int(rlp.ListSize(300 + rlp.ListSize(35000+250+250+250+250) + 350))
 
 	// create delay the txs[0], so it passes the age check
 	store.Add(txs[0].Hash(), txs[0].Content(), 1, testNetworkNum, false, 0, clock.Now().Add(-2*time.Second), 0)
@@ -40,7 +41,7 @@ func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 	// The txs[2] will not be included in shortID since it's too recent
 	store.Add(txs[3].Hash(), txs[3].Content(), 2, testNetworkNum, false, 0, clock.Now(), 0)
 
-	bxBlock, err := types.NewBxBlock(blockHash, header, txs, trailer, big.NewInt(10000), big.NewInt(10))
+	bxBlock, err := types.NewBxBlock(blockHash, header, txs, trailer, big.NewInt(10000), big.NewInt(10), blockSize)
 	assert.Nil(t, err)
 
 	// assume the blockchain network MinTxAgeSecond is 2
@@ -185,6 +186,7 @@ func TestRLPBlockProcessor_BroadcastToBxBlockFullTxs(t *testing.T) {
 
 	assert.Equal(t, fixtures.BroadcastDifficulty, bxBlock.TotalDifficulty)
 	assert.Equal(t, fixtures.BroadcastBlockNumber, bxBlock.Number)
+	assert.Equal(t, 2148, bxBlock.Size())
 }
 
 func TestRLPBlockProcessor_ProcessBroadcast(t *testing.T) {

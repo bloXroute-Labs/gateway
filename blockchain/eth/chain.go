@@ -5,12 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/utils"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	cmap "github.com/orcaman/concurrent-map"
-	log "github.com/sirupsen/logrus"
 	"math/big"
 	"strconv"
 	"sync"
@@ -401,7 +401,7 @@ func (c *Chain) GetHeaders(start eth.HashOrNumber, count int, skip int, reverse 
 // BlockAtDepth returns the blockRefChain with depth from the head of the chain
 func (c *Chain) BlockAtDepth(chainDepth int) (*ethtypes.Block, error) {
 	if len(c.chainState) <= chainDepth {
-		return nil, fmt.Errorf("not enough block in the chain state for depth lookup wtih depth of %v", chainDepth)
+		return nil, fmt.Errorf("not enough block in the chain state for depth lookup with depth of %v", chainDepth)
 	}
 	ref := c.chainState[chainDepth]
 	header, err := c.getHeaderAtHeight(ref.height)
@@ -572,6 +572,7 @@ func (c *Chain) storeBlockMetadata(hash ethcommon.Hash, height uint64, confirmed
 	if !set {
 		bm, _ := c.getBlockMetadata(hash)
 		bm.confirmed = bm.confirmed || confirmed
+		bm.cnfMsgSent = bm.cnfMsgSent || cnfMsgSent
 		c.blockHashMetadata.Set(hash.String(), bm)
 	}
 }

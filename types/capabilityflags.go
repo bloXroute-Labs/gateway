@@ -8,4 +8,5 @@ const (
 	CapabilityFastSync CapabilityFlags = 1 << iota
 	CapabilityMEVBuilder
 	CapabilityMEVMiner
+	CapabilityBDN
 )

@@ -4,8 +4,8 @@ import (
 	"encoding/binary"
 	"github.com/bloXroute-Labs/gateway"
 	"github.com/bloXroute-Labs/gateway/bxmessage/utils"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/types"
-	log "github.com/sirupsen/logrus"
 	"math"
 	"strconv"
 	"strings"
@@ -39,6 +39,9 @@ type BdnPerformanceStats struct {
 	memoryUtilizationMb uint16
 	nodeStats           map[string]*BdnPerformanceStatsData
 
+	burstLimitedTransactionsPaid   uint16
+	burstLimitedTransactionsUnpaid uint16
+
 	lock sync.Mutex
 }
 
@@ -60,10 +63,12 @@ func (bs *BdnPerformanceStats) CloseInterval() BdnPerformanceStats {
 
 	// create BDNStats from closed interval for logging and sending
 	prevBDNStats := BdnPerformanceStats{
-		intervalStartTime:   bs.intervalStartTime,
-		intervalEndTime:     bs.intervalEndTime,
-		memoryUtilizationMb: bs.memoryUtilizationMb,
-		nodeStats:           bs.nodeStats,
+		intervalStartTime:              bs.intervalStartTime,
+		intervalEndTime:                bs.intervalEndTime,
+		memoryUtilizationMb:            bs.memoryUtilizationMb,
+		nodeStats:                      bs.nodeStats,
+		burstLimitedTransactionsPaid:   bs.burstLimitedTransactionsPaid,
+		burstLimitedTransactionsUnpaid: bs.burstLimitedTransactionsUnpaid,
 	}
 
 	// create fresh map with existing nodes for new interval
@@ -168,6 +173,16 @@ func (bs *BdnPerformanceStats) LogDuplicateTxFromNode(node types.NodeEndpoint) {
 	nodeStats.DuplicateTxFromNode++
 }
 
+// LogBurstLimitedTransactionsPaid logs a tx count exceeded limit paid transactions in the stats
+func (bs *BdnPerformanceStats) LogBurstLimitedTransactionsPaid() {
+	bs.burstLimitedTransactionsPaid++
+}
+
+// LogBurstLimitedTransactionsUnpaid logs a tx count exceeded limit paid transactions in the stats
+func (bs *BdnPerformanceStats) LogBurstLimitedTransactionsUnpaid() {
+	bs.burstLimitedTransactionsUnpaid++
+}
+
 // StartTime returns the start time of the current stat interval
 func (bs *BdnPerformanceStats) StartTime() time.Time {
 	return bs.intervalStartTime
@@ -181,6 +196,16 @@ func (bs *BdnPerformanceStats) EndTime() time.Time {
 // Memory returns memory utilization stat
 func (bs *BdnPerformanceStats) Memory() uint16 {
 	return bs.memoryUtilizationMb
+}
+
+// BurstLimitedTransactionsPaid returns relay burst limited transactions paid stat
+func (bs *BdnPerformanceStats) BurstLimitedTransactionsPaid() uint16 {
+	return bs.burstLimitedTransactionsPaid
+}
+
+// BurstLimitedTransactionsUnpaid returns relay burst limited transactions unpaid stat
+func (bs *BdnPerformanceStats) BurstLimitedTransactionsUnpaid() uint16 {
+	return bs.burstLimitedTransactionsUnpaid
 }
 
 // NodeStats returns the bdn stats data for all nodes
@@ -199,17 +224,17 @@ func (bs *BdnPerformanceStats) getNodeStats(node types.NodeEndpoint) *BdnPerform
 }
 
 // Pack serializes a BdnPerformanceStats into a buffer for sending
-func (bs *BdnPerformanceStats) Pack(_ Protocol) ([]byte, error) {
+func (bs *BdnPerformanceStats) Pack(protocol Protocol) ([]byte, error) {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
 
-	bufLen := bs.size()
+	bufLen := bs.size(protocol)
 	buf := make([]byte, bufLen)
 	offset := uint32(HeaderLen)
 	binary.LittleEndian.PutUint64(buf[offset:], math.Float64bits(float64(bs.intervalStartTime.UnixNano())/float64(1e9)))
-	offset += TimestampLen
+	offset += types.UInt64Len
 	binary.LittleEndian.PutUint64(buf[offset:], math.Float64bits(float64(bs.intervalEndTime.UnixNano())/float64(1e9)))
-	offset += TimestampLen
+	offset += types.UInt64Len
 	binary.LittleEndian.PutUint16(buf[offset:], bs.memoryUtilizationMb)
 	offset += types.UInt16Len
 
@@ -244,6 +269,13 @@ func (bs *BdnPerformanceStats) Pack(_ Protocol) ([]byte, error) {
 		offset += types.UInt32Len
 	}
 
+	if protocol >= FullTxTimeStampProtocol {
+		binary.LittleEndian.PutUint16(buf[offset:], bs.burstLimitedTransactionsPaid)
+		offset += types.UInt16Len
+
+		binary.LittleEndian.PutUint16(buf[offset:], bs.burstLimitedTransactionsUnpaid)
+	}
+
 	bs.Header.Pack(&buf, BDNPerformanceStatsType)
 	return buf, nil
 }
@@ -259,11 +291,11 @@ func (bs *BdnPerformanceStats) Unpack(buf []byte, protocol Protocol) error {
 	startTimestamp := math.Float64frombits(binary.LittleEndian.Uint64(buf[offset:]))
 	startNanoseconds := int64(float64(startTimestamp) * float64(1e9))
 	bs.intervalStartTime = time.Unix(0, startNanoseconds)
-	offset += TimestampLen
+	offset += types.UInt64Len
 	endTimestamp := math.Float64frombits(binary.LittleEndian.Uint64(buf[offset:]))
 	endNanoseconds := int64(float64(endTimestamp) * float64(1e9))
 	bs.intervalEndTime = time.Unix(0, endNanoseconds)
-	offset += TimestampLen
+	offset += types.UInt64Len
 	bs.memoryUtilizationMb = binary.LittleEndian.Uint16(buf[offset:])
 	offset += types.UInt16Len
 	nodesStatsLen := binary.LittleEndian.Uint16(buf[offset:])
@@ -299,8 +331,16 @@ func (bs *BdnPerformanceStats) Unpack(buf []byte, protocol Protocol) error {
 		offset += types.UInt32Len
 		singleNodeStats.DuplicateTxFromNode = binary.LittleEndian.Uint32(buf[offset:])
 		offset += types.UInt32Len
+
 		bs.nodeStats[endpoint.IPPort()] = &singleNodeStats
 	}
+
+	if protocol >= FullTxTimeStampProtocol {
+		bs.burstLimitedTransactionsPaid = binary.LittleEndian.Uint16(buf[offset:])
+		offset += types.UInt16Len
+		bs.burstLimitedTransactionsUnpaid = binary.LittleEndian.Uint16(buf[offset:])
+	}
+
 	return bs.Header.Unpack(buf, protocol)
 }
 
@@ -308,12 +348,16 @@ func (bs *BdnPerformanceStats) Unpack(buf []byte, protocol Protocol) error {
 func (bs *BdnPerformanceStats) Log() {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
-	for _, nodeStats := range bs.NodeStats() {
-		log.Infof("[%v - %v]: Processed %v blocks and %v transactions from the BDN", bs.StartTime().Format(bxgateway.TimeLayoutISO), bs.EndTime().Format(bxgateway.TimeLayoutISO), nodeStats.NewBlocksReceivedFromBdn, nodeStats.NewTxReceivedFromBdn)
+	for endpoint, nodeStats := range bs.NodeStats() {
+		log.Infof("%v [%v - %v]: Processed %v blocks and %v transactions from the BDN", endpoint, bs.StartTime().Format(bxgateway.TimeLayoutISO), bs.EndTime().Format(bxgateway.TimeLayoutISO), nodeStats.NewBlocksReceivedFromBdn, nodeStats.NewTxReceivedFromBdn)
 	}
 }
 
-func (bs *BdnPerformanceStats) size() uint32 {
+func (bs *BdnPerformanceStats) size(protocol Protocol) uint32 {
 	nodeStatsSize := utils.IPAddrSizeInBytes + (types.UInt32Len * 7) + (types.UInt16Len * 3)
-	return bs.Header.Size() + uint32((types.UInt64Len*2)+(types.UInt16Len*2)+(len(bs.nodeStats)*nodeStatsSize))
+	total := bs.Header.Size() + uint32((types.UInt64Len*2)+(types.UInt16Len*2)+(len(bs.nodeStats)*nodeStatsSize))
+	if protocol >= FullTxTimeStampProtocol {
+		total += types.UInt16Len * 2
+	}
+	return total
 }

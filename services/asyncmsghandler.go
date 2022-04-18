@@ -4,7 +4,7 @@ import (
 	"github.com/bloXroute-Labs/gateway"
 	"github.com/bloXroute-Labs/gateway/bxmessage"
 	"github.com/bloXroute-Labs/gateway/connections"
-	log "github.com/sirupsen/logrus"
+	log "github.com/bloXroute-Labs/gateway/logger"
 )
 
 // MsgInfo is a struct that stores a msg and its source connection

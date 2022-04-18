@@ -2,7 +2,7 @@ package utils
 
 import (
 	"fmt"
-	log "github.com/sirupsen/logrus"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"io/ioutil"
 	"net/http"
 	"regexp"

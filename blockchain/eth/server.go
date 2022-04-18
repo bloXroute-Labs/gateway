@@ -20,7 +20,7 @@ type Server struct {
 }
 
 // NewServer return an Ethereum p2p server, configured with BDN friendly defaults
-func NewServer(parent context.Context, config *network.EthConfig, bridge blockchain.Bridge, dataDir string, logger log.Logger, ws blockchain.WSProvider) (*Server, error) {
+func NewServer(parent context.Context, config *network.EthConfig, bridge blockchain.Bridge, dataDir string, logger log.Logger, ws blockchain.WSManager) (*Server, error) {
 	var privateKey *ecdsa.PrivateKey
 
 	if config.PrivateKey != nil {
@@ -50,7 +50,7 @@ func NewServer(parent context.Context, config *network.EthConfig, bridge blockch
 	server := p2p.Server{
 		Config: p2p.Config{
 			PrivateKey:       privateKey,
-			MaxPeers:         1,
+			MaxPeers:         len(config.StaticPeers),
 			MaxPendingPeers:  1,
 			DialRatio:        1,
 			NoDiscovery:      true,
@@ -58,7 +58,7 @@ func NewServer(parent context.Context, config *network.EthConfig, bridge blockch
 			Name:             fmt.Sprintf("bloXroute Gateway Go v%v", version.BuildVersion),
 			BootstrapNodes:   nil,
 			BootstrapNodesV5: nil,
-			StaticNodes:      config.StaticPeers,
+			StaticNodes:      config.StaticEnodes(),
 			TrustedNodes:     nil,
 			NetRestrict:      nil,
 			NodeDatabase:     "",
@@ -81,7 +81,7 @@ func NewServer(parent context.Context, config *network.EthConfig, bridge blockch
 }
 
 // NewServerWithEthLogger returns the p2p server preconfigured with the default Ethereum logger
-func NewServerWithEthLogger(ctx context.Context, config *network.EthConfig, bridge blockchain.Bridge, dataDir string, ws blockchain.WSProvider) (*Server, error) {
+func NewServerWithEthLogger(ctx context.Context, config *network.EthConfig, bridge blockchain.Bridge, dataDir string, ws blockchain.WSManager) (*Server, error) {
 	l := log.New()
 	l.SetHandler(log.StreamHandler(os.Stdout, log.TerminalFormat(true)))
 

@@ -4,8 +4,8 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/types"
-	log "github.com/sirupsen/logrus"
 )
 
 // BxSSLProperties represents extension data encoded in bloxroute SSL certificates

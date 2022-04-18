@@ -7,9 +7,9 @@ import (
 	"github.com/bloXroute-Labs/gateway"
 	"github.com/bloXroute-Labs/gateway/bxmessage"
 	"github.com/bloXroute-Labs/gateway/connections"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/bloXroute-Labs/gateway/utils"
-	log "github.com/sirupsen/logrus"
 	"math"
 	"sync"
 	"time"
@@ -48,6 +48,7 @@ type BxConn struct {
 	capabilities          types.CapabilityFlags
 	clientVersion         string
 	sameRegion            bool
+	connectedAt           time.Time
 }
 
 // NewBxConn constructs a connection to a bloxroute node.
@@ -121,6 +122,7 @@ func (b *BxConn) Info() connections.Info {
 		Capabilities:    b.capabilities,
 		Version:         b.clientVersion,
 		SameRegion:      b.sameRegion,
+		ConnectedAt:     b.connectedAt,
 	}
 }
 
@@ -145,7 +147,7 @@ func (b *BxConn) Connect() error {
 	connInfo := b.Conn.Info()
 	b.peerID = connInfo.NodeID
 	b.accountID = connInfo.AccountID
-
+	b.connectedAt = b.clock.Now()
 	b.stringRepresentation = fmt.Sprintf("%v/%v@%v{%v}", b.connectionType, b.Conn, b.accountID, b.peerID)
 	b.log = log.WithFields(log.Fields{
 		"connType":   b.connectionType.String(),

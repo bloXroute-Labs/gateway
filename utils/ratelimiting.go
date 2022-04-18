@@ -2,8 +2,8 @@ package utils
 
 import (
 	"fmt"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/types"
-	log "github.com/sirupsen/logrus"
 	"time"
 )
 

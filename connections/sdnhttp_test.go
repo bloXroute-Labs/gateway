@@ -2,10 +2,11 @@ package connections
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/bloXroute-Labs/gateway"
-	"github.com/bloXroute-Labs/gateway/config"
+	"github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/test"
 	"github.com/bloXroute-Labs/gateway/types"
@@ -18,13 +19,43 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
+	"sync"
 	"testing"
+	"time"
 )
 
 type handlerArgs struct {
 	method  string
 	pattern string
 	handler func(w http.ResponseWriter, r *http.Request)
+}
+
+func cleanupFiles() {
+	_ = os.Remove(blockchainNetworksCacheFileName)
+	_ = os.Remove(blockchainNetworkCacheFileName)
+	_ = os.Remove(nodeModelCacheFileName)
+	_ = os.Remove(potentialRelaysFileName)
+	_ = os.Remove(accountModelsFileName)
+}
+
+func testSDNHTTP() realSDNHTTP {
+	return realSDNHTTP{
+		relays: sdnmessage.Peers{
+			{IP: "1.1.1.1", Port: 1},
+			{IP: "2.2.2.2", Port: 2},
+		},
+		getPingLatencies: func(peers sdnmessage.Peers) []nodeLatencyInfo {
+			nodeLatencyInfos := []nodeLatencyInfo{}
+			for _, peer := range peers {
+				nodeLatencyInfos = append(nodeLatencyInfos, nodeLatencyInfo{
+					IP:   peer.IP,
+					Port: peer.Port,
+				})
+			}
+			return nodeLatencyInfos
+		},
+	}
 }
 
 func TestRegister_BlockchainNetworkNumberUpdated(t *testing.T) {
@@ -60,8 +91,8 @@ func TestRegister_BlockchainNetworkNumberUpdated(t *testing.T) {
 				server.Close()
 			}()
 			testCerts := utils.TestCerts()
-			s := SDNHTTP{
-				SdnURL:   server.URL,
+			s := realSDNHTTP{
+				sdnURL:   server.URL,
 				sslCerts: &testCerts,
 				nodeModel: sdnmessage.NodeModel{
 					Protocol: testCase.nodeModel.Protocol,
@@ -79,16 +110,17 @@ func TestRegister_BlockchainNetworkNumberUpdated(t *testing.T) {
 	}
 }
 
-func TestBestRelay_IfPingOver40MSLogsWarning(t *testing.T) {
+func TestDirectRelayConnections_IfPingOver40MSLogsWarning(t *testing.T) {
+	logger.NonBlocking.AvoidChannel()
 	testTable := []struct {
 		name       string
 		relayCount int
 		latencies  []nodeLatencyInfo
 		log        string
 	}{
-		{"Latency 5", 1, []nodeLatencyInfo{{Latency: 5, IP: "1.1.1.0", Port: 40}}, "selected relay 1.1.1.0:40 with latency 5 ms"},
-		{"Latency 20", 1, []nodeLatencyInfo{{Latency: 20, IP: "1.1.1.1", Port: 41}}, "selected relay 1.1.1.1:41 with latency 20 ms"},
-		{"Latency 5, 41", 2, []nodeLatencyInfo{{Latency: 5, IP: "1.1.1.2", Port: 42}, {Latency: 41, IP: "1.1.1.3", Port: 43}}, "selected relay 1.1.1.2:42 with latency 5 ms"},
+		{"Latency 5", 1, []nodeLatencyInfo{{Latency: 5, IP: "1.1.1.0", Port: 40}}, "fastest selected relay 1.1.1.0:40 has a latency of 5 ms"},
+		{"Latency 20", 1, []nodeLatencyInfo{{Latency: 20, IP: "1.1.1.1", Port: 41}}, "fastest selected relay 1.1.1.1:41 has a latency of 20 ms"},
+		{"Latency 5, 41", 2, []nodeLatencyInfo{{Latency: 5, IP: "1.1.1.2", Port: 42}, {Latency: 41, IP: "1.1.1.3", Port: 43}}, "fastest selected relay 1.1.1.2:42 has a latency of 5 ms"},
 		{"Latency 41", 1, []nodeLatencyInfo{{Latency: 41, IP: "1.1.1.3", Port: 43}},
 			"ping latency of the fastest relay 1.1.1.3:43 is 41 ms, which is more than 40 ms"},
 		{"Latency 1000, 2000", 2, []nodeLatencyInfo{{Latency: 1000, IP: "1.1.1.4", Port: 44}, {Latency: 2000, IP: "1.1.1.5", Port: 45}},
@@ -101,11 +133,13 @@ func TestBestRelay_IfPingOver40MSLogsWarning(t *testing.T) {
 			getPingLatenciesFunction := func(peers sdnmessage.Peers) []nodeLatencyInfo {
 				return testCase.latencies
 			}
-			s := SDNHTTP{relays: make([]sdnmessage.Peer, testCase.relayCount), getPingLatencies: getPingLatenciesFunction}
-			b := config.Bx{}
+			s := realSDNHTTP{relays: make([]sdnmessage.Peer, testCase.relayCount), getPingLatencies: getPingLatenciesFunction}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 
-			b.OverrideRelay = false
-			_, _, err := s.BestRelay(&b)
+			autoRelayInstructions := make(chan RelayInstruction)
+			go func() { <-autoRelayInstructions }()
+			err := s.DirectRelayConnections(ctx, "auto", 1, autoRelayInstructions, AutoRelayTimeout)
 			assert.Nil(t, err)
 
 			logs := globalHook.Entries
@@ -122,6 +156,294 @@ func TestBestRelay_IfPingOver40MSLogsWarning(t *testing.T) {
 	}
 }
 
+func TestDirectRelayConnections_IncorrectArgs(t *testing.T) {
+	testTable := []struct {
+		name          string
+		relaysString  string
+		expectedError error
+	}{
+		{
+			name:          "no args",
+			expectedError: fmt.Errorf("no --relays/relay-ip arguments were provided"),
+		},
+		{
+			name:          "empty string",
+			relaysString:  " ",
+			expectedError: fmt.Errorf("argument to --relays/relay-ip is empty or has an extra comma"),
+		},
+		{
+			name:          "incorrect host",
+			relaysString:  "1:2:3",
+			expectedError: fmt.Errorf("relay from --relays/relay-ip was given in the incorrect format '1:2:3', should be IP:Port"),
+		},
+		{
+			name:          "no relay before comma",
+			relaysString:  ",127.0.0.1",
+			expectedError: fmt.Errorf("argument to --relays/relay-ip is empty or has an extra comma"),
+		},
+		{
+			name:          "no relay after comma",
+			relaysString:  "127.0.0.1,",
+			expectedError: fmt.Errorf("argument to --relays/relay-ip is empty or has an extra comma"),
+		},
+		{
+			name:          "space after comma",
+			relaysString:  "127.0.0.1, ",
+			expectedError: fmt.Errorf("argument to --relays/relay-ip is empty or has an extra comma"),
+		},
+	}
+
+	s := testSDNHTTP()
+
+	for _, testCase := range testTable {
+		t.Run(fmt.Sprint(testCase.name), func(t *testing.T) {
+			err := s.DirectRelayConnections(context.Background(), testCase.relaysString, 2, make(chan RelayInstruction), AutoRelayTimeout)
+			assert.Equal(t, testCase.expectedError, err)
+		})
+	}
+}
+
+func TestDirectRelayConnections_RelayLimit2(t *testing.T) {
+	testTable := []struct {
+		name           string
+		relaysString   string
+		expectedRelays map[string]int64
+		expectedError  error
+	}{
+		{
+			name:           "one auto",
+			relaysString:   "auto",
+			expectedRelays: map[string]int64{"1.1.1.1": 1},
+		},
+		{
+			name:           "two autos",
+			relaysString:   "auto, auto",
+			expectedRelays: map[string]int64{"1.1.1.1": 1, "2.2.2.2": 2},
+		},
+		{
+			name:           "an auto and a relay",
+			relaysString:   "auto, 1.1.1.1",
+			expectedRelays: map[string]int64{"1.1.1.1": 1809, "2.2.2.2": 2},
+		},
+		{
+			name:           "one relay",
+			relaysString:   "1.1.1.1",
+			expectedRelays: map[string]int64{"1.1.1.1": 1809},
+		},
+		{
+			name:           "two relays",
+			relaysString:   "1.1.1.1, 2.2.2.2",
+			expectedRelays: map[string]int64{"1.1.1.1": 1809, "2.2.2.2": 1809},
+		},
+		{
+			name:           "two relays, only one has port",
+			relaysString:   "1.1.1.1:34, 2.2.2.2",
+			expectedRelays: map[string]int64{"1.1.1.1": 34, "2.2.2.2": 1809},
+		},
+		{
+			name:           "two relays, both have ports",
+			relaysString:   "1.1.1.1:34, 2.2.2.2:56",
+			expectedRelays: map[string]int64{"1.1.1.1": 34, "2.2.2.2": 56},
+		},
+		{
+			name:           "three relays",
+			relaysString:   "4.4.4.4, 2.2.2.2:22, 1.1.1.1",
+			expectedRelays: map[string]int64{"4.4.4.4": 1809, "2.2.2.2": 22},
+		},
+		{
+			name:          "incorrect port",
+			relaysString:  "1.1.1.1, 2.2.2.2:abc",
+			expectedError: fmt.Errorf("port provided abc is not valid - strconv.Atoi: parsing \"abc\": invalid syntax"),
+		},
+		{
+			name:          "incorrect host",
+			relaysString:  "1:1:1, 1.1.1.1",
+			expectedError: fmt.Errorf("relay from --relays/relay-ip was given in the incorrect format '1:1:1', should be IP:Port"),
+		},
+		{
+			name:           "duplicate relay ips",
+			relaysString:   "1.1.1.1, 1.1.1.1:34",
+			expectedRelays: map[string]int64{"1.1.1.1": 1809},
+		},
+		{
+			name:           "duplicate relay ips #2",
+			relaysString:   "1.1.1.1:1, 1.1.1.1:2, 2.2.2.2:3, 2.2.2.2:4",
+			expectedRelays: map[string]int64{"1.1.1.1": 1, "2.2.2.2": 3},
+		},
+		{
+			name:           "duplicate relay ips with auto after",
+			relaysString:   "1.1.1.1, 1.1.1.1:2, auto",
+			expectedRelays: map[string]int64{"1.1.1.1": 1809, "2.2.2.2": 2},
+		},
+		{
+			name:           "auto relay doesn't overlap with configured relay",
+			relaysString:   "auto, 1.1.1.1",
+			expectedRelays: map[string]int64{"1.1.1.1": 1809, "2.2.2.2": 2},
+		},
+		{
+			name:           "auto relay doesn't overlap with configured relay #2",
+			relaysString:   "2.2.2.2, auto, 1.1.1.1",
+			expectedRelays: map[string]int64{"2.2.2.2": 1809, "1.1.1.1": 1},
+		},
+		{
+			name:           "three relays - leading 2 autos",
+			relaysString:   "auto, auto, 3.3.3.3",
+			expectedRelays: map[string]int64{"1.1.1.1": 1, "2.2.2.2": 2},
+		},
+	}
+
+	s := testSDNHTTP()
+
+	for _, testCase := range testTable {
+		t.Run(fmt.Sprint(testCase.name), func(t *testing.T) {
+			relayInstructions := make(chan RelayInstruction)
+			expectedRelayCount := len(testCase.expectedRelays)
+			var wg sync.WaitGroup
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for i := 0; i < expectedRelayCount; i++ {
+					timer := time.NewTimer(time.Millisecond)
+
+					select {
+					case <-timer.C:
+						t.Fail()
+						return
+					case instruction := <-relayInstructions:
+						port, ok := testCase.expectedRelays[instruction.IP]
+						if ok && port == instruction.Port {
+							delete(testCase.expectedRelays, instruction.IP) // confirming there is an instruction for each expectedRelay
+						}
+					}
+				}
+
+				timer := time.NewTimer(time.Millisecond)
+				select {
+				case <-timer.C:
+					break
+				case <-relayInstructions:
+					t.Fail()
+				}
+			}()
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			go func() {
+				err := s.DirectRelayConnections(ctx, testCase.relaysString, 2, relayInstructions, AutoRelayTimeout)
+				assert.Equal(t, testCase.expectedError, err)
+			}()
+
+			wg.Wait()
+			assert.Len(t, testCase.expectedRelays, 0)
+		})
+	}
+}
+
+func TestDirectRelayConnections_RelayLimit1(t *testing.T) {
+	testTable := []struct {
+		name           string
+		relaysString   string
+		expectedRelays map[string]int64
+		expectedError  error
+	}{
+		{
+			name:           "one auto",
+			relaysString:   "auto",
+			expectedRelays: map[string]int64{"1.1.1.1": 1},
+		},
+		{
+			name:           "two autos",
+			relaysString:   "auto, auto",
+			expectedRelays: map[string]int64{"1.1.1.1": 1},
+		},
+		{
+			name:           "an auto and a relay",
+			relaysString:   "auto, 1.1.1.1",
+			expectedRelays: map[string]int64{"1.1.1.1": 1},
+		},
+		{
+			name:           "one relay",
+			relaysString:   "2.2.2.2",
+			expectedRelays: map[string]int64{"2.2.2.2": 1809},
+		},
+		{
+			name:           "two relays",
+			relaysString:   "3.3.3.3, 4.4.4.4",
+			expectedRelays: map[string]int64{"3.3.3.3": 1809},
+		},
+		{
+			name:           "two relays - duplicates",
+			relaysString:   "3.3.3.3:14, 3.3.3.3:15",
+			expectedRelays: map[string]int64{"3.3.3.3": 14},
+		},
+		{
+			name:           "one relay with port",
+			relaysString:   "1.1.1.1:34",
+			expectedRelays: map[string]int64{"1.1.1.1": 34},
+		},
+		{
+			name:          "incorrect port",
+			relaysString:  "1.1.1.1:abc",
+			expectedError: fmt.Errorf("port provided abc is not valid - strconv.Atoi: parsing \"abc\": invalid syntax"),
+		},
+		{
+			name:          "incorrect host",
+			relaysString:  "127.0.0.9999",
+			expectedError: fmt.Errorf("host provided 127.0.0.9999 is not valid - lookup 127.0.0.9999: no such host"),
+		},
+		{
+			name:          "incorrect host with port",
+			relaysString:  "127.0.0.9999:1234",
+			expectedError: fmt.Errorf("host provided 127.0.0.9999 is not valid - lookup 127.0.0.9999: no such host"),
+		},
+	}
+
+	s := testSDNHTTP()
+	ticker := utils.RealClock{}.Ticker(time.Millisecond)
+
+	for _, testCase := range testTable {
+		t.Run(fmt.Sprint(testCase.name), func(t *testing.T) {
+			relayInstructions := make(chan RelayInstruction)
+			expectedRelayCount := len(testCase.expectedRelays)
+			var wg sync.WaitGroup
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for i := 0; i < expectedRelayCount; i++ {
+					select {
+					case <-ticker.Alert():
+						t.Fail()
+						return
+					case instruction := <-relayInstructions:
+						port, ok := testCase.expectedRelays[instruction.IP]
+						if ok && port == instruction.Port {
+							delete(testCase.expectedRelays, instruction.IP) // confirming there is an instruction for each expectedRelay
+						}
+					}
+				}
+
+				select {
+				case <-ticker.Alert():
+					break
+				case <-relayInstructions:
+					t.Fail()
+				}
+			}()
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			err := s.DirectRelayConnections(ctx, testCase.relaysString, 1, relayInstructions, AutoRelayTimeout)
+			assert.Equal(t, testCase.expectedError, err)
+
+			wg.Wait()
+			assert.Len(t, testCase.expectedRelays, 0)
+		})
+	}
+}
+
 func TestSDNHTTP_CacheFiles_ServiceUnavailable_SDN_BlockchainNetworks(t *testing.T) {
 	testCase := struct {
 		nodeModel                  sdnmessage.NodeModel
@@ -133,9 +455,7 @@ func TestSDNHTTP_CacheFiles_ServiceUnavailable_SDN_BlockchainNetworks(t *testing
 		jsonRespServiceUnavailable: `{"message": "503 Service Unavailable" }`,
 	}
 	t.Run(fmt.Sprint(testCase), func(t *testing.T) {
-		defer func() {
-			_ = os.Remove(blockchainNetworksCacheFileName)
-		}()
+		defer cleanupFiles()
 		// using bad certificate so get/post to bxapi will fail
 		sslCerts := utils.SSLCerts{}
 
@@ -150,8 +470,8 @@ func TestSDNHTTP_CacheFiles_ServiceUnavailable_SDN_BlockchainNetworks(t *testing
 
 		utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
 		// using bad sdn url so get/post to bxapi will fail
-		sdn := NewSDNHTTP(&sslCerts, server.URL, testCase.nodeModel, "")
-		url := fmt.Sprintf("%v/blockchain-networks/%v", sdn.SdnURL, testCase.networkNumber)
+		sdn := NewSDNHTTP(&sslCerts, server.URL, testCase.nodeModel, "").(*realSDNHTTP)
+		url := fmt.Sprintf("%v/blockchain-networks/%v", sdn.SDNURL(), testCase.networkNumber)
 
 		networks := generateNetworks()
 		// generate blockchainNetworks.json file which contains networks using UpdateCacheFile method
@@ -178,9 +498,7 @@ func TestSDNHTTP_CacheFiles_ServiceUnavailable_SDN_Node(t *testing.T) {
 		jsonRespServiceUnavailable: `{"message": "503 Service Unavailable" }`,
 	}
 	t.Run(fmt.Sprint(testCase), func(t *testing.T) {
-		defer func() {
-			_ = os.Remove(nodeModelCacheFileName)
-		}()
+		defer cleanupFiles()
 		// using bad certificate so get/post to bxapi will fail
 		sslCerts := utils.SSLCerts{}
 
@@ -195,7 +513,7 @@ func TestSDNHTTP_CacheFiles_ServiceUnavailable_SDN_Node(t *testing.T) {
 
 		utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
 		// using bad sdn url so get/post to bxapi will fail
-		sdn := NewSDNHTTP(&sslCerts, server.URL, testCase.nodeModel, "")
+		sdn := NewSDNHTTP(&sslCerts, server.URL, testCase.nodeModel, "").(*realSDNHTTP)
 
 		nodeModel := generateNodeModel()
 		// generate nodemodel.json file which contains nodeModel using UpdateCacheFile method
@@ -204,7 +522,7 @@ func TestSDNHTTP_CacheFiles_ServiceUnavailable_SDN_Node(t *testing.T) {
 		// calling to httpWithCache -> tying to get node model from bxapi
 		// bxapi is not responsive
 		// -> trying to load the node model from cache file
-		resp, err := sdn.httpWithCache(sdn.SdnURL+"/nodes", bxgateway.PostMethod, nodeModelCacheFileName, bytes.NewBuffer(sdn.NodeModel().Pack()))
+		resp, err := sdn.httpWithCache(sdn.sdnURL+"/nodes", bxgateway.PostMethod, nodeModelCacheFileName, bytes.NewBuffer(sdn.NodeModel().Pack()))
 		assert.Nil(t, err)
 		assert.NotNil(t, resp)
 		cachedNodeModel := &sdnmessage.NodeModel{}
@@ -222,9 +540,7 @@ func TestSDNHTTP_CacheFiles_ServiceUnavailable_SDN_Relays(t *testing.T) {
 		jsonRespServiceUnavailable: `{"message": "503 Service Unavailable" }`,
 	}
 	t.Run(fmt.Sprint(testCase), func(t *testing.T) {
-		defer func() {
-			_ = os.Remove(potentialRelaysFileName)
-		}()
+		defer cleanupFiles()
 		// using bad certificate so get/post to bxapi will fail
 		sslCerts := utils.SSLCerts{}
 
@@ -239,8 +555,8 @@ func TestSDNHTTP_CacheFiles_ServiceUnavailable_SDN_Relays(t *testing.T) {
 
 		utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
 		// using bad sdn url so get/post to bxapi will fail
-		sdn := NewSDNHTTP(&sslCerts, server.URL, testCase.nodeModel, "")
-		url := fmt.Sprintf("%v/nodes/%v/%v/potential-relays", sdn.SdnURL, sdn.NodeModel().NodeID, sdn.NodeModel().BlockchainNetworkNum)
+		sdn := NewSDNHTTP(&sslCerts, server.URL, testCase.nodeModel, "").(*realSDNHTTP)
+		url := fmt.Sprintf("%v/nodes/%v/%v/potential-relays", sdn.SDNURL(), sdn.NodeModel().NodeID, sdn.NodeModel().BlockchainNetworkNum)
 		peers := generatePeers()
 		// generate potentialrelays.json file which contains peers using UpdateCacheFile method
 		writeToFile(t, peers, potentialRelaysFileName)
@@ -266,9 +582,7 @@ func TestSDNHTTP_CacheFiles_ServiceUnavailable_SDN_Account(t *testing.T) {
 		jsonRespServiceUnavailable: `{"message": "503 Service Unavailable" }`,
 	}
 	t.Run(fmt.Sprint(testCase), func(t *testing.T) {
-		defer func() {
-			os.Remove(accountModelsFileName)
-		}()
+		defer cleanupFiles()
 		// using bad certificate so get/post to bxapi will fail
 		sslCerts := utils.SSLCerts{}
 
@@ -283,13 +597,12 @@ func TestSDNHTTP_CacheFiles_ServiceUnavailable_SDN_Account(t *testing.T) {
 
 		utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
 		// using bad sdn url so get/post to bxapi will fail
-		sdn := NewSDNHTTP(&sslCerts, server.URL, testCase.nodeModel, "")
-		url := fmt.Sprintf("%v/account/%v", sdn.SdnURL, testCase.nodeModel.AccountID)
+		sdn := NewSDNHTTP(&sslCerts, server.URL, testCase.nodeModel, "").(*realSDNHTTP)
 
 		accountModel := generateAccountModel()
 		// generate accountmodel.json file which contains accountModel using UpdateCacheFile method
 		writeToFile(t, accountModel, accountModelsFileName)
-		url = fmt.Sprintf("%v/%v/%v", sdn.SdnURL, "account", sdn.NodeModel().AccountID)
+		url := fmt.Sprintf("%v/%v/%v", sdn.SDNURL(), "account", sdn.NodeModel().AccountID)
 
 		// calling to httpWithCache -> tying to get account model from bxapi
 		// bxapi is not responsive
@@ -297,31 +610,31 @@ func TestSDNHTTP_CacheFiles_ServiceUnavailable_SDN_Account(t *testing.T) {
 		resp, err := sdn.httpWithCache(url, bxgateway.GetMethod, accountModelsFileName, nil)
 		assert.Nil(t, err)
 		assert.NotNil(t, resp)
+
 		cachedAccountModel := sdnmessage.Account{}
 		assert.Nil(t, json.Unmarshal(resp, &cachedAccountModel))
 		assert.Equal(t, accountModel, cachedAccountModel)
 	})
-	os.Remove(blockchainNetworksCacheFileName)
-	os.Remove(nodeModelCacheFileName)
-	os.Remove(potentialRelaysFileName)
-	os.Remove(accountModelsFileName)
 }
 
 func TestSDNHTTP_InitGateway(t *testing.T) {
 	testCase := struct {
-		nodeModel       sdnmessage.NodeModel
-		networkNumber   types.NetworkNum
-		jsonRespNetwork string
-		jsonRespRelays  string
-		jsonAccount     string
+		nodeModel          sdnmessage.NodeModel
+		networkNumber      types.NetworkNum
+		jsonRespNetwork    string
+		jsonRespRelays     string
+		jsonAccount        string
+		expectedRelayLimit int
 	}{
-		nodeModel:       sdnmessage.NodeModel{NodeID: "35299c61-55ad-4565-85a3-0cd985953fac", ExternalIP: "11.113.164.111", Protocol: "Ethereum", Network: "Mainnet", AccountID: "e64yrte6547"},
-		networkNumber:   5,
-		jsonRespNetwork: `{"min_tx_age_seconds":0,"min_tx_network_fee":0, "network":"Mainnet", "network_num":5,"protocol":"Ethereum"}`,
-		jsonRespRelays:  `[{"ip":"8.208.101.30", "port":1809}, {"ip":"47.90.133.153", "port":1809}]`,
-		jsonAccount:     `{"account_id":"e64yrte6547","blockchain_protocol":"","blockchain_network":"","tier_name":""}`,
+		nodeModel:          sdnmessage.NodeModel{NodeID: "35299c61-55ad-4565-85a3-0cd985953fac", ExternalIP: "11.113.164.111", Protocol: "Ethereum", Network: "Mainnet", AccountID: "e64yrte6547"},
+		networkNumber:      5,
+		jsonRespNetwork:    `{"min_tx_age_seconds":0,"min_tx_network_fee":0, "network":"Mainnet", "network_num":5,"protocol":"Ethereum"}`,
+		jsonRespRelays:     `[{"ip":"8.208.101.30", "port":1809}, {"ip":"47.90.133.153", "port":1809}]`,
+		jsonAccount:        `{"account_id":"e64yrte6547","blockchain_protocol":"","blockchain_network":"","tier_name":"", "relay_limit":{"expire_date":"", "msg_quota": {"limit":0}}}`,
+		expectedRelayLimit: 1,
 	}
 	t.Run(fmt.Sprint(testCase), func(t *testing.T) {
+		defer cleanupFiles()
 
 		sslCerts := utils.NewSSLCertsPrivateKey(test.PrivateKey)
 		sslCerts.SavePrivateCert(test.PrivateCert)
@@ -347,9 +660,10 @@ func TestSDNHTTP_InitGateway(t *testing.T) {
 		}()
 
 		utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
-		sdn := NewSDNHTTP(sslCerts, server.URL, sdnmessage.NodeModel{}, "")
+		sdn := NewSDNHTTP(sslCerts, server.URL, sdnmessage.NodeModel{}, "").(*realSDNHTTP)
 
 		assert.Nil(t, sdn.InitGateway(bxgateway.Ethereum, "Mainnet"))
+		assert.Equal(t, testCase.expectedRelayLimit, sdn.accountModel.RelayLimit.MsgQuota.Limit)
 	})
 }
 
@@ -378,7 +692,7 @@ func TestSDNHTTP_InitGateway_Fail(t *testing.T) {
 		}()
 
 		utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
-		sdn := NewSDNHTTP(sslCerts, server.URL, sdnmessage.NodeModel{}, "")
+		sdn := NewSDNHTTP(sslCerts, server.URL, sdnmessage.NodeModel{}, "").(*realSDNHTTP)
 
 		os.Remove(nodeModelCacheFileName)
 		assert.NotNil(t, sdn.InitGateway(bxgateway.Ethereum, "Mainnet"))
@@ -389,7 +703,7 @@ func TestSDNHTTP_HttpPostBadRequestDetailsResponse(t *testing.T) {
 	sslCerts := utils.SSLCerts{}
 
 	utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
-	sdn := NewSDNHTTP(&sslCerts, "", sdnmessage.NodeModel{ExternalIP: "localhost"}, "")
+	sdn := NewSDNHTTP(&sslCerts, "", sdnmessage.NodeModel{ExternalIP: "localhost"}, "").(*realSDNHTTP)
 	testCase := struct {
 		nodeModel         sdnmessage.NodeModel
 		jsonRespNodeModel string
@@ -427,7 +741,7 @@ func TestSDNHTTP_HttpPostBadRequestDetailsResponse(t *testing.T) {
 func TestSDNHTTP_HttpGetBadRequestDetailsResponse(t *testing.T) {
 	sslCerts := utils.SSLCerts{}
 	utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
-	sdn := NewSDNHTTP(&sslCerts, "", sdnmessage.NodeModel{ExternalIP: "localhost"}, "")
+	sdn := NewSDNHTTP(&sslCerts, "", sdnmessage.NodeModel{ExternalIP: "localhost"}, "").(*realSDNHTTP)
 	testCase := struct {
 		nodeModel         sdnmessage.NodeModel
 		jsonRespNodeModel string
@@ -488,15 +802,15 @@ func TestSDNHTTP_HttpPostBodyError(t *testing.T) {
 		}()
 
 		testCerts := utils.TestCerts()
-		sdn := SDNHTTP{
-			SdnURL:   server.URL,
+		sdn := realSDNHTTP{
+			sdnURL:   server.URL,
 			sslCerts: &testCerts,
 			nodeModel: sdnmessage.NodeModel{
 				NodeType: testCase.nodeModel.NodeType,
 			},
 		}
 
-		url := fmt.Sprintf("%v/nodes", sdn.SdnURL)
+		url := fmt.Sprintf("%v/nodes", sdn.SDNURL())
 		resp, err := sdn.http(url, bxgateway.PostMethod, bytes.NewBuffer(sdn.NodeModel().Pack()))
 		assert.NotNil(t, err)
 		assert.Nil(t, resp)
@@ -532,19 +846,36 @@ func TestSDNHTTP_HttpPostUnmarshallError(t *testing.T) {
 		}()
 
 		testCerts := utils.TestCerts()
-		sdn := SDNHTTP{
-			SdnURL:   server.URL,
+		sdn := realSDNHTTP{
+			sdnURL:   server.URL,
 			sslCerts: &testCerts,
 			nodeModel: sdnmessage.NodeModel{
 				NodeType: testCase.nodeModel.NodeType,
 			},
 		}
 
-		url := fmt.Sprintf("%v/nodes", sdn.SdnURL)
+		url := fmt.Sprintf("%v/nodes", sdn.SDNURL())
 		resp, err := sdn.http(url, bxgateway.PostMethod, bytes.NewBuffer(sdn.NodeModel().Pack()))
 		assert.NotNil(t, err)
 		assert.Nil(t, resp)
 	})
+}
+
+func TestSDNHTTP_FillInAccountDefaults(t *testing.T) {
+	targetAccount := sdnmessage.DefaultEnterpriseAccount
+	tp := reflect.TypeOf(targetAccount)
+	numFields := tp.NumField()
+	for i := 0; i < numFields; i++ {
+		reflect.ValueOf(&targetAccount).Elem().FieldByName(tp.Field(i).Name).Set(reflect.Zero(tp.Field(i).Type))
+	}
+
+	sdnhttp := testSDNHTTP()
+
+	targetAccount, error := sdnhttp.fillInAccountDefaults(&targetAccount)
+
+	assert.Nil(t, error)
+	assert.Equal(t, sdnmessage.DefaultEnterpriseAccount, targetAccount)
+
 }
 
 func mockNodesServer(t *testing.T, nodeID types.NodeID, externalPort int64, externalIP, protocol, network string, blockchainNetworkNum types.NetworkNum, accountID types.AccountID) func(w http.ResponseWriter, r *http.Request) {

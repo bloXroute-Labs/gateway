@@ -3,10 +3,11 @@ package connections
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"github.com/bloXroute-Labs/gateway/bxmessage"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/utils"
-	log "github.com/sirupsen/logrus"
 	"time"
 )
 
@@ -36,17 +37,18 @@ type SSLConn struct {
 	connectionOpen bool
 	disabled       bool
 	// done is used to stop the sendLoop routine
-	done            chan bool
+	done            context.CancelFunc
 	sendMessages    chan bxmessage.Message
 	sendChannelSize int
 	buf             bytes.Buffer
 	usePQ           bool
-	pq              *utils.MsgPriorityQueue
+	pq              *bxmessage.MsgPriorityQueue
 	logMessages     bool
 	extensions      utils.BxSSLProperties
 	packet          []byte
 	log             *log.Entry
 	clock           utils.Clock
+	connectedAt     time.Time
 }
 
 // NewSSLConnection constructs a new SSL connection. If socket is not nil, then the connection was initiated by the remote.
@@ -70,11 +72,11 @@ func NewSSLConnection(connect func() (Socket, error), sslCerts *utils.SSLCerts, 
 
 // sendLoop waits for messages on channel and send them to the socket
 // terminates when the channel is closed
-func (s *SSLConn) sendLoop() {
+func (s *SSLConn) sendLoop(ctx context.Context) {
 	s.Log().Trace("starting send loop")
 	for {
 		select {
-		case <-s.done:
+		case <-ctx.Done():
 			s.Log().Trace("stopping send loop (done)")
 			return
 		case msg := <-s.sendMessages:
@@ -90,7 +92,7 @@ func (s *SSLConn) sendLoop() {
 			}
 			err := s.writer.Flush()
 			if err != nil {
-				s.Log().Trace("stopping send loop (failed to Flush output buffer)")
+				s.Log().Tracef("stopping send loop (failed to Flush output buffer) - %v", err)
 				return
 			}
 		}
@@ -138,6 +140,7 @@ func (s *SSLConn) Info() Info {
 		ConnectionState: "",
 		NetworkNum:      0,
 		FromMe:          s.isInitiator(),
+		ConnectedAt:     s.connectedAt,
 	}
 }
 
@@ -168,7 +171,7 @@ func (s *SSLConn) Log() *log.Entry {
 
 // Connect initializes a connection to a bloxroute node. If this is called when the remote addr is the one initiating the connection, then this function is does little besides mark some connection states as ready. Connect is also responsible for starting any goroutines relevant to the connection.
 func (s *SSLConn) Connect() error {
-	s.pq = utils.NewMsgPriorityQueue(s.queueToMessageChan, PriorityQueueInterval)
+	s.pq = bxmessage.NewMsgPriorityQueue(s.queueToMessageChan, PriorityQueueInterval)
 	s.buf.Reset()
 
 	var err error
@@ -179,6 +182,7 @@ func (s *SSLConn) Connect() error {
 	}
 	// allocate a buffered writer to combine outgoing messages
 	s.writer = bufio.NewWriter(s.Socket)
+	s.connectedAt = s.clock.Now()
 
 	extensions, err := s.Properties()
 	if err != nil {
@@ -188,8 +192,9 @@ func (s *SSLConn) Connect() error {
 	s.connectionOpen = true
 	// start send loop now that connection is connected
 	s.sendMessages = make(chan bxmessage.Message, s.sendChannelSize)
-	s.done = make(chan bool)
-	go s.sendLoop()
+	ctx, cancel := context.WithCancel(context.Background())
+	s.done = cancel
+	go s.sendLoop(ctx)
 
 	return nil
 }
@@ -327,7 +332,7 @@ func (s *SSLConn) close(reason string) error {
 	// don't close s.sendMessages - not needed and can create race with sendLoop
 
 	// stop sendLoop
-	s.done <- true
+	s.done()
 
 	if s.Socket != nil {
 		err := s.Socket.Close(reason)

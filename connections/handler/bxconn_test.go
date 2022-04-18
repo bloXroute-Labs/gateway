@@ -4,6 +4,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/bxmessage"
 	"github.com/bloXroute-Labs/gateway/connections"
 	"github.com/bloXroute-Labs/gateway/test/bxmock"
+	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/bloXroute-Labs/gateway/utils"
 	"github.com/stretchr/testify/assert"
 	"runtime"
@@ -22,6 +23,18 @@ func (th *testHandler) ProcessMessage(msg bxmessage.MessageBytes) {
 
 func (th *testHandler) setConn(b *BxConn) {
 	th.BxConn = b
+}
+
+func TestBxConn_BDNIsDefaultForOldProtocol(t *testing.T) {
+	th := testHandler{}
+	_, bx := bxConn(&th)
+	th.setConn(bx)
+
+	helloMessage := bxmessage.Hello{}
+	b, _ := helloMessage.Pack(bxmessage.FlashbotsGatewayProtocol - 1)
+	bx.ProcessMessage(b)
+
+	assert.True(t, bx.capabilities&types.CapabilityBDN != 0)
 }
 
 // semi integration test: in general, sleep should be avoided, but these closing tests cases are checking that we are closing goroutines correctly

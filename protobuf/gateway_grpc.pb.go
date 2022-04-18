@@ -24,6 +24,8 @@ type GatewayClient interface {
 	GetTx(ctx context.Context, in *GetBxTransactionRequest, opts ...grpc.CallOption) (*GetBxTransactionResponse, error)
 	Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopReply, error)
 	Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionReply, error)
+	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
+	Subscriptions(ctx context.Context, in *SubscriptionsRequest, opts ...grpc.CallOption) (*SubscriptionsReply, error)
 }
 
 type gatewayClient struct {
@@ -88,6 +90,24 @@ func (c *gatewayClient) Version(ctx context.Context, in *VersionRequest, opts ..
 	return out, nil
 }
 
+func (c *gatewayClient) Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error) {
+	out := new(StatusResponse)
+	err := c.cc.Invoke(ctx, "/gateway.Gateway/Status", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayClient) Subscriptions(ctx context.Context, in *SubscriptionsRequest, opts ...grpc.CallOption) (*SubscriptionsReply, error) {
+	out := new(SubscriptionsReply)
+	err := c.cc.Invoke(ctx, "/gateway.Gateway/Subscriptions", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GatewayServer is the server API for Gateway service.
 // All implementations must embed UnimplementedGatewayServer
 // for forward compatibility
@@ -98,6 +118,8 @@ type GatewayServer interface {
 	GetTx(context.Context, *GetBxTransactionRequest) (*GetBxTransactionResponse, error)
 	Stop(context.Context, *StopRequest) (*StopReply, error)
 	Version(context.Context, *VersionRequest) (*VersionReply, error)
+	Status(context.Context, *StatusRequest) (*StatusResponse, error)
+	Subscriptions(context.Context, *SubscriptionsRequest) (*SubscriptionsReply, error)
 	mustEmbedUnimplementedGatewayServer()
 }
 
@@ -122,6 +144,12 @@ func (UnimplementedGatewayServer) Stop(context.Context, *StopRequest) (*StopRepl
 }
 func (UnimplementedGatewayServer) Version(context.Context, *VersionRequest) (*VersionReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Version not implemented")
+}
+func (UnimplementedGatewayServer) Status(context.Context, *StatusRequest) (*StatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Status not implemented")
+}
+func (UnimplementedGatewayServer) Subscriptions(context.Context, *SubscriptionsRequest) (*SubscriptionsReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Subscriptions not implemented")
 }
 func (UnimplementedGatewayServer) mustEmbedUnimplementedGatewayServer() {}
 
@@ -244,6 +272,42 @@ func _Gateway_Version_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Gateway_Status_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServer).Status(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/gateway.Gateway/Status",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServer).Status(ctx, req.(*StatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Gateway_Subscriptions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubscriptionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServer).Subscriptions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/gateway.Gateway/Subscriptions",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServer).Subscriptions(ctx, req.(*SubscriptionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Gateway_ServiceDesc is the grpc.ServiceDesc for Gateway service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -274,6 +338,14 @@ var Gateway_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Version",
 			Handler:    _Gateway_Version_Handler,
+		},
+		{
+			MethodName: "Status",
+			Handler:    _Gateway_Status_Handler,
+		},
+		{
+			MethodName: "Subscriptions",
+			Handler:    _Gateway_Subscriptions_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

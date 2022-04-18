@@ -1,9 +1,9 @@
 package services
 
 import (
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/utils"
 	cmap "github.com/orcaman/concurrent-map"
-	log "github.com/sirupsen/logrus"
 	"time"
 )
 

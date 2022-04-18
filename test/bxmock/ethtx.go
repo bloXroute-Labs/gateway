@@ -63,7 +63,7 @@ func newEthLegacyTx(nonce uint64, privateKey *ecdsa.PrivateKey) *ethtypes.Transa
 	address := crypto.PubkeyToAddress(privateKey.PublicKey)
 	unsignedTx := ethtypes.NewTx(&ethtypes.LegacyTx{
 		Nonce:    nonce,
-		GasPrice: big.NewInt(1),
+		GasPrice: big.NewInt(100),
 		Gas:      0,
 		To:       &address,
 		Value:    big.NewInt(1),
@@ -80,7 +80,7 @@ func newEthAccessListTx(nonce uint64, privateKey *ecdsa.PrivateKey) *ethtypes.Tr
 	unsignedTx := ethtypes.NewTx(&ethtypes.AccessListTx{
 		ChainID:    chainID,
 		Nonce:      nonce,
-		GasPrice:   big.NewInt(1),
+		GasPrice:   big.NewInt(100),
 		Gas:        0,
 		To:         &address,
 		Value:      big.NewInt(1),
@@ -99,8 +99,8 @@ func newEthDynamicFeeTx(nonce uint64, privateKey *ecdsa.PrivateKey) *ethtypes.Tr
 	unsignedTx := ethtypes.NewTx(&ethtypes.DynamicFeeTx{
 		ChainID:    chainID,
 		Nonce:      nonce,
-		GasTipCap:  big.NewInt(1),
-		GasFeeCap:  big.NewInt(1),
+		GasTipCap:  big.NewInt(100),
+		GasFeeCap:  big.NewInt(100),
 		Gas:        0,
 		To:         &address,
 		Value:      big.NewInt(1),

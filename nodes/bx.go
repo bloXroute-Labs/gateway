@@ -9,11 +9,11 @@ import (
 	"github.com/bloXroute-Labs/gateway/config"
 	"github.com/bloXroute-Labs/gateway/connections"
 	"github.com/bloXroute-Labs/gateway/connections/handler"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	pbbase "github.com/bloXroute-Labs/gateway/protobuf"
 	"github.com/bloXroute-Labs/gateway/services"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/bloXroute-Labs/gateway/utils"
-	log "github.com/sirupsen/logrus"
 	"reflect"
 	"sync"
 	"time"
@@ -47,8 +47,8 @@ func NewBx(bxConfig *config.Bx, dataDir string) Bx {
 // OnConnEstablished - a callback function. Called when new connection is established
 func (bn *Bx) OnConnEstablished(conn connections.Conn) error {
 	connInfo := conn.Info()
-	conn.Log().Infof("connection established, protocol version %v, network %v, on local port %v",
-		conn.Protocol(), connInfo.NetworkNum, conn.Info().LocalPort)
+	conn.Log().Infof("connection established, gateway: %v, bdn: %v protocol version %v, network %v, on local port %v",
+		connInfo.IsGateway(), connInfo.IsBDN(), conn.Protocol(), connInfo.NetworkNum, conn.Info().LocalPort)
 	bn.ConnectionsLock.Lock()
 	defer bn.ConnectionsLock.Unlock()
 	bn.Connections = append(bn.Connections, conn)

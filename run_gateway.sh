@@ -33,10 +33,6 @@ LOG_FILE_LEVEL="debug"
 IMAGE_TAG="latest"
 EXTERNAL_IP=""
 
-CA_CERT_URL="https://s3.amazonaws.com/credentials.blxrbdn.com/ca/ca_cert.pem"
-mkdir -p "$CERT_PATH"/external_gateway/ca
-curl $CA_CERT_URL -o "$CERT_PATH"/external_gateway/ca/ca_cert.pem
-
 ARGS="--ws --port 1801"
 if [[ "${EXTERNAL_IP}" != "" ]]; then
   ARGS="${ARGS} --external-ip ${EXTERNAL_IP}"

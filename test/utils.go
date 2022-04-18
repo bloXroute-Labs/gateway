@@ -2,9 +2,9 @@ package test
 
 import (
 	"encoding/json"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	log "github.com/sirupsen/logrus"
 	"math/rand"
 	"os"
 	"regexp"

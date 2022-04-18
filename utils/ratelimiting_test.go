@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"github.com/bloXroute-Labs/gateway/logger"
 	"github.com/sirupsen/logrus"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
@@ -130,6 +131,7 @@ func TestLeakyBucketRateLimiter_Take_BucketCounterSameWhenOutOfCalls(t *testing.
 }
 
 func TestTxTraceLeakyBucketRateLimiter_Take_HasCorrectLogging(t *testing.T) {
+	logger.NonBlocking.AvoidChannel()
 	mockClock := &MockClock{}
 	startTime := time.Unix(0, 0)
 	mockClock.SetTime(startTime)

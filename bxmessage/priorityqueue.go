@@ -1,8 +1,7 @@
-package utils
+package bxmessage
 
 import (
 	"container/heap"
-	"github.com/bloXroute-Labs/gateway/bxmessage"
 	"sync"
 	"time"
 )
@@ -10,7 +9,7 @@ import (
 // MsgPriorityQueue hold messages by message priority
 type MsgPriorityQueue struct {
 	lock             sync.Mutex
-	callBack         func(bxmessage.Message)
+	callBack         func(Message)
 	callBackInterval time.Duration
 	storage          items
 	lastPopTime      time.Time
@@ -18,12 +17,12 @@ type MsgPriorityQueue struct {
 
 // PriorityQueueItem holds message to be sent by priority and time that message is pushed onto queue
 type PriorityQueueItem struct {
-	msg          bxmessage.Message
+	msg          Message
 	timeReceived time.Time
 }
 
 // NewMsgPriorityQueue creates an empty, initialized priorityQueue heap for messages
-func NewMsgPriorityQueue(callBack func(bxmessage.Message), callBackInterval time.Duration) *MsgPriorityQueue {
+func NewMsgPriorityQueue(callBack func(Message), callBackInterval time.Duration) *MsgPriorityQueue {
 	pq := &MsgPriorityQueue{
 		callBack:         callBack,
 		callBackInterval: callBackInterval,
@@ -50,7 +49,7 @@ func (pq *MsgPriorityQueue) push(item PriorityQueueItem) {
 }
 
 // Push adds new message to the priority queue
-func (pq *MsgPriorityQueue) Push(msg bxmessage.Message) {
+func (pq *MsgPriorityQueue) Push(msg Message) {
 	pq.lock.Lock()
 	defer pq.lock.Unlock()
 
@@ -92,7 +91,7 @@ func (pq *MsgPriorityQueue) Push(msg bxmessage.Message) {
 	}
 }
 
-func (pq *MsgPriorityQueue) pop() bxmessage.Message {
+func (pq *MsgPriorityQueue) pop() Message {
 	// should be called with lock held
 	if pq.storage.Len() == 0 {
 		return nil
@@ -101,7 +100,7 @@ func (pq *MsgPriorityQueue) pop() bxmessage.Message {
 }
 
 // Pop extract the best message from the priority queue
-func (pq *MsgPriorityQueue) Pop() bxmessage.Message {
+func (pq *MsgPriorityQueue) Pop() Message {
 	pq.lock.Lock()
 	defer pq.lock.Unlock()
 	return pq.pop()

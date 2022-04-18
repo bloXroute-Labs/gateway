@@ -3,9 +3,9 @@ package connections
 import (
 	"fmt"
 	"github.com/bloXroute-Labs/gateway/bxmessage"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/bloXroute-Labs/gateway/utils"
-	log "github.com/sirupsen/logrus"
 	"time"
 )
 
@@ -26,6 +26,11 @@ func NewBlockchainConn(ipEndpoint types.NodeEndpoint) Blockchain {
 			"remoteAddr": fmt.Sprintf("%v:%v", ipEndpoint.IP, ipEndpoint.Port),
 		}),
 	}
+}
+
+// NodeEndpoint return the blockchain connection endpoint
+func (b Blockchain) NodeEndpoint() types.NodeEndpoint {
+	return b.endpoint
 }
 
 // Info returns connection metadata

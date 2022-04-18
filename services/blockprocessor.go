@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/bloXroute-Labs/gateway/bxmessage"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/ethereum/go-ethereum/rlp"
-	log "github.com/sirupsen/logrus"
 	"math/big"
 	"sync"
 	"time"
@@ -162,20 +162,24 @@ func (bp *rlpBlockProcessor) BxBlockFromBroadcast(broadcast *bxmessage.Broadcast
 	compressedTransactionCount := 0
 	txs := make([]*types.BxBlockTransaction, 0, len(rlpBlock.Txs))
 
+	var txsBytes uint64
 	for _, tx := range rlpBlock.Txs {
 		if !tx.IsFullTransaction {
 			if compressedTransactionCount >= len(bxTransactions) {
 				return nil, missingShortIDs, fmt.Errorf("could not decompress bad block: more empty transactions than short IDs provided")
 			}
 			txs = append(txs, types.NewRawBxBlockTransaction(bxTransactions[compressedTransactionCount].Content()))
+			txsBytes += uint64(len(bxTransactions[compressedTransactionCount].Content()))
 			compressedTransactionCount++
 		} else {
 			txs = append(txs, types.NewRawBxBlockTransaction(tx.Transaction))
+			txsBytes += uint64(len(tx.Transaction))
 		}
 	}
+	blockSize := int(rlp.ListSize(uint64(len(rlpBlock.Header)) + rlp.ListSize(txsBytes) + uint64(len(rlpBlock.Trailer))))
 
 	bp.markProcessed(blockHash)
-	block := types.NewRawBxBlock(broadcast.Hash(), rlpBlock.Header, txs, rlpBlock.Trailer, rlpBlock.TotalDifficulty, rlpBlock.Number)
+	block := types.NewRawBxBlock(broadcast.Hash(), rlpBlock.Header, txs, rlpBlock.Trailer, rlpBlock.TotalDifficulty, rlpBlock.Number, blockSize)
 	return block, missingShortIDs, err
 }
 

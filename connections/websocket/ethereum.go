@@ -3,9 +3,9 @@ package websocket
 import (
 	"encoding/json"
 	"fmt"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/gorilla/websocket"
-	log "github.com/sirupsen/logrus"
 	"strconv"
 	"sync"
 )

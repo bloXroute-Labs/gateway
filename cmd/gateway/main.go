@@ -3,23 +3,23 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/bloXroute-Labs/gateway"
 	"github.com/bloXroute-Labs/gateway/blockchain"
 	"github.com/bloXroute-Labs/gateway/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/config"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/nodes"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/bloXroute-Labs/gateway/utils"
 	"github.com/bloXroute-Labs/gateway/version"
 	"github.com/ethereum/go-ethereum/crypto"
-	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 )
 
 func main() {
@@ -45,7 +45,7 @@ func main() {
 			utils.TxTraceMaxFileSizeFlag,
 			utils.TxTraceMaxBackupFilesFlag,
 			utils.AvoidPrioritySendingFlag,
-			utils.RelayHostFlag,
+			utils.RelayHostsFlag,
 			utils.DataDirFlag,
 			utils.GRPCFlag,
 			utils.GRPCHostFlag,
@@ -54,11 +54,13 @@ func main() {
 			utils.GRPCPasswordFlag,
 			utils.BlockchainNetworkFlag,
 			utils.EnodesFlag,
+			utils.EthWSUriFlag,
+			utils.MultiNode,
 			utils.BlocksOnlyFlag,
 			utils.AllTransactionsFlag,
 			utils.PrivateKeyFlag,
-			utils.EthWSUriFlag,
 			utils.NodeTypeFlag,
+			utils.GatewayModeFlag,
 			utils.DisableProfilingFlag,
 			utils.FluentDFlag,
 			utils.FluentdHostFlag,
@@ -67,7 +69,9 @@ func main() {
 			utils.WSTLSFlag,
 			utils.MEVBuilderURIFlag,
 			utils.MEVMinerURIFlag,
+			utils.MEVBundleMethodNameFlag,
 			utils.SendBlockConfirmation,
+			utils.MegaBundleProcessing,
 		},
 		Action: runGateway,
 	}
@@ -103,13 +107,14 @@ func runGateway(c *cli.Context) error {
 	}
 
 	var blockchainPeers []types.NodeEndpoint
-	for _, blockchainPeer := range ethConfig.StaticPeers {
+	for _, blockchainPeerInfo := range ethConfig.StaticPeers {
+		blockchainPeer := blockchainPeerInfo.Enode
 		enodePublicKey := fmt.Sprintf("%x", crypto.FromECDSAPub(blockchainPeer.Pubkey())[1:])
 		blockchainPeers = append(blockchainPeers, types.NodeEndpoint{IP: blockchainPeer.IP().String(), Port: blockchainPeer.TCP(), PublicKey: enodePublicKey})
 	}
-	startupBlockchainClient := len(blockchainPeers) > 0
+	startupBlockchainClient := bxConfig.GatewayMode.IsBDN() && len(blockchainPeers) > 0
 
-	err = nodes.InitLogs(bxConfig.Log, version.BuildVersion)
+	err = log.Init(bxConfig.Config, version.BuildVersion)
 	if err != nil {
 		return err
 	}
@@ -121,18 +126,18 @@ func runGateway(c *cli.Context) error {
 		bridge = blockchain.NewNoOpBridge(eth.Converter{})
 	}
 
-	var wsProvider blockchain.WSProvider
-	ethWSURI := c.String(utils.EthWSUriFlag.Name)
-	if ethWSURI != "" {
-		// TODO range over blockchain peers when supporting multiple nodes connections
-		wsProvider = eth.NewEthWSProvider(ethWSURI, 10*time.Second)
-	} else if bxConfig.ManageWSServer {
-		return fmt.Errorf("--eth-ws-uri must be provided if --manage-ws-server is enabled")
-	} else if bxConfig.WebsocketEnabled || bxConfig.WebsocketTLSEnabled {
-		log.Warnf("websocket server enabled but --eth-ws-uri startup parameter not provided: only newTxs and bdnBlocks feeds are available")
+	if bxConfig.ManageWSServer && !bxConfig.WebsocketEnabled && !bxConfig.WebsocketTLSEnabled {
+		return fmt.Errorf("websocket server must be enabled using --ws or --ws-tls if --manage-ws-server is enabled")
+	}
+	wsManager := eth.NewEthWSManager(ethConfig.StaticPeers, eth.NewWSProvider, bxgateway.WSProviderTimeout)
+	if (bxConfig.WebsocketEnabled || bxConfig.WebsocketTLSEnabled) && !ethConfig.ValidWSAddr() {
+		log.Warn("websocket server enabled but no valid websockets endpoint specified via --eth-ws-uri nor --multi-node: only newTxs and bdnBlocks feeds are available")
+	}
+	if bxConfig.ManageWSServer && !ethConfig.ValidWSAddr() {
+		return fmt.Errorf("if websocket server management is enabled, a valid websocket address must be provided")
 	}
 
-	gateway, err := nodes.NewGateway(ctx, bxConfig, bridge, wsProvider, blockchainPeers)
+	gateway, err := nodes.NewGateway(ctx, bxConfig, bridge, wsManager, blockchainPeers, ethConfig.StaticPeers)
 	if err != nil {
 		return err
 	}
@@ -141,7 +146,7 @@ func runGateway(c *cli.Context) error {
 		if err != nil {
 			// TODO close the gateway while notify all other go routine (bridge, ws server, ...)
 			log.Errorf("closing gateway with err %v", err)
-			os.Exit(0)
+			log.Exit(0)
 		}
 	}()
 
@@ -149,12 +154,12 @@ func runGateway(c *cli.Context) error {
 	if startupBlockchainClient {
 		log.Infof("starting blockchain client with config for network ID: %v", ethConfig.Network)
 
-		blockchainServer, err = eth.NewServerWithEthLogger(ctx, ethConfig, bridge, c.String(utils.DataDirFlag.Name), wsProvider)
+		blockchainServer, err = eth.NewServerWithEthLogger(ctx, ethConfig, bridge, c.String(utils.DataDirFlag.Name), wsManager)
 		if err != nil {
 			return nil
 		}
 
-		if err = blockchainServer.AddEthLoggerFileHandler(bxConfig.Log.FileName); err != nil {
+		if err = blockchainServer.AddEthLoggerFileHandler(bxConfig.Config.FileName); err != nil {
 			log.Warnf("skipping reconfiguration of eth p2p server logger due to error: %v", err)
 		}
 
