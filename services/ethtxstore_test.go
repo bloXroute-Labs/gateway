@@ -4,6 +4,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/utils"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -23,7 +24,7 @@ var blockchainNetwork = sdnmessage.BlockchainNetwork{
 }
 
 func TestEthTxStore_InvalidChainID(t *testing.T) {
-	store := NewEthTxStore(&bxmock.MockClock{}, 30*time.Second, 30*time.Second, 30*time.Second,
+	store := NewEthTxStore(&utils.MockClock{}, 30*time.Second, 30*time.Second, 30*time.Second,
 		NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{testNetworkNum: &blockchainNetwork})
 	hash := types.SHA256Hash{1}
 	tx := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey)
@@ -35,13 +36,13 @@ func TestEthTxStore_InvalidChainID(t *testing.T) {
 	assert.True(t, result1.NewContent)
 	assert.False(t, result1.NewSID)
 	assert.False(t, result1.FailedValidation)
-	assert.False(t, result1.ReuseSenderNonce)
+	assert.False(t, result1.Transaction.Flags().IsReuseSenderNonce())
 	assert.Equal(t, 1, store.Count())
 
 }
 
 func TestEthTxStore_Add(t *testing.T) {
-	store := NewEthTxStore(&bxmock.MockClock{}, 30*time.Second, 30*time.Second, 30*time.Second,
+	store := NewEthTxStore(&utils.MockClock{}, 30*time.Second, 30*time.Second, 30*time.Second,
 		NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{testNetworkNum: &blockchainNetwork})
 	hash := types.SHA256Hash{1}
 	tx := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey)
@@ -53,7 +54,7 @@ func TestEthTxStore_Add(t *testing.T) {
 	assert.True(t, result2.NewContent)
 	assert.False(t, result2.NewSID)
 	assert.False(t, result2.FailedValidation)
-	assert.False(t, result2.ReuseSenderNonce)
+	assert.False(t, result2.Transaction.Flags().IsReuseSenderNonce())
 	assert.Equal(t, 1, store.Count())
 
 	// add short ID for already seen tx
@@ -62,7 +63,7 @@ func TestEthTxStore_Add(t *testing.T) {
 	assert.False(t, result3.NewContent)
 	assert.True(t, result3.NewSID)
 	assert.False(t, result3.FailedValidation)
-	assert.False(t, result3.ReuseSenderNonce)
+	assert.False(t, result3.Transaction.Flags().IsReuseSenderNonce())
 	assert.Equal(t, 1, store.Count())
 
 	// add invalid transaction - should not be added but should get to History
@@ -80,14 +81,14 @@ func TestEthTxStore_Add(t *testing.T) {
 	assert.False(t, result3.NewContent)
 	assert.False(t, result3.NewSID)
 	assert.False(t, result3.FailedValidation)
-	assert.False(t, result3.ReuseSenderNonce)
+	assert.False(t, result3.Transaction.Flags().IsReuseSenderNonce())
 
 	assert.Equal(t, 1, store.Count())
 
 }
 
 func TestEthTxStore_AddReuseSenderNonce(t *testing.T) {
-	mc := bxmock.MockClock{}
+	mc := utils.MockClock{}
 	nc := blockchainNetwork
 	nc.AllowTimeReuseSenderNonce = 10
 	store := NewEthTxStore(&mc, 30*time.Second, 30*time.Second, 20*time.Second, NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{testNetworkNum: &nc})
@@ -117,6 +118,7 @@ func TestEthTxStore_AddReuseSenderNonce(t *testing.T) {
 	result0 := store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, true, types.TFPaidTx, mc.Now(), tx1.ChainId().Int64())
 	assert.Equal(t, 1, store.Count())
 	result0.Transaction.SetAddTime(mc.Now())
+	assert.False(t, result0.Transaction.Flags().IsReuseSenderNonce())
 	//result0.Transaction.MarkProcessed()
 
 	// add transaction with same nonce/sender, should be notified and not added to tx store
@@ -125,56 +127,58 @@ func TestEthTxStore_AddReuseSenderNonce(t *testing.T) {
 	assert.True(t, result1.NewContent)
 	assert.False(t, result1.NewSID)
 	assert.False(t, result1.FailedValidation)
-	assert.True(t, result1.ReuseSenderNonce)
-	assert.Equal(t, 1, store.Count())
+	assert.True(t, result1.Transaction.Flags().IsReuseSenderNonce())
+	assert.Equal(t, 2, store.Count())
 	result1.Transaction.SetAddTime(mc.Now())
 
 	// add transaction with incremented nonce
 	result2 := store.Add(hash3, content3, types.ShortIDEmpty, testNetworkNum, true, types.TFPaidTx, mc.Now(), tx3.ChainId().Int64())
-	assert.Equal(t, 2, store.Count())
+	assert.Equal(t, 3, store.Count())
+	assert.False(t, result2.Transaction.Flags().IsReuseSenderNonce())
 	result2.Transaction.SetAddTime(mc.Now())
 
 	// add transaction with different sender
 	result3 := store.Add(hash4, content4, types.ShortIDEmpty, testNetworkNum, true, types.TFPaidTx, mc.Now(), tx4.ChainId().Int64())
-	assert.Equal(t, 3, store.Count())
+	assert.Equal(t, 4, store.Count())
+	assert.False(t, result3.Transaction.Flags().IsReuseSenderNonce())
 	result3.Transaction.SetAddTime(mc.Now())
 
-	// time has elapsed, ok now
-	mc.IncTime(11 * time.Second)
+	//// Hash2 is already in txstore
+	mc.IncTime(time.Duration(1+nc.AllowTimeReuseSenderNonce) * time.Second)
 	result2 = store.Add(hash2, content2, types.ShortIDEmpty, testNetworkNum, true, types.TFPaidTx, mc.Now(), tx2.ChainId().Int64())
-	assert.True(t, result2.NewTx)
-	assert.True(t, result2.NewContent)
+	assert.False(t, result2.NewTx)
+	assert.False(t, result2.NewContent)
 	assert.False(t, result2.NewSID)
 	assert.False(t, result2.FailedValidation)
-	assert.False(t, result2.ReuseSenderNonce)
+	assert.True(t, result2.Transaction.Flags().IsReuseSenderNonce())
 	assert.Equal(t, 4, store.Count())
 
 	// clean tx without shortID - we clean all tx excluding hash2 that was added 11  seconds ago
 	mc.IncTime(11 * time.Second)
 	cleaned, cleanedShortIDs := store.BxTxStore.clean()
 	assert.Equal(t, 0, len(cleanedShortIDs[testNetworkNum]))
-	assert.Equal(t, 3, cleaned)
-	// clean tx without shortID - now we should clean hash2
-	mc.IncTime(11 * time.Second)
-	cleaned, cleanedShortIDs = store.BxTxStore.clean()
-	assert.Equal(t, 0, len(cleanedShortIDs[testNetworkNum]))
-	assert.Equal(t, 1, cleaned)
+	assert.Equal(t, 4, cleaned)
+	//// clean tx without shortID - now we should clean hash2
+	//mc.IncTime(11 * time.Second)
+	//cleaned, cleanedShortIDs = store.BxTxStore.clean()
+	//assert.Equal(t, 0, len(cleanedShortIDs[testNetworkNum]))
+	//assert.Equal(t, 1, cleaned)
 
-	// now, should be able to add it back
+	// still, can't add it back due to history
 	mc.IncTime(11 * time.Second)
 	result2 = store.Add(hash2, content2, types.ShortIDEmpty, testNetworkNum, true, types.TFPaidTx, mc.Now(), tx2.ChainId().Int64())
 	assert.False(t, result2.NewTx)
 	assert.False(t, result2.NewContent)
 	assert.False(t, result2.NewSID)
 	assert.False(t, result2.FailedValidation)
-	assert.False(t, result2.ReuseSenderNonce)
+	assert.False(t, result2.Transaction.Flags().IsReuseSenderNonce())
 	assert.True(t, result2.AlreadySeen)
 	assert.Equal(t, 0, store.Count())
 
 }
 
 func TestEthTxStore_AddInvalidTx(t *testing.T) {
-	store := NewEthTxStore(&bxmock.MockClock{}, 30*time.Second, 30*time.Second, 10*time.Second,
+	store := NewEthTxStore(&utils.MockClock{}, 30*time.Second, 30*time.Second, 10*time.Second,
 		NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{blockchainNetwork.NetworkNum: &blockchainNetwork})
 	hash := types.SHA256Hash{1}
 	content := types.TxContent{1, 2, 3}
@@ -185,12 +189,12 @@ func TestEthTxStore_AddInvalidTx(t *testing.T) {
 	assert.True(t, result.NewContent)
 	assert.False(t, result.NewSID)
 	assert.True(t, result.FailedValidation)
-	assert.False(t, result.ReuseSenderNonce)
+	assert.False(t, result.Transaction.Flags().IsReuseSenderNonce())
 	assert.Equal(t, 1, store.Count())
 }
 
 func TestNonceTracker_track(t *testing.T) {
-	c := bxmock.MockClock{}
+	c := utils.MockClock{}
 	nc := blockchainNetwork
 	nc.AllowTimeReuseSenderNonce = 1
 	nc.NetworkNum = testNetworkNum
@@ -241,7 +245,7 @@ func TestNonceTracker_track(t *testing.T) {
 }
 
 func TestNonceTracker_clean(t *testing.T) {
-	c := bxmock.MockClock{}
+	c := utils.MockClock{}
 	nc := blockchainNetwork
 	nc.AllowTimeReuseSenderNonce = 1
 	nc.NetworkNum = testNetworkNum

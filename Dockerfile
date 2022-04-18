@@ -1,5 +1,5 @@
 ARG GO_VERSION=alpine
-ARG BASE=golang:alpine
+ARG BASE=golang:1.17-alpine
 
 FROM ${BASE} as builder
 
@@ -29,7 +29,6 @@ COPY go.mod .
 COPY go.sum .
 RUN go mod download
 COPY --chown=bloxroute:bloxroute Makefile .
-RUN make third_party_utils
 
 COPY --chown=bloxroute:bloxroute . .
 RUN make gateway

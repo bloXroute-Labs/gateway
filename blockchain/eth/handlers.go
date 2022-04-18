@@ -2,9 +2,10 @@ package eth
 
 import (
 	"fmt"
+	log "github.com/bloXroute-Labs/gateway/logger"
+	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
-	log "github.com/sirupsen/logrus"
 )
 
 func handleGetBlockHeaders(backend Backend, msg Decoder, peer *Peer) error {
@@ -157,9 +158,11 @@ func handleTransactions(backend Backend, msg Decoder, peer *Peer) error {
 	if err := msg.Decode(&txs); err != nil {
 		return fmt.Errorf("could not decode message: %v: %v", msg, err)
 	}
-	for _, tx := range txs {
-		log.Tracef("%v: receive tx %v", peer, tx.Hash())
+	hashes := make([]common.Hash, len(txs))
+	for idx, tx := range txs {
+		hashes[idx] = tx.Hash()
 	}
+	log.Tracef("%v: receive tx %v", peer, hashes)
 
 	return backend.Handle(peer, &txs)
 }
@@ -182,11 +185,16 @@ func handlePooledTransactions66(backend Backend, msg Decoder, peer *Peer) error 
 	if err := msg.Decode(&pooledTxsResponse); err != nil {
 		return fmt.Errorf("could not decode message: %v: %v", msg, err)
 	}
-
-	for _, tx := range pooledTxsResponse.PooledTransactionsPacket {
-		log.Tracef("%v: received pooled tx %v", peer, tx.Hash())
+	// TODO: check why we get empty
+	if len(pooledTxsResponse.PooledTransactionsPacket) == 0 {
+		return nil
+	}
+	hashes := make([]common.Hash, len(pooledTxsResponse.PooledTransactionsPacket))
+	for idx, tx := range pooledTxsResponse.PooledTransactionsPacket {
+		hashes[idx] = tx.Hash()
 	}
 
+	log.Tracef("%v: received pooled txs %v", peer, hashes)
 	return backend.Handle(peer, &pooledTxsResponse.PooledTransactionsPacket)
 }
 
@@ -196,9 +204,7 @@ func handleNewPooledTransactionHashes(backend Backend, msg Decoder, peer *Peer) 
 		return fmt.Errorf("could not decode message: %v: %v", msg, err)
 	}
 
-	for _, txHash := range txHashes {
-		log.Tracef("%v: received tx announcement %v", peer, txHash)
-	}
+	log.Tracef("%v: received tx announcement %v", peer, txHashes)
 
 	return backend.Handle(peer, &txHashes)
 }

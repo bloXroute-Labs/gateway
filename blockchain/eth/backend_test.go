@@ -2,6 +2,7 @@ package eth
 
 import (
 	"context"
+	"github.com/bloXroute-Labs/gateway"
 	"github.com/bloXroute-Labs/gateway/blockchain"
 	"github.com/bloXroute-Labs/gateway/blockchain/eth/test"
 	"github.com/bloXroute-Labs/gateway/blockchain/network"
@@ -22,17 +23,18 @@ import (
 
 const expectTimeout = time.Millisecond
 
-func setup(writeChannelSize int) (blockchain.Bridge, *Handler, *Peer) {
+func setup() (blockchain.Bridge, *Handler, []types.NodeEndpoint) {
 	bridge := blockchain.NewBxBridge(Converter{})
 	config, _ := network.NewEthereumPreset("Mainnet")
-	handler := NewHandler(context.Background(), bridge, &config, bxmock.NewMockWSProvider())
-	peer, _ := testPeer(writeChannelSize)
-	_ = handler.peers.register(peer)
-	return bridge, handler, peer
+	blockchainPeers, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
+	handler := NewHandler(context.Background(), bridge, &config, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout))
+	return bridge, handler, blockchainPeers
 }
 
 func TestHandler_HandleStatus(t *testing.T) {
-	_, handler, peer := setup(-1)
+	_, handler, _ := setup()
+	peer, _ := testPeer(1, 1)
+	_ = handler.peers.register(peer)
 	head := common.Hash{1, 2, 3}
 	headDifficulty := big.NewInt(100)
 	nextBlock := bxmock.NewEthBlock(2, head)
@@ -61,7 +63,9 @@ func TestHandler_HandleStatus(t *testing.T) {
 
 func TestHandler_HandleTransactions(t *testing.T) {
 	privateKey, _ := crypto.GenerateKey()
-	bridge, handler, peer := setup(-1)
+	bridge, handler, _ := setup()
+	peer, _ := testPeer(-1, 1)
+	_ = handler.peers.register(peer)
 
 	txs := []*ethtypes.Transaction{
 		bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey),
@@ -94,7 +98,9 @@ func TestHandler_HandleTransactions(t *testing.T) {
 }
 
 func TestHandler_HandleTransactionHashes(t *testing.T) {
-	bridge, handler, peer := setup(-1)
+	bridge, handler, _ := setup()
+	peer, _ := testPeer(-1, 1)
+	_ = handler.peers.register(peer)
 
 	txHashes := []types.SHA256Hash{
 		types.GenerateSHA256Hash(),
@@ -116,8 +122,152 @@ func TestHandler_HandleTransactionHashes(t *testing.T) {
 	}
 }
 
+func TestHandler_HandleNewBlock_MultiNode_SlowNode(t *testing.T) {
+	bridge, handler, _ := setup()
+	peer, _ := testPeer(-1, 1)
+	_ = handler.peers.register(peer)
+	blockHeight := uint64(1)
+
+	peer2, _ := testPeer(1, 2)
+	_ = handler.peers.register(peer2)
+
+	td := big.NewInt(10000)
+	blockA := bxmock.NewEthBlock(blockHeight, common.Hash{})
+	blockHeight++
+	blockB := bxmock.NewEthBlock(blockHeight, blockA.Hash())
+	blockHeight++
+	blockC := bxmock.NewEthBlock(blockHeight, blockB.Hash())
+	blockHeight++
+	blockD := bxmock.NewEthBlock(blockHeight, blockC.Hash())
+	blockHeight++
+	blockE := bxmock.NewEthBlock(blockHeight, blockD.Hash())
+
+	// both peers send blockA, second is not sent to BDN
+	err := testHandleNewBlock(handler, peer, blockA, td)
+	assert.Nil(t, err)
+	assertBlockSentToBDN(t, bridge, blockA.Hash())
+
+	err = testHandleNewBlock(handler, peer2, blockA, td)
+	assert.Nil(t, err)
+	assertNoBlockSentToBDN(t, bridge)
+
+	// peer1 sends blocks B-E first, all sent to BDN
+	err = testHandleNewBlock(handler, peer, blockB, td)
+	assert.Nil(t, err)
+	assertBlockSentToBDN(t, bridge, blockB.Hash())
+
+	err = testHandleNewBlock(handler, peer, blockC, td)
+	assert.Nil(t, err)
+	assertBlockSentToBDN(t, bridge, blockC.Hash())
+
+	err = testHandleNewBlock(handler, peer, blockD, td)
+	assert.Nil(t, err)
+	assertBlockSentToBDN(t, bridge, blockD.Hash())
+
+	err = testHandleNewBlock(handler, peer, blockE, td)
+	assert.Nil(t, err)
+	assertBlockSentToBDN(t, bridge, blockE.Hash())
+
+	// peer 2 sends same blocks B-E, none sent to BDN
+	err = testHandleNewBlock(handler, peer2, blockB, td)
+	assert.Nil(t, err)
+	assertNoBlockSentToBDN(t, bridge)
+
+	err = testHandleNewBlock(handler, peer2, blockC, td)
+	assert.Nil(t, err)
+	assertNoBlockSentToBDN(t, bridge)
+
+	err = testHandleNewBlock(handler, peer2, blockD, td)
+	assert.Nil(t, err)
+	assertNoBlockSentToBDN(t, bridge)
+
+	err = testHandleNewBlock(handler, peer2, blockE, td)
+	assert.Nil(t, err)
+	assertNoBlockSentToBDN(t, bridge)
+}
+
+func TestHandler_HandleNewBlock_MultiNode_BroadcastAmongNodes(t *testing.T) {
+	bridge, handler, _ := setup()
+	peer, _ := testPeer(-1, 1)
+	_ = handler.peers.register(peer)
+
+	peer2, _ := testPeer(1, 2)
+	_ = handler.peers.register(peer2)
+
+	td := big.NewInt(10000)
+	blockHeight := uint64(1)
+
+	block := bxmock.NewEthBlock(blockHeight, common.Hash{})
+	blockHeight++
+
+	err := testHandleNewBlock(handler, peer, block, td)
+	assert.Nil(t, err)
+	assertBlockSentToBDN(t, bridge, block.Hash())
+	assertQueuedBlockForBlockchain(t, peer2, block.Hash())
+	assertNoBlockQueuedForBlockchain(t, peer)
+}
+
+func TestHandler_HandleNewBlock_MultiNode_Fork(t *testing.T) {
+	bridge, handler, _ := setup()
+	peer, _ := testPeer(-1, 1)
+	_ = handler.peers.register(peer)
+	blockHeight := uint64(1)
+
+	peer2, _ := testPeer(1, 2)
+	_ = handler.peers.register(peer2)
+
+	td := big.NewInt(10000)
+	blockA := bxmock.NewEthBlock(blockHeight, common.Hash{})
+	blockHeight++
+	blockB1 := bxmock.NewEthBlock(blockHeight, blockA.Hash())
+	blockB2 := bxmock.NewEthBlock(blockHeight, blockA.Hash())
+	blockHeight++
+	blockC1 := bxmock.NewEthBlock(blockHeight, blockB1.Hash())
+	blockC2 := bxmock.NewEthBlock(blockHeight, blockB2.Hash())
+	blockHeight++
+	blockD := bxmock.NewEthBlock(blockHeight, blockC1.Hash())
+
+	err := testHandleNewBlock(handler, peer, blockA, td)
+	assert.Nil(t, err)
+	assertBlockSentToBDN(t, bridge, blockA.Hash())
+
+	// peer2 sends same block already sent by peer1, not sent to BDN
+	err = testHandleNewBlock(handler, peer2, blockA, td)
+	assert.Nil(t, err)
+	assertNoBlockSentToBDN(t, bridge)
+
+	err = testHandleNewBlock(handler, peer, blockB1, td)
+	assert.Nil(t, err)
+	assertBlockSentToBDN(t, bridge, blockB1.Hash())
+
+	// peer2 sends block at same height, not sent to BDN
+	err = testHandleNewBlock(handler, peer2, blockB2, td)
+	assert.Nil(t, err)
+	assertNoBlockSentToBDN(t, bridge)
+
+	err = testHandleNewBlock(handler, peer, blockC1, td)
+	assert.Nil(t, err)
+	assertBlockSentToBDN(t, bridge, blockC1.Hash())
+
+	// peer2 sends block at same height, not sent to BDN
+	err = testHandleNewBlock(handler, peer2, blockC2, td)
+	assert.Nil(t, err)
+	assertNoBlockSentToBDN(t, bridge)
+
+	err = testHandleNewBlock(handler, peer, blockD, td)
+	assert.Nil(t, err)
+	assertBlockSentToBDN(t, bridge, blockD.Hash())
+
+	// peer2 sends same block already sent by peer1, not sent to BDN
+	err = testHandleNewBlock(handler, peer2, blockD, td)
+	assert.Nil(t, err)
+	assertNoBlockSentToBDN(t, bridge)
+}
+
 func TestHandler_HandleNewBlock(t *testing.T) {
-	bridge, handler, peer := setup(-1)
+	bridge, handler, _ := setup()
+	peer, _ := testPeer(-1, 1)
+	_ = handler.peers.register(peer)
 	blockHeight := uint64(1)
 
 	block := bxmock.NewEthBlock(blockHeight, common.Hash{})
@@ -145,7 +295,9 @@ func TestHandler_HandleNewBlock(t *testing.T) {
 }
 
 func TestHandler_HandleNewBlock_TooOld(t *testing.T) {
-	bridge, handler, peer := setup(-1)
+	bridge, handler, _ := setup()
+	peer, _ := testPeer(-1, 1)
+	_ = handler.peers.register(peer)
 	blockHeight := uint64(1)
 
 	// oldest block that won't be sent to BDN
@@ -172,7 +324,9 @@ func TestHandler_HandleNewBlock_TooOld(t *testing.T) {
 }
 
 func TestHandler_HandleNewBlock_TooFarInFuture(t *testing.T) {
-	bridge, handler, peer := setup(-1)
+	bridge, handler, _ := setup()
+	peer, _ := testPeer(-1, 1)
+	_ = handler.peers.register(peer)
 	blockHeight := uint64(maxFutureBlockNumber + 100)
 
 	block := bxmock.NewEthBlock(blockHeight, common.Hash{})
@@ -192,7 +346,9 @@ func TestHandler_HandleNewBlock_TooFarInFuture(t *testing.T) {
 }
 
 func TestHandler_HandleNewBlockHashes(t *testing.T) {
-	bridge, handler, peer := setup(2)
+	bridge, handler, _ := setup()
+	peer, _ := testPeer(2, 1)
+	_ = handler.peers.register(peer)
 	peer.Start()
 	peerRW := peer.rw.(*test.MsgReadWriter)
 
@@ -269,7 +425,9 @@ func TestHandler_HandleNewBlockHashes(t *testing.T) {
 }
 
 func TestHandler_HandleNewBlockHashes_HandlingError(t *testing.T) {
-	bridge, handler, peer := setup(2)
+	bridge, handler, _ := setup()
+	peer, _ := testPeer(2, 1)
+	_ = handler.peers.register(peer)
 	peer.Start()
 	peerRW := peer.rw.(*test.MsgReadWriter)
 
@@ -304,7 +462,9 @@ func TestHandler_HandleNewBlockHashes_HandlingError(t *testing.T) {
 }
 
 func TestHandler_HandleNewBlockHashes66(t *testing.T) {
-	bridge, handler, peer := setup(2)
+	bridge, handler, _ := setup()
+	peer, _ := testPeer(2, 1)
+	_ = handler.peers.register(peer)
 	peer.version = eth.ETH66
 	peer.Start()
 	peerRW := peer.rw.(*test.MsgReadWriter)
@@ -373,7 +533,9 @@ func TestHandler_HandleNewBlockHashes66(t *testing.T) {
 }
 
 func TestHandler_processBDNBlock(t *testing.T) {
-	bridge, handler, peer := setup(1)
+	bridge, handler, _ := setup()
+	peer, _ := testPeer(1, 1)
+	_ = handler.peers.register(peer)
 	peer.Start()
 	peerRW := peer.rw.(*test.MsgReadWriter)
 
@@ -414,8 +576,75 @@ func TestHandler_processBDNBlock(t *testing.T) {
 	assertBlockSentToBDN(t, bridge, ethBlock.Hash())
 }
 
+func TestHandler_processBDNBlock_MultiNode(t *testing.T) {
+	bridge, handler, _ := setup()
+	peer, _ := testPeer(1, 1)
+	_ = handler.peers.register(peer)
+
+	// add extra peers
+	peer2, _ := testPeer(1, 2)
+	_ = handler.peers.register(peer2)
+	peer3, _ := testPeer(1, 3)
+	_ = handler.peers.register(peer3)
+
+	peer.Start()
+	peerRW := peer.rw.(*test.MsgReadWriter)
+	peer2.Start()
+	peerRW2 := peer2.rw.(*test.MsgReadWriter)
+	peer3.Start()
+	peerRW3 := peer3.rw.(*test.MsgReadWriter)
+
+	// generate bx block for processing
+	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
+	blockHash := ethBlock.Hash()
+	td := big.NewInt(10000)
+	bxBlock, _ := bridge.BlockBlockchainToBDN(NewBlockInfo(ethBlock, td))
+
+	// indicate previous head from status message
+	peer.confirmedHead = blockRef{hash: ethBlock.ParentHash()}
+	peer2.confirmedHead = blockRef{hash: ethBlock.ParentHash()}
+
+	handler.processBDNBlock(bxBlock)
+
+	// expect message to be sent to peer 1
+	blockPacket := assertBlockSentToBlockchain(t, peerRW, ethBlock.Hash())
+	assert.Equal(t, blockHash, blockPacket.Block.Hash())
+	assert.Equal(t, len(ethBlock.Transactions()), len(blockPacket.Block.Transactions()))
+	assert.Equal(t, td, blockPacket.TD)
+
+	// expect message to be sent to peer 2
+	blockPacket2 := assertBlockSentToBlockchain(t, peerRW2, ethBlock.Hash())
+	assert.Equal(t, blockHash, blockPacket2.Block.Hash())
+	assert.Equal(t, len(ethBlock.Transactions()), len(blockPacket2.Block.Transactions()))
+	assert.Equal(t, td, blockPacket2.TD)
+
+	// expect no block sent to peer3 because confirmedHead is not parent
+	assertNoBlockSentToBlockchain(t, peerRW3)
+
+	// contents stored in cache
+	assert.True(t, handler.chain.HasBlock(blockHash))
+
+	storedHeader, ok := handler.chain.getBlockHeader(10, blockHash)
+	assert.True(t, ok)
+	assert.Equal(t, ethBlock.Header(), storedHeader)
+
+	storedBody, ok := handler.chain.getBlockBody(blockHash)
+	assert.True(t, ok)
+	assert.Equal(t, ethBlock.Body().Uncles, storedBody.Uncles)
+	for i, tx := range ethBlock.Body().Transactions {
+		assert.Equal(t, tx.Hash(), storedBody.Transactions[i].Hash())
+	}
+
+	// confirm block, should send back to BDN and update head
+	err := handler.Handle(peer, &eth.BlockHeadersPacket{ethBlock.Header()})
+	assert.Nil(t, err)
+	assertBlockSentToBDN(t, bridge, ethBlock.Hash())
+}
+
 func TestHandler_processBDNBlockResolveDifficulty(t *testing.T) {
-	bridge, handler, peer := setup(1)
+	bridge, handler, _ := setup()
+	peer, _ := testPeer(1, 1)
+	_ = handler.peers.register(peer)
 	peer.Start()
 	peerRW := peer.rw.(*test.MsgReadWriter)
 
@@ -441,7 +670,9 @@ func TestHandler_processBDNBlockResolveDifficulty(t *testing.T) {
 }
 
 func TestHandler_processBDNBlockUnresolvableDifficulty(t *testing.T) {
-	bridge, handler, peer := setup(1)
+	bridge, handler, _ := setup()
+	peer, _ := testPeer(1, 1)
+	_ = handler.peers.register(peer)
 	peer.Start()
 	peerRW := peer.rw.(*test.MsgReadWriter)
 
@@ -467,9 +698,44 @@ func TestHandler_processBDNBlockUnresolvableDifficulty(t *testing.T) {
 	assert.Equal(t, blockHash, blockHashesPacket[0].Hash)
 }
 
+func TestHandler_BlockAtDepth(t *testing.T) {
+	c := newChain(context.Background(), 5, 5, time.Hour, 1000)
+	blockConfirmationCounts := 4
+	_, handler, _ := setup()
+	peer, _ := testPeer(1, 1)
+	_ = handler.peers.register(peer)
+	block1 := bxmock.NewEthBlock(1, common.Hash{})
+	block2 := bxmock.NewEthBlock(2, block1.Hash())
+	block3 := bxmock.NewEthBlock(3, block2.Hash())
+	block4 := bxmock.NewEthBlock(4, block3.Hash())
+	block5 := bxmock.NewEthBlock(5, block4.Hash())
+	addBlock(c, block1)
+	addBlock(c, block2)
+	addBlock(c, block3)
+	addBlock(c, block4)
+	addBlock(c, block5)
+
+	handler.chain = c
+	bxb1, err := handler.createBxBlockFromEthHeader(block1.Header())
+
+	// head of the chain state is block 5, for depth 4, the block should be 1
+	b1, err := handler.blockAtDepth(blockConfirmationCounts)
+	assert.Nil(t, err)
+	assert.Equal(t, b1.Hash(), bxb1.Hash())
+
+	// for depth 5, the chain state is not deep enough
+	blockConfirmationCounts = 5
+	_, err = handler.blockAtDepth(blockConfirmationCounts)
+	assert.NotNil(t, err)
+}
+
 func TestHandler_blockForks(t *testing.T) {
 	var err error
-	bridge, handler, peer := setup(1)
+	bridge, handler, _ := setup()
+	peer, _ := testPeer(1, 1)
+	_ = handler.peers.register(peer)
+	handler.config.SendBlockConfirmation = true
+	handler.config.BlockConfirmationsCount = 3
 	peer.Start()
 	peerRW := peer.rw.(*test.MsgReadWriter)
 
@@ -512,46 +778,55 @@ func TestHandler_blockForks(t *testing.T) {
 	assert.Nil(t, err)
 	assertBlockSentToBDN(t, bridge, block1.Hash())
 	assertNoBlockSentToBlockchain(t, peerRW)
+	assertNoConfirmationBlockSentToBDN(t, bridge)
 
 	// expectation: duplicate, nothing new
 	handler.processBDNBlock(bxBlock1)
 	assertNoBlockSentToBDN(t, bridge)
 	assertNoBlockSentToBlockchain(t, peerRW)
+	assertNoConfirmationBlockSentToBDN(t, bridge)
 
 	// expectation: sent to blockchain node (next in confirmed chain)
 	handler.processBDNBlock(bxBlock2a)
 	assertNoBlockSentToBDN(t, bridge)
 	assertBlockSentToBlockchain(t, peerRW, block2a.Hash())
+	assertNoConfirmationBlockSentToBDN(t, bridge)
 
 	// expectation: sent to gateway as confirmation
 	_ = testHandleNewBlock(handler, peer, newBlock2a.Block, newBlock2a.TD)
 	assertBlockSentToBDN(t, bridge, block2a.Hash())
 	assertNoBlockSentToBlockchain(t, peerRW)
+	assertNoConfirmationBlockSentToBDN(t, bridge)
 
 	// expectation: nothing sent anywhere (parked for blockchain, unconfirmed for BDN)
 	handler.processBDNBlock(bxBlock2b)
 	assertNoBlockSentToBDN(t, bridge)
 	assertNoBlockSentToBlockchain(t, peerRW)
+	assertNoConfirmationBlockSentToBDN(t, bridge)
 
 	// expectation: block sent to blockchain node
 	handler.processBDNBlock(bxBlock3a)
 	assertNoBlockSentToBDN(t, bridge)
 	assertBlockSentToBlockchain(t, peerRW, block3a.Hash())
+	assertNoConfirmationBlockSentToBDN(t, bridge)
 
 	// expectation: new block hashes confirms blocks, and sends to BDN
 	_ = testHandleNewBlockHashes(handler, peer, block3a.Hash(), block3a.NumberU64())
 	assertBlockSentToBDN(t, bridge, block3a.Hash())
 	assertNoBlockSentToBlockchain(t, peerRW)
+	assertNoConfirmationBlockSentToBDN(t, bridge)
 
 	// expectation: nothing sent anywhere (parked + unconfirmed)
 	handler.processBDNBlock(bxBlock3b)
 	assertNoBlockSentToBDN(t, bridge)
 	assertNoBlockSentToBlockchain(t, peerRW)
+	assertNoConfirmationBlockSentToBDN(t, bridge)
 
 	// expectation: nothing sent anywhere (unconfirmed, blockchain node is on 3a/4a path)
 	handler.processBDNBlock(bxBlock4b)
 	assertNoBlockSentToBDN(t, bridge)
 	assertNoBlockSentToBlockchain(t, peerRW)
+	assertNoConfirmationBlockSentToBDN(t, bridge)
 
 	// expectation: send 2b, 3b, 4b to BDN (confirmed now)
 	err = handler.Handle(peer, &newBlock4b)
@@ -560,6 +835,83 @@ func TestHandler_blockForks(t *testing.T) {
 	assertBlockSentToBDN(t, bridge, block3b.Hash())
 	assertBlockSentToBDN(t, bridge, block4b.Hash())
 	assertNoBlockSentToBlockchain(t, peerRW)
+	assertConfirmationBlockSentToGateway(t, bridge, bxBlock1)
+}
+
+func TestHandler_ConfirmBlockFromWS(t *testing.T) {
+	bridge, handler, _ := setup()
+
+	peer1, _ := testPeer(1, 1)
+	_ = handler.peers.register(peer1)
+	peer2, _ := testPeer(1, 2)
+	_ = handler.peers.register(peer2)
+	peer3, _ := testPeer(1, 3)
+	_ = handler.peers.register(peer3)
+
+	peer1.Start()
+	peerRW1 := peer1.rw.(*test.MsgReadWriter)
+	peer2.Start()
+	peerRW2 := peer2.rw.(*test.MsgReadWriter)
+	peer3.Start()
+	peerRW3 := peer3.rw.(*test.MsgReadWriter)
+
+	height := big.NewInt(1)
+	ethBlockA := bxmock.NewEthBlock(height.Uint64(), common.Hash{})
+
+	peer1.confirmedHead = blockRef{hash: ethBlockA.ParentHash()}
+	peer2.confirmedHead = blockRef{hash: ethBlockA.ParentHash()}
+	peer3.confirmedHead = blockRef{hash: ethBlockA.ParentHash()}
+
+	td := big.NewInt(10000)
+	blockA, _ := bridge.BlockBlockchainToBDN(NewBlockInfo(ethBlockA, td))
+	handler.processBDNBlock(blockA)
+
+	blockPacket := assertBlockSentToBlockchain(t, peerRW1, ethBlockA.Hash())
+	assert.Equal(t, ethBlockA.Hash(), blockPacket.Block.Hash())
+	assert.Equal(t, len(ethBlockA.Transactions()), len(blockPacket.Block.Transactions()))
+	assert.Equal(t, td, blockPacket.TD)
+
+	blockPacket = assertBlockSentToBlockchain(t, peerRW2, ethBlockA.Hash())
+	assert.Equal(t, ethBlockA.Hash(), blockPacket.Block.Hash())
+	assert.Equal(t, len(ethBlockA.Transactions()), len(blockPacket.Block.Transactions()))
+	assert.Equal(t, td, blockPacket.TD)
+
+	blockPacket = assertBlockSentToBlockchain(t, peerRW3, ethBlockA.Hash())
+	assert.Equal(t, ethBlockA.Hash(), blockPacket.Block.Hash())
+	assert.Equal(t, len(ethBlockA.Transactions()), len(blockPacket.Block.Transactions()))
+	assert.Equal(t, td, blockPacket.TD)
+
+	handler.confirmBlockFromWS(ethBlockA.Hash(), height, peer1)
+	time.Sleep(time.Millisecond)
+	assert.Equal(t, blockRef{height: 1, hash: ethBlockA.Hash()}, peer1.confirmedHead)
+	assert.Equal(t, blockRef{height: 0, hash: ethBlockA.ParentHash()}, peer2.confirmedHead)
+	assert.Equal(t, blockRef{height: 0, hash: ethBlockA.ParentHash()}, peer3.confirmedHead)
+	assertBlockSentToBDN(t, bridge, ethBlockA.Hash())
+	assertConfirmationBlockSentToGateway(t, bridge, blockA)
+
+	ethBlockB := bxmock.NewEthBlock(height.Uint64(), common.Hash{})
+	blockB, _ := bridge.BlockBlockchainToBDN(NewBlockInfo(ethBlockB, td))
+	handler.processBDNBlock(blockB)
+	handler.confirmBlockFromWS(ethBlockB.Hash(), height, peer2)
+	time.Sleep(time.Millisecond)
+	assert.Equal(t, blockRef{height: 1, hash: ethBlockA.Hash()}, peer1.confirmedHead)
+	assert.Equal(t, blockRef{height: 1, hash: ethBlockB.Hash()}, peer2.confirmedHead)
+	assert.Equal(t, blockRef{height: 0, hash: ethBlockA.ParentHash()}, peer3.confirmedHead)
+	assertNoBlockSentToBDN(t, bridge)
+	assertNoConfirmationBlockSentToBDN(t, bridge)
+
+	height = big.NewInt(2)
+	ethBlockB2 := bxmock.NewEthBlock(height.Uint64(), ethBlockB.Hash())
+	blockB2, _ := bridge.BlockBlockchainToBDN(NewBlockInfo(ethBlockB2, td))
+	handler.processBDNBlock(blockB2)
+	handler.confirmBlockFromWS(ethBlockB2.Hash(), height, peer2)
+	time.Sleep(time.Millisecond)
+	assert.Equal(t, blockRef{height: 1, hash: ethBlockA.Hash()}, peer1.confirmedHead)
+	assert.Equal(t, blockRef{height: 2, hash: ethBlockB2.Hash()}, peer2.confirmedHead)
+	assert.Equal(t, blockRef{height: 0, hash: ethBlockA.ParentHash()}, peer3.confirmedHead)
+	assertBlockSentToBDN(t, bridge, ethBlockB.Hash())
+	assertBlockSentToBDN(t, bridge, ethBlockB2.Hash())
+	assertConfirmationBlockSentToGateway(t, bridge, blockB2)
 }
 
 // variety of handling functions here to trigger handlers in handlers.go instead of directly invoking the handler (useful for setting state on Peer during handling)
@@ -590,6 +942,41 @@ func encodeRLP(code uint64, data interface{}) Decoder {
 		Code:    code,
 		Size:    uint32(size),
 		Payload: r,
+	}
+}
+
+func assertNewHeadSentToPeer(t *testing.T, peer *Peer, hash common.Hash, height uint64) {
+	select {
+	case sentHead := <-peer.newHeadCh:
+		assert.Equal(t, hash, sentHead.hash)
+		assert.Equal(t, height, sentHead.height)
+	case <-time.After(expectTimeout):
+		assert.FailNow(t, "peer did not receive newHead", "hash=%v", hash)
+	}
+}
+
+func assertNoNewHeadSentToPeer(t *testing.T, peer *Peer) {
+	select {
+	case sentHead := <-peer.newHeadCh:
+		assert.FailNow(t, "peer received unexpected newHead", "hash=%v", sentHead.hash)
+	case <-time.After(expectTimeout):
+	}
+}
+
+func assertConfirmationBlockSentToGateway(t *testing.T, bridge blockchain.Bridge, block *types.BxBlock) {
+	select {
+	case blockcnf := <-bridge.ReceiveConfirmedBlockFromNode():
+		assert.Equal(t, blockcnf.Block.Hash(), block.Hash())
+	case <-time.After(expectTimeout):
+		assert.FailNow(t, "BDN did not receive confirmed block", "hash=%v", block.Hash())
+	}
+}
+
+func assertNoConfirmationBlockSentToBDN(t *testing.T, bridge blockchain.Bridge) {
+	select {
+	case sentBlock := <-bridge.ReceiveConfirmedBlockFromNode():
+		assert.FailNow(t, "BDN received unexpected block confirmation", "hash=%v", sentBlock.Block.Hash())
+	case <-time.After(expectTimeout):
 	}
 }
 
@@ -628,4 +1015,21 @@ func assertBlockSentToBlockchain(t *testing.T, rw *test.MsgReadWriter, hash comm
 
 func assertNoBlockSentToBlockchain(t *testing.T, rw *test.MsgReadWriter) {
 	assert.False(t, rw.ExpectWrite(expectTimeout))
+}
+
+func assertQueuedBlockForBlockchain(t *testing.T, peer *Peer, hash common.Hash) {
+	select {
+	case sentBlock := <-peer.newBlockCh:
+		assert.Equal(t, hash.Bytes(), sentBlock.Block.Hash().Bytes())
+	case <-time.After(expectTimeout):
+		assert.FailNow(t, "Peer did not receive block", "hash=%v", hash)
+	}
+}
+
+func assertNoBlockQueuedForBlockchain(t *testing.T, peer *Peer) {
+	select {
+	case sentBlock := <-peer.newBlockCh:
+		assert.FailNow(t, "Peer received unexpected block", "hash=%v", sentBlock.Block.Hash())
+	case <-time.After(expectTimeout):
+	}
 }

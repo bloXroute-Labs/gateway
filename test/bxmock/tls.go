@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"github.com/bloXroute-Labs/gateway/bxmessage"
+	"github.com/bloXroute-Labs/gateway/connections"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/bloXroute-Labs/gateway/utils"
 	"net"
@@ -56,6 +57,11 @@ func NewMockTLS(ip string, port int64, nodeID types.NodeID, nodeType utils.NodeT
 		sendingBytes: make(chan []byte),
 		Timeout:      connectionTimeout,
 	}
+}
+
+// Equals compares the remote IP addr of two sockets
+func (m MockTLS) Equals(s connections.Socket) bool {
+	return m.RemoteAddr().String() == s.RemoteAddr().String()
 }
 
 // Read pulls messages queued onto the MockTLS connection

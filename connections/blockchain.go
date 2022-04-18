@@ -3,9 +3,9 @@ package connections
 import (
 	"fmt"
 	"github.com/bloXroute-Labs/gateway/bxmessage"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/bloXroute-Labs/gateway/utils"
-	log "github.com/sirupsen/logrus"
 	"time"
 )
 
@@ -28,6 +28,11 @@ func NewBlockchainConn(ipEndpoint types.NodeEndpoint) Blockchain {
 	}
 }
 
+// NodeEndpoint return the blockchain connection endpoint
+func (b Blockchain) NodeEndpoint() types.NodeEndpoint {
+	return b.endpoint
+}
+
 // Info returns connection metadata
 func (b Blockchain) Info() Info {
 	return Info{
@@ -46,6 +51,11 @@ func (b Blockchain) ID() Socket {
 
 // IsOpen is never true, since the Blockchain is not writable
 func (b Blockchain) IsOpen() bool {
+	return false
+}
+
+// IsDisabled indicates that Blockchain is never disabled
+func (b Blockchain) IsDisabled() bool {
 	return false
 }
 
@@ -86,6 +96,11 @@ func (b Blockchain) SendWithDelay(msg bxmessage.Message, delay time.Duration) er
 // Close is a no-op
 func (b Blockchain) Close(reason string) error {
 	return nil
+}
+
+// Disable is a no-op
+func (b Blockchain) Disable(reason string) {
+	return
 }
 
 // String returns the formatted representation of this placeholder connection

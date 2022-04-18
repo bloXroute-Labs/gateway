@@ -9,11 +9,11 @@ import (
 	"github.com/bloXroute-Labs/gateway/config"
 	"github.com/bloXroute-Labs/gateway/connections"
 	"github.com/bloXroute-Labs/gateway/connections/handler"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	pbbase "github.com/bloXroute-Labs/gateway/protobuf"
 	"github.com/bloXroute-Labs/gateway/services"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/bloXroute-Labs/gateway/utils"
-	log "github.com/sirupsen/logrus"
 	"reflect"
 	"sync"
 	"time"
@@ -30,6 +30,7 @@ type Bx struct {
 	ConnectionsLock *sync.RWMutex
 	Connections     connections.ConnList
 	dataDir         string
+	clock           utils.RealClock
 }
 
 // NewBx initializes a generic Bx node struct
@@ -39,19 +40,25 @@ func NewBx(bxConfig *config.Bx, dataDir string) Bx {
 		Connections:     make(connections.ConnList, 0),
 		ConnectionsLock: &sync.RWMutex{},
 		dataDir:         dataDir,
+		clock:           utils.RealClock{},
 	}
 }
 
 // OnConnEstablished - a callback function. Called when new connection is established
 func (bn *Bx) OnConnEstablished(conn connections.Conn) error {
 	connInfo := conn.Info()
-	conn.Log().Infof("connection established, protocol version %v, network %v, on local port %v",
-		conn.Protocol(), connInfo.NetworkNum, conn.Info().LocalPort)
+	conn.Log().Infof("connection established, gateway: %v, bdn: %v protocol version %v, network %v, on local port %v",
+		connInfo.IsGateway(), connInfo.IsBDN(), conn.Protocol(), connInfo.NetworkNum, conn.Info().LocalPort)
 	bn.ConnectionsLock.Lock()
 	defer bn.ConnectionsLock.Unlock()
 	bn.Connections = append(bn.Connections, conn)
 	return nil
 
+}
+
+// ValidateConnection - validates connection
+func (bn *Bx) ValidateConnection(conn connections.Conn) error {
+	return nil
 }
 
 // OnConnClosed - a callback function. Called when new connection is closed
@@ -138,23 +145,19 @@ func (bn *Bx) HandleMsg(msg bxmessage.Message, source connections.Conn) error {
 
 	case *bxmessage.TxCleanup:
 		cleanup := msg.(*bxmessage.TxCleanup)
-		go func() {
-			sizeBefore := bn.TxStore.Count()
-			startTime := time.Now()
-			bn.TxStore.RemoveShortIDs(&cleanup.ShortIDs, services.ReEntryProtection, "TxCleanup message")
-			source.Log().Debugf("TxStore cleanup (go routine) by txcleanup message took %v. Size before %v, size after %v, shortIds %v",
-				time.Now().Sub(startTime), sizeBefore, bn.TxStore.Count(), len(cleanup.ShortIDs))
-		}()
+		sizeBefore := bn.TxStore.Count()
+		startTime := time.Now()
+		bn.TxStore.RemoveShortIDs(&cleanup.ShortIDs, services.FullReEntryProtection, "TxCleanup message")
+		source.Log().Debugf("TxStore cleanup (go routine) by txcleanup message took %v. Size before %v, size after %v, shortIds %v",
+			time.Now().Sub(startTime), sizeBefore, bn.TxStore.Count(), len(cleanup.ShortIDs))
 
 	case *bxmessage.BlockConfirmation:
 		blockConfirmation := msg.(*bxmessage.BlockConfirmation)
-		go func() {
-			sizeBefore := bn.TxStore.Count()
-			startTime := time.Now()
-			bn.TxStore.RemoveHashes(&blockConfirmation.Hashes, services.ReEntryProtection, "BlockConfirmation message")
-			source.Log().Debugf("TxStore cleanup (go routine) by %v message took %v. Size before %v, size after %v, hashes %v",
-				bxmessage.BlockConfirmationType, time.Now().Sub(startTime), sizeBefore, bn.TxStore.Count(), len(blockConfirmation.Hashes))
-		}()
+		sizeBefore := bn.TxStore.Count()
+		startTime := time.Now()
+		bn.TxStore.RemoveHashes(&blockConfirmation.Hashes, services.ShortReEntryProtection, "BlockConfirmation message")
+		source.Log().Debugf("TxStore cleanup (go routine) by %v message took %v. Size before %v, size after %v, hashes %v",
+			bxmessage.BlockConfirmationType, time.Now().Sub(startTime), sizeBefore, bn.TxStore.Count(), len(blockConfirmation.Hashes))
 
 	default:
 		source.Log().Errorf("unknown message type %v received", reflect.TypeOf(msg))
@@ -194,14 +197,16 @@ func (bn *Bx) Peers(_ context.Context, req *pbbase.PeersRequest) (*pbbase.PeersR
 		}
 		connType := connInfo.ConnectionType.String()
 		peer := &pbbase.Peer{
-			Ip:        connInfo.PeerIP,
-			NodeId:    string(connInfo.NodeID),
-			Type:      connType,
-			State:     connInfo.ConnectionState,
-			Network:   uint32(connInfo.NetworkNum),
-			Initiator: connInfo.FromMe,
-			AccountId: string(connInfo.AccountID),
-			Port:      conn.Info().LocalPort,
+			Ip:         connInfo.PeerIP,
+			NodeId:     string(connInfo.NodeID),
+			Type:       connType,
+			State:      connInfo.ConnectionState,
+			Network:    uint32(connInfo.NetworkNum),
+			Initiator:  connInfo.FromMe,
+			AccountId:  string(connInfo.AccountID),
+			Port:       conn.Info().LocalPort,
+			Disabled:   conn.IsDisabled(),
+			Capability: uint32(conn.Info().Capabilities),
 		}
 		if bxConn, ok := conn.(*handler.BxConn); ok {
 			peer.MinMsFromPeer, peer.MinMsToPeer, peer.SlowTrafficCount, peer.MinMsRoundTrip = bxConn.GetMinLatencies()
@@ -214,12 +219,12 @@ func (bn *Bx) Peers(_ context.Context, req *pbbase.PeersRequest) (*pbbase.PeersR
 
 // PingLoop send a ping request every pingInterval to gateway, relays, and proxies. Can't use broadcast due to geo constrains
 func (bn *Bx) PingLoop() {
-	pingTicker := time.NewTicker(pingInterval)
+	pingTicker := bn.clock.Ticker(pingInterval)
 	ping := &bxmessage.Ping{}
 	to := utils.Gateway | utils.RelayProxy | utils.Relay
 	for {
 		select {
-		case <-pingTicker.C:
+		case <-pingTicker.Alert():
 			bn.ConnectionsLock.RLock()
 			count := 0
 			for _, conn := range bn.Connections {

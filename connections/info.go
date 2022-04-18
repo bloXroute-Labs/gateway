@@ -3,6 +3,7 @@ package connections
 import (
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/bloXroute-Labs/gateway/utils"
+	"time"
 )
 
 // Info represents various information fields about the connection.
@@ -22,6 +23,7 @@ type Info struct {
 	Capabilities    types.CapabilityFlags
 	Version         string
 	SameRegion      bool
+	ConnectedAt     time.Time
 }
 
 // IsCustomerGateway indicates whether the connected gateway belongs to a customer
@@ -37,6 +39,21 @@ func (ci Info) IsBloxrouteGateway() bool {
 // IsGateway indicates if the connection is a gateway
 func (ci Info) IsGateway() bool {
 	return ci.ConnectionType&utils.Gateway != 0
+}
+
+// IsMevMinerGateway indicates if the connection is a mev-miner gateway
+func (ci Info) IsMevMinerGateway() bool {
+	return ci.Capabilities&types.CapabilityMEVMiner != 0
+}
+
+// IsMevBuilderGateway indicates if the connection is a mev-builder gateway
+func (ci Info) IsMevBuilderGateway() bool {
+	return ci.Capabilities&types.CapabilityMEVBuilder != 0
+}
+
+// IsBDN indicates if the connection is a BDN gateway
+func (ci Info) IsBDN() bool {
+	return ci.Capabilities&types.CapabilityBDN != 0
 }
 
 // IsCloudAPI indicates if the connection is a cloud-api

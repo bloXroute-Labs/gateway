@@ -1,5 +1,7 @@
 package types
 
+import "sync"
+
 // PendingTransactionNotification - contains BxTransaction which contains the local region of the ethereum transaction and all its fields.
 type PendingTransactionNotification struct {
 	NewTransactionNotification
@@ -11,6 +13,7 @@ func CreatePendingTransactionNotification(bxTx *BxTransaction) Notification {
 		NewTransactionNotification{
 			bxTx,
 			nil,
+			&sync.Mutex{},
 		},
 	}
 }

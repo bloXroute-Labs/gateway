@@ -4,7 +4,7 @@ import (
 	"github.com/bloXroute-Labs/gateway"
 	"github.com/bloXroute-Labs/gateway/bxmessage"
 	"github.com/bloXroute-Labs/gateway/connections"
-	log "github.com/sirupsen/logrus"
+	log "github.com/bloXroute-Labs/gateway/logger"
 )
 
 // MsgInfo is a struct that stores a msg and its source connection
@@ -37,7 +37,7 @@ func (amh AsyncMsgHandler) HandleMsgAsync() {
 			log.Error("unexpected termination of AsyncMsgHandler. AsyncMsgChannel was closed.")
 			return
 		}
-		log.Tracef("async handling of %v from %v", messageInfo.Msg, messageInfo.Source.ID().RemoteAddr())
+		log.Tracef("async handling of %v from %v", messageInfo.Msg, messageInfo.Source)
 		_ = amh.listener.HandleMsg(messageInfo.Msg, messageInfo.Source, connections.RunForeground)
 	}
 }

@@ -61,9 +61,9 @@ func TestInitGateway_GetsCorrectBlockchainNetworkFromProtocolAndNetwork(t *testi
 		t.Run(fmt.Sprint(testCase), func(t *testing.T) {
 			sslCerts := getSSLCerts(t)
 			sdnURL := "https://bdn-api.testnet.blxrbdn.com"
-			s := SDNHTTP{
+			s := realSDNHTTP{
 				sslCerts: &sslCerts,
-				SdnURL:   sdnURL,
+				sdnURL:   sdnURL,
 				nodeModel: sdnmessage.NodeModel{
 					NodeType: "EXTERNAL_GATEWAY",
 				},
@@ -72,11 +72,11 @@ func TestInitGateway_GetsCorrectBlockchainNetworkFromProtocolAndNetwork(t *testi
 			assert.Nil(t, err)
 
 			//check Network Number correct
-			bcn, found := s.Networks[testCase.networkNumber]
+			bcn, found := (*s.Networks())[testCase.networkNumber]
 			if !found || bcn == nil {
 				t.FailNow()
 			}
-			assert.Len(t, s.Networks, 1)
+			assert.Len(t, *s.Networks(), 1)
 
 			//check Network correct
 			assert.Equal(t, testCase.protocol, bcn.Protocol)
@@ -112,9 +112,9 @@ func TestInitGateway_ReturnsErrorIfIncorrectNetworkOrProtocol(t *testing.T) {
 		t.Run(fmt.Sprint(testCase), func(t *testing.T) {
 			sslCerts := getSSLCerts(t)
 			sdnURL := "https://bdn-api.testnet.blxrbdn.com"
-			s := SDNHTTP{
+			s := realSDNHTTP{
 				sslCerts: &sslCerts,
-				SdnURL:   sdnURL,
+				sdnURL:   sdnURL,
 				nodeModel: sdnmessage.NodeModel{
 					NodeType: "INTERNAL_GATEWAY",
 				},

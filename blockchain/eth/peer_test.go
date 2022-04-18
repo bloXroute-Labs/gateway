@@ -2,8 +2,10 @@ package eth
 
 import (
 	"context"
+	"fmt"
 	"github.com/bloXroute-Labs/gateway/blockchain/eth/test"
 	"github.com/bloXroute-Labs/gateway/test/bxmock"
+	"github.com/bloXroute-Labs/gateway/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/forkid"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
@@ -14,14 +16,14 @@ import (
 	"time"
 )
 
-func testPeer(writeChannelSize int) (*Peer, *test.MsgReadWriter) {
+func testPeer(writeChannelSize int, peerCount int) (*Peer, *test.MsgReadWriter) {
 	rw := test.NewMsgReadWriter(100, writeChannelSize)
-	peer := newPeer(context.Background(), p2p.NewPeerPipe(test.GenerateEnodeID(), "test peer", []p2p.Cap{}, nil), rw, 0, &bxmock.MockClock{})
+	peer := newPeer(context.Background(), p2p.NewPeerPipe(test.GenerateEnodeID(), fmt.Sprintf("test peer_%v", peerCount), []p2p.Cap{}, nil), rw, 0, &utils.MockClock{})
 	return peer, rw
 }
 
 func TestPeer_Handshake(t *testing.T) {
-	peer, rw := testPeer(-1)
+	peer, rw := testPeer(-1, 1)
 
 	peerStatus := eth.StatusPacket{
 		ProtocolVersion: 1,
@@ -69,9 +71,9 @@ func TestPeer_SendNewBlock(t *testing.T) {
 		err error
 	)
 
-	peer, rw := testPeer(1)
+	peer, rw := testPeer(1, 1)
 	maxWriteTimeout := time.Millisecond // to allow for blockLoop goroutine to write to buffer
-	clock := peer.clock.(*bxmock.MockClock)
+	clock := peer.clock.(*utils.MockClock)
 	go peer.Start()
 
 	block1a := bxmock.NewEthBlock(1, common.Hash{})
@@ -165,7 +167,7 @@ func TestPeer_SendNewBlock_HeadUpdates(t *testing.T) {
 		err error
 	)
 
-	peer, rw := testPeer(1)
+	peer, rw := testPeer(1, 1)
 	maxWriteTimeout := time.Millisecond // to allow for blockLoop goroutine to write to buffer
 	go peer.Start()
 
@@ -211,7 +213,7 @@ func TestPeer_RequestBlockHeaderNonBlocking(t *testing.T) {
 		err error
 	)
 
-	peer, rw := testPeer(-1)
+	peer, rw := testPeer(-1, 1)
 	peer.version = eth.ETH66
 
 	err = peer.RequestBlockHeader(common.Hash{})

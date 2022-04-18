@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"github.com/bloXroute-Labs/gateway/config"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	pb "github.com/bloXroute-Labs/gateway/protobuf"
 	"github.com/bloXroute-Labs/gateway/rpc"
 	"github.com/bloXroute-Labs/gateway/utils"
-	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 	"os"
 )
@@ -75,6 +75,18 @@ func main() {
 				Usage:  "query information related to the TxService",
 				Flags:  []cli.Flag{},
 				Action: cmdVersion,
+			},
+			{
+				Name:   "status",
+				Usage:  "query gateway status",
+				Flags:  []cli.Flag{},
+				Action: cmdStatus,
+			},
+			{
+				Name:   "listsubscriptions",
+				Usage:  "query information related to the Subscriptions",
+				Flags:  []cli.Flag{},
+				Action: cmdListSubscriptions,
 			},
 		},
 		Flags: []cli.Flag{
@@ -156,6 +168,19 @@ func cmdTxService(*cli.Context) error {
 	return nil
 }
 
+func cmdListSubscriptions(ctx *cli.Context) error {
+	err := rpc.GatewayConsoleCall(
+		config.NewGRPCFromCLI(ctx),
+		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
+			return client.Subscriptions(callCtx, &pb.SubscriptionsRequest{})
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("could not fetch peers: %v", err)
+	}
+	return nil
+}
+
 func cmdListPeers(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
@@ -165,6 +190,19 @@ func cmdListPeers(ctx *cli.Context) error {
 	)
 	if err != nil {
 		return fmt.Errorf("could not fetch peers: %v", err)
+	}
+	return nil
+}
+
+func cmdStatus(ctx *cli.Context) error {
+	err := rpc.GatewayConsoleCall(
+		config.NewGRPCFromCLI(ctx),
+		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
+			return client.Status(callCtx, &pb.StatusRequest{})
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("could not get status: %v", err)
 	}
 	return nil
 }

@@ -2,6 +2,7 @@ package bxmessage
 
 import (
 	"bytes"
+	"github.com/bloXroute-Labs/gateway/utils"
 )
 
 // StartingBytesLen is the byte length of the starting bytes of bloxroute messages
@@ -55,11 +56,17 @@ const (
 	BDNPerformanceStatsType      = "bdnstats"
 	MEVBundleType                = "mevbundle"
 	MEVSearcherType              = "mevsearcher"
-	ErrorNotificationType        = "errnotify"
+	ErrorNotificationType        = "notify"
 )
+
+// SenderLen is the byte length of sender
+const SenderLen = 20
 
 // TimestampLen is the byte length of timestamps
 const TimestampLen = 8
+
+// ShortTimestampLen is the byte length of short timestamps
+const ShortTimestampLen = 4
 
 // SourceIDLen is the byte length of message source IDs
 const SourceIDLen = 16
@@ -74,13 +81,23 @@ const EmptyProtocol = 0
 const MinProtocol = 19
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
-const CurrentProtocol = 24
+const CurrentProtocol = 26
+
+// FlashbotsGatewayProtocol is the minimum protocol version that supports flashbots gateway without BDN
+const FlashbotsGatewayProtocol = 26
+
+// SenderProtocol is the minimum protocol version that supports sender in tx msg
+const SenderProtocol = 25
+
+// FullTxTimeStampProtocol is the minimum protocol version that supports full timestamp in TX message
+// It includes BDN performance stat changes
+const FullTxTimeStampProtocol = 25
 
 // MinFastSyncProtocol is the minimum protocol version that supports fast sync
 const MinFastSyncProtocol = 24
 
-// MevProtocol add to hello msg indication for the mev service
-const MevProtocol = 24
+// MEVProtocol add to hello msg indication for the mev service
+const MEVProtocol = 24
 
 // UnifiedRelayProtocol is the version of gateways that expects broadcast messages from relay proxy and discontinues split relays
 const UnifiedRelayProtocol = 23
@@ -102,3 +119,5 @@ const ClientVersionLen = 100
 
 // NullByteAccountID is a null byte packed series, which represents an empty accountID
 var NullByteAccountID = bytes.Repeat([]byte("\x00"), AccountIDLen)
+
+var clock utils.Clock = utils.RealClock{}

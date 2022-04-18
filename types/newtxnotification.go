@@ -2,15 +2,19 @@ package types
 
 import (
 	"fmt"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
-	log "github.com/sirupsen/logrus"
+	"sync"
 )
 
 // NewTransactionNotification - contains BxTransaction which contains the local region of the ethereum transaction and all its fields.
 type NewTransactionNotification struct {
 	*BxTransaction
 	BlockchainTransaction
+	// lock is used to prevent parallel extract of sender address
+	// while not locking the other unrelated go routines.
+	lock *sync.Mutex
 }
 
 // CreateNewTransactionNotification -  creates NewTransactionNotification object which contains bxTransaction and local region
@@ -18,13 +22,14 @@ func CreateNewTransactionNotification(bxTx *BxTransaction) Notification {
 	return &NewTransactionNotification{
 		bxTx,
 		nil,
+		&sync.Mutex{},
 	}
 }
 
 func (newTransactionNotification *NewTransactionNotification) makeBlockchainTransaction() error {
 	var err error
-	newTransactionNotification.BxTransaction.m.Lock()
-	defer newTransactionNotification.BxTransaction.m.Unlock()
+	newTransactionNotification.lock.Lock()
+	defer newTransactionNotification.lock.Unlock()
 	if newTransactionNotification.BlockchainTransaction == nil {
 		newTransactionNotification.BlockchainTransaction, err = newTransactionNotification.BxTransaction.BlockchainTransaction(true)
 		if err != nil {
@@ -52,6 +57,7 @@ func (newTransactionNotification *NewTransactionNotification) WithFields(fields 
 		return &NewTransactionNotification{
 			nil,
 			nil,
+			newTransactionNotification.lock,
 		}
 	}
 
@@ -59,6 +65,7 @@ func (newTransactionNotification *NewTransactionNotification) WithFields(fields 
 	return &NewTransactionNotification{
 		nil,
 		newBlockchainTransaction,
+		newTransactionNotification.lock,
 	}
 }
 

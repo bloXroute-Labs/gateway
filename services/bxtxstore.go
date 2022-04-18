@@ -4,11 +4,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/bloXroute-Labs/gateway"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	pbbase "github.com/bloXroute-Labs/gateway/protobuf"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/bloXroute-Labs/gateway/utils"
 	"github.com/orcaman/concurrent-map"
-	log "github.com/sirupsen/logrus"
 	"runtime/debug"
 	"sort"
 	"sync"
@@ -82,17 +82,22 @@ func (t *BxTxStore) Count() int {
 }
 
 // remove deletes a single transaction, including its shortIDs
-func (t *BxTxStore) remove(hash string, reEntryProtection bool, reason string) {
-	if tx, ok := t.hashToContent.Get(hash); ok {
+func (t *BxTxStore) remove(hash string, reEntryProtection ReEntryProtectionFlags, reason string) {
+	if tx, ok := t.hashToContent.Pop(hash); ok {
 		bxTransaction := tx.(*types.BxTransaction)
 		for _, shortID := range bxTransaction.ShortIDs() {
 			t.shortIDToHash.Remove(fmt.Sprint(shortID))
 		}
-		t.hashToContent.Remove(hash)
 		// if asked, add the hash to the history map so we remember this transaction for some time
 		// and prevent if from being added back to the TxStore
-		if reEntryProtection {
+		switch reEntryProtection {
+		case NoReEntryProtection:
+		case ShortReEntryProtection:
+			t.seenTxs.Add(hash, ShortReEntryProtectionDuration)
+		case FullReEntryProtection:
 			t.seenTxs.Add(hash, t.timeToAvoidReEntry)
+		default:
+			log.Fatalf("unknown reEntryProtection value %v for hash %v", reEntryProtection, hash)
 		}
 		log.Tracef("TxStore: transaction %v, network %v, shortIDs %v removed (%v). reEntryProtection %v",
 			bxTransaction.Hash(), bxTransaction.NetworkNum(), bxTransaction.ShortIDs(), reason, reEntryProtection)
@@ -100,7 +105,7 @@ func (t *BxTxStore) remove(hash string, reEntryProtection bool, reason string) {
 }
 
 // RemoveShortIDs deletes a series of transactions by their short IDs. RemoveShortIDs can take a potentially large short ID array, so it should be passed by reference.
-func (t *BxTxStore) RemoveShortIDs(shortIDs *types.ShortIDList, reEntryProtection bool, reason string) {
+func (t *BxTxStore) RemoveShortIDs(shortIDs *types.ShortIDList, reEntryProtection ReEntryProtectionFlags, reason string) {
 	// note - it is OK for hashesToRemove to hold the same hash multiple times.
 	hashesToRemove := make(types.SHA256HashList, 0)
 	for _, shortID := range *shortIDs {
@@ -125,7 +130,7 @@ func (t *BxTxStore) GetTxByShortID(shortID types.ShortID) (*types.BxTransaction,
 }
 
 // RemoveHashes deletes a series of transactions by their hash from BxTxStore. RemoveHashes can take a potentially large hash array, so it should be passed by reference.
-func (t *BxTxStore) RemoveHashes(hashes *types.SHA256HashList, reEntryProtection bool, reason string) {
+func (t *BxTxStore) RemoveHashes(hashes *types.SHA256HashList, reEntryProtection ReEntryProtectionFlags, reason string) {
 	for _, hash := range *hashes {
 		t.remove(string(hash[:]), reEntryProtection, reason)
 	}
@@ -162,7 +167,7 @@ func (t *BxTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID 
 
 	hashStr := string(hash[:])
 	// if the hash is in history we treat it as IgnoreSeen
-	if t.seenTxs.Exists(hashStr) {
+	if t.refreshSeenTx(hash) {
 		// if the hash is in history, but we get a shortID for it, it means that the hash was not in the ATR history
 		//and some GWs may get and use this shortID. In such a case we should remove the hash from history and allow
 		//it to be added to the TxStore
@@ -203,8 +208,9 @@ func (t *BxTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID 
 
 	// if shortID was not provided, assign shortID (if we are running as assigner)
 	// note that assigner.Next() provides ShortIDEmpty if we are not assigning
+	// also, shortID is not assigned if transaction is validators_only
 	// if we assigned shortID, result.AssignedShortID hold non ShortIDEmpty value
-	if result.NewTx && shortID == types.ShortIDEmpty {
+	if result.NewTx && shortID == types.ShortIDEmpty && !bxTransaction.Flags().IsValidatorsOnly() {
 		shortID = t.assigner.Next()
 		result.AssignedShortID = shortID
 	}
@@ -283,7 +289,7 @@ func (t *BxTxStore) clean() (cleaned int, cleanedShortIDs types.ShortIDsByNetwor
 			// remove the transaction by hash from both maps
 			// no need to add the hash to the history as it is deleted after long time
 			// dec-5-2021: add to hash history to prevent a lot of reentry (BSC, Polygon)
-			t.remove(item.Key, ReEntryProtection, removeReason)
+			t.remove(item.Key, FullReEntryProtection, removeReason)
 			cleanedShortIDs[networkNum] = append(cleanedShortIDs[networkNum], bxTransaction.ShortIDs()...)
 		}
 	}
@@ -310,10 +316,10 @@ func (t *BxTxStore) CleanNow() {
 }
 
 func (t *BxTxStore) cleanup() {
-	ticker := time.NewTicker(t.cleanupFreq)
+	ticker := t.clock.Ticker(t.cleanupFreq)
 	for {
 		select {
-		case <-ticker.C:
+		case <-ticker.Alert():
 			t.CleanNow()
 		case <-t.quit:
 			t.quit <- true
@@ -325,11 +331,20 @@ func (t *BxTxStore) cleanup() {
 
 // Get returns a single transaction from the transaction service
 func (t *BxTxStore) Get(hash types.SHA256Hash) (*types.BxTransaction, bool) {
+	// reset the timestamp of this hash in the seenTx hashHistory, if it exists in the hashHistory
+	if t.refreshSeenTx(hash) {
+		return nil, false
+	}
 	tx, ok := t.hashToContent.Get(string(hash[:]))
 	if !ok {
 		return nil, ok
 	}
 	return tx.(*types.BxTransaction), ok
+}
+
+// Known returns whether if a tx hash is in seenTx
+func (t *BxTxStore) Known(hash types.SHA256Hash) bool {
+	return t.refreshSeenTx(hash)
 }
 
 // HasContent returns if a given transaction is in the transaction service
@@ -378,4 +393,12 @@ func (t *BxTxStore) Summarize() *pbbase.TxStoreReply {
 	}
 
 	return &res
+}
+
+func (t *BxTxStore) refreshSeenTx(hash types.SHA256Hash) bool {
+	if t.seenTxs.Exists(string(hash[:])) {
+		t.seenTxs.Add(string(hash[:]), t.timeToAvoidReEntry)
+		return true
+	}
+	return false
 }

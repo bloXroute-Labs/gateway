@@ -2,10 +2,10 @@ package services
 
 import (
 	"fmt"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/bloXroute-Labs/gateway/utils"
-	log "github.com/sirupsen/logrus"
 	"sync"
 	"time"
 )
@@ -46,10 +46,10 @@ func (firewall *Firewall) AddRule(firewallRule sdnmessage.FirewallRule) {
 
 func (firewall *Firewall) cleanup(cleanupInterval time.Duration) {
 	log.Debugf("starting firewall cleanup routine")
-	ticker := time.NewTicker(cleanupInterval)
+	ticker := firewall.clock.Ticker(cleanupInterval)
 	for {
 		select {
-		case <-ticker.C:
+		case <-ticker.Alert():
 			firewall.clean()
 		}
 	}

@@ -4,18 +4,17 @@ import (
 	"encoding/binary"
 	"github.com/bloXroute-Labs/gateway"
 	"github.com/bloXroute-Labs/gateway/bxmessage/utils"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/types"
-	cmap "github.com/orcaman/concurrent-map"
-	log "github.com/sirupsen/logrus"
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 // BdnPerformanceStatsData - represent the bdn stat data struct sent in BdnPerformanceStats
 type BdnPerformanceStatsData struct {
-	BlockchainNodeIPEndpoint            string
 	NewBlocksReceivedFromBlockchainNode uint16
 	NewBlocksReceivedFromBdn            uint16
 	NewBlocksSeen                       uint32
@@ -38,43 +37,53 @@ type BdnPerformanceStats struct {
 	intervalStartTime   time.Time
 	intervalEndTime     time.Time
 	memoryUtilizationMb uint16
-	nodeStats           cmap.ConcurrentMap
+	nodeStats           map[string]*BdnPerformanceStatsData
+
+	burstLimitedTransactionsPaid   uint16
+	burstLimitedTransactionsUnpaid uint16
+
+	lock sync.Mutex
 }
 
 // NewBDNStats returns a new instance of BDNPerformanceStats
 func NewBDNStats() *BdnPerformanceStats {
 	bdnStats := BdnPerformanceStats{
 		intervalStartTime: time.Now(),
-		nodeStats:         cmap.New(),
+		nodeStats:         make(map[string]*BdnPerformanceStatsData),
 	}
 	return &bdnStats
 }
 
 // CloseInterval sets the closing interval end time, starts new interval with cleared stats, and returns BdnPerformanceStats of closed interval
 func (bs *BdnPerformanceStats) CloseInterval() BdnPerformanceStats {
+	bs.lock.Lock()
+
 	// close interval
 	bs.intervalEndTime = time.Now()
 
 	// create BDNStats from closed interval for logging and sending
 	prevBDNStats := BdnPerformanceStats{
-		intervalStartTime:   bs.intervalStartTime,
-		intervalEndTime:     bs.intervalEndTime,
-		memoryUtilizationMb: bs.memoryUtilizationMb,
-		nodeStats:           bs.nodeStats,
+		intervalStartTime:              bs.intervalStartTime,
+		intervalEndTime:                bs.intervalEndTime,
+		memoryUtilizationMb:            bs.memoryUtilizationMb,
+		nodeStats:                      bs.nodeStats,
+		burstLimitedTransactionsPaid:   bs.burstLimitedTransactionsPaid,
+		burstLimitedTransactionsUnpaid: bs.burstLimitedTransactionsUnpaid,
 	}
 
 	// create fresh map with existing nodes for new interval
-	bs.nodeStats = cmap.New()
-	for elem := range prevBDNStats.nodeStats.IterBuffered() {
-		stats := elem.Val.(*BdnPerformanceStatsData)
-		newStatsData := BdnPerformanceStatsData{BlockchainNodeIPEndpoint: stats.BlockchainNodeIPEndpoint}
-		bs.nodeStats.Set(stats.BlockchainNodeIPEndpoint, &newStatsData)
+	bs.nodeStats = make(map[string]*BdnPerformanceStatsData)
+	for endpoint := range prevBDNStats.nodeStats {
+		newStatsData := BdnPerformanceStatsData{}
+		bs.nodeStats[endpoint] = &newStatsData
 	}
 
 	// start new interval
 	bs.intervalStartTime = time.Now()
-	bs.memoryUtilizationMb = 0
 
+	bs.lock.Unlock()
+
+	bs.memoryUtilizationMb = 0
 	return prevBDNStats
 }
 
@@ -85,12 +94,13 @@ func (bs *BdnPerformanceStats) SetMemoryUtilization(mb int) {
 
 // LogNewBlockFromNode logs new block from blockchain for specified node; new block seen; from BDN for other nodes
 func (bs *BdnPerformanceStats) LogNewBlockFromNode(node types.NodeEndpoint) {
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
 	nodeStats := bs.getNodeStats(node)
 	nodeStats.NewBlocksReceivedFromBlockchainNode++
-	for elem := range bs.nodeStats.IterBuffered() {
-		stats := elem.Val.(*BdnPerformanceStatsData)
+	for endpoint, stats := range bs.nodeStats {
 		stats.NewBlocksSeen++
-		if stats.BlockchainNodeIPEndpoint == node.IPPort() {
+		if endpoint == node.IPPort() {
 			continue
 		}
 		stats.NewBlocksReceivedFromBdn++
@@ -99,8 +109,9 @@ func (bs *BdnPerformanceStats) LogNewBlockFromNode(node types.NodeEndpoint) {
 
 // LogNewBlockFromBDN logs a new block from the BDN and new block seen in the stats for all nodes
 func (bs *BdnPerformanceStats) LogNewBlockFromBDN() {
-	for elem := range bs.nodeStats.IterBuffered() {
-		stats := elem.Val.(*BdnPerformanceStatsData)
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
+	for _, stats := range bs.nodeStats {
 		stats.NewBlocksSeen++
 		stats.NewBlocksReceivedFromBdn++
 	}
@@ -108,23 +119,28 @@ func (bs *BdnPerformanceStats) LogNewBlockFromBDN() {
 
 // LogNewBlockMessageFromNode logs a new block message from blockchain node in the stats for specified node
 func (bs *BdnPerformanceStats) LogNewBlockMessageFromNode(node types.NodeEndpoint) {
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
 	nodeStats := bs.getNodeStats(node)
 	nodeStats.NewBlockMessagesFromBlockchainNode++
 }
 
 // LogNewBlockAnnouncementFromNode logs a new block announcement from blockchain node in the stats for specified node
 func (bs *BdnPerformanceStats) LogNewBlockAnnouncementFromNode(node types.NodeEndpoint) {
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
 	nodeStats := bs.getNodeStats(node)
 	nodeStats.NewBlockAnnouncementsFromBlockchainNode++
 }
 
 // LogNewTxFromNode logs new tx from blockchain in stats for specified node, from BDN for other nodes
 func (bs *BdnPerformanceStats) LogNewTxFromNode(node types.NodeEndpoint) {
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
 	nodeStats := bs.getNodeStats(node)
 	nodeStats.NewTxReceivedFromBlockchainNode++
-	for elem := range bs.nodeStats.IterBuffered() {
-		stats := elem.Val.(*BdnPerformanceStatsData)
-		if stats.BlockchainNodeIPEndpoint == node.IPPort() {
+	for endpoint, stats := range bs.nodeStats {
+		if endpoint == node.IPPort() {
 			continue
 		}
 		stats.NewTxReceivedFromBdn++
@@ -133,24 +149,38 @@ func (bs *BdnPerformanceStats) LogNewTxFromNode(node types.NodeEndpoint) {
 
 // LogNewTxFromBDN logs a new tx from BDN in the stats for all nodes
 func (bs *BdnPerformanceStats) LogNewTxFromBDN() {
-	for elem := range bs.nodeStats.IterBuffered() {
-		stats := elem.Val.(*BdnPerformanceStatsData)
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
+	for _, stats := range bs.nodeStats {
 		stats.NewTxReceivedFromBdn++
 	}
 }
 
 // LogTxSentToNode logs a tx sent to all blockchain nodes
 func (bs *BdnPerformanceStats) LogTxSentToNode() {
-	for elem := range bs.nodeStats.IterBuffered() {
-		stats := elem.Val.(*BdnPerformanceStatsData)
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
+	for _, stats := range bs.nodeStats {
 		stats.TxSentToNode++
 	}
 }
 
 // LogDuplicateTxFromNode logs a duplicate tx from blockchain node in the stats for specified node
 func (bs *BdnPerformanceStats) LogDuplicateTxFromNode(node types.NodeEndpoint) {
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
 	nodeStats := bs.getNodeStats(node)
 	nodeStats.DuplicateTxFromNode++
+}
+
+// LogBurstLimitedTransactionsPaid logs a tx count exceeded limit paid transactions in the stats
+func (bs *BdnPerformanceStats) LogBurstLimitedTransactionsPaid() {
+	bs.burstLimitedTransactionsPaid++
+}
+
+// LogBurstLimitedTransactionsUnpaid logs a tx count exceeded limit paid transactions in the stats
+func (bs *BdnPerformanceStats) LogBurstLimitedTransactionsUnpaid() {
+	bs.burstLimitedTransactionsUnpaid++
 }
 
 // StartTime returns the start time of the current stat interval
@@ -168,41 +198,51 @@ func (bs *BdnPerformanceStats) Memory() uint16 {
 	return bs.memoryUtilizationMb
 }
 
+// BurstLimitedTransactionsPaid returns relay burst limited transactions paid stat
+func (bs *BdnPerformanceStats) BurstLimitedTransactionsPaid() uint16 {
+	return bs.burstLimitedTransactionsPaid
+}
+
+// BurstLimitedTransactionsUnpaid returns relay burst limited transactions unpaid stat
+func (bs *BdnPerformanceStats) BurstLimitedTransactionsUnpaid() uint16 {
+	return bs.burstLimitedTransactionsUnpaid
+}
+
 // NodeStats returns the bdn stats data for all nodes
-func (bs *BdnPerformanceStats) NodeStats() cmap.ConcurrentMap {
+func (bs *BdnPerformanceStats) NodeStats() map[string]*BdnPerformanceStatsData {
 	return bs.nodeStats
 }
 
 func (bs *BdnPerformanceStats) getNodeStats(node types.NodeEndpoint) *BdnPerformanceStatsData {
-	val, ok := bs.nodeStats.Get(node.IPPort())
+	stats, ok := bs.nodeStats[node.IPPort()]
 	if ok {
-		stats := val.(*BdnPerformanceStatsData)
 		return stats
 	}
-
-	newStatsData := BdnPerformanceStatsData{BlockchainNodeIPEndpoint: node.IPPort()}
-	bs.nodeStats.Set(node.IPPort(), &newStatsData)
+	newStatsData := BdnPerformanceStatsData{}
+	bs.nodeStats[node.IPPort()] = &newStatsData
 	return &newStatsData
 }
 
 // Pack serializes a BdnPerformanceStats into a buffer for sending
-func (bs *BdnPerformanceStats) Pack(_ Protocol) ([]byte, error) {
-	bufLen := bs.size()
+func (bs *BdnPerformanceStats) Pack(protocol Protocol) ([]byte, error) {
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
+
+	bufLen := bs.size(protocol)
 	buf := make([]byte, bufLen)
 	offset := uint32(HeaderLen)
 	binary.LittleEndian.PutUint64(buf[offset:], math.Float64bits(float64(bs.intervalStartTime.UnixNano())/float64(1e9)))
-	offset += TimestampLen
+	offset += types.UInt64Len
 	binary.LittleEndian.PutUint64(buf[offset:], math.Float64bits(float64(bs.intervalEndTime.UnixNano())/float64(1e9)))
-	offset += TimestampLen
+	offset += types.UInt64Len
 	binary.LittleEndian.PutUint16(buf[offset:], bs.memoryUtilizationMb)
 	offset += types.UInt16Len
-	nodeStatsLen := bs.nodeStats.Count()
+
+	nodeStatsLen := len(bs.nodeStats)
 	binary.LittleEndian.PutUint16(buf[offset:], uint16(nodeStatsLen))
 	offset += types.UInt16Len
-
-	for elem := range bs.nodeStats.IterBuffered() {
-		nodeStats := elem.Val.(*BdnPerformanceStatsData)
-		ipPort := strings.Split(nodeStats.BlockchainNodeIPEndpoint, " ")
+	for endpoint, nodeStats := range bs.nodeStats {
+		ipPort := strings.Split(endpoint, " ")
 		port, err := strconv.Atoi(ipPort[1])
 		if err != nil {
 			return nil, err
@@ -228,13 +268,21 @@ func (bs *BdnPerformanceStats) Pack(_ Protocol) ([]byte, error) {
 		binary.LittleEndian.PutUint32(buf[offset:], nodeStats.DuplicateTxFromNode)
 		offset += types.UInt32Len
 	}
+
+	if protocol >= FullTxTimeStampProtocol {
+		binary.LittleEndian.PutUint16(buf[offset:], bs.burstLimitedTransactionsPaid)
+		offset += types.UInt16Len
+
+		binary.LittleEndian.PutUint16(buf[offset:], bs.burstLimitedTransactionsUnpaid)
+	}
+
 	bs.Header.Pack(&buf, BDNPerformanceStatsType)
 	return buf, nil
 }
 
 // Unpack deserializes a BdnPerformanceStats from a buffer
 func (bs *BdnPerformanceStats) Unpack(buf []byte, protocol Protocol) error {
-	bs.nodeStats = cmap.New()
+	bs.nodeStats = make(map[string]*BdnPerformanceStatsData)
 	nodeStatsOffset := (types.UInt64Len * 2) + (types.UInt16Len * 2)
 	if err := checkBufSize(&buf, HeaderLen, nodeStatsOffset); err != nil {
 		return err
@@ -243,11 +291,11 @@ func (bs *BdnPerformanceStats) Unpack(buf []byte, protocol Protocol) error {
 	startTimestamp := math.Float64frombits(binary.LittleEndian.Uint64(buf[offset:]))
 	startNanoseconds := int64(float64(startTimestamp) * float64(1e9))
 	bs.intervalStartTime = time.Unix(0, startNanoseconds)
-	offset += TimestampLen
+	offset += types.UInt64Len
 	endTimestamp := math.Float64frombits(binary.LittleEndian.Uint64(buf[offset:]))
 	endNanoseconds := int64(float64(endTimestamp) * float64(1e9))
 	bs.intervalEndTime = time.Unix(0, endNanoseconds)
-	offset += TimestampLen
+	offset += types.UInt64Len
 	bs.memoryUtilizationMb = binary.LittleEndian.Uint16(buf[offset:])
 	offset += types.UInt16Len
 	nodesStatsLen := binary.LittleEndian.Uint16(buf[offset:])
@@ -264,7 +312,6 @@ func (bs *BdnPerformanceStats) Unpack(buf []byte, protocol Protocol) error {
 			log.Errorf("unable to parse ip and port from BDNPerformanceStats message: %v", err)
 		}
 		endpoint := types.NodeEndpoint{IP: ip, Port: int(port)}
-		singleNodeStats.BlockchainNodeIPEndpoint = endpoint.IPPort()
 		offset += utils.IPAddrSizeInBytes + types.UInt16Len
 		singleNodeStats.NewBlocksReceivedFromBlockchainNode = binary.LittleEndian.Uint16(buf[offset:])
 		offset += types.UInt16Len
@@ -284,20 +331,33 @@ func (bs *BdnPerformanceStats) Unpack(buf []byte, protocol Protocol) error {
 		offset += types.UInt32Len
 		singleNodeStats.DuplicateTxFromNode = binary.LittleEndian.Uint32(buf[offset:])
 		offset += types.UInt32Len
-		bs.nodeStats.Set(singleNodeStats.BlockchainNodeIPEndpoint, &singleNodeStats)
+
+		bs.nodeStats[endpoint.IPPort()] = &singleNodeStats
 	}
+
+	if protocol >= FullTxTimeStampProtocol {
+		bs.burstLimitedTransactionsPaid = binary.LittleEndian.Uint16(buf[offset:])
+		offset += types.UInt16Len
+		bs.burstLimitedTransactionsUnpaid = binary.LittleEndian.Uint16(buf[offset:])
+	}
+
 	return bs.Header.Unpack(buf, protocol)
 }
 
 // Log logs stats
 func (bs *BdnPerformanceStats) Log() {
-	for elem := range bs.NodeStats().IterBuffered() {
-		nodeStats := elem.Val.(*BdnPerformanceStatsData)
-		log.Infof("[%v - %v]: Processed %v blocks and %v transactions from the BDN", bs.StartTime().Format(bxgateway.TimeLayoutISO), bs.EndTime().Format(bxgateway.TimeLayoutISO), nodeStats.NewBlocksReceivedFromBdn, nodeStats.NewTxReceivedFromBdn)
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
+	for endpoint, nodeStats := range bs.NodeStats() {
+		log.Infof("%v [%v - %v]: Processed %v blocks and %v transactions from the BDN", endpoint, bs.StartTime().Format(bxgateway.TimeLayoutISO), bs.EndTime().Format(bxgateway.TimeLayoutISO), nodeStats.NewBlocksReceivedFromBdn, nodeStats.NewTxReceivedFromBdn)
 	}
 }
 
-func (bs *BdnPerformanceStats) size() uint32 {
+func (bs *BdnPerformanceStats) size(protocol Protocol) uint32 {
 	nodeStatsSize := utils.IPAddrSizeInBytes + (types.UInt32Len * 7) + (types.UInt16Len * 3)
-	return bs.Header.Size() + uint32((types.UInt64Len*2)+(types.UInt16Len*2)+(bs.nodeStats.Count()*nodeStatsSize))
+	total := bs.Header.Size() + uint32((types.UInt64Len*2)+(types.UInt16Len*2)+(len(bs.nodeStats)*nodeStatsSize))
+	if protocol >= FullTxTimeStampProtocol {
+		total += types.UInt16Len * 2
+	}
+	return total
 }

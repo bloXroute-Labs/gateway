@@ -2,11 +2,11 @@ package services
 
 import (
 	"fmt"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/bloXroute-Labs/gateway/utils"
 	cmap "github.com/orcaman/concurrent-map"
-	log "github.com/sirupsen/logrus"
 	"math/big"
 	"time"
 )
@@ -36,6 +36,22 @@ func NewEthTxStore(clock utils.Clock, cleanupInterval time.Duration, maxTxAge ti
 // Add validates an Ethereum transaction and checks that its nonce has not been seen before
 func (t *EthTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID types.ShortID,
 	network types.NetworkNum, validate bool, flags types.TxFlags, timestamp time.Time, networkChainID int64) TransactionResult {
+	result := t.add(hash, content, shortID, network, validate, flags, timestamp, networkChainID)
+
+	if result.Transaction.Flags().IsReuseSenderNonce() {
+		// make sure reuse nonce will not be delivered to the node
+		result.Transaction.RemoveFlags(types.TFDeliverToNode)
+
+		// no reprocess in case of reuse nonce
+		result.Reprocess = false
+	}
+
+	return result
+}
+
+// Add validates an Ethereum transaction and checks that its nonce has not been seen before
+func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID types.ShortID,
+	network types.NetworkNum, validate bool, flags types.TxFlags, timestamp time.Time, networkChainID int64) TransactionResult {
 	result := t.BxTxStore.Add(hash, content, shortID, network, false, flags, timestamp, networkChainID)
 
 	// if no new content we can leave
@@ -60,13 +76,14 @@ func (t *EthTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID
 	}
 
 	ethTx := blockchainTx.(*types.EthTransaction)
+	copy(result.Sender[:], ethTx.From.Bytes())
 	txChainID := ethTx.ChainID.Int64()
 	if networkChainID != 0 && txChainID != 0 && networkChainID != txChainID {
 		log.Errorf("chainID mismatch for hash %v - content chainID %v networkNum %v networkChainID %v", hash, txChainID, network, networkChainID)
 		// remove the tx from the TxStore but allow it to get back in
 		hashToRemove := make(types.SHA256HashList, 1)
 		hashToRemove[0] = result.Transaction.Hash()
-		t.BxTxStore.RemoveHashes(&hashToRemove, ReEntryProtection, "chainID mismatch")
+		t.BxTxStore.RemoveHashes(&hashToRemove, FullReEntryProtection, "chainID mismatch")
 		result.FailedValidation = true
 		return result
 
@@ -80,23 +97,12 @@ func (t *EthTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID
 		return result
 	}
 
-	// if we have shortID we should not block this transaction even in case of reuse nonce.
-	// we called t.track() to keep track of this transaction so it may block other transactions.
-	if shortID != types.ShortIDEmpty {
-		log.Tracef("reuse nonce detected but ignored since having shortID (%v). "+
-			"New transaction %v is reusing nonce with existing tx %v",
-			shortID, result.Transaction.Hash(), otherTx)
-		return result
-	}
+	// mark tx as reuse nonce
+	result.Transaction.AddFlags(types.TFReusedNonce)
 
-	result.ReuseSenderNonce = true
 	result.DebugData = otherTx
 	log.Tracef("reuse nonce detected. New transaction %v is reusing nonce with existing tx %v",
 		result.Transaction.Hash(), otherTx)
-	// remove the tx from the TxStore but allow it to get back in
-	hashToRemove := make(types.SHA256HashList, 1)
-	hashToRemove[0] = result.Transaction.Hash()
-	t.BxTxStore.RemoveHashes(&hashToRemove, NoReEntryProtection, "reuse nonce detected")
 	return result
 }
 
@@ -186,7 +192,7 @@ func (nt *nonceTracker) track(tx *types.EthTransaction, network types.NetworkNum
 		return false, nil
 	}
 
-	if (tx.EffectiveGasFeeCap().GreaterThan(oldTx.gasFeeCap) && tx.EffectiveGasTipCap().GreaterThan(oldTx.gasTipCap)) || nt.clock.Now().After(oldTx.expireTime) {
+	if (tx.EffectiveGasFeeCap().GreaterThanOrEqualTo(oldTx.gasFeeCap) && tx.EffectiveGasTipCap().GreaterThanOrEqualTo(oldTx.gasTipCap)) || nt.clock.Now().After(oldTx.expireTime) {
 		nt.setTransaction(tx, network)
 		return false, nil
 	}
@@ -194,10 +200,10 @@ func (nt *nonceTracker) track(tx *types.EthTransaction, network types.NetworkNum
 }
 
 func (nt *nonceTracker) cleanLoop() {
-	ticker := time.NewTicker(nt.cleanInterval)
+	ticker := nt.clock.Ticker(nt.cleanInterval)
 	for {
 		select {
-		case <-ticker.C:
+		case <-ticker.Alert():
 			nt.clean()
 		case <-nt.quit:
 			ticker.Stop()

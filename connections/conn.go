@@ -2,8 +2,8 @@ package connections
 
 import (
 	"github.com/bloXroute-Labs/gateway/bxmessage"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/types"
-	log "github.com/sirupsen/logrus"
 	"time"
 )
 
@@ -17,6 +17,7 @@ type Conn interface {
 	ID() Socket
 	Info() Info
 	IsOpen() bool
+	IsDisabled() bool
 
 	Protocol() bxmessage.Protocol
 	SetProtocol(bxmessage.Protocol)
@@ -27,6 +28,7 @@ type Conn interface {
 	ReadMessages(callBack func(bxmessage.MessageBytes), readDeadline time.Duration, headerLen int, readPayloadLen func([]byte) int) (int, error)
 	Send(msg bxmessage.Message) error
 	SendWithDelay(msg bxmessage.Message, delay time.Duration) error
+	Disable(reason string)
 	Close(reason string) error
 }
 
@@ -51,6 +53,7 @@ const (
 type BxListener interface {
 	NodeStatus() NodeStatus
 	HandleMsg(msg bxmessage.Message, conn Conn, background MsgHandlingOptions) error
+	ValidateConnection(conn Conn) error
 
 	// OnConnEstablished is a callback for when a connection has been connected and finished its handshake
 	OnConnEstablished(conn Conn) error

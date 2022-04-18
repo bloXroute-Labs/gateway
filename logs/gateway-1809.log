@@ -1,0 +1,2 @@
+time="2022-04-01T02:11:45.542285" level=info msg="gateway (2.110.4.0) is starting with arguments "
+time="2022-04-01T02:11:45.542596" level=fatal msg="websocket server must be enabled using --ws or --ws-tls to use Solana gateway"

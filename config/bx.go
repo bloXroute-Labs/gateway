@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/utils"
 	"github.com/urfave/cli/v2"
 	"time"
@@ -22,27 +23,33 @@ type Bx struct {
 	BlockchainNetwork  string
 	PrioritySending    bool
 	NodeType           utils.NodeType
+	GatewayMode        utils.GatewayMode
 	LogNetworkContent  bool
 	FluentDEnabled     bool
 	FluentDHost        string
 
-	OverrideRelay     bool
-	OverrideRelayHost string
+	Relays string
 
 	WebsocketEnabled    bool
 	WebsocketTLSEnabled bool
 	WebsocketHost       string
 	WebsocketPort       int
 	ManageWSServer      bool
+	HTTPPort            int
 
-	BlocksOnly      bool
-	AllTransactions bool
-	MevBuilderURI   string
-	MevMinerURI     string
+	BlocksOnly       bool
+	AllTransactions  bool
+	SendConfirmation bool
+	MEVBuilderURI    string
+	MEVMinerURI      string
+
+	ProcessMegaBundle            bool
+	MevMinerSendBundleMethodName string
 
 	*GRPC
 	*Env
-	*Log
+	*logger.Config
+	*TxTraceLog
 }
 
 // NewBxFromCLI builds bx node configuration from the CLI context
@@ -52,7 +59,7 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		return nil, err
 	}
 
-	log, err := NewLogFromCLI(ctx)
+	log, txTraceLog, err := NewLogFromCLI(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -60,6 +67,18 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 	grpcConfig := NewGRPCFromCLI(ctx)
 
 	nodeType, err := utils.FromStringToNodeType(ctx.String(utils.NodeTypeFlag.Name))
+	if err != nil {
+		return nil, err
+	}
+
+	var gatewayMode utils.GatewayMode
+	if utils.IsGateway {
+		gatewayMode, err = utils.FromStringToGatewayMode(ctx.String(utils.GatewayModeFlag.Name))
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	bxConfig := &Bx{
 		Host:               ctx.String(utils.HostFlag.Name),
 		OverrideExternalIP: ctx.IsSet(utils.ExternalIPFlag.Name),
@@ -67,9 +86,9 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		ExternalPort:       ctx.Int64(utils.PortFlag.Name),
 		BlockchainNetwork:  ctx.String(utils.BlockchainNetworkFlag.Name),
 		PrioritySending:    !ctx.Bool(utils.AvoidPrioritySendingFlag.Name),
-		OverrideRelay:      ctx.IsSet(utils.RelayHostFlag.Name),
-		OverrideRelayHost:  ctx.String(utils.RelayHostFlag.Name),
+		Relays:             ctx.String(utils.RelayHostsFlag.Name),
 		NodeType:           nodeType,
+		GatewayMode:        gatewayMode,
 		LogNetworkContent:  ctx.Bool(utils.LogNetworkContentFlag.Name),
 		FluentDEnabled:     ctx.Bool(utils.FluentDFlag.Name),
 		FluentDHost:        ctx.String(utils.FluentdHostFlag.Name),
@@ -80,15 +99,22 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		WebsocketPort:       ctx.Int(utils.WSPortFlag.Name),
 		ManageWSServer:      ctx.Bool(utils.ManageWSServer.Name),
 
-		BlocksOnly:      ctx.Bool(utils.BlocksOnlyFlag.Name),
-		AllTransactions: ctx.Bool(utils.AllTransactionsFlag.Name),
+		HTTPPort: ctx.Int(utils.HTTPPortFlag.Name),
 
-		MevBuilderURI: ctx.String(utils.MevBuilderURIFlag.Name),
-		MevMinerURI:   ctx.String(utils.MevMinerURIFlag.Name),
+		BlocksOnly:       ctx.Bool(utils.BlocksOnlyFlag.Name),
+		SendConfirmation: ctx.Bool(utils.SendBlockConfirmation.Name),
+		AllTransactions:  ctx.Bool(utils.AllTransactionsFlag.Name),
 
-		GRPC: grpcConfig,
-		Env:  env,
-		Log:  log,
+		MEVBuilderURI:                ctx.String(utils.MEVBuilderURIFlag.Name),
+		MEVMinerURI:                  ctx.String(utils.MEVMinerURIFlag.Name),
+		MevMinerSendBundleMethodName: ctx.String(utils.MEVBundleMethodNameFlag.Name),
+
+		ProcessMegaBundle: ctx.Bool(utils.MegaBundleProcessing.Name),
+
+		GRPC:       grpcConfig,
+		Env:        env,
+		Config:     log,
+		TxTraceLog: txTraceLog,
 	}
 
 	if bxConfig.BlocksOnly && bxConfig.AllTransactions {

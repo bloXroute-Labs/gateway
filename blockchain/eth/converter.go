@@ -69,7 +69,7 @@ func (c Converter) BlockBlockchainToBDN(i interface{}) (*types.BxBlock, error) {
 	if difficulty == nil {
 		difficulty = big.NewInt(0)
 	}
-	return types.NewBxBlock(hash, encodedHeader, txs, encodedTrailer, difficulty, block.Number())
+	return types.NewBxBlock(hash, encodedHeader, txs, encodedTrailer, difficulty, block.Number(), int(block.Size()))
 }
 
 // BlockBDNtoBlockchain converts a BDN block to an Ethereum block
@@ -102,6 +102,7 @@ func (c Converter) BxBlockToCanonicFormat(bxBlock *types.BxBlock) (*types.BlockN
 		return nil, err
 	}
 	ethBlock := result.(*BlockInfo).Block
+	bxBlock.SetSize(int(ethBlock.Size()))
 
 	ethTxs := make([]types.EthTransaction, 0, len(ethBlock.Transactions()))
 	for _, tx := range ethBlock.Transactions() {

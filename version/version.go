@@ -2,7 +2,7 @@ package version
 
 var (
 	// BuildVersion - github version at build time
-	BuildVersion string = "2.108.3.0"
+	BuildVersion = "2.111.2.0"
 	// BuildDate - date and time of build
-	BuildDate string = "12-28-2021 12:59:04"
+	BuildDate = "04-06-2022 13:02:56"
 )

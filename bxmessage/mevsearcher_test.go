@@ -2,6 +2,7 @@ package bxmessage
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"github.com/bloXroute-Labs/gateway/test/fixtures"
 	"github.com/stretchr/testify/require"
@@ -52,13 +53,11 @@ func TestMEVSearcherUnpackSuccess(t *testing.T) {
 
 	buf, err := hex.DecodeString(fixtures.MEVSearcherPayload)
 	assert.NoError(t, err)
-	params, err := hex.DecodeString("636f6e74656e742074657374")
-	assert.NoError(t, err)
 
 	assert.NoError(t, err)
 	err = mevSearcher.Unpack(buf, 0)
 	assert.NoError(t, err)
-	assert.Equal(t, params, mevSearcher.Params)
+	assert.Equal(t, json.RawMessage(`{"test":"test"}`), mevSearcher.Params)
 	assert.Equal(t, "eth_sendMegabundle", mevSearcher.Method)
 	assert.Equal(t, MEVSearcherAuth{"name test": "auth test"}, mevSearcher.Auth())
 }

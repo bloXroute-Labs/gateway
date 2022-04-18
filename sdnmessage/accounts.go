@@ -1,6 +1,9 @@
 package sdnmessage
 
 import (
+	"encoding/json"
+	"fmt"
+	"github.com/bloXroute-Labs/gateway"
 	"github.com/bloXroute-Labs/gateway/types"
 	"time"
 )
@@ -45,6 +48,15 @@ func (at AccountTier) ReceivesUnpaidTxs() bool {
 	return at == ATierElite || at == ATierEnterprise || at == ATierProfessional
 }
 
+// IsValid indicates whether the account tier is valid
+func (at AccountTier) IsValid() error {
+	switch at {
+	case ATierElite, ATierEnterprise, ATierProfessional, ATierDeveloper, ATierIntroductory:
+		return nil
+	}
+	return fmt.Errorf("unrecognized account tier: %v", at)
+}
+
 // TimeIntervalType represents an time interval type
 type TimeIntervalType string
 
@@ -76,10 +88,10 @@ const (
 	BehaviorAlert BDNServiceBehaviorType = "ALERT"
 	// BehaviorAuditLog means log audit entry
 	BehaviorAuditLog BDNServiceBehaviorType = "AUDIT_LOG"
-	// BlockAlert means
-	BlockAlert BDNServiceBehaviorType = "BLOCK_ALERT"
-	// AuditAlert means
-	AuditAlert BDNServiceBehaviorType = "AUDIT_ALERT"
+	// BehaviorBlockAlert means to block event and issue customer alert
+	BehaviorBlockAlert BDNServiceBehaviorType = "BLOCK_ALERT"
+	// BehaviorAuditAlert means
+	BehaviorAuditAlert BDNServiceBehaviorType = "AUDIT_ALERT"
 )
 
 // BDNService represents a service model config
@@ -94,9 +106,39 @@ type BDNService struct {
 
 // BDNQuotaService represents quota service model configs
 type BDNQuotaService struct {
-	ExpireDate     string     `json:"expire_date"`
-	MsgQuota       BDNService `json:"msg_quota"`
+	MsgQuota       BDNService
 	ExpireDateTime time.Time
+}
+
+// quotaService is a temporary struct for deserializing BDNQuotaService
+type quotaService struct {
+	ExpireDate string     `json:"expire_date"`
+	MsgQuota   BDNService `json:"msg_quota"`
+}
+
+// UnmarshalJSON implements deserialization for BDNQuotaService type
+func (bdnQS *BDNQuotaService) UnmarshalJSON(b []byte) error {
+	qs := quotaService{
+		ExpireDate: bxgateway.ExpiredDate,
+		MsgQuota:   BDNService{},
+	}
+	err := json.Unmarshal(b, &qs)
+	if err != nil {
+		return err
+	}
+	expireDateTime, err := time.Parse(bxgateway.TimeDateLayoutISO, qs.ExpireDate)
+	bdnQS.ExpireDateTime = expireDateTime
+	bdnQS.MsgQuota = qs.MsgQuota
+	return nil
+}
+
+// MarshalJSON implements serialization for BDNQuotaService type
+func (bdnQS BDNQuotaService) MarshalJSON() ([]byte, error) {
+	qs := quotaService{
+		ExpireDate: bdnQS.ExpireDateTime.Format(bxgateway.TimeDateLayoutISO),
+		MsgQuota:   bdnQS.MsgQuota,
+	}
+	return json.Marshal(qs)
 }
 
 // FeedProperties represent feed in BDN service
@@ -106,7 +148,9 @@ type FeedProperties struct {
 }
 
 // BDNBasicService is a placeholder for service model configs
-type BDNBasicService interface{}
+type BDNBasicService struct {
+	ExpireDate string `json:"expire_date"`
+}
 
 // BDNFeedService is a placeholder for service model configs
 type BDNFeedService struct {
@@ -132,7 +176,24 @@ type Account struct {
 	TransactionReceiptFeed      BDNFeedService         `json:"transaction_receipts_feed"`
 	PrivateRelay                BDNPrivateRelayService `json:"private_relays"`
 	PrivateTransaction          BDNQuotaService        `json:"private_transaction"`
-	TxTraceRateLimitation       BDNQuotaService        `json:"tx_trace_rate_limitation"`
+	TxTraceRateLimit            BDNQuotaService        `json:"tx_trace_rate_limitation"`
+	RelayLimit                  BDNQuotaService        `json:"relay_limit"`
+
+	// txs allowed per 5s
+	UnpaidTransactionBurstLimit BDNQuotaService `json:"unpaid_tx_burst_limit"`
+	PaidTransactionBurstLimit   BDNQuotaService `json:"paid_tx_burst_limit"`
+
+	BoostMEVSearcher BDNBasicService `json:"boost_mevsearcher"`
+}
+
+// Validate verifies the response that the response from bxapi is well understood
+func (a *Account) Validate() error {
+	err := a.TierName.IsValid()
+	if err != nil {
+		a.TierName = ATierElite
+		return err
+	}
+	return nil
 }
 
 // AccountInfo represents basic info about the account model
@@ -146,8 +207,8 @@ type AccountInfo struct {
 	BlockchainNetwork  string          `json:"blockchain_network"`
 	TierName           AccountTier     `json:"tier_name"`
 	Miner              bool            `json:"is_miner"`
-	MevBuilder         string          `json:"mev_builder"`
-	MevMiner           string          `json:"mev_miner"`
+	MEVBuilder         string          `json:"mev_builder"`
+	MEVMiner           string          `json:"mev_miner"`
 }
 
 // DefaultEnterpriseAccount default enterprise account
@@ -163,7 +224,6 @@ var DefaultEnterpriseAccount = Account{
 		Miner:              false,
 	},
 	FreeTransactions: BDNQuotaService{
-		ExpireDate: "2999-12-31",
 		MsgQuota: BDNService{
 			TimeInterval: TimeIntervalDaily,
 			ServiceType:  BDNServiceMsgQuota,
@@ -172,7 +232,6 @@ var DefaultEnterpriseAccount = Account{
 		ExpireDateTime: time.Now().Add(time.Hour),
 	},
 	PaidTransactions: BDNQuotaService{
-		ExpireDate: "2999-12-31",
 		MsgQuota: BDNService{
 			TimeInterval: TimeIntervalDaily,
 			ServiceType:  BDNServiceMsgQuota,
@@ -180,7 +239,9 @@ var DefaultEnterpriseAccount = Account{
 		},
 		ExpireDateTime: time.Now().Add(time.Hour),
 	},
-	CloudAPI: nil,
+	CloudAPI: BDNBasicService{
+		ExpireDate: "2999-12-31",
+	},
 	NewTransactionStreaming: BDNFeedService{
 		ExpireDate: "2999-12-31",
 		Feed: FeedProperties{
@@ -225,7 +286,6 @@ var DefaultEnterpriseAccount = Account{
 	},
 	PrivateRelay: nil,
 	PrivateTransaction: BDNQuotaService{
-		ExpireDate: "2999-12-31",
 		MsgQuota: BDNService{
 			TimeInterval: TimeIntervalDaily,
 			ServiceType:  BDNServiceMsgQuota,
@@ -233,12 +293,39 @@ var DefaultEnterpriseAccount = Account{
 		},
 		ExpireDateTime: time.Now().Add(time.Hour),
 	},
-	TxTraceRateLimitation: BDNQuotaService{
-		ExpireDate: "2999-12-31",
+	TxTraceRateLimit: BDNQuotaService{
 		MsgQuota: BDNService{
 			TimeInterval: TimeIntervalDaily,
 			ServiceType:  BDNServiceMsgQuota,
 			Limit:        1,
+		},
+		ExpireDateTime: time.Now().Add(time.Hour),
+	},
+	UnpaidTransactionBurstLimit: BDNQuotaService{
+		MsgQuota: BDNService{
+			ServiceType:       BDNServiceMsgQuota,
+			Limit:             20,
+			BehaviorLimitOK:   BehaviorNoAction,
+			BehaviorLimitFail: BehaviorNoAction,
+		},
+		ExpireDateTime: time.Now().Add(time.Hour),
+	},
+	PaidTransactionBurstLimit: BDNQuotaService{
+		MsgQuota: BDNService{
+			ServiceType:       BDNServiceMsgQuota,
+			Limit:             50,
+			BehaviorLimitOK:   BehaviorNoAction,
+			BehaviorLimitFail: BehaviorAlert,
+		},
+		ExpireDateTime: time.Now().Add(time.Hour),
+	},
+	BoostMEVSearcher: BDNBasicService{
+		ExpireDate: bxgateway.ExpiredDate,
+	},
+	RelayLimit: BDNQuotaService{
+		MsgQuota: BDNService{
+			ServiceType: BDNServicePermit,
+			Limit:       1,
 		},
 		ExpireDateTime: time.Now().Add(time.Hour),
 	},

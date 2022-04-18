@@ -51,11 +51,11 @@ func NewSignedEthTxBytes(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKe
 }
 
 // NewSignedEthTxMessage generates a valid Ethereum transaction, and packs it into a bloxroute tx message
-func NewSignedEthTxMessage(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey, networkNum types.NetworkNum) (*ethtypes.Transaction, *bxmessage.Tx) {
+func NewSignedEthTxMessage(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey, networkNum types.NetworkNum, flags types.TxFlags) (*ethtypes.Transaction, *bxmessage.Tx) {
 	ethTx, ethTxBytes := NewSignedEthTxBytes(txType, nonce, privateKey)
 	var hash types.SHA256Hash
 	copy(hash[:], ethTx.Hash().Bytes())
-	return ethTx, bxmessage.NewTx(hash, ethTxBytes, networkNum, 0, "")
+	return ethTx, bxmessage.NewTx(hash, ethTxBytes, networkNum, flags, "")
 }
 
 // newEthLegacyTx generates a valid signed Ethereum transaction from a provided private key. nil can be specified to use a hardcoded private key.
@@ -63,7 +63,7 @@ func newEthLegacyTx(nonce uint64, privateKey *ecdsa.PrivateKey) *ethtypes.Transa
 	address := crypto.PubkeyToAddress(privateKey.PublicKey)
 	unsignedTx := ethtypes.NewTx(&ethtypes.LegacyTx{
 		Nonce:    nonce,
-		GasPrice: big.NewInt(1),
+		GasPrice: big.NewInt(100),
 		Gas:      0,
 		To:       &address,
 		Value:    big.NewInt(1),
@@ -80,7 +80,7 @@ func newEthAccessListTx(nonce uint64, privateKey *ecdsa.PrivateKey) *ethtypes.Tr
 	unsignedTx := ethtypes.NewTx(&ethtypes.AccessListTx{
 		ChainID:    chainID,
 		Nonce:      nonce,
-		GasPrice:   big.NewInt(1),
+		GasPrice:   big.NewInt(100),
 		Gas:        0,
 		To:         &address,
 		Value:      big.NewInt(1),
@@ -99,8 +99,8 @@ func newEthDynamicFeeTx(nonce uint64, privateKey *ecdsa.PrivateKey) *ethtypes.Tr
 	unsignedTx := ethtypes.NewTx(&ethtypes.DynamicFeeTx{
 		ChainID:    chainID,
 		Nonce:      nonce,
-		GasTipCap:  big.NewInt(1),
-		GasFeeCap:  big.NewInt(1),
+		GasTipCap:  big.NewInt(100),
+		GasFeeCap:  big.NewInt(100),
 		Gas:        0,
 		To:         &address,
 		Value:      big.NewInt(1),

@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/types"
-	log "github.com/sirupsen/logrus"
 )
 
 // NodeModel represents metadata on a given node in the bloxroute network
 type NodeModel struct {
 	NodeType                  string           `json:"node_type"`
+	GatewayMode               string           `json:"gateway_mode"`
 	ExternalPort              int64            `json:"external_port"`
 	NonSSLPort                int              `json:"non_ssl_port"`
 	ExternalIP                string           `json:"external_ip"`
@@ -32,12 +33,13 @@ type NodeModel struct {
 	BlockchainNetworkNum      types.NetworkNum `json:"blockchain_network_num"`
 	BlockchainIP              string           `json:"blockchain_ip"`
 	BlockchainPort            int              `json:"blockchain_port"`
+	BlockchainPeers           string           `json:"blockchain_peers"`
 	Hostname                  string           `json:"hostname"`
 	SdnID                     interface{}      `json:"sdn_id"`
 	OsVersion                 string           `json:"os_version"`
-	Continent                 interface{}      `json:"continent"`
+	Continent                 string           `json:"continent"`
 	SplitRelays               bool             `json:"split_relays"`
-	Country                   interface{}      `json:"country"`
+	Country                   string           `json:"country"`
 	Region                    interface{}      `json:"region"`
 	Idx                       int64            `json:"idx"`
 	HasFullyUpdatedTxService  bool             `json:"has_fully_updated_tx_service"`
@@ -60,7 +62,7 @@ type NodeModel struct {
 	UsingPrivateIPConnection  bool             `json:"using_private_ip_connection"`
 	PrivateNode               bool             `json:"private_node"`
 	ProgramName               string           `json:"program_name"`
-	RelayType                 string           `json:"relay_type"`
+	RelayType                 types.RelayType  `json:"relay_type"`
 }
 
 // Pack serializes a NodeModel into a buffer for sending

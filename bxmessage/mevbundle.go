@@ -2,6 +2,7 @@ package bxmessage
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"github.com/bloXroute-Labs/gateway/bxmessage/utils"
 	"github.com/bloXroute-Labs/gateway/types"
@@ -12,8 +13,8 @@ const mevBundleNameMaxSize = 255
 // MEVMinerNames alias for []string
 type MEVMinerNames = []string
 
-// MEVBundleParams alias for []byte
-type MEVBundleParams = []byte
+// MEVBundleParams alias for json.RawMessage
+type MEVBundleParams = json.RawMessage
 
 // MEVBundle represents data that we receive from MEV-miners and send to BDN
 type MEVBundle struct {
@@ -52,6 +53,21 @@ func (m *MEVBundle) SetHash() {
 	}
 	buf = append(buf, m.Params...)
 	m.hash = utils.DoubleSHA256(buf[:])
+}
+
+// SetNames set names
+func (m *MEVBundle) SetNames(names MEVMinerNames) {
+	m.names = names
+}
+
+// Clone create new MEVMinerNames entity based on names
+func (m MEVBundle) Clone(names MEVMinerNames) MEVBundle {
+	return MEVBundle{
+		BroadcastHeader: m.BroadcastHeader,
+		Method:          m.Method,
+		names:           names,
+		Params:          m.Params,
+	}
 }
 
 func (m MEVBundle) size() uint32 {
@@ -151,9 +167,6 @@ func (m *MEVBundle) Unpack(buf []byte, _ Protocol) error {
 func checkMEVBundleNameSize(namesSize int) error {
 	if namesSize > mevBundleNameMaxSize {
 		return fmt.Errorf("number of mev builders names %v exceeded the limit (%v)", namesSize, mevBundleNameMaxSize)
-	}
-	if namesSize == 0 {
-		return fmt.Errorf("at least 1 mev miner must be present")
 	}
 
 	return nil

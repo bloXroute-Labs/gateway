@@ -3,9 +3,9 @@ package connections
 import (
 	"fmt"
 	"github.com/bloXroute-Labs/gateway/bxmessage"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/bloXroute-Labs/gateway/utils"
-	log "github.com/sirupsen/logrus"
 	"time"
 )
 
@@ -54,6 +54,11 @@ func (r RPCConn) IsOpen() bool {
 	return false
 }
 
+// IsDisabled indicates that RPCConn is never disabled
+func (r RPCConn) IsDisabled() bool {
+	return false
+}
+
 // Protocol indicates that the RPCConn does not have a protocol
 func (r RPCConn) Protocol() bxmessage.Protocol {
 	return bxmessage.EmptyProtocol
@@ -91,6 +96,11 @@ func (r RPCConn) SendWithDelay(msg bxmessage.Message, delay time.Duration) error
 // Close is a no-op
 func (r RPCConn) Close(reason string) error {
 	return nil
+}
+
+// Disable is a no-op
+func (r RPCConn) Disable(reason string) {
+	return
 }
 
 // String returns the formatted representation of this placeholder connection

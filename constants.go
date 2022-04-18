@@ -24,6 +24,9 @@ const TxStoreMaxSize = 200000
 // BlockRecoveryTimeout - max time to wait for block recovery before canceling block
 const BlockRecoveryTimeout = 10 * time.Second
 
+// ConnectionDisabledDuration - the duration for which an invalid connection is disabled before closing
+const ConnectionDisabledDuration = 15 * time.Minute
+
 // Ethereum - string representation for the Ethereum protocol
 const Ethereum = "Ethereum"
 
@@ -32,6 +35,9 @@ const TimeDateLayoutISO = "2006-01-02"
 
 // TimeLayoutISO - used to parse ISO time format string
 const TimeLayoutISO = "2006-01-02 15:04:05-0700"
+
+// ExpiredDate - constant for an expired date
+const ExpiredDate = "1970-01-01"
 
 // AsyncMsgChannelSize - size of async message channel
 const AsyncMsgChannelSize = 500
@@ -69,9 +75,6 @@ const CleanedShortIDsChannelSize = 100
 // WSConnectionID - special node ID to identify the websocket connection
 const WSConnectionID = "WSConnectionID"
 
-// DeliverToNodePercent is the % of transactions that should be delivered to the connected blockchain node
-const DeliverToNodePercent = 20
-
 // DefaultRoutingConfigFileName - routingConfig cache file name
 const DefaultRoutingConfigFileName = "defaultRoutingConfig.json"
 
@@ -83,3 +86,25 @@ const GetMethod = "GET"
 
 // PostMethod - post method for http
 const PostMethod = "POST"
+
+// TimeToWaitBeforeClosing - set time to wait before closing the connection
+const TimeToWaitBeforeClosing = 500 * time.Millisecond
+
+// WSProviderTimeout - sets timeout duration used by WSProvider
+const WSProviderTimeout = 10 * time.Second
+
+const (
+	// InternalError - status Code for an unexpected condition was encountered
+	InternalError = 500
+	// NotImplemented - Status for the server does not recognize the request method
+	NotImplemented = 501
+	// BadGateway - status Code for a gateway which did not receive a timely response from the server
+	BadGateway = 502
+	// ServiceUnavailable - status Code for server unavailable on sdn
+	ServiceUnavailable = 503
+	// GatewayTimeout - status Code for invalid response from server
+	GatewayTimeout = 504
+)
+
+// BloxrouteBuilderName - set bloxroute mev builder name
+const BloxrouteBuilderName = "bloxroute"

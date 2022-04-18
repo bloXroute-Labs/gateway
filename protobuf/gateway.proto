@@ -1,7 +1,7 @@
 syntax = "proto3";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/gateway";
+option go_package = "github.com/bloXroute-Labs/gateway/gateway";
 
 // The gateway service definition.
 package  gateway;
@@ -12,14 +12,31 @@ service Gateway {
   rpc GetTx(GetBxTransactionRequest) returns (GetBxTransactionResponse) {}
   rpc Stop (StopRequest) returns (StopReply){}
   rpc Version (VersionRequest) returns (VersionReply){}
+  rpc Status (StatusRequest) returns (StatusResponse) {}
+  rpc Subscriptions (SubscriptionsRequest) returns (SubscriptionsReply){}
+}
+
+message SubscriptionsRequest{
+
+}
+
+message Subscription{
+  string account_id = 1;
+  string tier = 2;
+  string feed_name = 3;
+  uint32 network = 4;
+}
+
+message SubscriptionsReply {
+  repeated Subscription subscriptions = 1;
 }
 
 message VersionRequest{
 }
 
 message VersionReply{
-    string version = 1;
-    string build_date =2;
+  string version = 1;
+  string build_date = 2;
 }
 
 message StopRequest{
@@ -30,6 +47,12 @@ message StopReply{
 
 message PeersRequest {
   string type = 1;
+}
+
+message RateSnapshot {
+  int64 fiveMinute = 1;
+  int64 oneHour = 2;
+  int64 oneDay = 3;
 }
 
 message Peer {
@@ -46,8 +69,17 @@ message Peer {
   string account_id = 11;
   string account_tier = 12;
   int64 port = 13;
+  bool disabled = 14;
+  string mev_miner = 15;
+  string mev_builder = 16;
+  uint32 capability = 17;
+  int64 unpaid_tx_burst_limit = 18;
+  int64 paid_tx_burst_limit = 19;
+  RateSnapshot unpaid_tx_burst_limit_excess = 20;
+  RateSnapshot paid_tx_burst_limit_excess = 21;
+  RateSnapshot paid_tx_throughput = 22;
+  RateSnapshot unpaid_tx_throughput = 23;
 }
-
 
 message PeersReply {
   repeated Peer peers = 1;
@@ -100,4 +132,67 @@ message BlxrTxRequest {
 
 message BlxrTxReply {
   string tx_hash = 1;
+}
+
+message StatusRequest {}
+
+message AccountInfo {
+  string account_id = 1;
+  string expire_date = 2;
+}
+
+message NodePerformance {
+  string since = 1;
+  uint32 new_blocks_received_from_blockchain_node = 2;
+  uint32 new_blocks_received_from_bdn = 3;
+  uint32 new_blocks_seen = 4;
+  uint32 new_block_messages_from_blockchain_node = 5;
+  uint32 new_block_announcements_from_blockchain_node = 6;
+  uint32 new_tx_received_from_blockchain_node = 7;
+  uint32 new_tx_received_from_bdn = 8;
+  uint32 tx_sent_to_node = 9;
+  uint32 duplicate_tx_from_node = 10;
+}
+
+message WsConnStatus {
+  string addr = 1;
+  string conn_status = 2;
+  string sync_status = 3;
+}
+
+message NodeConnStatus {
+  string conn_status = 1;
+  WsConnStatus ws_connection = 2;
+  NodePerformance node_performance = 3;
+}
+
+message BDNConnStatus {
+  string status = 1;
+  string connected_at = 2;
+  ConnectionLatency latency = 3;
+}
+
+message ConnectionLatency {
+  int64 min_ms_from_peer = 7;
+  int64 min_ms_to_peer = 8;
+  int64 slow_traffic_count = 9;
+  int64 min_ms_round_trip = 10;
+}
+
+message GatewayInfo {
+  string version = 1;
+  string node_id = 2;
+  string ip_address = 3;
+  string time_started = 4;
+  string continent = 5;
+  string country = 6;
+  string network = 8;
+  string startup_params = 7;
+}
+
+message StatusResponse {
+  GatewayInfo gateway_info = 2;
+  map<string, NodeConnStatus> nodes = 3;
+  map<string, BDNConnStatus> relays = 4;
+  AccountInfo account_info = 1;
 }

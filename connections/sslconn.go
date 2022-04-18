@@ -3,11 +3,11 @@ package connections
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"github.com/bloXroute-Labs/gateway/bxmessage"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/utils"
-	log "github.com/sirupsen/logrus"
-	"sync"
 	"time"
 )
 
@@ -29,23 +29,26 @@ type SSLConn struct {
 	Socket
 	writer *bufio.Writer
 
-	connect         func() (Socket, error)
-	ip              string
-	port            int64
-	protocol        bxmessage.Protocol
-	sslCerts        *utils.SSLCerts
-	connectionOpen  bool
-	lock            *sync.Mutex
+	connect        func() (Socket, error)
+	ip             string
+	port           int64
+	protocol       bxmessage.Protocol
+	sslCerts       *utils.SSLCerts
+	connectionOpen bool
+	disabled       bool
+	// done is used to stop the sendLoop routine
+	done            context.CancelFunc
 	sendMessages    chan bxmessage.Message
 	sendChannelSize int
 	buf             bytes.Buffer
 	usePQ           bool
-	pq              *utils.MsgPriorityQueue
+	pq              *bxmessage.MsgPriorityQueue
 	logMessages     bool
 	extensions      utils.BxSSLProperties
 	packet          []byte
 	log             *log.Entry
 	clock           utils.Clock
+	connectedAt     time.Time
 }
 
 // NewSSLConnection constructs a new SSL connection. If socket is not nil, then the connection was initiated by the remote.
@@ -59,7 +62,6 @@ func NewSSLConnection(connect func() (Socket, error), sslCerts *utils.SSLCerts, 
 		buf:             bytes.Buffer{},
 		usePQ:           usePQ,
 		logMessages:     logMessages,
-		lock:            &sync.Mutex{},
 		sendChannelSize: sendChannelSize,
 		packet:          make([]byte, readPacketSize),
 		log:             log.WithField("remoteAddr", fmt.Sprintf("%v:%v", ip, port)),
@@ -70,26 +72,19 @@ func NewSSLConnection(connect func() (Socket, error), sslCerts *utils.SSLCerts, 
 
 // sendLoop waits for messages on channel and send them to the socket
 // terminates when the channel is closed
-func (s *SSLConn) sendLoop() {
+func (s *SSLConn) sendLoop(ctx context.Context) {
 	s.Log().Trace("starting send loop")
 	for {
 		select {
-		case msg, ok := <-s.sendMessages:
-			if !ok {
-				s.Log().Trace("stopping send loop (channel closed)")
-				return
-			}
+		case <-ctx.Done():
+			s.Log().Trace("stopping send loop (done)")
+			return
+		case msg := <-s.sendMessages:
 			s.packAndWrite(msg)
 			continueReading := true
 			for continueReading {
 				select {
-				case msg, ok = <-s.sendMessages:
-					if !ok {
-						s.Log().Trace("stopping send loop (channel closed)")
-						// before we close, try to send what is buffered
-						s.writer.Flush()
-						return
-					}
+				case msg = <-s.sendMessages:
 					s.packAndWrite(msg)
 				default:
 					continueReading = false
@@ -97,7 +92,7 @@ func (s *SSLConn) sendLoop() {
 			}
 			err := s.writer.Flush()
 			if err != nil {
-				s.Log().Trace("stopping send loop (failed to Flush output buffer)")
+				s.Log().Tracef("stopping send loop (failed to Flush output buffer) - %v", err)
 				return
 			}
 		}
@@ -145,12 +140,18 @@ func (s *SSLConn) Info() Info {
 		ConnectionState: "",
 		NetworkNum:      0,
 		FromMe:          s.isInitiator(),
+		ConnectedAt:     s.connectedAt,
 	}
 }
 
 // IsOpen indicates whether the socket connection is open
 func (s SSLConn) IsOpen() bool {
 	return s.connectionOpen
+}
+
+// IsDisabled indicates whether the socket connection is disabled (ping and pong only)
+func (s SSLConn) IsDisabled() bool {
+	return s.disabled
 }
 
 // Protocol provides the protocol version of the connection
@@ -170,7 +171,7 @@ func (s *SSLConn) Log() *log.Entry {
 
 // Connect initializes a connection to a bloxroute node. If this is called when the remote addr is the one initiating the connection, then this function is does little besides mark some connection states as ready. Connect is also responsible for starting any goroutines relevant to the connection.
 func (s *SSLConn) Connect() error {
-	s.pq = utils.NewMsgPriorityQueue(s.queueToMessageChan, PriorityQueueInterval)
+	s.pq = bxmessage.NewMsgPriorityQueue(s.queueToMessageChan, PriorityQueueInterval)
 	s.buf.Reset()
 
 	var err error
@@ -181,6 +182,7 @@ func (s *SSLConn) Connect() error {
 	}
 	// allocate a buffered writer to combine outgoing messages
 	s.writer = bufio.NewWriter(s.Socket)
+	s.connectedAt = s.clock.Now()
 
 	extensions, err := s.Properties()
 	if err != nil {
@@ -190,7 +192,9 @@ func (s *SSLConn) Connect() error {
 	s.connectionOpen = true
 	// start send loop now that connection is connected
 	s.sendMessages = make(chan bxmessage.Message, s.sendChannelSize)
-	go s.sendLoop()
+	ctx, cancel := context.WithCancel(context.Background())
+	s.done = cancel
+	go s.sendLoop(ctx)
 
 	return nil
 }
@@ -223,6 +227,10 @@ func (s *SSLConn) ReadMessages(callBack func(msg bxmessage.MessageBytes), readDe
 			s.Log().Warnf("encountered error while reading message: %v, skipping", err)
 			continue
 		}
+		msgType := bxmessage.MessageBytes(msg).BxType()
+		if s.IsDisabled() && msgType != bxmessage.PingType && msgType != bxmessage.PongType {
+			continue
+		}
 		callBack(msg)
 	}
 	return n, nil
@@ -253,7 +261,7 @@ func (s *SSLConn) Send(msg bxmessage.Message) error {
 	}
 	// in order not to overload the python code - use priority queue and a gap of 0.5ms between sends
 	// this should be removed once relay/gw are in GOLANG
-	// Note: as of BX-2912 the pririty queue mechanism is disabled without an option to activate it
+	// Note: as of BX-2912 the priority queue mechanism is disabled without an option to activate it
 	// TODO: remove PQ from code base
 	if true || !s.usePQ || msg.GetPriority() == bxmessage.HighestPriority {
 		s.queueToMessageChan(msg)
@@ -280,26 +288,22 @@ func (s *SSLConn) SendWithDelay(msg bxmessage.Message, delay time.Duration) erro
 }
 
 func (s *SSLConn) queueToMessageChan(msg bxmessage.Message) {
-	// prevent a race with close
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	if !s.connectionOpen {
-		return
-	}
 	select {
 	case s.sendMessages <- msg:
 		// all good if we are here
 	default:
-		_ = s.close("cannot place message on channel without blocking")
+		_ = s.Close("cannot place message on channel without blocking")
 	}
+}
+
+// Disable marks the connection as disabled, meaning it sends/processes only ping/pong messages. Must be called in a go routine.
+func (s *SSLConn) Disable(reason string) {
+	s.Log().Errorf("disabling connection: %v", reason)
+	s.disabled = true
 }
 
 // Close shuts down a connection. If the connection was initiated by this node, it can be reopened with another Connect call. If the connection was initiated by the remote, it cannot be reopened.
 func (s *SSLConn) Close(reason string) error {
-	// prevent a race with writing to the sendMessages channel
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
 	return s.close(reason)
 }
 
@@ -324,10 +328,11 @@ func (s *SSLConn) close(reason string) error {
 	}
 
 	s.connectionOpen = false
-	if s.sendMessages != nil {
-		// close channel to stop send loop if running
-		close(s.sendMessages)
-	}
+	s.disabled = false
+	// don't close s.sendMessages - not needed and can create race with sendLoop
+
+	// stop sendLoop
+	s.done()
 
 	if s.Socket != nil {
 		err := s.Socket.Close(reason)

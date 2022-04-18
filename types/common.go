@@ -2,6 +2,7 @@ package types
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 )
 
@@ -28,12 +29,12 @@ type NodeEndpoint struct {
 }
 
 // String returns string representation of NodeEndpoint
-func (e *NodeEndpoint) String() string {
+func (e NodeEndpoint) String() string {
 	return fmt.Sprintf("%v %v %v", e.IP, e.Port, e.PublicKey)
 }
 
 // IPPort returns string of IP and Port
-func (e *NodeEndpoint) IPPort() string {
+func (e NodeEndpoint) IPPort() string {
 	return fmt.Sprintf("%v %v", e.IP, e.Port)
 }
 
@@ -51,6 +52,14 @@ type NodeID string
 
 // AccountID represents a user's BDN account. This field is a UUID.
 type AccountID string
+
+// Sender represents sender type
+type Sender [20]byte
+
+// String returns string of the Sender
+func (s Sender) String() string {
+	return hex.EncodeToString(s[:])
+}
 
 // EmptyAccountID represent no Account ID set
 const EmptyAccountID AccountID = ""
@@ -87,12 +96,6 @@ const GoGatewayVersion = "2.0.1"
 
 // AllNetworkNum is the network number for relays that facilitate transactions from all networks
 const AllNetworkNum NetworkNum = 0
-
-// ErrorNotificationCode len of code
-type ErrorNotificationCode uint32
-
-// ErrorTypeLen represents len of error type
-const ErrorTypeLen = 2
 
 // ErrorNotificationCodeLen represents len of code
 const ErrorNotificationCodeLen = 4

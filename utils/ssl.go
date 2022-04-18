@@ -59,6 +59,12 @@ func NewSSLCerts(registrationOnlyBaseURL, privateBaseURL, certName string) SSLCe
 	return NewSSLCertsFromFiles(privateCertFile, privateKeyFile, registrationOnlyCertFile, registrationOnlyKeyFile)
 }
 
+// NewSSLCertsPrivateKey returns ssl certs with given private key
+func NewSSLCertsPrivateKey(privateKey string) *SSLCerts {
+	pKey, _ := parsePEMPrivateKey([]byte(privateKey))
+	return &SSLCerts{privateKey: *pKey}
+}
+
 // NewSSLCertsFromFiles receiving cert files info returns and initializes new storage of SSL certificates.
 // Registration only keys/certs are mandatory. If they cannot be loaded, this function will panic.
 // Private keys and certs must match each other. If they do not, a new private key will be generated
@@ -152,6 +158,7 @@ func NewSSLCertsFromFiles(privateCertFile string, privateKeyFile string, registr
 	}
 }
 
+// parsePEMPrivateKey should parse pem private key
 func parsePEMPrivateKey(block []byte) (*ecdsa.PrivateKey, error) {
 	decodedKeyBlock, _ := pem.Decode(block)
 	keyBytes := decodedKeyBlock.Bytes
@@ -268,7 +275,7 @@ func (s SSLCerts) GetNodeID() (types.NodeID, error) {
 // GetAccountID reads the account ID embedded in the local certificates
 func (s SSLCerts) GetAccountID() (types.AccountID, error) {
 	sslProperties, err := ParseBxCertificate(&s.registrationOnlyCert)
-	if err != nil {
+	if err != ErrNodeIDNotEmbedded {
 		return "", err
 	}
 	return sslProperties.AccountID, nil

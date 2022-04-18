@@ -49,6 +49,7 @@ const (
 	transactionBacklog       = 500
 	transactionHashesBacklog = 1000
 	blockBacklog             = 100
+	statusBacklog            = 10
 )
 
 // Bridge represents the application interface over which messages are passed between the blockchain node and the BDN
@@ -70,12 +71,19 @@ type Bridge interface {
 
 	SendBlockToBDN(*types.BxBlock, types.NodeEndpoint) error
 	SendBlockToNode(*types.BxBlock) error
+	SendConfirmedBlockToGateway(block *types.BxBlock, peerEndpoint types.NodeEndpoint) error
 
 	ReceiveBlockFromBDN() <-chan *types.BxBlock
 	ReceiveBlockFromNode() <-chan BlockFromNode
+	ReceiveConfirmedBlockFromNode() <-chan BlockFromNode
 
 	ReceiveNoActiveBlockchainPeersAlert() <-chan NoActiveBlockchainPeersAlert
 	SendNoActiveBlockchainPeersAlert() error
+
+	SendBlockchainStatusRequest() error
+	ReceiveBlockchainStatusRequest() <-chan struct{}
+	SendBlockchainStatusResponse([]*types.NodeEndpoint) error
+	ReceiveBlockchainStatusResponse() <-chan []*types.NodeEndpoint
 }
 
 // ErrChannelFull is a special error for identifying overflowing channel buffers
@@ -90,10 +98,14 @@ type BxBridge struct {
 	transactionHashesFromNode chan TransactionAnnouncement
 	transactionHashesRequests chan TransactionAnnouncement
 
-	blocksFromNode chan BlockFromNode
-	blocksFromBDN  chan *types.BxBlock
+	blocksFromNode         chan BlockFromNode
+	blocksFromBDN          chan *types.BxBlock
+	confirmedBlockFromNode chan BlockFromNode
 
 	noActiveBlockchainPeers chan NoActiveBlockchainPeersAlert
+
+	blockchainStatusRequest  chan struct{}
+	blockchainStatusResponse chan []*types.NodeEndpoint
 }
 
 // NewBxBridge returns a BxBridge instance
@@ -106,7 +118,10 @@ func NewBxBridge(converter Converter) Bridge {
 		transactionHashesRequests: make(chan TransactionAnnouncement, transactionHashesBacklog),
 		blocksFromNode:            make(chan BlockFromNode, blockBacklog),
 		blocksFromBDN:             make(chan *types.BxBlock, blockBacklog),
+		confirmedBlockFromNode:    make(chan BlockFromNode, blockBacklog),
 		noActiveBlockchainPeers:   make(chan NoActiveBlockchainPeersAlert),
+		blockchainStatusRequest:   make(chan struct{}, statusBacklog),
+		blockchainStatusResponse:  make(chan []*types.NodeEndpoint, statusBacklog),
 		Converter:                 converter,
 	}
 }
@@ -156,6 +171,16 @@ func (b BxBridge) SendTransactionsFromBDN(transactions []*types.BxTransaction) e
 func (b BxBridge) SendTransactionsToBDN(txs []*types.BxTransaction, peerEndpoint types.NodeEndpoint) error {
 	select {
 	case b.transactionsFromNode <- TransactionsFromNode{Transactions: txs, PeerEndpoint: peerEndpoint}:
+		return nil
+	default:
+		return ErrChannelFull
+	}
+}
+
+// SendConfirmedBlockToGateway sends a SHA256 of the block to be included in blockConfirm message
+func (b BxBridge) SendConfirmedBlockToGateway(block *types.BxBlock, peerEndpoint types.NodeEndpoint) error {
+	select {
+	case b.confirmedBlockFromNode <- BlockFromNode{Block: block, PeerEndpoint: peerEndpoint}:
 		return nil
 	default:
 		return ErrChannelFull
@@ -212,6 +237,11 @@ func (b BxBridge) ReceiveBlockFromBDN() <-chan *types.BxBlock {
 	return b.blocksFromBDN
 }
 
+// ReceiveConfirmedBlockFromNode provides a channel that pushes confirmed blocks from nodes
+func (b BxBridge) ReceiveConfirmedBlockFromNode() <-chan BlockFromNode {
+	return b.confirmedBlockFromNode
+}
+
 // SendNoActiveBlockchainPeersAlert sends alerts to the BDN when there is no active blockchain peer
 func (b BxBridge) SendNoActiveBlockchainPeersAlert() error {
 	select {
@@ -225,4 +255,34 @@ func (b BxBridge) SendNoActiveBlockchainPeersAlert() error {
 // ReceiveNoActiveBlockchainPeersAlert provides a channel that pushes no active blockchain peer alerts
 func (b BxBridge) ReceiveNoActiveBlockchainPeersAlert() <-chan NoActiveBlockchainPeersAlert {
 	return b.noActiveBlockchainPeers
+}
+
+// SendBlockchainStatusRequest sends a blockchain connection status request signal to a blockchain backend
+func (b BxBridge) SendBlockchainStatusRequest() error {
+	select {
+	case b.blockchainStatusRequest <- struct{}{}:
+		return nil
+	default:
+		return ErrChannelFull
+	}
+}
+
+// ReceiveBlockchainStatusRequest handles SendBlockchainStatusRequest signal
+func (b BxBridge) ReceiveBlockchainStatusRequest() <-chan struct{} {
+	return b.blockchainStatusRequest
+}
+
+// SendBlockchainStatusResponse sends a response for blockchain connection status request
+func (b BxBridge) SendBlockchainStatusResponse(endpoints []*types.NodeEndpoint) error {
+	select {
+	case b.blockchainStatusResponse <- endpoints:
+		return nil
+	default:
+		return ErrChannelFull
+	}
+}
+
+// ReceiveBlockchainStatusResponse handles blockchain connection status response from backend
+func (b BxBridge) ReceiveBlockchainStatusResponse() <-chan []*types.NodeEndpoint {
+	return b.blockchainStatusResponse
 }

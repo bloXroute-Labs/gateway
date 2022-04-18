@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	pb "github.com/bloXroute-Labs/gateway/protobuf"
 	"github.com/bloXroute-Labs/gateway/rpc"
-	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"net"
 )

@@ -1,4 +1,4 @@
-module github.com/bloXroute-Labs/bxgateway-private-go/bxgateway
+module github.com/bloXroute-Labs/gateway
 
 go 1.16
 
@@ -8,10 +8,11 @@ require (
 	github.com/ethereum/go-ethereum v1.10.8
 	github.com/evalphobia/logrus_fluent v0.5.4
 	github.com/fluent/fluent-logger-golang v1.5.0
-	github.com/golang/protobuf v1.5.2
+	github.com/golang/mock v1.3.1
 	github.com/google/go-cmp v0.5.6 // indirect
 	github.com/gorilla/mux v1.8.0
 	github.com/gorilla/websocket v1.4.2
+	github.com/jinzhu/copier v0.3.5
 	github.com/onsi/gomega v1.15.0 // indirect
 	github.com/orandin/lumberjackrus v1.0.1
 	github.com/orcaman/concurrent-map v0.0.0-20210106121528-16402b402231

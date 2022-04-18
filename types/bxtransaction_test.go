@@ -92,3 +92,27 @@ func TestNotValidContentParsing(t *testing.T) {
 	assert.NotNil(t, err)
 	assert.Nil(t, blockchainTx)
 }
+
+func TestHasContent(t *testing.T) {
+	var hash SHA256Hash
+	content, _ := hex.DecodeString("01")
+
+	txNoContent := &BxTransaction{
+		hash:       hash,
+		shortIDs:   make(ShortIDList, 0),
+		addTime:    time.Now(),
+		networkNum: testNetworkNum,
+	}
+	assert.False(t, txNoContent.HasContent())
+	txWithContent := &BxTransaction{
+		hash:       hash,
+		content:    content,
+		shortIDs:   make(ShortIDList, 0),
+		addTime:    time.Now(),
+		networkNum: testNetworkNum,
+	}
+	assert.True(t, txWithContent.HasContent())
+
+	txNoContent.SetContent(content)
+	assert.True(t, txNoContent.HasContent())
+}
