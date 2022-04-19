@@ -29,14 +29,9 @@ func NewSHA256Hash(b []byte) (SHA256Hash, error) {
 
 // NewSHA256HashFromString parses a SHA256Hash from a serialized string format
 func NewSHA256HashFromString(hashStr string) (SHA256Hash, error) {
-	if hashStr[:2] == "0x" {
-		hashStr = hashStr[2:]
-	}
-
-	var hash SHA256Hash
-	hashBytes, err := hex.DecodeString(hashStr)
+	hashBytes, err := DecodeHex(hashStr)
 	if err != nil {
-		return hash, fmt.Errorf("could not decode hash string: %v %v", hashStr, err)
+		return SHA256Hash{}, fmt.Errorf("could not decode hash string: %v %v", hashStr, err)
 	}
 
 	return NewSHA256Hash(hashBytes)
@@ -73,4 +68,12 @@ func (s SHA256Hash) Format(prefix bool) string {
 		return fmt.Sprintf("%v%v", "0x", s)
 	}
 	return s.String()
+}
+
+// DecodeHex gets the bytes of a hexadecimal string, with or without its `0x` prefix
+func DecodeHex(str string) ([]byte, error) {
+	if len(str) > 2 && str[:2] == "0x" {
+		str = str[2:]
+	}
+	return hex.DecodeString(str)
 }

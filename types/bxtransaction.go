@@ -59,9 +59,19 @@ func (bt *BxTransaction) SetFlags(flags TxFlags) {
 	bt.flags = flags
 }
 
+// RemoveFlags sets off txFlag
+func (bt *BxTransaction) RemoveFlags(flags TxFlags) {
+	bt.SetFlags(bt.Flags() &^ flags)
+}
+
 // Content returns the transaction contents (usually the blockchain transaction bytes)
 func (bt *BxTransaction) Content() TxContent {
 	return bt.content
+}
+
+// HasContent indicates if transaction has content bytes
+func (bt *BxTransaction) HasContent() bool {
+	return len(bt.content) > 0
 }
 
 // ShortIDs returns the (possibly multiple) short IDs assigned to a transaction

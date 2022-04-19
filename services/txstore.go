@@ -49,9 +49,9 @@ type TransactionResult struct {
 	NewSID           bool
 	Reprocess        bool
 	FailedValidation bool
-	ReuseSenderNonce bool
 	Transaction      *types.BxTransaction
 	AssignedShortID  types.ShortID
 	DebugData        interface{}
 	AlreadySeen      bool
+	Sender           types.Sender
 }

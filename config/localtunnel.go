@@ -5,8 +5,8 @@ package config
 // ssh 54.174.28.236 -fNL 1800:bxapi-s.testnet-v176-16.testnet.blxrbdn.com:1800 -M -S sdn-socket
 var LocalTunnelEnv = Env{
 	SDNURL:              "https://bdn-api.testnet.blxrbdn.com",
-	RegistrationCertDir: "ssl/",
-	CACertURL:           "ssl/ca",
+	RegistrationCertDir: "ssl/testnet",
+	CACertURL:           "ssl/testnet/ca",
 	DataDir:             "datadir",
-	Environment:         "localTunnel",
+	Environment:         "localtunnel",
 }

@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"github.com/bloXroute-Labs/gateway/bxmessage"
 	"github.com/bloXroute-Labs/gateway/connections"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/fluent/fluent-logger-golang/fluent"
-	log "github.com/sirupsen/logrus"
+	uuid "github.com/satori/go.uuid"
 	"math"
 	"sync"
 	"time"
@@ -36,6 +37,9 @@ type Stats interface {
 		startTime time.Time, priority bxmessage.SendPriority, debugData interface{})
 	AddGatewayBlockEvent(name string, source connections.Conn, blockHash types.SHA256Hash, networkNum types.NetworkNum,
 		sentPeers int, startTime time.Time, sentGatewayPeers int, originalSize int, compressSize int, shortIDsCount int, txsCount int, recoveredTxsCount int, block *types.BxBlock)
+	LogSubscribeStats(subscriptionID *uuid.UUID, accountID types.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
+		ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string)
+	LogUnsubscribeStats(subscriptionID *uuid.UUID, feedName types.FeedType, networkNum types.NetworkNum, accountID types.AccountID, tierName sdnmessage.AccountTier)
 }
 
 // NoStats is used to generate empty stats
@@ -56,6 +60,15 @@ func (NoStats) AddGatewayBlockEvent(name string, source connections.Conn, blockH
 func (NoStats) AddTxsByShortIDsEvent(name string, source connections.Conn, txInfo *types.BxTransaction,
 	shortID types.ShortID, sourceID types.NodeID, sentPeers int, sentGatewayPeers int,
 	startTime time.Time, priority bxmessage.SendPriority, debugData interface{}) {
+}
+
+//LogSubscribeStats does nothing
+func (NoStats) LogSubscribeStats(subscriptionID *uuid.UUID, accountID types.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
+	ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string) {
+}
+
+//LogUnsubscribeStats does nothing
+func (NoStats) LogUnsubscribeStats(subscriptionID *uuid.UUID, feedName types.FeedType, networkNum types.NetworkNum, accountID types.AccountID, tierName sdnmessage.AccountTier) {
 }
 
 // FluentdStats struct that represents fluentd stats info
@@ -281,4 +294,38 @@ func (s FluentdStats) getLogPercentageByHash(networkNum types.NetworkNum) float6
 		return 0
 	}
 	return blockchainNetwork.TxPercentToLogByHash
+}
+
+// LogSubscribeStats generates a fluentd STATS event
+func (s FluentdStats) LogSubscribeStats(subscriptionID *uuid.UUID, accountID types.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
+	ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string) {
+	now := time.Now()
+	record := subscribeRecord{
+		Type:           "subscriptions",
+		Event:          "created",
+		SubscriptionID: subscriptionID,
+		AccountID:      accountID,
+		Tier:           tierName,
+		IP:             ip,
+		NetworkNum:     networkNum,
+		FeedName:       feedName,
+		FeedInclude:    feedInclude,
+		FeedFilters:    feedFilter,
+	}
+	s.LogToFluentD(record, now, "stats.subscriptions.events")
+}
+
+// LogUnsubscribeStats generates a fluentd STATS event
+func (s FluentdStats) LogUnsubscribeStats(subscriptionID *uuid.UUID, feedName types.FeedType, networkNum types.NetworkNum, accountID types.AccountID, tierName sdnmessage.AccountTier) {
+	now := time.Now()
+	record := unsubscribeRecord{
+		Type:           "subscriptions",
+		Event:          "closed",
+		SubscriptionID: subscriptionID,
+		NetworkNum:     networkNum,
+		FeedName:       feedName,
+		AccountID:      accountID,
+		Tier:           tierName,
+	}
+	s.LogToFluentD(record, now, "stats.subscriptions.events")
 }

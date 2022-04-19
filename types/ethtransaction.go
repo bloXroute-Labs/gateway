@@ -297,6 +297,11 @@ func (bi EthBigInt) GreaterThan(other EthBigInt) bool {
 	return bi.Int.Cmp(other.Int) == 1
 }
 
+// GreaterThanOrEqualTo compares the wrapped big.Int with another
+func (bi EthBigInt) GreaterThanOrEqualTo(other EthBigInt) bool {
+	return bi.Int.Cmp(other.Int) != -1
+}
+
 // MarshalJSON formats an big.Int according to the bloxroute spec
 func (bi EthBigInt) MarshalJSON() ([]byte, error) {
 	if bi.Int != nil {

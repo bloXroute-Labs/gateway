@@ -7,6 +7,7 @@ import (
 	"github.com/bloXroute-Labs/gateway"
 	"github.com/bloXroute-Labs/gateway/blockchain"
 	"github.com/bloXroute-Labs/gateway/blockchain/network"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/types"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -15,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
-	log "github.com/sirupsen/logrus"
 	"math/big"
 	"time"
 )
@@ -41,101 +41,111 @@ type Handler struct {
 	cancel context.CancelFunc
 	config *network.EthConfig
 
-	chain           *Chain
-	activeWebsocket bool
+	wsManager blockchain.WSManager
+	chain     *Chain
 }
 
 // NewHandler returns a new Handler and starts its processing go routines
-func NewHandler(parent context.Context, bridge blockchain.Bridge, config *network.EthConfig, wsProvider blockchain.WSProvider) *Handler {
+func NewHandler(parent context.Context, bridge blockchain.Bridge, config *network.EthConfig, wsManager blockchain.WSManager) *Handler {
 	ctx, cancel := context.WithCancel(parent)
 	h := &Handler{
-		bridge: bridge,
-		peers:  newPeerSet(),
-		cancel: cancel,
-		config: config,
-		chain:  NewChain(ctx),
+		bridge:    bridge,
+		peers:     newPeerSet(),
+		cancel:    cancel,
+		config:    config,
+		wsManager: wsManager,
+		chain:     NewChain(ctx),
 	}
 	go h.checkInitialBlockchainLiveliness(100 * time.Second)
 	go h.handleBDNBridge(ctx)
-	if wsProvider != nil {
-		go h.runEthSub(wsProvider)
-	}
 	return h
 }
 
-func (h *Handler) handleFeeds(ws blockchain.WSProvider, newHeadsRespCh chan *ethtypes.Header, nptResponseCh chan ethcommon.Hash, nhSub *rpc.ClientSubscription, nptSub *rpc.ClientSubscription) {
-	activeFeeds := true
+func (h *Handler) handleFeeds(wsCtx context.Context, nodeWS blockchain.WSProvider, newHeadsRespCh chan *ethtypes.Header, nptResponseCh chan ethcommon.Hash, nhSub *rpc.ClientSubscription, nptSub *rpc.ClientSubscription) {
+	activeFeeds := false
 	activeFeedsCheckTicker := time.NewTicker(time.Second * 10)
 	defer activeFeedsCheckTicker.Stop()
 	for {
 		select {
+		case <-wsCtx.Done():
+			return
 		case err := <-nhSub.Err():
-			ws.Log().Errorf("failed to get notification from newHeads: %v", err)
-			ws.UpdateNodeSyncStatus(blockchain.Unsynced)
+			nodeWS.Log().Errorf("failed to get notification from newHeads: %v", err)
+			h.wsManager.UpdateNodeSyncStatus(nodeWS.BlockchainPeerEndpoint(), blockchain.Unsynced)
 			return
 		case newHeader := <-newHeadsRespCh:
-			ws.Log().Tracef("received header for block %v (height %v)", newHeader.Hash(), newHeader.Number)
-			h.confirmBlockForAll(newHeader.Hash(), newHeader.Number)
+			nodeWS.Log().Tracef("received header for block %v (height %v)", newHeader.Hash(), newHeader.Number)
+			h.confirmBlockFromWS(newHeader.Hash(), newHeader.Number, nodeWS.BlockchainPeer().(*Peer))
 		case err := <-nptSub.Err():
-			ws.Log().Errorf("failed to get notification from newPendingTransactions: %v", err)
-			ws.UpdateNodeSyncStatus(blockchain.Unsynced)
+			nodeWS.Log().Errorf("failed to get notification from newPendingTransactions: %v", err)
+			h.wsManager.UpdateNodeSyncStatus(nodeWS.BlockchainPeerEndpoint(), blockchain.Unsynced)
 			return
 		case newPendingTx := <-nptResponseCh:
 			activeFeeds = true
 			txHash, err := types.NewSHA256Hash(newPendingTx[:])
-			ws.Log().Tracef("received new pending tx %v", txHash)
+			nodeWS.Log().Tracef("received new pending tx %v", txHash)
 			hashes := types.SHA256HashList{txHash}
 			err = h.bridge.AnnounceTransactionHashes(bxgateway.WSConnectionID, hashes)
 			if err != nil {
-				ws.Log().Errorf("failed to send transaction %v to the gateway: %v", txHash, err)
+				nodeWS.Log().Errorf("failed to send transaction %v to the gateway: %v", txHash, err)
 			}
 		case <-activeFeedsCheckTicker.C:
 			if !activeFeeds {
-				ws.UpdateNodeSyncStatus(blockchain.Unsynced)
+				h.wsManager.UpdateNodeSyncStatus(nodeWS.BlockchainPeerEndpoint(), blockchain.Unsynced)
 			} else {
-				ws.UpdateNodeSyncStatus(blockchain.Synced)
+				h.wsManager.UpdateNodeSyncStatus(nodeWS.BlockchainPeerEndpoint(), blockchain.Synced)
 			}
 			activeFeeds = false
 		}
 	}
 }
 
-func (h *Handler) runEthSub(ws blockchain.WSProvider) {
+func (h *Handler) runEthSub(wsCtx context.Context, nodeWS blockchain.WSProvider) {
 	newHeadsRespCh := make(chan *ethtypes.Header)
 	nptResponseCh := make(chan ethcommon.Hash)
 
 	for {
-		nhSub, err := ws.Subscribe(newHeadsRespCh, "newHeads")
+		nodeWS.Dial()
+
+		nhSub, err := nodeWS.Subscribe(newHeadsRespCh, "newHeads")
 		if err != nil {
 			log.Error(err)
-			ws.Close()
-			ws.Connect()
+			nodeWS.Close()
+			nodeWS.Dial()
 			continue
 		}
 
-		nptSub, err := ws.Subscribe(nptResponseCh, "newPendingTransactions")
+		nptSub, err := nodeWS.Subscribe(nptResponseCh, "newPendingTransactions")
 		if err != nil {
 			log.Error(err)
-			ws.Close()
-			ws.Connect()
+			nodeWS.Close()
+			nodeWS.Dial()
 			continue
 		}
 
-		h.activeWebsocket = true
-
-		// process feeds
-		h.handleFeeds(ws, newHeadsRespCh, nptResponseCh, nhSub.Sub.(*rpc.ClientSubscription), nptSub.Sub.(*rpc.ClientSubscription))
-
-		// force all peers to manually request block confirmations while disconnected
-		for _, peer := range h.peers.getAll() {
-			peer.RequestConfirmations = true
+		if h.checkForP2PDisconnect(nodeWS) {
+			return
 		}
-		h.activeWebsocket = false
+		h.handleFeeds(wsCtx, nodeWS, newHeadsRespCh, nptResponseCh, nhSub.Sub.(*rpc.ClientSubscription), nptSub.Sub.(*rpc.ClientSubscription))
+		if h.checkForP2PDisconnect(nodeWS) {
+			return
+		}
 
-		// closing connection and trying reconnection
-		ws.Close()
-		ws.Connect()
+		nodeWS.Close()
 	}
+}
+
+// checkForP2PDisconnect checks if p2p peer corresponding to ws provider has disconnected;
+// if so, marks ws provider as unsynced, closes ws client, and returns true to indicate p2p disconnection occurred
+func (h *Handler) checkForP2PDisconnect(nodeWS blockchain.WSProvider) bool {
+	peer := nodeWS.BlockchainPeer().(*Peer)
+	if peer == nil { // p2p disconnected
+		nodeWS.Close()
+		nodeWS.Log().Debugf("corresponding p2p peer disconnected - closing eth ws subscriptions")
+		h.wsManager.UpdateNodeSyncStatus(nodeWS.BlockchainPeerEndpoint(), blockchain.Unsynced)
+		return true
+	}
+	return false
 }
 
 // Stop shutdowns down all the handler goroutines
@@ -150,11 +160,23 @@ func (h *Handler) NetworkConfig() *network.EthConfig {
 
 // RunPeer registers a peer within the peer set and starts handling all its messages
 func (h *Handler) RunPeer(ep *Peer, handler func(*Peer) error) error {
-	ep.RequestConfirmations = !h.activeWebsocket
+	ok := h.wsManager.SetBlockchainPeer(ep)
+	if !ok {
+		log.Warnf("unable to set blockchain peer for %v: no corresponding websockets provider found (ok if websockets URI was omitted)", ep.endpoint.IPPort())
+	}
+	if ws, ok := h.wsManager.Provider(&ep.endpoint); ok {
+		wsCtx, _ := context.WithCancel(ep.ctx)
+		go h.runEthSub(wsCtx, ws)
+	}
 	if err := h.peers.register(ep); err != nil {
 		return err
 	}
 	defer func() {
+		ok := h.wsManager.UnsetBlockchainPeer(ep.endpoint)
+		if !ok {
+			log.Errorf("unable to unset blockchain peer for %v: no corresponding websockets provider found", ep.endpoint.IPPort())
+		}
+		ep.ctx.Done()
 		ep.Stop()
 		_ = h.peers.unregister(ep.ID())
 	}()
@@ -177,6 +199,8 @@ func (h *Handler) handleBDNBridge(ctx context.Context) {
 			h.processBDNBlock(bdnBlock)
 		case config := <-h.bridge.ReceiveNetworkConfigUpdates():
 			h.config.Update(config)
+		case <-h.bridge.ReceiveBlockchainStatusRequest():
+			h.processBlockchainStatusRequest()
 		case <-ctx.Done():
 			return
 		}
@@ -242,7 +266,21 @@ func (h *Handler) processBDNBlock(bdnBlock *types.BxBlock) {
 		log.Debugf("could not resolve difficulty for block %v, announcing instead", ethBlock.Hash())
 		h.broadcastBlockAnnouncement(ethBlock)
 	} else {
-		h.broadcastBlock(ethBlock, ethBlockInfo.TotalDifficulty())
+		h.broadcastBlock(ethBlock, ethBlockInfo.TotalDifficulty(), nil)
+	}
+}
+
+func (h *Handler) processBlockchainStatusRequest() {
+	var nodes = make([]*types.NodeEndpoint, 0)
+
+	for _, peer := range h.peers.getAll() {
+		endpoint := peer.IPEndpoint()
+		nodes = append(nodes, &endpoint)
+	}
+
+	err := h.bridge.SendBlockchainStatusResponse(nodes)
+	if err != nil {
+		log.Errorf("send blockchain status response: %v", err)
 	}
 }
 
@@ -422,10 +460,17 @@ func (h *Handler) broadcastTransactions(txs ethtypes.Transactions) {
 	}
 }
 
-func (h *Handler) broadcastBlock(block *ethtypes.Block, totalDifficulty *big.Int) {
+func (h *Handler) broadcastBlock(block *ethtypes.Block, totalDifficulty *big.Int, sourceBlockchainPeer *Peer) {
+	source := "BDN"
+	if sourceBlockchainPeer != nil {
+		source = sourceBlockchainPeer.endpoint.IPPort()
+	}
 	for _, peer := range h.peers.getAll() {
+		if peer == sourceBlockchainPeer {
+			continue
+		}
 		peer.QueueNewBlock(block, totalDifficulty)
-		peer.Log().Debugf("queuing block %v from BDN", block.Hash())
+		peer.Log().Debugf("queuing block %v from %v", block.Hash(), source)
 	}
 }
 
@@ -491,6 +536,7 @@ func (h *Handler) processBlock(peer *Peer, blockInfo *BlockInfo) error {
 	peer.Log().Debugf("processing new block %v (height %v)", blockHash, blockHeight)
 	newHeadCount := h.chain.AddBlock(blockInfo, BSBlockchain)
 	h.sendConfirmedBlocksToBDN(newHeadCount, peer.IPEndpoint())
+	h.broadcastBlock(block, blockInfo.totalDifficulty, peer)
 	return nil
 }
 
@@ -545,12 +591,11 @@ func (h *Handler) processBlockHeaders(peer *Peer, blockHeaders eth.BlockHeadersP
 	return nil
 }
 
-// confirmedBlockForAll is called when the websocket connection indicates that a block has been accepted
+// confirmBlockFromWS is called when the websocket connection indicates that a block has been accepted
 // - this function is a replacement for requesting manual confirmations.
-// - this function will not work correct once multiple blockchain peers are connected, since the websocket connection only represents one of them
-func (h *Handler) confirmBlockForAll(hash ethcommon.Hash, height *big.Int) {
-	h.confirmBlock(hash, types.NodeEndpoint{})
-	for _, peer := range h.peers.getAll() {
+func (h *Handler) confirmBlockFromWS(hash ethcommon.Hash, height *big.Int, peer *Peer) {
+	if peer != nil {
+		h.confirmBlock(hash, peer.endpoint)
 		peer.UpdateHead(height.Uint64(), hash)
 	}
 }
@@ -595,11 +640,11 @@ func (h *Handler) sendConfirmedBlocksToBDN(count int, peerEndpoint types.NodeEnd
 		return
 	}
 	if metadata.cnfMsgSent {
-		log.Debugf("block has already been sent in a block confirm message to gateway")
+		log.Debugf("block %v has already been sent in a block confirm message to gateway", b.Hash())
 		return
 	}
 	log.Tracef("sending block (%v) confirm message to gateway from backend", b.Hash())
-	err = h.bridge.SendConfirmedBlockToGateway(b)
+	err = h.bridge.SendConfirmedBlockToGateway(b, peerEndpoint)
 	if err != nil {
 		log.Debugf("failed sending block(%v) confirmation message to gateway, %v", b.Hash(), err)
 		return

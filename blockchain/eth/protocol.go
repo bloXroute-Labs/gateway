@@ -2,10 +2,11 @@ package eth
 
 import (
 	"context"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/enode"
-	log "github.com/sirupsen/logrus"
+	"time"
 )
 
 // SupportedProtocols is the list of all Ethereum devp2p protocols supported by this client
@@ -107,8 +108,10 @@ func handleMessage(backend Backend, peer *Peer) error {
 		return err
 	}
 
+	startTime := time.Now()
 	defer func() {
 		_ = msg.Discard()
+		log.Tracef("%v: handling message with code: %v took %v", peer, msg.Code, time.Since(startTime))
 	}()
 
 	handlers := eth65
@@ -116,8 +119,6 @@ func handleMessage(backend Backend, peer *Peer) error {
 		handlers = eth66
 	}
 	handler, ok := handlers[msg.Code]
-
-	log.Tracef("%v: handling message with code: %v", peer, msg.Code)
 
 	if ok {
 		return handler(backend, msg, peer)

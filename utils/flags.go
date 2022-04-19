@@ -52,9 +52,11 @@ var (
 		Aliases: []string{"rth"},
 		Value:   "localhost",
 	}
-	RelayHostFlag = &cli.StringFlag{
-		Name:  "relay-ip",
-		Usage: "host of relay",
+	RelayHostsFlag = &cli.StringFlag{
+		Name:    "relays",
+		Usage:   "host of relay",
+		Aliases: []string{"relay-ip"},
+		Value:   "auto",
 	}
 	EnvFlag = &cli.StringFlag{
 		Name:  "env",
@@ -284,6 +286,11 @@ var (
 		Usage: "set node type",
 		Value: "external_gateway",
 	}
+	GatewayModeFlag = &cli.StringFlag{
+		Name:  "mode",
+		Usage: "set gateway mode",
+		Value: "bdn",
+	}
 	SSLFlag = &cli.BoolFlag{
 		Name:  "ssl",
 		Usage: "Opens a http/websocket server with TLS",
@@ -302,9 +309,19 @@ var (
 		Name:  "mev-miner-uri",
 		Usage: "set mev miner for gateway",
 	}
+	MEVBundleMethodNameFlag = &cli.StringFlag{
+		Name:  "mev-bundle-method-name",
+		Usage: "set custom method for mevBundle request",
+		Value: "eth_sendBundle",
+	}
 	SendBlockConfirmation = &cli.BoolFlag{
 		Name:  "send-block-confirmation",
 		Usage: "sending block confirmation to relay",
+		Value: false,
+	}
+	MegaBundleProcessing = &cli.BoolFlag{
+		Name:  "mega-bundle-processing",
+		Usage: "enabling mega-bundle processing",
 		Value: false,
 	}
 )

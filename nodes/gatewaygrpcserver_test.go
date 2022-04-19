@@ -12,9 +12,9 @@ import (
 	"time"
 )
 
-func spawnGRPCServer(port int, user string, password string) (*gateway, *gatewayGRPCServer) {
+func spawnGRPCServer(t *testing.T, port int, user string, password string) (*gateway, *gatewayGRPCServer) {
 	serverConfig := config.NewGRPC("0.0.0.0", port, user, password)
-	_, g := setup()
+	_, g := setup(t, 1)
 	g.BxConfig.GRPC = serverConfig
 	s := newGatewayGRPCServer(g, serverConfig.Host, serverConfig.Port, serverConfig.User, serverConfig.Password)
 	go func() {
@@ -30,7 +30,7 @@ func spawnGRPCServer(port int, user string, password string) (*gateway, *gateway
 func TestGatewayGRPCServerNoAuth(t *testing.T) {
 	port := test.NextTestPort()
 
-	_, s := spawnGRPCServer(port, "", "")
+	_, s := spawnGRPCServer(t, port, "", "")
 	defer s.Stop()
 
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
@@ -48,7 +48,7 @@ func TestGatewayGRPCServerNoAuth(t *testing.T) {
 func TestGatewayGRPCServerAuth(t *testing.T) {
 	port := test.NextTestPort()
 
-	_, s := spawnGRPCServer(port, "user", "password")
+	_, s := spawnGRPCServer(t, port, "user", "password")
 	defer s.Stop()
 
 	authorizedClientConfig := config.NewGRPC("127.0.0.1", port, "user", "password")
@@ -74,7 +74,7 @@ func TestGatewayGRPCServerAuth(t *testing.T) {
 func TestGatewayGRPCServerPeers(t *testing.T) {
 	port := test.NextTestPort()
 
-	g, s := spawnGRPCServer(port, "", "")
+	g, s := spawnGRPCServer(t, port, "", "")
 	defer s.Stop()
 
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")

@@ -1,4 +1,4 @@
-package servers
+package jsonrpc
 
 // RPCErrorCode represents an error condition while processing an RPC request
 type RPCErrorCode int64
@@ -24,22 +24,10 @@ const (
 	AccountIDError RPCErrorCode = -32004
 )
 
-var errorMsg = map[RPCErrorCode]string{
+// ErrorMsg is a mapping of codes to error messages
+var ErrorMsg = map[RPCErrorCode]string{
 	MethodNotFound: "Invalid method",
 	InvalidParams:  "Invalid params",
 	AccountIDError: "Invalid account ID",
 	InternalError:  "Internal error",
 }
-
-// RPCRequestType represents the JSON-RPC methods that are callable
-type RPCRequestType string
-
-// RPCRequestType enumeration
-const (
-	RPCSubscribe     RPCRequestType = "subscribe"
-	RPCUnsubscribe   RPCRequestType = "unsubscribe"
-	RPCTx            RPCRequestType = "blxr_tx"
-	RPCPing          RPCRequestType = "ping"
-	RPCMEVSearcher   RPCRequestType = "blxr_mev_searcher"
-	RPCEthSendBundle RPCRequestType = "eth_sendBundle"
-)

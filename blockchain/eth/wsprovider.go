@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 	"github.com/bloXroute-Labs/gateway/blockchain"
+	log "github.com/bloXroute-Labs/gateway/logger"
+	"github.com/bloXroute-Labs/gateway/types"
 	"github.com/ethereum/go-ethereum/rpc"
-	log "github.com/sirupsen/logrus"
 	"strings"
 	"time"
 )
@@ -13,6 +14,9 @@ import (
 // WSProvider implements the blockchain.WSProvider interface for Ethereum
 type WSProvider struct {
 	addr          string
+	open          bool
+	peerEndpoint  types.NodeEndpoint
+	peer          *Peer
 	client        *rpc.Client
 	log           *log.Entry
 	ctx           context.Context
@@ -43,8 +47,8 @@ var commandMethodsToRequiredPayloadFields = map[string][]string{
 	"eth_blockNumber":         {},
 }
 
-// NewEthWSProvider - returns a new instance of WSProvider
-func NewEthWSProvider(ethWSUri string, timeout time.Duration) blockchain.WSProvider {
+// NewWSProvider - returns a new instance of WSProvider
+func NewWSProvider(ethWSUri string, peerEndpoint types.NodeEndpoint, timeout time.Duration) blockchain.WSProvider {
 	var ws WSProvider
 
 	ws.log = log.WithFields(log.Fields{
@@ -52,23 +56,23 @@ func NewEthWSProvider(ethWSUri string, timeout time.Duration) blockchain.WSProvi
 		"remoteAddr": ethWSUri,
 	})
 	ws.timeout = timeout
-	ws.syncStatus = blockchain.Synced
-	ws.syncStatusCh = make(chan blockchain.NodeSyncStatus, 1)
+	ws.syncStatus = blockchain.Unsynced
 	ws.addr = ethWSUri
-	ws.Connect()
+	ws.peerEndpoint = peerEndpoint
 
-	ws.log.Infof("connection was successfully established with %v", ethWSUri)
 	return &ws
 }
 
-// Connect - dials websocket address and returns client with established connection
-func (ws *WSProvider) Connect() {
+// Dial - dials websocket address and sets ws client with established connection
+func (ws *WSProvider) Dial() {
 	// gateway should retry connecting to the ws url until it's successfully connected
 	ws.log.Debugf("dialing %v...", ws.addr)
 	for {
 		client, err := rpc.Dial(ws.addr)
 		if err == nil {
 			ws.client = client
+			ws.open = true
+			ws.log.Infof("connection was successfully established with %v", ws.addr)
 			return
 		}
 
@@ -76,6 +80,28 @@ func (ws *WSProvider) Connect() {
 		ws.log.Warnf("Failed to dial %v, retrying..", ws.addr)
 		continue
 	}
+}
+
+// SetBlockchainPeer sets the blockchain peer that corresponds to the ws client
+func (ws *WSProvider) SetBlockchainPeer(peer interface{}) {
+	ws.peer = peer.(*Peer)
+	ws.Log().Debugf("set blockchain peer %v corresponding to ws client", peer.(*Peer).endpoint.IPPort())
+}
+
+// UnsetBlockchainPeer unsets the blockchain peer that corresponds to the ws client
+func (ws *WSProvider) UnsetBlockchainPeer() {
+	ws.peer = nil
+	ws.Log().Debug("unset blockchain peer corresponding to ws client")
+}
+
+// BlockchainPeer returns the blockchain peer that corresponds to the ws client
+func (ws *WSProvider) BlockchainPeer() interface{} {
+	return ws.peer
+}
+
+// BlockchainPeerEndpoint returns the endpoint of the corresponding node or of eth ws uri if there is no corresponding node
+func (ws *WSProvider) BlockchainPeerEndpoint() types.NodeEndpoint {
+	return ws.peerEndpoint
 }
 
 // Subscribe - subscribes to Ethereum feeds and returns subscription
@@ -91,6 +117,12 @@ func (ws *WSProvider) Subscribe(responseChannel interface{}, feedName string) (*
 	return &blockchain.Subscription{Sub: sub}, nil
 }
 
+// Addr returns web-socket connection address
+func (ws *WSProvider) Addr() string { return ws.addr }
+
+// IsOpen returns true if web-socket connection is active
+func (ws *WSProvider) IsOpen() bool { return ws.open }
+
 // Close - unsubscribes all active subscriptions and closes client connection
 func (ws *WSProvider) Close() {
 	for _, s := range ws.subscriptions {
@@ -98,6 +130,7 @@ func (ws *WSProvider) Close() {
 	}
 	ws.subscriptions = ws.subscriptions[:0]
 	ws.client.Close()
+	ws.open = false
 }
 
 // CallRPC - executes Ethereum RPC calls
@@ -127,59 +160,13 @@ func (ws *WSProvider) Log() *log.Entry {
 	return ws.log
 }
 
-//GetValidRPCCallMethods returns valid Ethereum RPC command methods
-func (ws *WSProvider) GetValidRPCCallMethods() []string {
-	return validRPCCallMethods
+// UpdateSyncStatus - updates sync status of ws client node
+func (ws *WSProvider) UpdateSyncStatus(status blockchain.NodeSyncStatus) {
+	ws.syncStatus = status
+	ws.Log().Debugf("updated sync status to %v", status)
 }
 
-// GetValidRPCCallPayloadFields returns valid Ethereum RPC method payload fields
-func (ws *WSProvider) GetValidRPCCallPayloadFields() []string {
-	return validRPCCallPayloadFields
-}
-
-// GetRequiredPayloadFieldsForRPCMethod returns the valid payload fields for the provided Ethereum RPC command method
-func (ws *WSProvider) GetRequiredPayloadFieldsForRPCMethod(method string) ([]string, bool) {
-	requiredFields, ok := commandMethodsToRequiredPayloadFields[method]
-	return requiredFields, ok
-}
-
-// ConstructRPCCallPayload returns payload used in RPC call
-func (ws *WSProvider) ConstructRPCCallPayload(method string, callParams map[string]string, tag string) ([]interface{}, error) {
-	switch method {
-	case "eth_call":
-		payload := []interface{}{callParams, tag}
-		return payload, nil
-	case "eth_blockNumber":
-		return []interface{}{}, nil
-	case "eth_getStorageAt":
-		payload := []interface{}{callParams["address"], callParams["pos"], tag}
-		return payload, nil
-	case "eth_getBalance":
-		fallthrough
-	case "eth_getCode":
-		fallthrough
-	case "eth_getTransactionCount":
-		payload := []interface{}{callParams["address"], tag}
-		return payload, nil
-	default:
-		return nil, fmt.Errorf("unexpectedly failed to match method %v", method)
-	}
-}
-
-// UpdateNodeSyncStatus sends update on NodeSyncStatus channel if status has changed
-func (ws *WSProvider) UpdateNodeSyncStatus(syncStatus blockchain.NodeSyncStatus) {
-	if syncStatus == ws.syncStatus {
-		return
-	}
-	select {
-	case ws.syncStatusCh <- syncStatus:
-		ws.syncStatus = syncStatus
-	default:
-		// enables non-blocking
-	}
-}
-
-// ReceiveNodeSyncStatusUpdate provides a channel to receive NodeSyncStatus updates
-func (ws *WSProvider) ReceiveNodeSyncStatusUpdate() chan blockchain.NodeSyncStatus {
-	return ws.syncStatusCh
+// SyncStatus - returns sync status of ws client node
+func (ws *WSProvider) SyncStatus() blockchain.NodeSyncStatus {
+	return ws.syncStatus
 }

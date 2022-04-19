@@ -12,6 +12,7 @@ type BlockNotification struct {
 	Transactions     []EthTransaction `json:"transactions,omitempty"`
 	Uncles           []Header         `json:"uncles,omitempty"`
 	notificationType FeedType
+	source           *NodeEndpoint
 }
 
 // Header - represents Ethereum block header
@@ -101,4 +102,14 @@ func (ethBlockNotification *BlockNotification) SetNotificationType(feedName Feed
 // NotificationType - feed name
 func (ethBlockNotification *BlockNotification) NotificationType() FeedType {
 	return ethBlockNotification.notificationType
+}
+
+// SetSource - source blockchain node endpoint
+func (ethBlockNotification *BlockNotification) SetSource(source *NodeEndpoint) {
+	ethBlockNotification.source = source
+}
+
+// Source - source blockchain node endpoint
+func (ethBlockNotification *BlockNotification) Source() *NodeEndpoint {
+	return ethBlockNotification.source
 }

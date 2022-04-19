@@ -3,9 +3,9 @@ package bxmessage
 import (
 	"encoding/binary"
 	"fmt"
+	log "github.com/bloXroute-Labs/gateway/logger"
 	"github.com/bloXroute-Labs/gateway/types"
 	uuid "github.com/satori/go.uuid"
-	log "github.com/sirupsen/logrus"
 )
 
 // BroadcastHeader represents the shared header of a bloxroute broadcast message

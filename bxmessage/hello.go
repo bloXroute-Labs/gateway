@@ -77,5 +77,10 @@ func (m *Hello) Unpack(buf []byte, protocol Protocol) error {
 		m.ClientVersion = string(buf[offset:])
 		offset += ClientVersionLen
 	}
+
+	if m.Protocol < FlashbotsGatewayProtocol {
+		m.Capabilities |= types.CapabilityBDN
+	}
+
 	return m.Header.Unpack(buf, protocol)
 }
