@@ -2,8 +2,8 @@ package connections
 
 import (
 	"crypto/tls"
-	log "github.com/bloXroute-Labs/gateway/logger"
-	"github.com/bloXroute-Labs/gateway/utils"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"net"
 	"strconv"
 	"time"

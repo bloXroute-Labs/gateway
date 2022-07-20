@@ -1,7 +1,7 @@
 package bxmessage
 
 import (
-	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"testing"
@@ -12,7 +12,7 @@ var BDNStatsMsgBytes = []byte("\xff\xfe\xfd\xfcbdnstats\x00\x00\x00\x00y\x00\x00
 
 func TestBdnPerformanceStats_Unpack(t *testing.T) {
 	bdnStats := BdnPerformanceStats{}
-	err := bdnStats.Unpack(BDNStatsMsgBytes, 24)
+	err := bdnStats.Unpack(BDNStatsMsgBytes, MinFastSyncProtocol)
 	assert.Nil(t, err)
 	assert.Equal(t, uint16(100), bdnStats.memoryUtilizationMb)
 	assert.Equal(t, 2, len(bdnStats.nodeStats))
@@ -31,6 +31,8 @@ func TestBdnPerformanceStats_Unpack(t *testing.T) {
 	assert.Equal(t, uint32(20), nodeStats.NewBlockAnnouncementsFromBlockchainNode)
 	assert.Equal(t, uint32(100), nodeStats.TxSentToNode)
 	assert.Equal(t, uint32(50), nodeStats.DuplicateTxFromNode)
+	assert.Equal(t, uint16(0), bdnStats.burstLimitedTransactionsPaid)
+	assert.Equal(t, uint16(0), bdnStats.burstLimitedTransactionsUnpaid)
 
 	ipEndpoint2 := types.NodeEndpoint{
 		IP:   "172.17.0.1",
@@ -50,7 +52,7 @@ func TestBdnPerformanceStats_Unpack(t *testing.T) {
 
 func TestBdnPerformanceStats_UnpackBurstLimit(t *testing.T) {
 	bdnStats := BdnPerformanceStats{}
-	err := bdnStats.Unpack(BDNStatsMsgBytes, 25)
+	err := bdnStats.Unpack(BDNStatsMsgBytes, FullTxTimeStampProtocol)
 	assert.Nil(t, err)
 	assert.Equal(t, uint16(100), bdnStats.memoryUtilizationMb)
 	assert.Equal(t, 2, len(bdnStats.nodeStats))
@@ -89,16 +91,19 @@ func TestBdnPerformanceStats_UnpackBurstLimit(t *testing.T) {
 	assert.Equal(t, uint16(20), bdnStats.burstLimitedTransactionsUnpaid)
 }
 
-func TestBdnPerformanceStats_Pack(t *testing.T) {
+func TestBdnPerformanceStats_Pack_BurstLimitTx_MinFastSyncProtocol(t *testing.T) {
 	bdnStatsFromBytes := BdnPerformanceStats{}
-	err := bdnStatsFromBytes.Unpack(BDNStatsMsgBytes, 24)
-	require.NoError(t, err)
+	err := bdnStatsFromBytes.Unpack(BDNStatsMsgBytes, MinFastSyncProtocol)
+	assert.Nil(t, err)
 
-	bdnStats := NewBDNStats()
+	endpoint1 := types.NodeEndpoint{IP: "127.0.0.1", Port: 8001}
+	endpoint2 := types.NodeEndpoint{IP: "127.0.0.1", Port: 8002}
+	blockchainPeers := []types.NodeEndpoint{endpoint1, endpoint2}
+
+	bdnStats := NewBDNStats(blockchainPeers)
 	bdnStats.intervalStartTime = bdnStatsFromBytes.intervalStartTime
 	bdnStats.intervalEndTime = bdnStatsFromBytes.intervalEndTime
 	bdnStats.memoryUtilizationMb = 100
-	endpoint1 := types.NodeEndpoint{IP: "127.0.0.1", Port: 8001}
 	nodeStats1 := BdnPerformanceStatsData{
 		NewBlocksReceivedFromBlockchainNode:     20,
 		NewBlocksReceivedFromBdn:                30,
@@ -111,26 +116,76 @@ func TestBdnPerformanceStats_Pack(t *testing.T) {
 		DuplicateTxFromNode:                     50,
 	}
 	bdnStats.nodeStats[endpoint1.IPPort()] = &nodeStats1
+	nodeStats2 := BdnPerformanceStatsData{
+		NewBlocksReceivedFromBlockchainNode:     21,
+		NewBlocksReceivedFromBdn:                31,
+		NewBlocksSeen:                           11,
+		NewBlockMessagesFromBlockchainNode:      11,
+		NewBlockAnnouncementsFromBlockchainNode: 21,
+		NewTxReceivedFromBlockchainNode:         41,
+		NewTxReceivedFromBdn:                    51,
+		TxSentToNode:                            101,
+		DuplicateTxFromNode:                     51,
+	}
+	bdnStats.nodeStats[endpoint2.IPPort()] = &nodeStats2
+	bdnStats.burstLimitedTransactionsPaid = bdnStatsFromBytes.burstLimitedTransactionsPaid
+	bdnStats.burstLimitedTransactionsUnpaid = bdnStatsFromBytes.burstLimitedTransactionsUnpaid
 
-	packed, err := bdnStats.Pack(24)
+	packed, err := bdnStats.Pack(MinFastSyncProtocol)
 	require.NoError(t, err)
 
-	// Pack loops over the map which order is not defined, testing with single nodeStat
-	packedBytes := []byte{255, 254, 253, 252, 98, 100, 110, 115, 116, 97, 116, 115, 0, 0, 0, 0, 71, 0, 0, 0, 87, 232, 246, 222, 0, 53, 216, 65, 96, 234, 246, 222, 0, 53, 216, 65, 100, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 0, 0, 1, 65, 31, 20, 0, 30, 0, 40, 0, 0, 0, 50, 0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0, 20, 0, 0, 0, 100, 0, 0, 0, 50, 0, 0, 0, 1}
-	assert.Equal(t, packedBytes, packed)
+	err = bdnStatsFromBytes.Unpack(packed, MinFastSyncProtocol)
 	assert.Nil(t, err)
+	assert.Equal(t, bdnStats.intervalStartTime, bdnStatsFromBytes.intervalStartTime)
+	assert.Equal(t, bdnStats.intervalEndTime, bdnStatsFromBytes.intervalEndTime)
+	assert.Equal(t, bdnStats.memoryUtilizationMb, bdnStatsFromBytes.memoryUtilizationMb)
+	numNodeStats := 0
+	for endpoint, nodeStats := range bdnStatsFromBytes.nodeStats {
+		if endpoint == endpoint1.IPPort() {
+			numNodeStats++
+			assert.Equal(t, endpoint, endpoint1.IPPort())
+			assert.Equal(t, nodeStats.NewBlocksReceivedFromBlockchainNode, nodeStats1.NewBlocksReceivedFromBlockchainNode)
+			assert.Equal(t, nodeStats.NewBlocksReceivedFromBdn, nodeStats1.NewBlocksReceivedFromBdn)
+			assert.Equal(t, nodeStats.NewBlocksSeen, nodeStats1.NewBlocksSeen)
+			assert.Equal(t, nodeStats.NewBlockMessagesFromBlockchainNode, nodeStats1.NewBlockMessagesFromBlockchainNode)
+			assert.Equal(t, nodeStats.NewBlockAnnouncementsFromBlockchainNode, nodeStats1.NewBlockAnnouncementsFromBlockchainNode)
+			assert.Equal(t, nodeStats.NewTxReceivedFromBlockchainNode, nodeStats1.NewTxReceivedFromBlockchainNode)
+			assert.Equal(t, nodeStats.NewTxReceivedFromBdn, nodeStats1.NewTxReceivedFromBdn)
+			assert.Equal(t, nodeStats.TxSentToNode, nodeStats1.TxSentToNode)
+			assert.Equal(t, nodeStats.DuplicateTxFromNode, nodeStats1.DuplicateTxFromNode)
+		}
+		if endpoint == endpoint2.IPPort() {
+			numNodeStats++
+			assert.Equal(t, endpoint, endpoint2.IPPort())
+			assert.Equal(t, nodeStats.NewBlocksReceivedFromBlockchainNode, nodeStats2.NewBlocksReceivedFromBlockchainNode)
+			assert.Equal(t, nodeStats.NewBlocksReceivedFromBdn, nodeStats2.NewBlocksReceivedFromBdn)
+			assert.Equal(t, nodeStats.NewBlocksSeen, nodeStats2.NewBlocksSeen)
+			assert.Equal(t, nodeStats.NewBlockMessagesFromBlockchainNode, nodeStats2.NewBlockMessagesFromBlockchainNode)
+			assert.Equal(t, nodeStats.NewBlockAnnouncementsFromBlockchainNode, nodeStats2.NewBlockAnnouncementsFromBlockchainNode)
+			assert.Equal(t, nodeStats.NewTxReceivedFromBlockchainNode, nodeStats2.NewTxReceivedFromBlockchainNode)
+			assert.Equal(t, nodeStats.NewTxReceivedFromBdn, nodeStats2.NewTxReceivedFromBdn)
+			assert.Equal(t, nodeStats.TxSentToNode, nodeStats2.TxSentToNode)
+			assert.Equal(t, nodeStats.DuplicateTxFromNode, nodeStats2.DuplicateTxFromNode)
+		}
+	}
+	assert.Equal(t, 2, numNodeStats)
+	assert.Equal(t, uint16(0), bdnStats.burstLimitedTransactionsPaid)
+	assert.Equal(t, uint16(0), bdnStats.burstLimitedTransactionsUnpaid)
 }
 
-func TestBdnPerformanceStats_Pack_BurstLimitTx(t *testing.T) {
+func TestBdnPerformanceStats_Pack_BurstLimitTx_FullTxTimeStampProtocol(t *testing.T) {
 	bdnStatsFromBytes := BdnPerformanceStats{}
-	err := bdnStatsFromBytes.Unpack(BDNStatsMsgBytes, 25)
+	err := bdnStatsFromBytes.Unpack(BDNStatsMsgBytes, FullTxTimeStampProtocol)
 	require.NoError(t, err)
 
-	bdnStats := NewBDNStats()
+	endpoint1 := types.NodeEndpoint{IP: "127.0.0.1", Port: 8001}
+	endpoint2 := types.NodeEndpoint{IP: "127.0.0.1", Port: 8002}
+	blockchainPeers := []types.NodeEndpoint{endpoint1}
+
+	bdnStats := NewBDNStats(blockchainPeers)
 	bdnStats.intervalStartTime = bdnStatsFromBytes.intervalStartTime
 	bdnStats.intervalEndTime = bdnStatsFromBytes.intervalEndTime
 	bdnStats.memoryUtilizationMb = 100
-	endpoint1 := types.NodeEndpoint{IP: "127.0.0.1", Port: 8001}
 	nodeStats1 := BdnPerformanceStatsData{
 		NewBlocksReceivedFromBlockchainNode:     20,
 		NewBlocksReceivedFromBdn:                30,
@@ -143,16 +198,61 @@ func TestBdnPerformanceStats_Pack_BurstLimitTx(t *testing.T) {
 		DuplicateTxFromNode:                     50,
 	}
 	bdnStats.nodeStats[endpoint1.IPPort()] = &nodeStats1
+	nodeStats2 := BdnPerformanceStatsData{
+		NewBlocksReceivedFromBlockchainNode:     21,
+		NewBlocksReceivedFromBdn:                31,
+		NewBlocksSeen:                           11,
+		NewBlockMessagesFromBlockchainNode:      11,
+		NewBlockAnnouncementsFromBlockchainNode: 21,
+		NewTxReceivedFromBlockchainNode:         41,
+		NewTxReceivedFromBdn:                    51,
+		TxSentToNode:                            101,
+		DuplicateTxFromNode:                     51,
+	}
+	bdnStats.nodeStats[endpoint2.IPPort()] = &nodeStats2
 	bdnStats.burstLimitedTransactionsPaid = 51
 	bdnStats.burstLimitedTransactionsUnpaid = 20
 
-	packed, err := bdnStats.Pack(25)
+	packed, err := bdnStats.Pack(FullTxTimeStampProtocol)
 	require.NoError(t, err)
 
-	// Pack loops over the map which order is not defined, testing with single nodeStat
-	packedBytes := []byte{255, 254, 253, 252, 98, 100, 110, 115, 116, 97, 116, 115, 0, 0, 0, 0, 75, 0, 0, 0, 87, 232, 246, 222, 0, 53, 216, 65, 96, 234, 246, 222, 0, 53, 216, 65, 100, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 127, 0, 0, 1, 65, 31, 20, 0, 30, 0, 40, 0, 0, 0, 50, 0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0, 20, 0, 0, 0, 100, 0, 0, 0, 50, 0, 0, 0, 51, 0, 20, 0, 1}
-	assert.Equal(t, packedBytes, packed)
+	err = bdnStatsFromBytes.Unpack(packed, FullTxTimeStampProtocol)
 	assert.Nil(t, err)
+	assert.Equal(t, bdnStats.intervalStartTime, bdnStatsFromBytes.intervalStartTime)
+	assert.Equal(t, bdnStats.intervalEndTime, bdnStatsFromBytes.intervalEndTime)
+	assert.Equal(t, bdnStats.memoryUtilizationMb, bdnStatsFromBytes.memoryUtilizationMb)
+	numNodeStats := 0
+	for endpoint, nodeStats := range bdnStatsFromBytes.nodeStats {
+		if endpoint == endpoint1.IPPort() {
+			numNodeStats++
+			assert.Equal(t, endpoint, endpoint1.IPPort())
+			assert.Equal(t, nodeStats.NewBlocksReceivedFromBlockchainNode, nodeStats1.NewBlocksReceivedFromBlockchainNode)
+			assert.Equal(t, nodeStats.NewBlocksReceivedFromBdn, nodeStats1.NewBlocksReceivedFromBdn)
+			assert.Equal(t, nodeStats.NewBlocksSeen, nodeStats1.NewBlocksSeen)
+			assert.Equal(t, nodeStats.NewBlockMessagesFromBlockchainNode, nodeStats1.NewBlockMessagesFromBlockchainNode)
+			assert.Equal(t, nodeStats.NewBlockAnnouncementsFromBlockchainNode, nodeStats1.NewBlockAnnouncementsFromBlockchainNode)
+			assert.Equal(t, nodeStats.NewTxReceivedFromBlockchainNode, nodeStats1.NewTxReceivedFromBlockchainNode)
+			assert.Equal(t, nodeStats.NewTxReceivedFromBdn, nodeStats1.NewTxReceivedFromBdn)
+			assert.Equal(t, nodeStats.TxSentToNode, nodeStats1.TxSentToNode)
+			assert.Equal(t, nodeStats.DuplicateTxFromNode, nodeStats1.DuplicateTxFromNode)
+		}
+		if endpoint == endpoint2.IPPort() {
+			numNodeStats++
+			assert.Equal(t, endpoint, endpoint2.IPPort())
+			assert.Equal(t, nodeStats.NewBlocksReceivedFromBlockchainNode, nodeStats2.NewBlocksReceivedFromBlockchainNode)
+			assert.Equal(t, nodeStats.NewBlocksReceivedFromBdn, nodeStats2.NewBlocksReceivedFromBdn)
+			assert.Equal(t, nodeStats.NewBlocksSeen, nodeStats2.NewBlocksSeen)
+			assert.Equal(t, nodeStats.NewBlockMessagesFromBlockchainNode, nodeStats2.NewBlockMessagesFromBlockchainNode)
+			assert.Equal(t, nodeStats.NewBlockAnnouncementsFromBlockchainNode, nodeStats2.NewBlockAnnouncementsFromBlockchainNode)
+			assert.Equal(t, nodeStats.NewTxReceivedFromBlockchainNode, nodeStats2.NewTxReceivedFromBlockchainNode)
+			assert.Equal(t, nodeStats.NewTxReceivedFromBdn, nodeStats2.NewTxReceivedFromBdn)
+			assert.Equal(t, nodeStats.TxSentToNode, nodeStats2.TxSentToNode)
+			assert.Equal(t, nodeStats.DuplicateTxFromNode, nodeStats2.DuplicateTxFromNode)
+		}
+	}
+	assert.Equal(t, 2, numNodeStats)
+	assert.Equal(t, uint16(51), bdnStats.burstLimitedTransactionsPaid)
+	assert.Equal(t, uint16(20), bdnStats.burstLimitedTransactionsUnpaid)
 }
 
 func TestBdnPerformanceStats_UnpackBadBuffer(t *testing.T) {

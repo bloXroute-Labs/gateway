@@ -1,7 +1,7 @@
 package services
 
 import (
-	"github.com/bloXroute-Labs/gateway/utils"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"time"
 )
 
@@ -46,5 +46,5 @@ func (r RateSnapshot) OneHour() int64 {
 
 // OneDay gets the number of events in the last 24 hours
 func (r RateSnapshot) OneDay() int64 {
-	return int64(r.ts5m.Count())
+	return int64(r.ts1d.Count())
 }

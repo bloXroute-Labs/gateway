@@ -81,12 +81,14 @@ func Errorf(format string, args ...interface{}) {
 
 // Panicf logs a message at level Panic on the standard logger.
 func Panicf(format string, args ...interface{}) {
-	NonBlocking.Logf(PanicLevel, nil, format, args...)
+	NonBlocking.Exit()
+	logrus.Panicf(format, args...)
 }
 
 // Fatalf logs a message at level Fatal on the standard logger then the process will exit with status set to 1.
 func Fatalf(format string, args ...interface{}) {
-	NonBlocking.Logf(FatalLevel, nil, format, args...)
+	NonBlocking.Exit()
+	logrus.Fatalf(format, args...)
 }
 
 // Trace logs a message at level Trace on the standard logger.

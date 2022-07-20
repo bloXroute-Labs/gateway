@@ -13,6 +13,7 @@ func CreatePendingTransactionNotification(bxTx *BxTransaction) Notification {
 		NewTransactionNotification{
 			bxTx,
 			nil,
+			TxPendingValidation,
 			&sync.Mutex{},
 		},
 	}

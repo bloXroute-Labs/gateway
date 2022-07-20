@@ -3,23 +3,24 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway"
-	"github.com/bloXroute-Labs/gateway/blockchain"
-	"github.com/bloXroute-Labs/gateway/blockchain/eth"
-	"github.com/bloXroute-Labs/gateway/blockchain/network"
-	"github.com/bloXroute-Labs/gateway/config"
-	log "github.com/bloXroute-Labs/gateway/logger"
-	"github.com/bloXroute-Labs/gateway/nodes"
-	"github.com/bloXroute-Labs/gateway/types"
-	"github.com/bloXroute-Labs/gateway/utils"
-	"github.com/bloXroute-Labs/gateway/version"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/urfave/cli/v2"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/bloXroute-Labs/gateway/v2"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
+	"github.com/bloXroute-Labs/gateway/v2/config"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/nodes"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/bloXroute-Labs/gateway/v2/version"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/urfave/cli/v2"
 )
 
 func main() {
@@ -52,6 +53,8 @@ func main() {
 			utils.GRPCPortFlag,
 			utils.GRPCUserFlag,
 			utils.GRPCPasswordFlag,
+			utils.PrysmHostFlag,
+			utils.PrysmPortFlag,
 			utils.BlockchainNetworkFlag,
 			utils.EnodesFlag,
 			utils.EthWSUriFlag,
@@ -72,6 +75,7 @@ func main() {
 			utils.MEVBundleMethodNameFlag,
 			utils.SendBlockConfirmation,
 			utils.MegaBundleProcessing,
+			utils.TerminalTotalDifficulty,
 		},
 		Action: runGateway,
 	}
@@ -101,7 +105,14 @@ func runGateway(c *cli.Context) error {
 		return err
 	}
 
-	ethConfig, err := network.NewPresetEthConfigFromCLI(c)
+	err = log.Init(bxConfig.Config, version.BuildVersion)
+	if err != nil {
+		return err
+	}
+
+	dataDir := c.String(utils.DataDirFlag.Name)
+
+	ethConfig, gatewayPublicKey, err := network.NewPresetEthConfigFromCLI(c, dataDir)
 	if err != nil {
 		return err
 	}
@@ -113,11 +124,6 @@ func runGateway(c *cli.Context) error {
 		blockchainPeers = append(blockchainPeers, types.NodeEndpoint{IP: blockchainPeer.IP().String(), Port: blockchainPeer.TCP(), PublicKey: enodePublicKey})
 	}
 	startupBlockchainClient := bxConfig.GatewayMode.IsBDN() && len(blockchainPeers) > 0
-
-	err = log.Init(bxConfig.Config, version.BuildVersion)
-	if err != nil {
-		return err
-	}
 
 	var bridge blockchain.Bridge
 	if startupBlockchainClient {
@@ -137,24 +143,22 @@ func runGateway(c *cli.Context) error {
 		return fmt.Errorf("if websocket server management is enabled, a valid websocket address must be provided")
 	}
 
-	gateway, err := nodes.NewGateway(ctx, bxConfig, bridge, wsManager, blockchainPeers, ethConfig.StaticPeers)
+	gateway, err := nodes.NewGateway(ctx, bxConfig, bridge, wsManager, blockchainPeers, ethConfig.StaticPeers, gatewayPublicKey)
 	if err != nil {
 		return err
 	}
-	go func() {
-		err = gateway.Run()
-		if err != nil {
-			// TODO close the gateway while notify all other go routine (bridge, ws server, ...)
-			log.Errorf("closing gateway with err %v", err)
-			log.Exit(0)
-		}
-	}()
+
+	if err = gateway.Run(); err != nil {
+		// TODO close the gateway while notify all other go routine (bridge, ws server, ...)
+		log.Errorf("closing gateway with err %v", err)
+		log.Exit(0)
+	}
 
 	var blockchainServer *eth.Server
 	if startupBlockchainClient {
 		log.Infof("starting blockchain client with config for network ID: %v", ethConfig.Network)
 
-		blockchainServer, err = eth.NewServerWithEthLogger(ctx, ethConfig, bridge, c.String(utils.DataDirFlag.Name), wsManager)
+		blockchainServer, err = eth.NewServerWithEthLogger(ctx, ethConfig, bridge, dataDir, wsManager)
 		if err != nil {
 			return nil
 		}

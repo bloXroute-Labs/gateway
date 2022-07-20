@@ -2,7 +2,7 @@ package bxmessage
 
 import (
 	"bytes"
-	"github.com/bloXroute-Labs/gateway/utils"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // StartingBytesLen is the byte length of the starting bytes of bloxroute messages
@@ -81,7 +81,10 @@ const EmptyProtocol = 0
 const MinProtocol = 19
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
-const CurrentProtocol = 26
+const CurrentProtocol = 27
+
+// MevSearcherWithUUID send mev searcher request with request
+const MevSearcherWithUUID = 27
 
 // FlashbotsGatewayProtocol is the minimum protocol version that supports flashbots gateway without BDN
 const FlashbotsGatewayProtocol = 26

@@ -2,26 +2,38 @@ package types
 
 import (
 	"fmt"
-	log "github.com/bloXroute-Labs/gateway/logger"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"sync"
+)
+
+// TxValidationStatus indicates the validation status of transaction notifications
+type TxValidationStatus int
+
+// TxValidationStatus types enumeration
+const (
+	TxPendingValidation TxValidationStatus = 0
+	TxInvalid           TxValidationStatus = 1
+	TxValid             TxValidationStatus = 2
 )
 
 // NewTransactionNotification - contains BxTransaction which contains the local region of the ethereum transaction and all its fields.
 type NewTransactionNotification struct {
 	*BxTransaction
 	BlockchainTransaction
+	validationStatus TxValidationStatus
 	// lock is used to prevent parallel extract of sender address
 	// while not locking the other unrelated go routines.
 	lock *sync.Mutex
 }
 
 // CreateNewTransactionNotification -  creates NewTransactionNotification object which contains bxTransaction and local region
-func CreateNewTransactionNotification(bxTx *BxTransaction) Notification {
+func CreateNewTransactionNotification(bxTx *BxTransaction) *NewTransactionNotification {
 	return &NewTransactionNotification{
 		bxTx,
 		nil,
+		TxPendingValidation,
 		&sync.Mutex{},
 	}
 }
@@ -30,13 +42,19 @@ func (newTransactionNotification *NewTransactionNotification) makeBlockchainTran
 	var err error
 	newTransactionNotification.lock.Lock()
 	defer newTransactionNotification.lock.Unlock()
-	if newTransactionNotification.BlockchainTransaction == nil {
-		newTransactionNotification.BlockchainTransaction, err = newTransactionNotification.BxTransaction.BlockchainTransaction(true)
+	if newTransactionNotification.validationStatus == TxPendingValidation {
+		newTransactionNotification.BlockchainTransaction, err =
+			newTransactionNotification.BxTransaction.BlockchainTransaction(newTransactionNotification.Sender())
 		if err != nil {
+			newTransactionNotification.validationStatus = TxInvalid
 			err = fmt.Errorf("invalid tx with hash %v. error %v", newTransactionNotification.BxTransaction.Hash(), err)
 			log.Errorf("failed in makeBlockchainTransaction - %v", err)
 			return err
 		}
+		newTransactionNotification.validationStatus = TxValid
+	}
+	if newTransactionNotification.validationStatus == TxInvalid {
+		return fmt.Errorf("invalid tx")
 	}
 	return nil
 }
@@ -50,23 +68,19 @@ func (newTransactionNotification *NewTransactionNotification) Filters(filters []
 	return newTransactionNotification.BlockchainTransaction.Filters(filters)
 }
 
-// WithFields - creates BlockchainTransaction if needs and returns the value of requested fields of the transaction
-func (newTransactionNotification *NewTransactionNotification) WithFields(fields []string) Notification {
+// Fields - creates BlockchainTransaction if needs and returns the value of requested fields of the transaction
+func (newTransactionNotification *NewTransactionNotification) Fields(fields []string) map[string]interface{} {
 	err := newTransactionNotification.makeBlockchainTransaction()
 	if err != nil {
-		return &NewTransactionNotification{
-			nil,
-			nil,
-			newTransactionNotification.lock,
-		}
+		return nil
 	}
+	ethTx := newTransactionNotification.BlockchainTransaction.(*EthTransaction)
+	return ethTx.Fields(fields)
+}
 
-	newBlockchainTransaction := newTransactionNotification.BlockchainTransaction.WithFields(fields)
-	return &NewTransactionNotification{
-		nil,
-		newBlockchainTransaction,
-		newTransactionNotification.lock,
-	}
+// WithFields - creates BlockchainTransaction if needs and returns the value of requested fields of the transaction
+func (newTransactionNotification *NewTransactionNotification) WithFields(fields []string) Notification {
+	return nil
 }
 
 // LocalRegion - returns the local region of the ethereum transaction

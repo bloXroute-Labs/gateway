@@ -1,10 +1,10 @@
 package loggers
 
 import (
-	"github.com/bloXroute-Labs/gateway/connections"
-	log "github.com/bloXroute-Labs/gateway/logger"
-	"github.com/bloXroute-Labs/gateway/types"
-	"github.com/bloXroute-Labs/gateway/utils"
+	"github.com/bloXroute-Labs/gateway/v2/connections"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // TxTrace is used to generate log records for TxTrace

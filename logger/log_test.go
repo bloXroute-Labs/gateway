@@ -7,10 +7,10 @@ import (
 )
 
 func TestLog_Exit(t *testing.T) {
-	SetLevel(DebugLevel)
+	SetLevel(TraceLevel)
 	hook := test.NewGlobal()
 
-	numLogRecords := 1000
+	numLogRecords := 100
 	for i := 0; i < numLogRecords; i++ {
 		Infof("log record %v", i)
 	}

@@ -1,10 +1,10 @@
 package services
 
 import (
-	"github.com/bloXroute-Labs/gateway"
-	"github.com/bloXroute-Labs/gateway/bxmessage"
-	"github.com/bloXroute-Labs/gateway/connections"
-	log "github.com/bloXroute-Labs/gateway/logger"
+	"github.com/bloXroute-Labs/gateway/v2"
+	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
+	"github.com/bloXroute-Labs/gateway/v2/connections"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
 )
 
 // MsgInfo is a struct that stores a msg and its source connection

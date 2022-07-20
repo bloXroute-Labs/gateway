@@ -2,15 +2,16 @@ package bxmock
 
 import (
 	"crypto/ecdsa"
-	"github.com/bloXroute-Labs/gateway/bxmessage"
-	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
 	"math/big"
 )
 
-var chainID = big.NewInt(10)
+// ChainID ethereum chain ID
+var ChainID = big.NewInt(10)
 var pKey, _ = crypto.HexToECDSA("dae2cb3b03f8a1bbaedae4d43e159360c8d07ffab119d5d7311a81a9d4f53bd1")
 
 // NewSignedEthTx generates a valid signed Ethereum transaction from a provided private key. nil can be specified to use a hardcoded key.
@@ -32,7 +33,7 @@ func NewSignedEthTx(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey) *e
 		panic("provided tx type does not exist")
 	}
 
-	signer := ethtypes.NewLondonSigner(chainID)
+	signer := ethtypes.NewLondonSigner(ChainID)
 	hash := signer.Hash(unsignedTx)
 	signature, _ := crypto.Sign(hash.Bytes(), privateKey)
 
@@ -78,7 +79,7 @@ func newEthLegacyTx(nonce uint64, privateKey *ecdsa.PrivateKey) *ethtypes.Transa
 func newEthAccessListTx(nonce uint64, privateKey *ecdsa.PrivateKey) *ethtypes.Transaction {
 	address := crypto.PubkeyToAddress(privateKey.PublicKey)
 	unsignedTx := ethtypes.NewTx(&ethtypes.AccessListTx{
-		ChainID:    chainID,
+		ChainID:    ChainID,
 		Nonce:      nonce,
 		GasPrice:   big.NewInt(100),
 		Gas:        0,
@@ -97,7 +98,7 @@ func newEthAccessListTx(nonce uint64, privateKey *ecdsa.PrivateKey) *ethtypes.Tr
 func newEthDynamicFeeTx(nonce uint64, privateKey *ecdsa.PrivateKey) *ethtypes.Transaction {
 	address := crypto.PubkeyToAddress(privateKey.PublicKey)
 	unsignedTx := ethtypes.NewTx(&ethtypes.DynamicFeeTx{
-		ChainID:    chainID,
+		ChainID:    ChainID,
 		Nonce:      nonce,
 		GasTipCap:  big.NewInt(100),
 		GasFeeCap:  big.NewInt(100),

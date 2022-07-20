@@ -3,8 +3,10 @@ package sdnmessage
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway"
-	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/v2"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/ethereum/go-ethereum/common/math"
+	"strconv"
 	"time"
 )
 
@@ -26,6 +28,7 @@ type AccountTier string
 
 // AccountTier types enumeration
 const (
+	ATierUltra        AccountTier = "Ultra"
 	ATierElite        AccountTier = "EnterpriseElite"
 	ATierEnterprise   AccountTier = "Enterprise"
 	ATierProfessional AccountTier = "Professional"
@@ -33,25 +36,30 @@ const (
 	ATierIntroductory AccountTier = "Introductory"
 )
 
-// IsElite indicates whether the account tier is elite
-func (at AccountTier) IsElite() bool {
-	return at == ATierElite
+// IsUltra indicates whether the account tier is ultra
+func (at AccountTier) IsUltra() bool {
+	return at == ATierUltra
 }
 
-// IsEnterprise indicates whether the account tier is considered enterprise
+// IsElite indicates whether the account tier is elite or ultra
+func (at AccountTier) IsElite() bool {
+	return at == ATierElite || at == ATierUltra
+}
+
+// IsEnterprise indicates whether the account tier is considered enterprise, elite or ultra
 func (at AccountTier) IsEnterprise() bool {
-	return at == ATierEnterprise
+	return at == ATierEnterprise || at == ATierElite || at == ATierUltra
 }
 
 // ReceivesUnpaidTxs indicates whether the account tier receives unpaid txs (only >= ATierProfessional)
 func (at AccountTier) ReceivesUnpaidTxs() bool {
-	return at == ATierElite || at == ATierEnterprise || at == ATierProfessional
+	return at == ATierUltra || at == ATierElite || at == ATierEnterprise || at == ATierProfessional
 }
 
 // IsValid indicates whether the account tier is valid
 func (at AccountTier) IsValid() error {
 	switch at {
-	case ATierElite, ATierEnterprise, ATierProfessional, ATierDeveloper, ATierIntroductory:
+	case ATierUltra, ATierElite, ATierEnterprise, ATierProfessional, ATierDeveloper, ATierIntroductory:
 		return nil
 	}
 	return fmt.Errorf("unrecognized account tier: %v", at)
@@ -59,6 +67,9 @@ func (at AccountTier) IsValid() error {
 
 // TimeIntervalType represents an time interval type
 type TimeIntervalType string
+
+// BDNServiceLimit represents large integer that can hold number bigger than math.MaxBigInt and also negative numbers
+type BDNServiceLimit int64
 
 // TimeIntervalType enumeration
 const (
@@ -99,7 +110,7 @@ const (
 type BDNService struct {
 	TimeInterval      TimeIntervalType       `json:"interval"`
 	ServiceType       BDNServiceType         `json:"service_type"`
-	Limit             int                    `json:"limit"`
+	Limit             BDNServiceLimit        `json:"limit"`
 	BehaviorLimitOK   BDNServiceBehaviorType `json:"behavior_limit_ok"`
 	BehaviorLimitFail BDNServiceBehaviorType `json:"behavior_limit_fail"`
 }
@@ -114,6 +125,19 @@ type BDNQuotaService struct {
 type quotaService struct {
 	ExpireDate string     `json:"expire_date"`
 	MsgQuota   BDNService `json:"msg_quota"`
+}
+
+// UnmarshalJSON implements deserialization for BDNQuotaService type
+func (i *BDNServiceLimit) UnmarshalJSON(b []byte) error {
+	stringElement := json.Number(b)
+	limit, err := stringElement.Int64()
+	if err != nil && err.(*strconv.NumError).Err == strconv.ErrRange {
+		*i = math.MaxInt64
+	} else if err != nil {
+		return err
+	}
+	*i = BDNServiceLimit(limit)
+	return nil
 }
 
 // UnmarshalJSON implements deserialization for BDNQuotaService type
@@ -176,8 +200,11 @@ type Account struct {
 	TransactionReceiptFeed      BDNFeedService         `json:"transaction_receipts_feed"`
 	PrivateRelay                BDNPrivateRelayService `json:"private_relays"`
 	PrivateTransaction          BDNQuotaService        `json:"private_transaction"`
+	PrivateTransactionFee       BDNQuotaService        `json:"private_transaction_fee"`
 	TxTraceRateLimit            BDNQuotaService        `json:"tx_trace_rate_limitation"`
 	RelayLimit                  BDNQuotaService        `json:"relay_limit"`
+	MinAllowedNodes             BDNQuotaService        `json:"min_allowed_nodes"`
+	MaxAllowedNodes             BDNQuotaService        `json:"max_allowed_nodes"`
 
 	// txs allowed per 5s
 	UnpaidTransactionBurstLimit BDNQuotaService `json:"unpaid_tx_burst_limit"`
@@ -211,16 +238,16 @@ type AccountInfo struct {
 	MEVMiner           string          `json:"mev_miner"`
 }
 
-// DefaultEnterpriseAccount default enterprise account
-var DefaultEnterpriseAccount = Account{
+// DefaultEliteAccount default Elite account
+var DefaultEliteAccount = Account{
 	AccountInfo: AccountInfo{
 		AccountID:          "",
 		LogicalAccountID:   "",
 		Certificate:        "",
-		ExpireDate:         "2999-12-31",
+		ExpireDate:         fmt.Sprintf("%s", time.Now().AddDate(0, 0, 1).Format("2006-01-02")),
 		BlockchainProtocol: "Ethereum",
 		BlockchainNetwork:  "Mainnet",
-		TierName:           ATierEnterprise,
+		TierName:           ATierElite,
 		Miner:              false,
 	},
 	FreeTransactions: BDNQuotaService{
@@ -240,45 +267,45 @@ var DefaultEnterpriseAccount = Account{
 		ExpireDateTime: time.Now().Add(time.Hour),
 	},
 	CloudAPI: BDNBasicService{
-		ExpireDate: "2999-12-31",
+		ExpireDate: fmt.Sprintf("%s", time.Now().AddDate(0, 0, 1).Format("2006-01-02")),
 	},
 	NewTransactionStreaming: BDNFeedService{
-		ExpireDate: "2999-12-31",
+		ExpireDate: fmt.Sprintf("%s", time.Now().AddDate(0, 0, 1).Format("2006-01-02")),
 		Feed: FeedProperties{
 			AllowFiltering:  true,
 			AvailableFields: []string{"all"},
 		},
 	},
 	NewBlockStreaming: BDNFeedService{
-		ExpireDate: "2999-12-31",
+		ExpireDate: fmt.Sprintf("%s", time.Now().AddDate(0, 0, 1).Format("2006-01-02")),
 		Feed: FeedProperties{
 			AllowFiltering:  true,
 			AvailableFields: []string{"all"},
 		},
 	},
 	PendingTransactionStreaming: BDNFeedService{
-		ExpireDate: "2999-12-31",
+		ExpireDate: fmt.Sprintf("%s", time.Now().AddDate(0, 0, 1).Format("2006-01-02")),
 		Feed: FeedProperties{
 			AllowFiltering:  true,
 			AvailableFields: []string{"all"},
 		},
 	},
 	TransactionStateFeed: BDNFeedService{
-		ExpireDate: "2999-12-31",
+		ExpireDate: fmt.Sprintf("%s", time.Now().AddDate(0, 0, 1).Format("2006-01-02")),
 		Feed: FeedProperties{
 			AllowFiltering:  false,
 			AvailableFields: nil,
 		},
 	},
 	OnBlockFeed: BDNFeedService{
-		ExpireDate: "2999-12-31",
+		ExpireDate: fmt.Sprintf("%s", time.Now().AddDate(0, 0, 1).Format("2006-01-02")),
 		Feed: FeedProperties{
 			AllowFiltering:  false,
 			AvailableFields: nil,
 		},
 	},
 	TransactionReceiptFeed: BDNFeedService{
-		ExpireDate: "2999-12-31",
+		ExpireDate: fmt.Sprintf("%s", time.Now().AddDate(0, 0, 1).Format("2006-01-02")),
 		Feed: FeedProperties{
 			AllowFiltering:  false,
 			AvailableFields: nil,
@@ -325,7 +352,21 @@ var DefaultEnterpriseAccount = Account{
 	RelayLimit: BDNQuotaService{
 		MsgQuota: BDNService{
 			ServiceType: BDNServicePermit,
-			Limit:       1,
+			Limit:       2,
+		},
+		ExpireDateTime: time.Now().Add(time.Hour),
+	},
+	MinAllowedNodes: BDNQuotaService{
+		MsgQuota: BDNService{
+			ServiceType: BDNServicePermit,
+			Limit:       0,
+		},
+		ExpireDateTime: time.Now().Add(time.Hour),
+	},
+	MaxAllowedNodes: BDNQuotaService{
+		MsgQuota: BDNService{
+			ServiceType: BDNServicePermit,
+			Limit:       2,
 		},
 		ExpireDateTime: time.Now().Add(time.Hour),
 	},

@@ -1,7 +1,7 @@
 package bxmock
 
 import (
-	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"math/big"

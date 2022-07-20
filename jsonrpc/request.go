@@ -12,29 +12,50 @@ type RPCRequestType string
 const (
 	RPCSubscribe         RPCRequestType = "subscribe"
 	RPCUnsubscribe       RPCRequestType = "unsubscribe"
+	RPCPrivateTxBalance  RPCRequestType = "private_tx_balance"
+	RPCPrivateTx         RPCRequestType = "blxr_private_tx"
 	RPCTx                RPCRequestType = "blxr_tx"
 	RPCPing              RPCRequestType = "ping"
 	RPCMEVSearcher       RPCRequestType = "blxr_mev_searcher"
 	RPCEthSendBundle     RPCRequestType = "eth_sendBundle"
 	RPCEthSendMegaBundle RPCRequestType = "eth_sendMegabundle"
 	RPCBatchTx           RPCRequestType = "blxr_batch_tx"
+	RPCQuotaUsage        RPCRequestType = "quota_usage"
+	RPCBundleSubmission  RPCRequestType = "blxr_submit_bundle"
+	RPCBundleSimulation  RPCRequestType = "blxr_simulate_bundle"
 )
+
+// RPCPrivateTxPayload is the payload of blxr_private_tx requests
+type RPCPrivateTxPayload struct {
+	Transaction        string `json:"transaction"`
+	Pools              string `json:"pools"`
+	WalletAPIKey       string `json:"wallet_api_key"`
+	DetailResponse     bool   `json:"detail_response"`
+	BlockchainProtocol string `json:"blockchain_protocol"`
+	BlockchainNetwork  string `json:"blockchain_network"`
+}
 
 // RPCTxPayload is the payload of blxr_tx requests
 type RPCTxPayload struct {
-	Transaction    string
-	ValidatorsOnly bool
+	Transaction             string `json:"transaction"`
+	ValidatorsOnly          bool   `json:"validators_only"`
+	BlockchainNetwork       string `json:"blockchain_network"`
+	OriginalSenderAccountID string `json:"original_sender_account_id"`
 }
 
 // RPCBatchTxPayload is the payload of blxr_batch_tx request
 type RPCBatchTxPayload struct {
-	Transactions   []string
-	ValidatorsOnly bool
+	Transactions            []string `json:"transactions"`
+	ValidatorsOnly          bool     `json:"validators_only"`
+	BlockchainNetwork       string   `json:"blockchain_network"`
+	OriginalSenderAccountID string   `json:"original_sender_account_id"`
 }
 
 type rpcTxJSON struct {
-	Transaction    string `json:"transaction"`
-	ValidatorsOnly bool   `json:"validators_only"`
+	Transaction             string `json:"transaction"`
+	ValidatorsOnly          bool   `json:"validators_only"`
+	BlockchainNetwork       string `json:"blockchain_network"`
+	OriginalSenderAccountID string `json:"original_sender_account_id"`
 }
 
 // UnmarshalJSON provides a compatibility layer for go-ethereum style RPC calls, which are [object], instead of just object.
@@ -58,5 +79,7 @@ func (p *RPCTxPayload) UnmarshalJSON(b []byte) error {
 
 	p.Transaction = payload.Transaction
 	p.ValidatorsOnly = payload.ValidatorsOnly
+	p.BlockchainNetwork = payload.BlockchainNetwork
+	p.OriginalSenderAccountID = payload.OriginalSenderAccountID
 	return nil
 }

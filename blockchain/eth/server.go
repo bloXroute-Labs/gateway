@@ -4,19 +4,21 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/blockchain"
-	"github.com/bloXroute-Labs/gateway/blockchain/network"
-	"github.com/bloXroute-Labs/gateway/version"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/p2p"
 	"os"
 	"path"
+
+	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
+	"github.com/bloXroute-Labs/gateway/v2/version"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/p2p"
 )
 
 // Server wraps the Ethereum p2p server, for use with the BDN
 type Server struct {
-	*p2p.Server
-	cancel context.CancelFunc
+	p2pServer   *p2p.Server
+	prysmClient *PrysmClient
+	cancel      context.CancelFunc
 }
 
 // NewServer return an Ethereum p2p server, configured with BDN friendly defaults
@@ -27,7 +29,7 @@ func NewServer(parent context.Context, config *network.EthConfig, bridge blockch
 		privateKey = config.PrivateKey
 	} else {
 		privateKeyPath := path.Join(dataDir, ".gatewaykey")
-		privateKeyFromFile, generated, err := LoadOrGeneratePrivateKey(privateKeyPath)
+		privateKeyFromFile, generated, err := network.LoadOrGeneratePrivateKey(privateKeyPath)
 
 		if err != nil {
 			keyWriteErr, ok := err.(keyWriteError)
@@ -73,9 +75,18 @@ func NewServer(parent context.Context, config *network.EthConfig, bridge blockch
 		DiscV5: nil,
 	}
 
+	var prysmClient *PrysmClient
+	for _, peerInfo := range config.StaticPeers {
+		if peerInfo.PrysmAddr != "" {
+			prysmClient = NewPrysmClient(ctx, peerInfo.PrysmAddr, bridge, backend, peerInfo.Enode)
+			break
+		}
+	}
+
 	s := &Server{
-		Server: &server,
-		cancel: cancel,
+		p2pServer:   &server,
+		prysmClient: prysmClient,
+		cancel:      cancel,
 	}
 	return s, nil
 }
@@ -88,10 +99,22 @@ func NewServerWithEthLogger(ctx context.Context, config *network.EthConfig, brid
 	return NewServer(ctx, config, bridge, dataDir, l, ws)
 }
 
+// Start starts eth server
+func (s *Server) Start() error {
+	if err := s.p2pServer.Start(); err != nil {
+		return err
+	}
+
+	if s.prysmClient != nil {
+		s.prysmClient.Start()
+	}
+	return nil
+}
+
 // Stop shutdowns the p2p server and any additional context relevant goroutines
 func (s *Server) Stop() {
 	s.cancel()
-	s.Server.Stop()
+	s.p2pServer.Stop()
 }
 
 // AddEthLoggerFileHandler registers additional file handler by file path
@@ -100,6 +123,6 @@ func (s *Server) AddEthLoggerFileHandler(path string) error {
 	if err != nil {
 		return err
 	}
-	s.Server.Logger.SetHandler(log.MultiHandler(fileHandler, s.Server.Logger.GetHandler()))
+	s.p2pServer.Logger.SetHandler(log.MultiHandler(fileHandler, s.p2pServer.Logger.GetHandler()))
 	return nil
 }

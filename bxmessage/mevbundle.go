@@ -4,8 +4,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/bxmessage/utils"
-	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 const mevBundleNameMaxSize = 255

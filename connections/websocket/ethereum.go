@@ -3,8 +3,8 @@ package websocket
 import (
 	"encoding/json"
 	"fmt"
-	log "github.com/bloXroute-Labs/gateway/logger"
-	"github.com/bloXroute-Labs/gateway/types"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/gorilla/websocket"
 	"strconv"
 	"sync"

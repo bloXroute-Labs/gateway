@@ -1,9 +1,9 @@
 package services
 
 import (
-	"github.com/bloXroute-Labs/gateway/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/types"
-	"github.com/bloXroute-Labs/gateway/utils"
+	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	uuid "github.com/satori/go.uuid"
 	"github.com/stretchr/testify/assert"
 	"testing"

@@ -1,9 +1,9 @@
 package services
 
 import (
-	"github.com/bloXroute-Labs/gateway"
-	"github.com/bloXroute-Labs/gateway/types"
-	"github.com/bloXroute-Labs/gateway/utils"
+	"github.com/bloXroute-Labs/gateway/v2"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/stretchr/testify/assert"
 	"strconv"
 	"testing"
@@ -31,35 +31,35 @@ func TestBxTxStore_Add(t *testing.T) {
 	content4 := types.TxContent{4}
 
 	// add content first
-	result11 := store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, 0, time.Now(), testChainID)
+	result11 := store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, 0, time.Now(), testChainID, types.EmptySender)
 	assert.True(t, result11.NewTx)
 	assert.True(t, result11.NewContent)
 	assert.False(t, result11.NewSID)
 	assert.False(t, result11.Reprocess)
 
 	// reprocess paid tx
-	result12 := store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
+	result12 := store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 	assert.False(t, result12.NewTx)
 	assert.False(t, result12.NewContent)
 	assert.False(t, result12.NewSID)
 	assert.True(t, result12.Reprocess)
 
 	// only reprocess paid tx once
-	result13 := store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
+	result13 := store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 	assert.False(t, result13.NewTx)
 	assert.False(t, result13.NewContent)
 	assert.False(t, result13.NewSID)
 	assert.False(t, result13.Reprocess)
 
 	// then add short ID
-	result14 := store.Add(hash1, content1, 1, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
+	result14 := store.Add(hash1, content1, 1, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 	assert.False(t, result14.NewTx)
 	assert.False(t, result14.NewContent)
 	assert.True(t, result14.NewSID)
 	assert.False(t, result14.Reprocess)
 
 	// try adding some nonsense that should all be ignored
-	result15 := store.Add(hash1, content2, 1, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
+	result15 := store.Add(hash1, content2, 1, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 	assert.False(t, result15.NewTx)
 	assert.False(t, result15.NewContent)
 	assert.False(t, result15.NewSID)
@@ -72,49 +72,49 @@ func TestBxTxStore_Add(t *testing.T) {
 	}
 
 	// add short ID first
-	result21 := store.Add(hash2, types.TxContent{}, 2, testNetworkNum, false, 0, time.Now(), testChainID)
+	result21 := store.Add(hash2, types.TxContent{}, 2, testNetworkNum, false, 0, time.Now(), testChainID, types.EmptySender)
 	assert.True(t, result21.NewTx)
 	assert.False(t, result21.NewContent)
 	assert.True(t, result21.NewSID)
 	assert.False(t, result21.Reprocess)
 
 	// reprocess deliverToNode tx
-	result22 := store.Add(hash2, types.TxContent{}, 2, testNetworkNum, false, types.TFDeliverToNode, time.Now(), testChainID)
+	result22 := store.Add(hash2, types.TxContent{}, 2, testNetworkNum, false, types.TFDeliverToNode, time.Now(), testChainID, types.EmptySender)
 	assert.False(t, result22.NewTx)
 	assert.False(t, result22.NewContent)
 	assert.False(t, result22.NewSID)
 	assert.True(t, result22.Reprocess)
 
 	// then add content
-	result23 := store.Add(hash2, content2, 2, testNetworkNum, false, types.TFDeliverToNode, time.Now(), testChainID)
+	result23 := store.Add(hash2, content2, 2, testNetworkNum, false, types.TFDeliverToNode, time.Now(), testChainID, types.EmptySender)
 	assert.False(t, result23.NewTx)
 	assert.True(t, result23.NewContent)
 	assert.False(t, result23.NewSID)
 	assert.False(t, result23.Reprocess)
 
 	// add content and short ID together
-	result31 := store.Add(hash3, content3, 3, testNetworkNum, false, types.TFDeliverToNode, time.Now(), testChainID)
+	result31 := store.Add(hash3, content3, 3, testNetworkNum, false, types.TFDeliverToNode, time.Now(), testChainID, types.EmptySender)
 	assert.True(t, result31.NewTx)
 	assert.True(t, result31.NewContent)
 	assert.True(t, result31.NewSID)
 	assert.False(t, result31.Reprocess)
 
 	// new validators_only transaction no shortID
-	result32 := store.Add(hash4, content4, types.ShortIDEmpty, testNetworkNum, false, types.TFValidatorsOnly, time.Now(), testChainID)
+	result32 := store.Add(hash4, content4, types.ShortIDEmpty, testNetworkNum, false, types.TFValidatorsOnly, time.Now(), testChainID, types.EmptySender)
 	assert.True(t, result32.NewTx)
 	assert.True(t, result32.NewContent)
 	assert.False(t, result32.NewSID)
 	assert.False(t, result32.Reprocess)
 
 	// ignore validators_only transaction without validators_only
-	result33 := store.Add(hash4, content4, types.ShortIDEmpty, testNetworkNum, false, 0, time.Now(), testChainID)
+	result33 := store.Add(hash4, content4, types.ShortIDEmpty, testNetworkNum, false, 0, time.Now(), testChainID, types.EmptySender)
 	assert.False(t, result33.NewTx)
 	assert.False(t, result33.NewContent)
 	assert.False(t, result33.NewSID)
 	assert.False(t, result33.Reprocess)
 
 	// ignore repeated validators_only transaction with validators_only
-	result34 := store.Add(hash4, content4, types.ShortIDEmpty, testNetworkNum, false, types.TFValidatorsOnly, time.Now(), testChainID)
+	result34 := store.Add(hash4, content4, types.ShortIDEmpty, testNetworkNum, false, types.TFValidatorsOnly, time.Now(), testChainID, types.EmptySender)
 	assert.False(t, result34.NewTx)
 	assert.False(t, result34.NewContent)
 	assert.False(t, result34.NewSID)
@@ -133,14 +133,14 @@ func TestBxTxStore_clean(t *testing.T) {
 	content2 := types.TxContent{2}
 
 	// add content first, no shortID
-	result1 := store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
+	result1 := store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 	assert.True(t, result1.NewTx)
 	assert.True(t, result1.NewContent)
 	assert.False(t, result1.NewSID)
 	assert.Equal(t, store.Count(), 1)
 	result1.Transaction.SetAddTime(clock.Now())
 
-	result2 := store.Add(hash2, content2, 2, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
+	result2 := store.Add(hash2, content2, 2, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 	assert.True(t, result2.NewTx)
 	assert.True(t, result2.NewContent)
 	assert.True(t, result2.NewSID)
@@ -165,7 +165,7 @@ func TestBxTxStore_clean256K(t *testing.T) {
 		var h types.SHA256Hash
 		var c types.TxContent
 		copy(h[:], strconv.Itoa(i))
-		result1 := store.Add(h, c, types.ShortID(i+1), testNetworkNum+1, false, types.TFPaidTx, time.Now(), testChainID)
+		result1 := store.Add(h, c, types.ShortID(i+1), testNetworkNum+1, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 		assert.True(t, result1.NewTx)
 		assert.False(t, result1.NewContent)
 		assert.True(t, result1.NewSID)
@@ -178,7 +178,7 @@ func TestBxTxStore_clean256K(t *testing.T) {
 		var h types.SHA256Hash
 		var c types.TxContent
 		copy(h[:], strconv.Itoa(i))
-		result1 := store.Add(h, c, types.ShortID(i+1), testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
+		result1 := store.Add(h, c, types.ShortID(i+1), testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 		assert.True(t, result1.NewTx)
 		assert.False(t, result1.NewContent)
 		assert.True(t, result1.NewSID)
@@ -222,11 +222,11 @@ func TestHistory(t *testing.T) {
 	shortID2 := types.ShortID(2)
 
 	// add content first
-	result := store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
+	result := store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 	assert.True(t, result.NewTx)
 	assert.True(t, result.NewContent)
 	assert.False(t, result.NewSID)
-	result1 := store.Add(hash2, content2, shortID2, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
+	result1 := store.Add(hash2, content2, shortID2, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 	assert.True(t, result1.NewTx)
 	assert.True(t, result1.NewContent)
 	assert.True(t, result1.NewSID)
@@ -238,7 +238,7 @@ func TestHistory(t *testing.T) {
 	assert.Equal(t, 1, store.seenTxs.Count())
 
 	// add it again - should not get in due to history
-	result = store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, clock.Now(), testChainID)
+	result = store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, clock.Now(), testChainID, types.EmptySender)
 	assert.False(t, result.NewTx)
 	assert.False(t, result.NewContent)
 	assert.False(t, result.NewSID)
@@ -248,7 +248,7 @@ func TestHistory(t *testing.T) {
 	store.CleanNow()
 	//assert.Equal(t, 1, len(cleanedShortIDsChan))
 	// add it again - this time it should get in
-	result = store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, clock.Now(), testChainID)
+	result = store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, clock.Now(), testChainID, types.EmptySender)
 	assert.True(t, result.NewTx)
 	assert.True(t, result.NewContent)
 	assert.False(t, result.NewSID)
@@ -270,7 +270,7 @@ func TestGetTxByShortID(t *testing.T) {
 	assert.NotNil(t, err)
 
 	// add content first, then short ID
-	result11 := store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
+	result11 := store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 	assert.True(t, result11.NewTx)
 	assert.True(t, result11.NewContent)
 	assert.False(t, result11.NewSID)
@@ -278,7 +278,7 @@ func TestGetTxByShortID(t *testing.T) {
 	assert.Nil(t, tx)
 	assert.NotNil(t, err)
 
-	result12 := store.Add(hash1, content1, 1, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
+	result12 := store.Add(hash1, content1, 1, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 	assert.False(t, result12.NewTx)
 	assert.False(t, result12.NewContent)
 	assert.True(t, result12.NewSID)
@@ -302,7 +302,7 @@ func TestHistoryTxWithShortID(t *testing.T) {
 	content1 := types.TxContent{1}
 
 	// add content first, no shortID
-	result1 := store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, clock.Now(), testChainID)
+	result1 := store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, clock.Now(), testChainID, types.EmptySender)
 	assert.True(t, result1.NewTx)
 	assert.True(t, result1.NewContent)
 	assert.False(t, result1.NewSID)
@@ -312,13 +312,13 @@ func TestHistoryTxWithShortID(t *testing.T) {
 	go store.CleanNow()
 	<-cleanedShortIDsChan
 	// tx should not be added since it is history
-	result := store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, clock.Now(), testChainID)
+	result := store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, clock.Now(), testChainID, types.EmptySender)
 	assert.False(t, result.NewTx)
 	assert.False(t, result.NewContent)
 	assert.True(t, result.AlreadySeen)
 
 	// tx should be added because it has short id
-	result2 := store.Add(hash1, content1, 1, testNetworkNum, false, types.TFPaidTx, clock.Now(), testChainID)
+	result2 := store.Add(hash1, content1, 1, testNetworkNum, false, types.TFPaidTx, clock.Now(), testChainID, types.EmptySender)
 	assert.True(t, result2.NewTx)
 	assert.True(t, result2.NewSID)
 }
@@ -334,7 +334,7 @@ func TestBxTxStore_ResetSeenTxTime(t *testing.T) {
 
 	hash1 := types.SHA256Hash{1}
 	content1 := types.TxContent{1}
-	result1 := store.Add(hash1, content1, types.ShortID(1), testNetworkNum, false, types.TFPaidTx, clock.Now(), testChainID)
+	result1 := store.Add(hash1, content1, types.ShortID(1), testNetworkNum, false, types.TFPaidTx, clock.Now(), testChainID, types.EmptySender)
 	assert.True(t, result1.NewTx)
 	assert.True(t, result1.NewContent)
 	assert.Equal(t, store.Count(), 1)
@@ -361,7 +361,7 @@ func TestBxTxStore_ResetSeenTxTime(t *testing.T) {
 	// add hash2 to TxStore and wait for TxStore to clean up, call Get() right before it expire and check if the expiration time renewed
 	hash2 := types.SHA256Hash{1}
 	content2 := types.TxContent{1}
-	result2 := store.Add(hash2, content2, types.ShortID(2), testNetworkNum, false, types.TFPaidTx, clock.Now(), testChainID)
+	result2 := store.Add(hash2, content2, types.ShortID(2), testNetworkNum, false, types.TFPaidTx, clock.Now(), testChainID, types.EmptySender)
 	assert.True(t, result2.NewTx)
 	assert.True(t, result2.NewContent)
 	assert.Equal(t, store.Count(), 1)
@@ -392,7 +392,7 @@ func TestBxTxStore_ResetSeenTxTime(t *testing.T) {
 	// add hash3 to TxStore and wait for TxStore to clean up, call Add() right before it expire and check if the expiration time renewed
 	hash3 := types.SHA256Hash{1}
 	content3 := types.TxContent{1}
-	result3 := store.Add(hash3, content3, types.ShortID(3), testNetworkNum, false, types.TFPaidTx, clock.Now(), testChainID)
+	result3 := store.Add(hash3, content3, types.ShortID(3), testNetworkNum, false, types.TFPaidTx, clock.Now(), testChainID, types.EmptySender)
 	assert.True(t, result3.NewTx)
 	assert.True(t, result3.NewContent)
 	assert.Equal(t, store.Count(), 1)
@@ -404,7 +404,7 @@ func TestBxTxStore_ResetSeenTxTime(t *testing.T) {
 
 	clock.IncTime(29 * time.Second)
 	// hash3 will expire in next second in seenTx, now call
-	result3 = store.Add(hash3, content3, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, clock.Now(), testChainID)
+	result3 = store.Add(hash3, content3, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, clock.Now(), testChainID, types.EmptySender)
 	assert.False(t, result3.NewTx)
 	assert.False(t, result3.NewContent)
 	assert.Equal(t, 0, store.Count())

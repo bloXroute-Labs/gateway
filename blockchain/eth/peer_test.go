@@ -3,9 +3,9 @@ package eth
 import (
 	"context"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/blockchain/eth/test"
-	"github.com/bloXroute-Labs/gateway/test/bxmock"
-	"github.com/bloXroute-Labs/gateway/utils"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
+	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/forkid"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"

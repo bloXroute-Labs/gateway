@@ -2,7 +2,7 @@ package utils
 
 import (
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/logger"
+	"github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/sirupsen/logrus"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
@@ -13,7 +13,7 @@ import (
 func TestLeakyBucketRateLimiter_refill(t *testing.T) {
 	testTable := []struct {
 		counter    float32
-		limit      int
+		limit      uint64
 		refillRate float32
 		timePassed time.Duration
 		endCount   float32
@@ -53,7 +53,7 @@ func TestLeakyBucketRateLimiter_refill(t *testing.T) {
 
 func TestLeakyBucketRateLimiter_Take_RefillRateCalculatedCorrectly(t *testing.T) {
 	testTable := []struct {
-		limit              int
+		limit              uint64
 		interval           time.Duration
 		expectedRefillRate float32
 	}{

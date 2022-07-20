@@ -2,7 +2,7 @@ package eth
 
 import (
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"math/big"
@@ -104,15 +104,21 @@ func (c Converter) BxBlockToCanonicFormat(bxBlock *types.BxBlock) (*types.BlockN
 	ethBlock := result.(*BlockInfo).Block
 	bxBlock.SetSize(int(ethBlock.Size()))
 
-	ethTxs := make([]types.EthTransaction, 0, len(ethBlock.Transactions()))
+	ethTxs := make([]map[string]interface{}, 0)
 	for _, tx := range ethBlock.Transactions() {
 		var ethTx *types.EthTransaction
 		txHash := NewSHA256Hash(tx.Hash())
-		ethTx, err = types.NewEthTransaction(txHash, tx, true)
+		// send EmptySender to cause extraction of real sender
+		ethTx, err = types.NewEthTransaction(txHash, tx, types.EmptySender)
 		if err != nil {
 			return nil, err
 		}
-		ethTxs = append(ethTxs, *ethTx)
+		fields := ethTx.Fields(types.AllFields)
+		// todo: calculate gasPrice for DynamicFeeTxType properly
+		if ethTx.Type() == ethtypes.DynamicFeeTxType {
+			fields["gasPrice"] = fields["maxFeePerGas"]
+		}
+		ethTxs = append(ethTxs, ethTx.Fields(types.AllFields))
 	}
 	ethUncles := make([]types.Header, 0, len(ethBlock.Uncles()))
 	for _, uncle := range ethBlock.Uncles() {

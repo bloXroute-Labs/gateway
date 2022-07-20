@@ -2,7 +2,7 @@ package eth
 
 import (
 	"fmt"
-	log "github.com/bloXroute-Labs/gateway/logger"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"

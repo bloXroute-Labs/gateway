@@ -3,9 +3,10 @@ package eth
 import (
 	"context"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/blockchain"
-	log "github.com/bloXroute-Labs/gateway/logger"
-	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/ethereum/go-ethereum/rpc"
 	"strings"
 	"time"
@@ -52,6 +53,7 @@ func NewWSProvider(ethWSUri string, peerEndpoint types.NodeEndpoint, timeout tim
 	var ws WSProvider
 
 	ws.log = log.WithFields(log.Fields{
+		"component":  "wsProvider",
 		"connType":   "WS",
 		"remoteAddr": ethWSUri,
 	})
@@ -66,7 +68,7 @@ func NewWSProvider(ethWSUri string, peerEndpoint types.NodeEndpoint, timeout tim
 // Dial - dials websocket address and sets ws client with established connection
 func (ws *WSProvider) Dial() {
 	// gateway should retry connecting to the ws url until it's successfully connected
-	ws.log.Debugf("dialing %v...", ws.addr)
+	ws.log.Debugf("dialing %v... process %v", ws.addr, utils.GetGID())
 	for {
 		client, err := rpc.Dial(ws.addr)
 		if err == nil {
@@ -77,7 +79,7 @@ func (ws *WSProvider) Dial() {
 		}
 
 		time.Sleep(5 * time.Second)
-		ws.log.Warnf("Failed to dial %v, retrying..", ws.addr)
+		ws.log.Warnf("Failed to dial %v, retrying..  process %v", ws.addr, utils.GetGID())
 		continue
 	}
 }
@@ -85,13 +87,13 @@ func (ws *WSProvider) Dial() {
 // SetBlockchainPeer sets the blockchain peer that corresponds to the ws client
 func (ws *WSProvider) SetBlockchainPeer(peer interface{}) {
 	ws.peer = peer.(*Peer)
-	ws.Log().Debugf("set blockchain peer %v corresponding to ws client", peer.(*Peer).endpoint.IPPort())
+	ws.log.Debugf("set blockchain peer %v corresponding to ws client  process %v", peer.(*Peer).endpoint.IPPort(), utils.GetGID())
 }
 
 // UnsetBlockchainPeer unsets the blockchain peer that corresponds to the ws client
 func (ws *WSProvider) UnsetBlockchainPeer() {
 	ws.peer = nil
-	ws.Log().Debug("unset blockchain peer corresponding to ws client")
+	ws.log.Debugf("unset blockchain peer corresponding to ws client  process %v", utils.GetGID())
 }
 
 // BlockchainPeer returns the blockchain peer that corresponds to the ws client
@@ -125,6 +127,7 @@ func (ws *WSProvider) IsOpen() bool { return ws.open }
 
 // Close - unsubscribes all active subscriptions and closes client connection
 func (ws *WSProvider) Close() {
+	ws.log.Debugf("closing websocket to node, open subscriptions %v  process %v", len(ws.subscriptions), utils.GetGID())
 	for _, s := range ws.subscriptions {
 		s.Sub.(*rpc.ClientSubscription).Unsubscribe()
 	}
@@ -163,7 +166,7 @@ func (ws *WSProvider) Log() *log.Entry {
 // UpdateSyncStatus - updates sync status of ws client node
 func (ws *WSProvider) UpdateSyncStatus(status blockchain.NodeSyncStatus) {
 	ws.syncStatus = status
-	ws.Log().Debugf("updated sync status to %v", status)
+	ws.log.Debugf("updated sync status to %v process %v", status, utils.GetGID())
 }
 
 // SyncStatus - returns sync status of ws client node

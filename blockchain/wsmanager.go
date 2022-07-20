@@ -1,6 +1,8 @@
 package blockchain
 
-import "github.com/bloXroute-Labs/gateway/types"
+import "github.com/bloXroute-Labs/gateway/v2/types"
+
+// TODO: remove SetBlockchainPeer and UnsetBlockchainPeer from interface and implementation
 
 // WSManager provides an interface to manage websocket providers
 type WSManager interface {

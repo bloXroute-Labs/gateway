@@ -2,7 +2,7 @@ package sdnmessage
 
 import (
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // Peer represents a peer returned by the SDN for a node to connect to

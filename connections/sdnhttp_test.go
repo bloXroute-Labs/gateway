@@ -5,22 +5,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway"
-	"github.com/bloXroute-Labs/gateway/logger"
-	"github.com/bloXroute-Labs/gateway/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/test"
-	"github.com/bloXroute-Labs/gateway/types"
-	"github.com/bloXroute-Labs/gateway/utils"
-	"github.com/bloXroute-Labs/gateway/utils/utilmock"
+	"github.com/bloXroute-Labs/gateway/v2"
+	"github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/v2/test"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/bloXroute-Labs/gateway/v2/utils/utilmock"
 	"github.com/gorilla/mux"
 	logrusTest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"reflect"
-	"sync"
 	"testing"
 	"time"
 )
@@ -46,15 +46,20 @@ func testSDNHTTP() realSDNHTTP {
 			{IP: "2.2.2.2", Port: 2},
 		},
 		getPingLatencies: func(peers sdnmessage.Peers) []nodeLatencyInfo {
-			nodeLatencyInfos := []nodeLatencyInfo{}
+			var nlis []nodeLatencyInfo
 			for _, peer := range peers {
-				nodeLatencyInfos = append(nodeLatencyInfos, nodeLatencyInfo{
+				nlis = append(nlis, nodeLatencyInfo{
 					IP:   peer.IP,
 					Port: peer.Port,
 				})
 			}
-			return nodeLatencyInfos
+			return nlis
 		},
+		nodeModel: &sdnmessage.NodeModel{
+			NodeID:               "35299c61-55ad-4565-85a3-0cd985953fac",
+			BlockchainNetworkNum: LocalInitiatedPort,
+		},
+		//autoRelays: []nodeLatencyInfo,
 	}
 }
 
@@ -94,7 +99,7 @@ func TestRegister_BlockchainNetworkNumberUpdated(t *testing.T) {
 			s := realSDNHTTP{
 				sdnURL:   server.URL,
 				sslCerts: &testCerts,
-				nodeModel: sdnmessage.NodeModel{
+				nodeModel: &sdnmessage.NodeModel{
 					Protocol: testCase.nodeModel.Protocol,
 					Network:  testCase.nodeModel.Network,
 				},
@@ -112,42 +117,81 @@ func TestRegister_BlockchainNetworkNumberUpdated(t *testing.T) {
 
 func TestDirectRelayConnections_IfPingOver40MSLogsWarning(t *testing.T) {
 	logger.NonBlocking.AvoidChannel()
+	jsonRespRelays := `[{"ip":"8.208.101.30", "port":1809}, {"ip":"47.90.133.153", "port":1809}]`
+	nodeModel := sdnmessage.NodeModel{
+		NodeID:     "35299c61-55ad-4565-85a3-0cd985953fac",
+		ExternalIP: "11.113.164.111",
+		Protocol:   "Ethereum",
+		Network:    "Mainnet",
+	}
+	utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
+
 	testTable := []struct {
-		name       string
-		relayCount int
-		latencies  []nodeLatencyInfo
-		log        string
+		name      string
+		latencies []nodeLatencyInfo
+		log       string
 	}{
-		{"Latency 5", 1, []nodeLatencyInfo{{Latency: 5, IP: "1.1.1.0", Port: 40}}, "fastest selected relay 1.1.1.0:40 has a latency of 5 ms"},
-		{"Latency 20", 1, []nodeLatencyInfo{{Latency: 20, IP: "1.1.1.1", Port: 41}}, "fastest selected relay 1.1.1.1:41 has a latency of 20 ms"},
-		{"Latency 5, 41", 2, []nodeLatencyInfo{{Latency: 5, IP: "1.1.1.2", Port: 42}, {Latency: 41, IP: "1.1.1.3", Port: 43}}, "fastest selected relay 1.1.1.2:42 has a latency of 5 ms"},
-		{"Latency 41", 1, []nodeLatencyInfo{{Latency: 41, IP: "1.1.1.3", Port: 43}},
-			"ping latency of the fastest relay 1.1.1.3:43 is 41 ms, which is more than 40 ms"},
-		{"Latency 1000, 2000", 2, []nodeLatencyInfo{{Latency: 1000, IP: "1.1.1.4", Port: 44}, {Latency: 2000, IP: "1.1.1.5", Port: 45}},
-			"ping latency of the fastest relay 1.1.1.4:44 is 1000 ms, which is more than 40 ms"},
+		{
+			"Latency 5",
+			[]nodeLatencyInfo{{Latency: 5, IP: "8.208.101.30", Port: 1809}},
+			"fastest selected relay 8.208.101.30:1809 has a latency of 5 ms"},
+		{
+			"Latency 20",
+			[]nodeLatencyInfo{{Latency: 20, IP: "1.1.1.1", Port: 41}},
+			"fastest selected relay 1.1.1.1:41 has a latency of 20 ms"},
+		{
+			"Latency 5, 41",
+			[]nodeLatencyInfo{{Latency: 5, IP: "1.1.1.2", Port: 42}, {Latency: 41, IP: "1.1.1.3", Port: 43}},
+			"fastest selected relay 1.1.1.2:42 has a latency of 5 ms",
+		},
+		{
+			"Latency 41",
+			[]nodeLatencyInfo{{Latency: 41, IP: "1.1.1.3", Port: 43}},
+			"ping latency of the fastest relay 1.1.1.3:43 is 41 ms, which is more than 40 ms",
+		},
+		{
+			"Latency 1000, 2000",
+			[]nodeLatencyInfo{{Latency: 1000, IP: "1.1.1.4", Port: 44}, {Latency: 2000, IP: "1.1.1.5", Port: 45}},
+			"ping latency of the fastest relay 1.1.1.4:44 is 1000 ms, which is more than 40 ms",
+		},
 	}
 
 	for _, testCase := range testTable {
 		t.Run(testCase.name, func(t *testing.T) {
+			defer cleanupFiles()
+
+			sslCerts := utils.SSLCerts{}
+			handler3, _ := mockRelaysServer(t, jsonRespRelays)
+			var m []handlerArgs
+			m = append(m, handlerArgs{method: "GET", pattern: "/nodes/{nodeID}/{networkNum}/potential-relays", handler: handler3})
+
+			server := mockRouter(m)
+			defer func() {
+				server.Close()
+			}()
+
+			sdn := NewSDNHTTP(&sslCerts, server.URL, nodeModel, "").(*realSDNHTTP)
+
 			globalHook := logrusTest.NewGlobal()
 			getPingLatenciesFunction := func(peers sdnmessage.Peers) []nodeLatencyInfo {
 				return testCase.latencies
 			}
-			s := realSDNHTTP{relays: make([]sdnmessage.Peer, testCase.relayCount), getPingLatencies: getPingLatenciesFunction}
+			sdn.getPingLatencies = getPingLatenciesFunction
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
 			autoRelayInstructions := make(chan RelayInstruction)
 			go func() { <-autoRelayInstructions }()
-			err := s.DirectRelayConnections(ctx, "auto", 1, autoRelayInstructions, AutoRelayTimeout)
+			err := sdn.DirectRelayConnections(ctx, "auto", 1, autoRelayInstructions, time.Second)
 			assert.Nil(t, err)
+			time.Sleep(time.Millisecond)
 
 			logs := globalHook.Entries
 			if testCase.log == "" {
 				assert.Nil(t, logs)
 			} else {
 				if len(logs) == 0 {
-					t.Fail()
+					t.FailNow()
 				}
 				firstLog := logs[0]
 				assert.Equal(t, testCase.log, firstLog.Message)
@@ -194,61 +238,75 @@ func TestDirectRelayConnections_IncorrectArgs(t *testing.T) {
 	}
 
 	s := testSDNHTTP()
+	//defer server.Close()
 
 	for _, testCase := range testTable {
 		t.Run(fmt.Sprint(testCase.name), func(t *testing.T) {
-			err := s.DirectRelayConnections(context.Background(), testCase.relaysString, 2, make(chan RelayInstruction), AutoRelayTimeout)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			err := s.DirectRelayConnections(ctx, testCase.relaysString, 2, make(chan RelayInstruction), time.Second)
 			assert.Equal(t, testCase.expectedError, err)
 		})
 	}
 }
 
 func TestDirectRelayConnections_RelayLimit2(t *testing.T) {
+	jsonRespRelays := `[{"ip":"1.1.1.1", "port":1809}, {"ip":"2.2.2.2", "port":1809}]`
+	latencies := []nodeLatencyInfo{{Latency: 5, IP: "1.1.1.1", Port: 1809}, {Latency: 6, IP: "2.2.2.2", Port: 1809}}
+	nodeModel := sdnmessage.NodeModel{
+		NodeID:     "35299c61-55ad-4565-85a3-0cd985953fac",
+		ExternalIP: "11.113.164.111",
+		Protocol:   "Ethereum",
+		Network:    "Mainnet",
+	}
+	utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
+
 	testTable := []struct {
 		name           string
 		relaysString   string
-		expectedRelays map[string]int64
+		expectedRelays relayMap
 		expectedError  error
 	}{
 		{
 			name:           "one auto",
 			relaysString:   "auto",
-			expectedRelays: map[string]int64{"1.1.1.1": 1},
+			expectedRelays: relayMap{"1.1.1.1": 1809},
 		},
 		{
 			name:           "two autos",
 			relaysString:   "auto, auto",
-			expectedRelays: map[string]int64{"1.1.1.1": 1, "2.2.2.2": 2},
+			expectedRelays: relayMap{"1.1.1.1": 1809, "2.2.2.2": 1809},
 		},
 		{
 			name:           "an auto and a relay",
 			relaysString:   "auto, 1.1.1.1",
-			expectedRelays: map[string]int64{"1.1.1.1": 1809, "2.2.2.2": 2},
+			expectedRelays: relayMap{"1.1.1.1": 1809, "2.2.2.2": 1809},
 		},
 		{
 			name:           "one relay",
 			relaysString:   "1.1.1.1",
-			expectedRelays: map[string]int64{"1.1.1.1": 1809},
+			expectedRelays: relayMap{"1.1.1.1": 1809},
 		},
 		{
 			name:           "two relays",
 			relaysString:   "1.1.1.1, 2.2.2.2",
-			expectedRelays: map[string]int64{"1.1.1.1": 1809, "2.2.2.2": 1809},
+			expectedRelays: relayMap{"1.1.1.1": 1809, "2.2.2.2": 1809},
 		},
 		{
 			name:           "two relays, only one has port",
 			relaysString:   "1.1.1.1:34, 2.2.2.2",
-			expectedRelays: map[string]int64{"1.1.1.1": 34, "2.2.2.2": 1809},
+			expectedRelays: relayMap{"1.1.1.1": 34, "2.2.2.2": 1809},
 		},
 		{
 			name:           "two relays, both have ports",
 			relaysString:   "1.1.1.1:34, 2.2.2.2:56",
-			expectedRelays: map[string]int64{"1.1.1.1": 34, "2.2.2.2": 56},
+			expectedRelays: relayMap{"1.1.1.1": 34, "2.2.2.2": 56},
 		},
 		{
 			name:           "three relays",
 			relaysString:   "4.4.4.4, 2.2.2.2:22, 1.1.1.1",
-			expectedRelays: map[string]int64{"4.4.4.4": 1809, "2.2.2.2": 22},
+			expectedRelays: relayMap{"4.4.4.4": 1809, "2.2.2.2": 22},
 		},
 		{
 			name:          "incorrect port",
@@ -263,183 +321,413 @@ func TestDirectRelayConnections_RelayLimit2(t *testing.T) {
 		{
 			name:           "duplicate relay ips",
 			relaysString:   "1.1.1.1, 1.1.1.1:34",
-			expectedRelays: map[string]int64{"1.1.1.1": 1809},
+			expectedRelays: relayMap{"1.1.1.1": 1809},
 		},
 		{
 			name:           "duplicate relay ips #2",
 			relaysString:   "1.1.1.1:1, 1.1.1.1:2, 2.2.2.2:3, 2.2.2.2:4",
-			expectedRelays: map[string]int64{"1.1.1.1": 1, "2.2.2.2": 3},
+			expectedRelays: relayMap{"1.1.1.1": 1, "2.2.2.2": 3},
 		},
 		{
 			name:           "duplicate relay ips with auto after",
 			relaysString:   "1.1.1.1, 1.1.1.1:2, auto",
-			expectedRelays: map[string]int64{"1.1.1.1": 1809, "2.2.2.2": 2},
+			expectedRelays: relayMap{"1.1.1.1": 1809, "2.2.2.2": 1809},
 		},
 		{
 			name:           "auto relay doesn't overlap with configured relay",
 			relaysString:   "auto, 1.1.1.1",
-			expectedRelays: map[string]int64{"1.1.1.1": 1809, "2.2.2.2": 2},
+			expectedRelays: relayMap{"1.1.1.1": 1809, "2.2.2.2": 1809},
 		},
 		{
 			name:           "auto relay doesn't overlap with configured relay #2",
 			relaysString:   "2.2.2.2, auto, 1.1.1.1",
-			expectedRelays: map[string]int64{"2.2.2.2": 1809, "1.1.1.1": 1},
-		},
-		{
-			name:           "three relays - leading 2 autos",
-			relaysString:   "auto, auto, 3.3.3.3",
-			expectedRelays: map[string]int64{"1.1.1.1": 1, "2.2.2.2": 2},
+			expectedRelays: relayMap{"2.2.2.2": 1809, "1.1.1.1": 1809},
 		},
 	}
 
-	s := testSDNHTTP()
-
 	for _, testCase := range testTable {
 		t.Run(fmt.Sprint(testCase.name), func(t *testing.T) {
-			relayInstructions := make(chan RelayInstruction)
-			expectedRelayCount := len(testCase.expectedRelays)
-			var wg sync.WaitGroup
+			defer cleanupFiles()
 
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for i := 0; i < expectedRelayCount; i++ {
-					timer := time.NewTimer(time.Millisecond)
+			sslCerts := utils.SSLCerts{}
+			handler3, _ := mockRelaysServer(t, jsonRespRelays)
+			var m []handlerArgs
+			m = append(m, handlerArgs{method: "GET", pattern: "/nodes/{nodeID}/{networkNum}/potential-relays", handler: handler3})
 
-					select {
-					case <-timer.C:
-						t.Fail()
-						return
-					case instruction := <-relayInstructions:
-						port, ok := testCase.expectedRelays[instruction.IP]
-						if ok && port == instruction.Port {
-							delete(testCase.expectedRelays, instruction.IP) // confirming there is an instruction for each expectedRelay
-						}
-					}
-				}
-
-				timer := time.NewTimer(time.Millisecond)
-				select {
-				case <-timer.C:
-					break
-				case <-relayInstructions:
-					t.Fail()
-				}
+			server := mockRouter(m)
+			defer func() {
+				server.Close()
 			}()
+
+			sdn := NewSDNHTTP(&sslCerts, server.URL, nodeModel, "").(*realSDNHTTP)
+			getPingLatenciesFunction := func(peers sdnmessage.Peers) []nodeLatencyInfo {
+				return latencies
+			}
+			sdn.getPingLatencies = getPingLatenciesFunction
+
+			expectedRelayCount := len(testCase.expectedRelays)
+			relayInstructions := make(chan RelayInstruction, expectedRelayCount)
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			go func() {
-				err := s.DirectRelayConnections(ctx, testCase.relaysString, 2, relayInstructions, AutoRelayTimeout)
-				assert.Equal(t, testCase.expectedError, err)
-			}()
+			err := sdn.DirectRelayConnections(ctx, testCase.relaysString, 2, relayInstructions, AutoRelayTimeout)
+			assert.Equal(t, testCase.expectedError, err)
 
-			wg.Wait()
-			assert.Len(t, testCase.expectedRelays, 0)
+			timer := time.NewTimer(1 * time.Second)
+
+			for i := 0; i < expectedRelayCount; i++ {
+				select {
+				case <-timer.C:
+					t.Fail()
+					return
+				case instruction := <-relayInstructions:
+					r, ok := testCase.expectedRelays[instruction.IP]
+					assert.True(t, ok, "received instruction for unexpected relay")
+					assert.Equal(t, r, instruction.Port)
+					delete(testCase.expectedRelays, instruction.IP)
+				}
+			}
+
+			timer = time.NewTimer(time.Millisecond)
+			select {
+			case <-timer.C:
+				break
+			case <-relayInstructions:
+				t.Fail()
+			}
+
+			assert.Equal(t, 0, len(testCase.expectedRelays))
 		})
 	}
 }
 
 func TestDirectRelayConnections_RelayLimit1(t *testing.T) {
+	jsonRespRelays := `[{"ip":"1.1.1.1", "port":1809}, {"ip":"2.2.2.2", "port":1809}]`
+	latencies := []nodeLatencyInfo{{Latency: 5, IP: "1.1.1.1", Port: 1809}, {Latency: 6, IP: "2.2.2.2", Port: 1809}}
+	nodeModel := sdnmessage.NodeModel{
+		NodeID:     "35299c61-55ad-4565-85a3-0cd985953fac",
+		ExternalIP: "11.113.164.111",
+		Protocol:   "Ethereum",
+		Network:    "Mainnet",
+	}
+	utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
+
 	testTable := []struct {
 		name           string
 		relaysString   string
-		expectedRelays map[string]int64
+		expectedRelays relayMap
 		expectedError  error
 	}{
 		{
 			name:           "one auto",
 			relaysString:   "auto",
-			expectedRelays: map[string]int64{"1.1.1.1": 1},
+			expectedRelays: relayMap{"1.1.1.1": 1809},
 		},
 		{
 			name:           "two autos",
 			relaysString:   "auto, auto",
-			expectedRelays: map[string]int64{"1.1.1.1": 1},
+			expectedRelays: relayMap{"1.1.1.1": 1809},
 		},
 		{
 			name:           "an auto and a relay",
 			relaysString:   "auto, 1.1.1.1",
-			expectedRelays: map[string]int64{"1.1.1.1": 1},
+			expectedRelays: relayMap{"1.1.1.1": 1809},
 		},
 		{
 			name:           "one relay",
 			relaysString:   "2.2.2.2",
-			expectedRelays: map[string]int64{"2.2.2.2": 1809},
+			expectedRelays: relayMap{"2.2.2.2": 1809},
 		},
 		{
 			name:           "two relays",
 			relaysString:   "3.3.3.3, 4.4.4.4",
-			expectedRelays: map[string]int64{"3.3.3.3": 1809},
+			expectedRelays: relayMap{"3.3.3.3": 1809},
 		},
 		{
 			name:           "two relays - duplicates",
 			relaysString:   "3.3.3.3:14, 3.3.3.3:15",
-			expectedRelays: map[string]int64{"3.3.3.3": 14},
+			expectedRelays: relayMap{"3.3.3.3": 14},
 		},
 		{
 			name:           "one relay with port",
 			relaysString:   "1.1.1.1:34",
-			expectedRelays: map[string]int64{"1.1.1.1": 34},
+			expectedRelays: relayMap{"1.1.1.1": 34},
 		},
 		{
-			name:          "incorrect port",
-			relaysString:  "1.1.1.1:abc",
-			expectedError: fmt.Errorf("port provided abc is not valid - strconv.Atoi: parsing \"abc\": invalid syntax"),
+			name:           "incorrect port",
+			relaysString:   "1.1.1.1:abc",
+			expectedRelays: relayMap{},
+			expectedError:  fmt.Errorf("port provided abc is not valid - strconv.Atoi: parsing \"abc\": invalid syntax"),
 		},
 		{
-			name:          "incorrect host",
-			relaysString:  "127.0.0.9999",
-			expectedError: fmt.Errorf("host provided 127.0.0.9999 is not valid - lookup 127.0.0.9999: no such host"),
+			name:           "incorrect host",
+			relaysString:   "127.0.0.9999",
+			expectedRelays: relayMap{},
+			expectedError:  fmt.Errorf("host provided 127.0.0.9999 is not valid - lookup 127.0.0.9999: no such host"),
 		},
 		{
-			name:          "incorrect host with port",
-			relaysString:  "127.0.0.9999:1234",
-			expectedError: fmt.Errorf("host provided 127.0.0.9999 is not valid - lookup 127.0.0.9999: no such host"),
+			name:           "incorrect host with port",
+			relaysString:   "127.0.0.9999:1234",
+			expectedRelays: relayMap{},
+			expectedError:  fmt.Errorf("host provided 127.0.0.9999 is not valid - lookup 127.0.0.9999: no such host"),
 		},
 	}
 
-	s := testSDNHTTP()
-	ticker := utils.RealClock{}.Ticker(time.Millisecond)
-
 	for _, testCase := range testTable {
 		t.Run(fmt.Sprint(testCase.name), func(t *testing.T) {
-			relayInstructions := make(chan RelayInstruction)
-			expectedRelayCount := len(testCase.expectedRelays)
-			var wg sync.WaitGroup
+			defer cleanupFiles()
 
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for i := 0; i < expectedRelayCount; i++ {
-					select {
-					case <-ticker.Alert():
-						t.Fail()
-						return
-					case instruction := <-relayInstructions:
-						port, ok := testCase.expectedRelays[instruction.IP]
-						if ok && port == instruction.Port {
-							delete(testCase.expectedRelays, instruction.IP) // confirming there is an instruction for each expectedRelay
-						}
-					}
-				}
+			sslCerts := utils.SSLCerts{}
+			handler3, _ := mockRelaysServer(t, jsonRespRelays)
+			var m []handlerArgs
+			m = append(m, handlerArgs{method: "GET", pattern: "/nodes/{nodeID}/{networkNum}/potential-relays", handler: handler3})
 
-				select {
-				case <-ticker.Alert():
-					break
-				case <-relayInstructions:
-					t.Fail()
-				}
+			server := mockRouter(m)
+			defer func() {
+				server.Close()
 			}()
+
+			sdn := NewSDNHTTP(&sslCerts, server.URL, nodeModel, "").(*realSDNHTTP)
+			getPingLatenciesFunction := func(peers sdnmessage.Peers) []nodeLatencyInfo {
+				return latencies
+			}
+			sdn.getPingLatencies = getPingLatenciesFunction
+
+			expectedRelayCount := len(testCase.expectedRelays)
+			relayInstructions := make(chan RelayInstruction, expectedRelayCount)
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			err := s.DirectRelayConnections(ctx, testCase.relaysString, 1, relayInstructions, AutoRelayTimeout)
+
+			err := sdn.DirectRelayConnections(ctx, testCase.relaysString, 1, relayInstructions, time.Second)
 			assert.Equal(t, testCase.expectedError, err)
 
-			wg.Wait()
-			assert.Len(t, testCase.expectedRelays, 0)
+			for i := 0; i < expectedRelayCount; i++ {
+				select {
+				case <-utils.RealClock{}.Timer(time.Millisecond * 2).Alert():
+					t.Fail()
+					return
+				case instruction := <-relayInstructions:
+					r, ok := testCase.expectedRelays[instruction.IP]
+					assert.True(t, ok, "received instruction for unexpected relay")
+					assert.Equal(t, r, instruction.Port)
+					delete(testCase.expectedRelays, instruction.IP)
+				}
+			}
+
+			select {
+			case <-utils.RealClock{}.Timer(time.Millisecond * 2).Alert():
+				break
+			case <-relayInstructions:
+				t.Fail()
+			}
+
+			assert.Equal(t, 0, len(testCase.expectedRelays))
+		})
+	}
+}
+
+func TestDirectRelayConnections_UpdateAutoRelays(t *testing.T) {
+	t.Skip()
+	testTable := []struct {
+		name                      string
+		relaysArgument            string
+		initialPingLatencies      []nodeLatencyInfo
+		expectedInitialAutoRelays relayMap
+		addPingLatencies          []nodeLatencyInfo
+		expectedFinalAutoRelays   relayMap
+	}{
+		{
+			name:           "two autos, both relays updated",
+			relaysArgument: "auto, auto",
+			initialPingLatencies: []nodeLatencyInfo{
+				{IP: "10.10.10.10", Port: 10, Latency: 10},
+				{IP: "11.11.11.11", Port: 11, Latency: 11},
+			},
+			expectedInitialAutoRelays: relayMap{
+				"10.10.10.10": 10,
+				"11.11.11.11": 11,
+			},
+			addPingLatencies: []nodeLatencyInfo{
+				{IP: "7.7.7.7", Port: 7, Latency: 7},
+				{IP: "8.8.8.8", Port: 8, Latency: 8},
+			},
+			expectedFinalAutoRelays: relayMap{
+				"7.7.7.7": 7,
+				"8.8.8.8": 8,
+			},
+		},
+		{
+			name:           "two autos, one relay updated",
+			relaysArgument: "auto, auto",
+			initialPingLatencies: []nodeLatencyInfo{
+				{IP: "10.10.10.10", Port: 10, Latency: 10},
+				{IP: "11.11.11.11", Port: 11, Latency: 11},
+			},
+			expectedInitialAutoRelays: relayMap{
+				"10.10.10.10": 10,
+				"11.11.11.11": 11,
+			},
+			addPingLatencies: []nodeLatencyInfo{
+				{IP: "7.7.7.7", Port: 7, Latency: 7},
+			},
+			expectedFinalAutoRelays: relayMap{
+				"7.7.7.7":     7,
+				"10.10.10.10": 10,
+			},
+		},
+		{
+			name:           "one auto, relay updated",
+			relaysArgument: "auto",
+			initialPingLatencies: []nodeLatencyInfo{
+				{IP: "10.10.10.10", Port: 10, Latency: 10},
+				{IP: "11.11.11.11", Port: 11, Latency: 11},
+			},
+			expectedInitialAutoRelays: relayMap{
+				"10.10.10.10": 10,
+			},
+			addPingLatencies: []nodeLatencyInfo{
+				{IP: "7.7.7.7", Port: 7, Latency: 7},
+			},
+			expectedFinalAutoRelays: relayMap{
+				"7.7.7.7": 7,
+			},
+		},
+		{
+			name:                      "two autos, no ping latencies at beginning",
+			relaysArgument:            "auto, auto",
+			initialPingLatencies:      []nodeLatencyInfo{},
+			expectedInitialAutoRelays: relayMap{},
+			addPingLatencies: []nodeLatencyInfo{
+				{IP: "7.7.7.7", Port: 7, Latency: 7},
+				{IP: "8.8.8.8", Port: 8, Latency: 8},
+			},
+			expectedFinalAutoRelays: relayMap{
+				"7.7.7.7": 7,
+				"8.8.8.8": 8,
+			},
+		},
+		{
+			name:           "two autos, not enough ping latencies at beginning",
+			relaysArgument: "auto, auto",
+			initialPingLatencies: []nodeLatencyInfo{
+				{IP: "10.10.10.10", Port: 10, Latency: 10},
+			},
+			expectedInitialAutoRelays: relayMap{
+				"10.10.10.10": 10,
+				"":            0,
+			},
+			addPingLatencies: []nodeLatencyInfo{
+				{IP: "7.7.7.7", Port: 7, Latency: 7},
+				{IP: "8.8.8.8", Port: 8, Latency: 8},
+			},
+			expectedFinalAutoRelays: relayMap{
+				"7.7.7.7": 7,
+				"8.8.8.8": 8,
+			},
+		},
+	}
+
+	for _, testCase := range testTable {
+		t.Run(testCase.name, func(t *testing.T) {
+			s := testSDNHTTP()
+			//defer server.Close()
+			s.getPingLatencies = func(peers sdnmessage.Peers) []nodeLatencyInfo {
+				return testCase.initialPingLatencies
+			}
+
+			relayInstructions := make(chan RelayInstruction)
+			go func() {
+				for {
+					<-relayInstructions
+				}
+			}()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			err := s.DirectRelayConnections(ctx, testCase.relaysArgument, 2, relayInstructions, time.Millisecond)
+			require.Nil(t, err)
+			time.Sleep(time.Millisecond * 2)
+			//require.True(t, UnorderedEqual(testCase.expectedInitialAutoRelays, s.autoRelays))
+
+			testCase.initialPingLatencies = append(testCase.addPingLatencies, testCase.initialPingLatencies...)
+			time.Sleep(time.Millisecond * 5)
+			//require.True(t, UnorderedEqual(testCase.expectedFinalAutoRelays, s.autoRelays))
+		})
+	}
+}
+
+func TestDirectRelayConnections_UpdateAutoRelaysTwice(t *testing.T) {
+	t.Skip()
+	testTable := []struct {
+		name                    string
+		relaysArgument          string
+		initialPingLatencies    []nodeLatencyInfo
+		expectedAutoRelays1     relayMap
+		addPingLatencies1       []nodeLatencyInfo
+		expectedAutoRelays2     relayMap
+		addPingLatencies2       []nodeLatencyInfo
+		expectedFinalAutoRelays relayMap
+	}{
+		{
+			name:           "two autos, both relays updated",
+			relaysArgument: "auto, auto",
+			initialPingLatencies: []nodeLatencyInfo{
+				{IP: "10.10.10.10", Port: 10, Latency: 10},
+				{IP: "11.11.11.11", Port: 11, Latency: 11},
+			},
+			expectedAutoRelays1: relayMap{
+				"10.10.10.10": 10,
+				"11.11.11.11": 11,
+			},
+			addPingLatencies1: []nodeLatencyInfo{
+				{IP: "7.7.7.7", Port: 7, Latency: 7},
+				{IP: "8.8.8.8", Port: 8, Latency: 8},
+			},
+			expectedAutoRelays2: relayMap{
+				"7.7.7.7": 7,
+				"8.8.8.8": 8,
+			},
+			addPingLatencies2: []nodeLatencyInfo{
+				{IP: "6.6.6.6", Port: 6, Latency: 6},
+			},
+			expectedFinalAutoRelays: relayMap{
+				"6.6.6.6": 6,
+				"7.7.7.7": 7,
+			},
+		},
+	}
+
+	for _, testCase := range testTable {
+		t.Run(testCase.name, func(t *testing.T) {
+			s := testSDNHTTP()
+			//defer server.Close()
+			s.getPingLatencies = func(peers sdnmessage.Peers) []nodeLatencyInfo {
+				return testCase.initialPingLatencies
+			}
+
+			relayInstructions := make(chan RelayInstruction)
+			go func() {
+				for {
+					<-relayInstructions
+				}
+			}()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			err := s.DirectRelayConnections(ctx, testCase.relaysArgument, 2, relayInstructions, time.Millisecond)
+			require.Nil(t, err)
+			time.Sleep(time.Millisecond * 2)
+			//require.True(t, UnorderedEqual(testCase.expectedAutoRelays1, s.autoRelays))
+
+			testCase.initialPingLatencies = append(testCase.addPingLatencies1, testCase.initialPingLatencies...)
+			time.Sleep(time.Millisecond * 5)
+			//require.True(t, UnorderedEqual(testCase.expectedAutoRelays2, s.autoRelays))
+
+			testCase.initialPingLatencies = append(testCase.addPingLatencies2, testCase.initialPingLatencies...)
+			time.Sleep(time.Millisecond * 5)
+			//require.True(t, UnorderedEqual(testCase.expectedFinalAutoRelays, s.autoRelays))
 		})
 	}
 }
@@ -624,14 +912,14 @@ func TestSDNHTTP_InitGateway(t *testing.T) {
 		jsonRespNetwork    string
 		jsonRespRelays     string
 		jsonAccount        string
-		expectedRelayLimit int
+		expectedRelayLimit sdnmessage.BDNServiceLimit
 	}{
 		nodeModel:          sdnmessage.NodeModel{NodeID: "35299c61-55ad-4565-85a3-0cd985953fac", ExternalIP: "11.113.164.111", Protocol: "Ethereum", Network: "Mainnet", AccountID: "e64yrte6547"},
 		networkNumber:      5,
 		jsonRespNetwork:    `{"min_tx_age_seconds":0,"min_tx_network_fee":0, "network":"Mainnet", "network_num":5,"protocol":"Ethereum"}`,
 		jsonRespRelays:     `[{"ip":"8.208.101.30", "port":1809}, {"ip":"47.90.133.153", "port":1809}]`,
-		jsonAccount:        `{"account_id":"e64yrte6547","blockchain_protocol":"","blockchain_network":"","tier_name":"", "relay_limit":{"expire_date":"", "msg_quota": {"limit":0}}}`,
-		expectedRelayLimit: 1,
+		jsonAccount:        `{"account_id":"e64yrte6547","blockchain_protocol":"","blockchain_network":"","tier_name":"", "relay_limit":{"expire_date":"", "msg_quota": {"limit":0}}, "private_transaction_fee": {"expire_date": "2999-01-01", "msg_quota": {"interval": "WITHOUT_INTERVAL", "service_type": "MSG_QUOTA", "limit": 13614113913969504939, "behavior_limit_ok": "ALERT", "behavior_limit_fail": "BLOCK_ALERT"}}}`,
+		expectedRelayLimit: 2,
 	}
 	t.Run(fmt.Sprint(testCase), func(t *testing.T) {
 		defer cleanupFiles()
@@ -805,7 +1093,7 @@ func TestSDNHTTP_HttpPostBodyError(t *testing.T) {
 		sdn := realSDNHTTP{
 			sdnURL:   server.URL,
 			sslCerts: &testCerts,
-			nodeModel: sdnmessage.NodeModel{
+			nodeModel: &sdnmessage.NodeModel{
 				NodeType: testCase.nodeModel.NodeType,
 			},
 		}
@@ -849,7 +1137,7 @@ func TestSDNHTTP_HttpPostUnmarshallError(t *testing.T) {
 		sdn := realSDNHTTP{
 			sdnURL:   server.URL,
 			sslCerts: &testCerts,
-			nodeModel: sdnmessage.NodeModel{
+			nodeModel: &sdnmessage.NodeModel{
 				NodeType: testCase.nodeModel.NodeType,
 			},
 		}
@@ -862,7 +1150,7 @@ func TestSDNHTTP_HttpPostUnmarshallError(t *testing.T) {
 }
 
 func TestSDNHTTP_FillInAccountDefaults(t *testing.T) {
-	targetAccount := sdnmessage.DefaultEnterpriseAccount
+	targetAccount := sdnmessage.DefaultEliteAccount
 	tp := reflect.TypeOf(targetAccount)
 	numFields := tp.NumField()
 	for i := 0; i < numFields; i++ {
@@ -871,10 +1159,10 @@ func TestSDNHTTP_FillInAccountDefaults(t *testing.T) {
 
 	sdnhttp := testSDNHTTP()
 
-	targetAccount, error := sdnhttp.fillInAccountDefaults(&targetAccount)
+	targetAccount, err := sdnhttp.fillInAccountDefaults(&targetAccount)
 
-	assert.Nil(t, error)
-	assert.Equal(t, sdnmessage.DefaultEnterpriseAccount, targetAccount)
+	assert.Nil(t, err)
+	assert.Equal(t, sdnmessage.DefaultEliteAccount, targetAccount)
 
 }
 

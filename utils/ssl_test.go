@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"github.com/bloXroute-Labs/gateway/test"
+	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"

@@ -1,11 +1,11 @@
 package services
 
 import (
-	"github.com/bloXroute-Labs/gateway/bxmessage"
-	"github.com/bloXroute-Labs/gateway/test"
-	"github.com/bloXroute-Labs/gateway/test/fixtures"
-	"github.com/bloXroute-Labs/gateway/types"
-	"github.com/bloXroute-Labs/gateway/utils"
+	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
+	"github.com/bloXroute-Labs/gateway/v2/test"
+	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -36,10 +36,10 @@ func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 	blockSize := int(rlp.ListSize(300 + rlp.ListSize(35000+250+250+250+250) + 350))
 
 	// create delay the txs[0], so it passes the age check
-	store.Add(txs[0].Hash(), txs[0].Content(), 1, testNetworkNum, false, 0, clock.Now().Add(-2*time.Second), 0)
+	store.Add(txs[0].Hash(), txs[0].Content(), 1, testNetworkNum, false, 0, clock.Now().Add(-2*time.Second), 0, types.EmptySender)
 
 	// The txs[2] will not be included in shortID since it's too recent
-	store.Add(txs[3].Hash(), txs[3].Content(), 2, testNetworkNum, false, 0, clock.Now(), 0)
+	store.Add(txs[3].Hash(), txs[3].Content(), 2, testNetworkNum, false, 0, clock.Now(), 0, types.EmptySender)
 
 	bxBlock, err := types.NewBxBlock(blockHash, header, txs, trailer, big.NewInt(10000), big.NewInt(10), blockSize)
 	assert.Nil(t, err)
@@ -110,8 +110,8 @@ func TestRLPBlockProcessor_BroadcastToBxBlockShortIDs(t *testing.T) {
 
 	txContents := [][]byte{txContent1, txContent2}
 
-	store.Add(txHash1, txContent1, 1, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
-	store.Add(txHash2, txContent2, 2, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
+	store.Add(txHash1, txContent1, 1, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
+	store.Add(txHash2, txContent2, 2, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 
 	bxBlock, missingShortIDs, err := bp.BxBlockFromBroadcast(broadcast)
 	assert.Nil(t, err)
@@ -158,7 +158,7 @@ func TestRLPBlockProcessor_BroadcastToBxBlockFullTxs(t *testing.T) {
 	txHash1, _ := types.NewSHA256HashFromString(fixtures.BroadcastTransactionHash1)
 	txContent1 := common.Hex2Bytes(fixtures.BroadcastTransactionContent1)
 
-	store.Add(txHash1, txContent1, 1, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
+	store.Add(txHash1, txContent1, 1, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 
 	bxBlock, missingShortIDs, err := bp.BxBlockFromBroadcast(broadcast)
 	assert.Nil(t, err)
@@ -199,8 +199,8 @@ func TestRLPBlockProcessor_ProcessBroadcast(t *testing.T) {
 	txContent2 := common.Hex2Bytes(fixtures.BroadcastTransactionContent2)
 
 	store := newTestBxTxStore()
-	store.Add(txHash1, txContent1, 1, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
-	store.Add(txHash2, txContent2, 2, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
+	store.Add(txHash1, txContent1, 1, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
+	store.Add(txHash2, txContent2, 2, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 
 	bp := NewRLPBlockProcessor(&store)
 

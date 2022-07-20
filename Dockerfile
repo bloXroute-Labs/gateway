@@ -53,6 +53,7 @@ RUN apk update \
 RUN addgroup -g 502 -S bloxroute \
  && adduser -u 502 -S -G bloxroute bloxroute \
  && mkdir -p /app/bloxroute/logs \
+ && mkdir -p /app/bloxroute/datadir \
  && chown -R bloxroute:bloxroute /app/bloxroute
 
 # Move to working directory

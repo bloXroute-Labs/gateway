@@ -2,20 +2,25 @@ package eth
 
 import (
 	"context"
-	log "github.com/bloXroute-Labs/gateway/logger"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"time"
 )
 
+const (
+	// ETH65 declares dropped by go-ethereum version of ethereum which still should be supported
+	ETH65 = 65
+)
+
 // SupportedProtocols is the list of all Ethereum devp2p protocols supported by this client
 var SupportedProtocols = []uint{
-	eth.ETH65, eth.ETH66,
+	ETH65, eth.ETH66,
 }
 
 // ProtocolLengths is a mapping of each supported devp2p protocol to its message version length
-var ProtocolLengths = map[uint]uint64{eth.ETH65: 17, eth.ETH66: 17}
+var ProtocolLengths = map[uint]uint64{ETH65: 17, eth.ETH66: 17}
 
 // MakeProtocols generates the set of supported protocols structs for the p2p server
 func MakeProtocols(ctx context.Context, backend Backend) []p2p.Protocol {
@@ -37,19 +42,24 @@ func makeProtocol(ctx context.Context, backend Backend, version uint, versionLen
 			config := backend.NetworkConfig()
 			peerStatus, err := ep.Handshake(uint32(version), config.Network, config.TotalDifficulty, config.Head, config.Genesis)
 			if err != nil {
+				log.Errorf("Peer %v handshake failed with error - %v", ep.endpoint, err)
 				return err
 			}
+
+			log.Infof("Peer %v is starting", ep.endpoint)
 
 			// process status message on backend to set initial total difficulty
 			_ = backend.Handle(ep, peerStatus)
 
-			return backend.RunPeer(ep, func(peer *Peer) error {
+			err = backend.RunPeer(ep, func(peer *Peer) error {
 				for {
 					if err = handleMessage(backend, ep); err != nil {
 						return err
 					}
 				}
 			})
+			log.Errorf("Peer %v terminated with error - %v", ep.endpoint, err)
+			return err
 		},
 		NodeInfo: func() interface{} {
 			return nil

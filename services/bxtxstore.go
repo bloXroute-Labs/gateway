@@ -3,11 +3,11 @@ package services
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway"
-	log "github.com/bloXroute-Labs/gateway/logger"
-	pbbase "github.com/bloXroute-Labs/gateway/protobuf"
-	"github.com/bloXroute-Labs/gateway/types"
-	"github.com/bloXroute-Labs/gateway/utils"
+	"github.com/bloXroute-Labs/gateway/v2"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	pbbase "github.com/bloXroute-Labs/gateway/v2/protobuf"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/orcaman/concurrent-map"
 	"runtime/debug"
 	"sort"
@@ -153,7 +153,7 @@ func (t *BxTxStore) Iter() (iter <-chan *types.BxTransaction) {
 
 // Add adds a new transaction to BxTxStore
 func (t *BxTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID types.ShortID, networkNum types.NetworkNum,
-	_ bool, flags types.TxFlags, timestamp time.Time, _ int64) TransactionResult {
+	_ bool, flags types.TxFlags, timestamp time.Time, _ int64, sender types.Sender) TransactionResult {
 	if shortID == types.ShortIDEmpty && len(content) == 0 {
 		debug.PrintStack()
 		panic("Bad usage of Add function - content and shortID can't be both missing")
@@ -217,6 +217,10 @@ func (t *BxTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID 
 
 	result.NewSID = bxTransaction.AddShortID(shortID)
 	result.NewContent = bxTransaction.SetContent(content)
+	// set sender only if it has new content in order to avoid false sender when the shortID is not new
+	if result.NewContent {
+		bxTransaction.SetSender(sender)
+	}
 	result.Transaction = bxTransaction
 	bxTransaction.Unlock()
 

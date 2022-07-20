@@ -2,27 +2,30 @@ package utils
 
 import (
 	"fmt"
-	log "github.com/bloXroute-Labs/gateway/logger"
-	"github.com/bloXroute-Labs/gateway/types"
+	"sync"
 	"time"
+
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // RateLimiter represents any struct that can be used to limit the amount of calls per time period
 type RateLimiter interface {
 	Take() (bool, float32)
-	Limit() int
+	Limit() uint64
 	refill() float32
 	String() string
 }
 
 // bucket keeps track of the calls made by an account during an interval
 type bucket struct {
-	limit   int
+	limit   uint64
 	counter float32
 }
 
 // leakyBucketRateLimiter enables rate limiting using the leaky bucket algorithm
 type leakyBucketRateLimiter struct {
+	lock       sync.Mutex
 	clock      Clock
 	bucket     bucket
 	interval   time.Duration
@@ -31,7 +34,7 @@ type leakyBucketRateLimiter struct {
 }
 
 // NewLeakyBucketRateLimiter creates a new leakyBucketRateLimiter
-func NewLeakyBucketRateLimiter(clock Clock, limit int, interval time.Duration) RateLimiter {
+func NewLeakyBucketRateLimiter(clock Clock, limit uint64, interval time.Duration) RateLimiter {
 	rateLimiter := &leakyBucketRateLimiter{
 		clock:    clock,
 		interval: interval,
@@ -48,6 +51,9 @@ func NewLeakyBucketRateLimiter(clock Clock, limit int, interval time.Duration) R
 
 // Take returns true if the action is allowed and false if not and updates the bucket count as necessary
 func (l *leakyBucketRateLimiter) Take() (bool, float32) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
 	l.refill()
 
 	if l.bucket.counter < 1 {
@@ -58,7 +64,7 @@ func (l *leakyBucketRateLimiter) Take() (bool, float32) {
 	return true, l.bucket.counter
 }
 
-func (l *leakyBucketRateLimiter) Limit() int {
+func (l *leakyBucketRateLimiter) Limit() uint64 {
 	return l.bucket.limit
 }
 
@@ -118,7 +124,7 @@ func (t *txTraceLeakyBucketRateLimiter) Take() (bool, float32) {
 }
 
 // NewTxTraceLeakyBucketRateLimiter creates a RateLimiter using the leaky bucket rate algorithm; it has logging during `Take()` compared to the leakyBucketRateLimiter
-func NewTxTraceLeakyBucketRateLimiter(clock Clock, limit int, rateLimitType rateLimitType, accountID types.AccountID) RateLimiter {
+func NewTxTraceLeakyBucketRateLimiter(clock Clock, limit uint64, rateLimitType rateLimitType, accountID types.AccountID) RateLimiter {
 	interval := rateLimitTypeToIntervalDuration[rateLimitType]
 	rateLimiter := NewLeakyBucketRateLimiter(clock, limit, interval).(*leakyBucketRateLimiter)
 

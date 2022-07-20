@@ -2,7 +2,7 @@ package bxmessage
 
 import (
 	"encoding/binary"
-	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // abstractCleanup represents a transactions that can be cleaned from tx-service

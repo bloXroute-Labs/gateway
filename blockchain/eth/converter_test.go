@@ -1,7 +1,7 @@
 package eth
 
 import (
-	"github.com/bloXroute-Labs/gateway/test/bxmock"
+	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -61,6 +61,6 @@ func TestConverter_Block(t *testing.T) {
 	canonicFormat, err := c.BxBlockToCanonicFormat(bxBlock)
 	assert.Nil(t, err)
 	for i, tx := range canonicFormat.Transactions {
-		assert.Equal(t, tx.Hash.Bytes(), ethBlock.Transactions()[i].Hash().Bytes())
+		assert.Equal(t, tx["hash"], ethBlock.Transactions()[i].Hash().String())
 	}
 }

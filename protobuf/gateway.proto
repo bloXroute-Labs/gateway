@@ -25,6 +25,11 @@ message Subscription{
   string tier = 2;
   string feed_name = 3;
   uint32 network = 4;
+  string remote_addr = 5;
+  string include = 6;
+  string filter = 7;
+  uint64 age = 8;
+  uint64 messages_sent = 9;
 }
 
 message SubscriptionsReply {
@@ -188,6 +193,7 @@ message GatewayInfo {
   string country = 6;
   string network = 8;
   string startup_params = 7;
+  string gateway_public_key = 9;
 }
 
 message StatusResponse {

@@ -3,7 +3,7 @@ package types
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	utils2 "github.com/bloXroute-Labs/gateway/bxmessage/utils"
+	utils2 "github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )

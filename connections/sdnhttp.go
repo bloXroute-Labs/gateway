@@ -7,14 +7,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway"
-	log "github.com/bloXroute-Labs/gateway/logger"
-	"github.com/bloXroute-Labs/gateway/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/types"
-	"github.com/bloXroute-Labs/gateway/utils"
+	"github.com/bloXroute-Labs/gateway/v2"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/jinzhu/copier"
 	"io"
 	"io/ioutil"
+	"math"
+	"math/big"
 	"net/http"
 	"os/exec"
 	"regexp"
@@ -25,6 +27,8 @@ import (
 	"sync"
 	"time"
 )
+
+//go:generate mockgen -destination ../../bxgateway/test/sdnhttpmock/mock_sdnhttp.go -package mock_connections . SDNHTTP
 
 // ErrSDNUnavailable - represents sdn service unavailable
 var ErrSDNUnavailable = errors.New("SDN service unavailable")
@@ -57,9 +61,10 @@ type SDNHTTP interface {
 	Register() error
 	NeedsRegistration() bool
 	FetchCustomerAccountModel(accountID types.AccountID) (sdnmessage.Account, error)
-	DirectRelayConnections(ctx context.Context, relayHosts string, relayLimit int, relayInstructions chan<- RelayInstruction, autoRelayTimeout time.Duration) error
+	DirectRelayConnections(ctx context.Context, relayHosts string, relayLimit uint64, relayInstructions chan<- RelayInstruction, autoRelayTimeout time.Duration) error
 	FindNetwork(networkNum types.NetworkNum) (*sdnmessage.BlockchainNetwork, error)
 	MinTxAge() time.Duration
+	Get(endpoint string, requestBody []byte) ([]byte, error)
 }
 
 // realSDNHTTP is a connection to the bloxroute API
@@ -67,13 +72,16 @@ type realSDNHTTP struct {
 	sslCerts         *utils.SSLCerts
 	getPingLatencies func(peers sdnmessage.Peers) []nodeLatencyInfo
 	networks         sdnmessage.BlockchainNetworks
-	accountModel     sdnmessage.Account
+	accountModel     *sdnmessage.Account
 	nodeID           types.NodeID
 	sdnURL           string
 	dataDir          string
-	nodeModel        sdnmessage.NodeModel
+	nodeModel        *sdnmessage.NodeModel
 	relays           sdnmessage.Peers
 }
+
+// relayMap maps a relay's IP to its port
+type relayMap map[string]int64
 
 // nodeLatencyInfo contains ping results with host and latency info
 type nodeLatencyInfo struct {
@@ -119,7 +127,7 @@ func NewSDNHTTP(sslCerts *utils.SSLCerts, sdnURL string, nodeModel sdnmessage.No
 	sdn := &realSDNHTTP{
 		sslCerts:         sslCerts,
 		sdnURL:           sdnURL,
-		nodeModel:        nodeModel,
+		nodeModel:        &nodeModel,
 		getPingLatencies: getPingLatencies,
 		dataDir:          dataDir,
 	}
@@ -133,6 +141,28 @@ func (s *realSDNHTTP) FetchAllBlockchainNetworks() error {
 		return err
 	}
 	return nil
+}
+
+// Get is a generic function for sending GET request to SDNHttp
+func (s *realSDNHTTP) Get(endpoint string, requestBody []byte) ([]byte, error) {
+	url := s.sdnURL + endpoint
+	proxyReq, err := http.NewRequest(bxgateway.GetMethod, url, bytes.NewReader(requestBody))
+	if err != nil {
+		return nil, err
+	}
+	c, err := s.httpClient()
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.Do(proxyReq)
+	if err != nil {
+		return nil, err
+	}
+	respBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	return respBytes, nil
 }
 
 // FetchBlockchainNetwork fetches a blockchain network given the blockchain number of the model registered with SDN
@@ -153,6 +183,10 @@ func (s *realSDNHTTP) FetchBlockchainNetwork() error {
 	if prev != nil && s.networks[networkNum].MinTxAgeSeconds != prev.MinTxAgeSeconds {
 		log.Debugf("The MinTxAgeSeconds changed from %v seconds to %v seconds after the update", prev.MinTxAgeSeconds, s.networks[networkNum].MinTxAgeSeconds)
 	}
+	if s.networks[networkNum].Protocol == bxgateway.Ethereum && s.networks[networkNum].DefaultAttributes.TerminalTotalDifficulty == 0 {
+		s.networks[networkNum].DefaultAttributes.TerminalTotalDifficulty = big.NewInt(math.MaxInt)
+	}
+
 	return nil
 }
 
@@ -167,9 +201,6 @@ func (s *realSDNHTTP) InitGateway(protocol string, network string) error {
 		return err
 	}
 	if err = s.FetchBlockchainNetwork(); err != nil {
-		return err
-	}
-	if err = s.getRelays(s.nodeModel.NodeID, s.nodeModel.BlockchainNetworkNum); err != nil {
 		return err
 	}
 	err = s.getAccountModel(s.nodeModel.AccountID)
@@ -189,26 +220,37 @@ func logLowestLatency(lowestLatencyRelay nodeLatencyInfo) {
 }
 
 // DirectRelayConnections directs the gateway on relays to connect/disconnect
-func (s realSDNHTTP) DirectRelayConnections(ctx context.Context, relayHosts string, relayLimit int, relayInstructions chan<- RelayInstruction, autoRelayTimeout time.Duration) error {
+func (s realSDNHTTP) DirectRelayConnections(ctx context.Context, relayHosts string, relayLimit uint64, relayInstructions chan<- RelayInstruction, autoRelayTimeout time.Duration) error {
 	overrideRelays, autoCount, err := parsedCmdlineRelays(relayHosts, relayLimit)
 	if err != nil {
 		return err
 	}
-	connectRelays(overrideRelays, relayInstructions)
-	if autoCount > 0 {
-		autoRelays, err := s.getAutoRelays(overrideRelays, autoCount)
-		if err != nil {
-			return err
-		}
-		connectRelays(autoRelays, relayInstructions)
-		// TODO update auto relays, phase 2
+
+	// connect relays specified in `relays` argument
+	for ip, port := range overrideRelays {
+		relayInstructions <- RelayInstruction{IP: ip, Port: port, Type: Connect}
 	}
+
+	if autoCount == 0 {
+		return nil
+	}
+
+	// TODO: fetching relay from SDN should be done in a loop inside manageAutoRelays
+	// if auto relays specified, start and manage them
+	relays, err := s.getRelays(s.nodeModel.NodeID, s.nodeModel.BlockchainNetworkNum)
+	if err != nil {
+		return fmt.Errorf("failed to extract relay list - %v", err)
+	}
+	if len(relays) == 0 {
+		return errors.New("no relays were acquired from SDN")
+	}
+	go s.manageAutoRelays(ctx, autoCount, relayInstructions, autoRelayTimeout, relays, overrideRelays)
 	return nil
 }
 
 // parsedCmdlineRelays parses the relayHosts argument and returns relays IPs up to the relay limit
-func parsedCmdlineRelays(relayHosts string, relayLimit int) (map[string]int64, int, error) {
-	overrideRelays := make(map[string]int64) // Holds IP to port mapping
+func parsedCmdlineRelays(relayHosts string, relayLimit uint64) (relayMap, int, error) {
+	overrideRelays := make(relayMap)
 	autoCount := 0
 
 	if len(relayHosts) == 0 {
@@ -216,7 +258,7 @@ func parsedCmdlineRelays(relayHosts string, relayLimit int) (map[string]int64, i
 	}
 	for _, relay := range strings.Split(relayHosts, ",") {
 		// Clean and get the relay string
-		if len(overrideRelays)+autoCount == relayLimit { // Only counting unique relays + auto relays
+		if uint64(len(overrideRelays)+autoCount) == relayLimit { // Only counting unique relays + auto relays
 			break
 		}
 		suggestedRelayString := strings.Trim(relay, " ")
@@ -255,53 +297,42 @@ func parsedCmdlineRelays(relayHosts string, relayLimit int) (map[string]int64, i
 	return overrideRelays, autoCount, nil
 }
 
-func connectRelays(relays map[string]int64, relayInstructions chan<- RelayInstruction) {
-	for ip, port := range relays {
-		relayInstructions <- RelayInstruction{IP: ip, Port: port, Type: Connect}
-	}
-}
-
-// getAutoRelays adds SDN relay(s) with the lowest latency relay(s) from getPingLatencies (no duplicates / overlap with the relays provided)
-func (s realSDNHTTP) getAutoRelays(overrideRelays map[string]int64, autoCount int) (map[string]int64, error) {
-	if autoCount == 0 {
-		return map[string]int64{}, nil
-	}
-	if len(s.relays) == 0 {
-		return map[string]int64{}, fmt.Errorf("no relays are available")
-	}
-	pingLatencies := s.getPingLatencies(s.relays)
+func (s realSDNHTTP) manageAutoRelays(ctx context.Context, autoRelayCount int, relayInstructions chan<- RelayInstruction, autoRelayRefreshInterval time.Duration, relays sdnmessage.Peers, overrideRelays relayMap) {
+	pingLatencies := s.getPingLatencies(relays) // list of SDN relays sorted by ascending order of latency
 	if len(pingLatencies) == 0 {
-		return map[string]int64{}, fmt.Errorf("no latencies were acquired for the relays")
+		log.Errorf("ping latencies not found for relays from SDN")
+		return
 	}
-	logLowestLatency(pingLatencies[0])
 
-	autoRelays := make(map[string]int64)
-	availableRelayCount := 0
-	for _, nli := range pingLatencies {
-		relayIP, err := utils.GetIP(nli.IP)
+	autoRelayCounter := 0
+	//autoRelays := nodeLatencyInfos{}
+	for idx, pingLatency := range pingLatencies {
+		newRelayIP, err := utils.GetIP(pingLatency.IP)
 		if err != nil {
-			log.Errorf("relay %s from SDN is not valid", nli.IP)
+			log.Errorf("relay %s from the SDN does not have a valid IP address - %v", pingLatency.IP, err)
 			continue
 		}
-		if _, ok := overrideRelays[relayIP]; !ok { // no auto relays overlap with override relays
-			log.Debugf("auto relay %s:%v with ping latency of %v chosen", relayIP, nli.Port, nli.Latency)
-			autoRelays[relayIP] = nli.Port
-			availableRelayCount++
+		// only connect to the relay if not already connected to
+		if _, ok := overrideRelays[newRelayIP]; ok {
+			continue
 		}
-		if autoCount == availableRelayCount {
-			break
-		}
-	}
+		logLowestLatency(pingLatencies[idx])
+		relayInstructions <- RelayInstruction{IP: newRelayIP, Port: pingLatency.Port, Type: Connect}
+		//autoRelays = append(autoRelays, pingLatency)
 
-	if autoCount > availableRelayCount {
-		log.Warnf("reducing auto relay count to number of available relays from the SDN: %v", availableRelayCount)
+		autoRelayCounter++
+		if autoRelayCounter == autoRelayCount {
+			// we found all autoRelays so we are done
+			return
+		}
 	}
-	return autoRelays, nil
+	// if we are here we failed to find all needed auto relays
+	log.Errorf("available SDN relays %v; requested auto count %v", autoRelayCounter, autoRelayCount)
 }
 
 // NodeModel returns the node model returned by the SDN
 func (s realSDNHTTP) NodeModel() *sdnmessage.NodeModel {
-	return &s.nodeModel
+	return s.nodeModel
 }
 
 // AccountTier returns the account tier name
@@ -311,7 +342,7 @@ func (s realSDNHTTP) AccountTier() sdnmessage.AccountTier {
 
 // AccountModel returns the account model
 func (s realSDNHTTP) AccountModel() sdnmessage.Account {
-	return s.accountModel
+	return *s.accountModel
 }
 
 // NetworkNum returns the registered network number of the node model
@@ -419,7 +450,7 @@ func (s *realSDNHTTP) getAccountModelWithEndpoint(accountID types.AccountID, end
 }
 
 func (s *realSDNHTTP) fillInAccountDefaults(accountModel *sdnmessage.Account) (sdnmessage.Account, error) {
-	mappedAccountModel := sdnmessage.DefaultEnterpriseAccount
+	mappedAccountModel := sdnmessage.DefaultEliteAccount
 	err := copier.CopyWithOption(&mappedAccountModel, *accountModel, copier.Option{IgnoreEmpty: true, DeepCopy: true})
 
 	if err != nil {
@@ -431,11 +462,17 @@ func (s *realSDNHTTP) fillInAccountDefaults(accountModel *sdnmessage.Account) (s
 
 func (s *realSDNHTTP) getAccountModel(accountID types.AccountID) error {
 	accountModel, err := s.getAccountModelWithEndpoint(accountID, "account")
-	s.accountModel = accountModel
+	s.accountModel = &accountModel
 	if s.accountModel.RelayLimit.MsgQuota.Limit == 0 {
 		log.Warnf("relay limit was set to 0, setting to 1")
 		s.accountModel.RelayLimit.MsgQuota.Limit = 1
 	}
+
+	if s.accountModel.MaxAllowedNodes.MsgQuota.Limit == 0 {
+		log.Warnf("relay max allowed nodes limit was set to 0, setting to 6")
+		s.accountModel.MaxAllowedNodes.MsgQuota.Limit = 6
+	}
+
 	return err
 }
 
@@ -445,16 +482,17 @@ func (s *realSDNHTTP) FetchCustomerAccountModel(accountID types.AccountID) (sdnm
 }
 
 // getRelays gets the potential relays for a gateway
-func (s *realSDNHTTP) getRelays(nodeID types.NodeID, networkNum types.NetworkNum) error {
+func (s *realSDNHTTP) getRelays(nodeID types.NodeID, networkNum types.NetworkNum) (sdnmessage.Peers, error) {
 	url := fmt.Sprintf("%v/nodes/%v/%v/potential-relays", s.sdnURL, nodeID, networkNum)
 	resp, err := s.httpWithCache(url, bxgateway.GetMethod, potentialRelaysFileName, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if err = json.Unmarshal(resp, &s.relays); err != nil {
-		return fmt.Errorf("could not deserialize potential relays: %v", err)
+	var relays sdnmessage.Peers
+	if err = json.Unmarshal(resp, &relays); err != nil {
+		return nil, fmt.Errorf("could not deserialize potential relays: %v", err)
 	}
-	return nil
+	return relays, nil
 }
 
 func (s *realSDNHTTP) httpWithCache(uri string, method string, fileName string, body io.Reader) ([]byte, error) {

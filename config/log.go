@@ -2,8 +2,8 @@ package config
 
 import (
 	"fmt"
-	log "github.com/bloXroute-Labs/gateway/logger"
-	"github.com/bloXroute-Labs/gateway/utils"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/urfave/cli/v2"
 )
 

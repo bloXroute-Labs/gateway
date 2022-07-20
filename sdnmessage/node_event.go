@@ -2,7 +2,7 @@ package sdnmessage
 
 import (
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // NodeEventType represents a type of node event being reported to the SDN

@@ -1,8 +1,8 @@
 package blockchain
 
 import (
-	"github.com/bloXroute-Labs/gateway/blockchain/network"
-	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // NoOpBxBridge is a placeholder bridge that still operates as a Converter
@@ -53,7 +53,7 @@ func (n NoOpBxBridge) AnnounceTransactionHashes(s string, list types.SHA256HashL
 }
 
 // SendTransactionsFromBDN is a no-op
-func (n NoOpBxBridge) SendTransactionsFromBDN(transactions []*types.BxTransaction) error {
+func (n NoOpBxBridge) SendTransactionsFromBDN(transactions Transactions) error {
 	return nil
 }
 
@@ -68,13 +68,13 @@ func (n NoOpBxBridge) RequestTransactionsFromNode(s string, list types.SHA256Has
 }
 
 // ReceiveNodeTransactions is a no-op
-func (n NoOpBxBridge) ReceiveNodeTransactions() <-chan TransactionsFromNode {
-	return make(chan TransactionsFromNode)
+func (n NoOpBxBridge) ReceiveNodeTransactions() <-chan Transactions {
+	return make(chan Transactions)
 }
 
 // ReceiveBDNTransactions is a no-op
-func (n NoOpBxBridge) ReceiveBDNTransactions() <-chan []*types.BxTransaction {
-	return make(chan []*types.BxTransaction)
+func (n NoOpBxBridge) ReceiveBDNTransactions() <-chan Transactions {
+	return make(chan Transactions)
 }
 
 // ReceiveTransactionHashesAnnouncement is a no-op

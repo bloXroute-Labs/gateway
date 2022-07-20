@@ -1,9 +1,9 @@
 [![](images/logo.png)](https://bloxroute.com)
 <p align="center">
-  <a href="https://github.com/bloXroute-Labs/gateway/blob/develop/LICENSE.md">
+  <a href="https://github.com/bloXroute-Labs/gateway/blob/master/LICENSE.md">
     <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="bxgateway is released under the MIT license." />
   </a>
-  <a href="https://github.com/bloXroute-Labs/gateway/blob/develop/CONTRIBUTING.md">
+  <a href="https://github.com/bloXroute-Labs/gateway/blob/master/CONTRIBUTING.md">
     <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs welcome!" />
   </a>
   <a href="https://discord.gg/FAYTEMm">
@@ -56,4 +56,4 @@ Contact us at [our Discord] for further questions.
 [install]: https://docs.bloxroute.com/gateway
 [documentation]: https://docs.bloxroute.com/
 [our Discord]: https://discord.gg/jHgpN8b
-[contributing guide]: https://github.com/bloXroute-Labs/gateway/blob/develop/CONTRIBUTING.md
+[contributing guide]: https://github.com/bloXroute-Labs/gateway/blob/master/CONTRIBUTING.md

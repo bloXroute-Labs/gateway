@@ -2,12 +2,14 @@ package eth
 
 import (
 	"context"
-	"github.com/bloXroute-Labs/gateway"
-	"github.com/bloXroute-Labs/gateway/blockchain"
-	"github.com/bloXroute-Labs/gateway/blockchain/eth/test"
-	"github.com/bloXroute-Labs/gateway/blockchain/network"
-	"github.com/bloXroute-Labs/gateway/test/bxmock"
-	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/v2"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
+	"github.com/bloXroute-Labs/gateway/v2/logger"
+	gateway_test "github.com/bloXroute-Labs/gateway/v2/test"
+	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/forkid"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -28,6 +30,7 @@ func setup() (blockchain.Bridge, *Handler, []types.NodeEndpoint) {
 	config, _ := network.NewEthereumPreset("Mainnet")
 	blockchainPeers, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
 	handler := NewHandler(context.Background(), bridge, &config, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout))
+	gateway_test.ConfigureLogger(logger.TraceLevel)
 	return bridge, handler, blockchainPeers
 }
 
@@ -534,7 +537,7 @@ func TestHandler_HandleNewBlockHashes66(t *testing.T) {
 
 func TestHandler_processBDNBlock(t *testing.T) {
 	bridge, handler, _ := setup()
-	peer, _ := testPeer(1, 1)
+	peer, _ := testPeer(2, 1)
 	_ = handler.peers.register(peer)
 	peer.Start()
 	peerRW := peer.rw.(*test.MsgReadWriter)

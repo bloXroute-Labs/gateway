@@ -22,6 +22,9 @@ const (
 
 	// AccountIDError - invalid account ID
 	AccountIDError RPCErrorCode = -32004
+
+	// Blocked - blocked
+	Blocked RPCErrorCode = -32001
 )
 
 // ErrorMsg is a mapping of codes to error messages
@@ -30,4 +33,5 @@ var ErrorMsg = map[RPCErrorCode]string{
 	InvalidParams:  "Invalid params",
 	AccountIDError: "Invalid account ID",
 	InternalError:  "Internal error",
+	Blocked:        "Insufficient quota",
 }

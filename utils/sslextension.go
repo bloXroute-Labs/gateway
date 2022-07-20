@@ -4,8 +4,8 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
-	log "github.com/bloXroute-Labs/gateway/logger"
-	"github.com/bloXroute-Labs/gateway/types"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // BxSSLProperties represents extension data encoded in bloxroute SSL certificates
@@ -83,14 +83,14 @@ func ParseBxCertificate(certificate *x509.Certificate) (BxSSLProperties, error) 
 }
 
 // GetAccountIDFromBxCertificate get account ID from cert
-func GetAccountIDFromBxCertificate(extensions []pkix.Extension) types.AccountID {
+func GetAccountIDFromBxCertificate(extensions []pkix.Extension) (types.AccountID, error) {
 	var accountID types.AccountID
 	for _, extension := range extensions {
 		if extension.Id.String() == accountIDExtensionID {
 			accountID = types.AccountID(extension.Value)
-			break
+			return accountID, nil
 		}
 	}
 
-	return accountID
+	return accountID, errors.New("extension not found in cert")
 }

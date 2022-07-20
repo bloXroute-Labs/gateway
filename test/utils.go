@@ -2,7 +2,7 @@ package test
 
 import (
 	"encoding/json"
-	log "github.com/bloXroute-Labs/gateway/logger"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"math/rand"

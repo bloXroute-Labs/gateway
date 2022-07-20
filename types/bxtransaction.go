@@ -1,7 +1,7 @@
 package types
 
 import (
-	pbbase "github.com/bloXroute-Labs/gateway/protobuf"
+	pbbase "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"sync"
 	"time"
@@ -19,6 +19,7 @@ type BxTransaction struct {
 	addTime    time.Time
 	flags      TxFlags
 	networkNum NetworkNum
+	sender     Sender
 }
 
 // NewBxTransaction creates a new transaction to be stored. Transactions are not expected to be initialized with content or shortIDs; they should be added via AddShortID and SetContent.
@@ -84,6 +85,16 @@ func (bt *BxTransaction) NetworkNum() NetworkNum {
 	return bt.networkNum
 }
 
+// Sender returns the transaction sender
+func (bt *BxTransaction) Sender() Sender {
+	return bt.sender
+}
+
+// SetSender returns the transaction sender
+func (bt *BxTransaction) SetSender(sender Sender) {
+	copy(bt.sender[:], sender[:])
+}
+
 // AddTime returns the time the transaction was added
 func (bt *BxTransaction) AddTime() time.Time {
 	return bt.addTime
@@ -130,16 +141,16 @@ func (bt *BxTransaction) SetContent(content TxContent) bool {
 }
 
 // BlockchainTransaction parses and returns a transaction for the given network number's spec
-func (bt *BxTransaction) BlockchainTransaction(extractSender bool) (BlockchainTransaction, error) {
-	return bt.parseTransaction(extractSender)
+func (bt *BxTransaction) BlockchainTransaction(sender Sender) (BlockchainTransaction, error) {
+	return bt.parseTransaction(sender)
 }
 
-func (bt *BxTransaction) parseTransaction(extractSender bool) (BlockchainTransaction, error) {
+func (bt *BxTransaction) parseTransaction(sender Sender) (BlockchainTransaction, error) {
 	// TODO - add support for additional networks
 
 	// for now, since we only support Ethereum based transaction
 	// we are not checking but parsing as if the transaction is Ethereum based.
-	return EthTransactionFromBytes(bt.hash, bt.content, extractSender)
+	return ethTransactionFromBytes(bt.hash, bt.content, sender)
 	/*
 		switch bt.networkNum {
 		case EthereumNetworkNum:

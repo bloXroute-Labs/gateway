@@ -5,9 +5,9 @@ package connections
 
 import (
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/types"
-	"github.com/bloXroute-Labs/gateway/utils"
+	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
@@ -64,7 +64,7 @@ func TestInitGateway_GetsCorrectBlockchainNetworkFromProtocolAndNetwork(t *testi
 			s := realSDNHTTP{
 				sslCerts: &sslCerts,
 				sdnURL:   sdnURL,
-				nodeModel: sdnmessage.NodeModel{
+				nodeModel: &sdnmessage.NodeModel{
 					NodeType: "EXTERNAL_GATEWAY",
 				},
 			}
@@ -115,11 +115,10 @@ func TestInitGateway_ReturnsErrorIfIncorrectNetworkOrProtocol(t *testing.T) {
 			s := realSDNHTTP{
 				sslCerts: &sslCerts,
 				sdnURL:   sdnURL,
-				nodeModel: sdnmessage.NodeModel{
+				nodeModel: &sdnmessage.NodeModel{
 					NodeType: "INTERNAL_GATEWAY",
 				},
 			}
-
 			err := s.InitGateway(testCase.protocol, testCase.network)
 
 			if err == nil {

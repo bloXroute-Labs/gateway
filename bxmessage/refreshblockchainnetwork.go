@@ -1,6 +1,6 @@
 package bxmessage
 
-import "github.com/bloXroute-Labs/gateway/types"
+import "github.com/bloXroute-Labs/gateway/v2/types"
 
 // RefreshBlockchainNetwork acknowledges a received header message
 type RefreshBlockchainNetwork struct {

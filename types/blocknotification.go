@@ -3,36 +3,37 @@ package types
 import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"math/big"
 )
 
 // BlockNotification - represents a single block
 type BlockNotification struct {
-	BlockHash        ethcommon.Hash   `json:"hash,omitempty"`
-	Header           *Header          `json:"header,omitempty"`
-	Transactions     []EthTransaction `json:"transactions,omitempty"`
-	Uncles           []Header         `json:"uncles,omitempty"`
+	BlockHash        ethcommon.Hash           `json:"hash,omitempty"`
+	Header           *Header                  `json:"header,omitempty"`
+	Transactions     []map[string]interface{} `json:"transactions,omitempty"`
+	Uncles           []Header                 `json:"uncles,omitempty"`
 	notificationType FeedType
 	source           *NodeEndpoint
 }
 
 // Header - represents Ethereum block header
 type Header struct {
-	ParentHash       ethcommon.Hash `json:"parentHash"`
-	Sha3Uncles       ethcommon.Hash `json:"sha3Uncles"`
-	Miner            EthAddress     `json:"miner"`
-	StateRoot        ethcommon.Hash `json:"stateRoot"`
-	TransactionsRoot ethcommon.Hash `json:"transactionsRoot"`
-	ReceiptsRoot     ethcommon.Hash `json:"receiptsRoot"`
-	LogsBloom        EthBigInt      `json:"logsBloom"`
-	Difficulty       EthBigInt      `json:"difficulty"`
-	Number           EthBigInt      `json:"number"`
-	GasLimit         EthUInt64      `json:"gasLimit"`
-	GasUsed          EthUInt64      `json:"gasUsed"`
-	Timestamp        EthUInt64      `json:"timestamp"`
-	ExtraData        EthBytes       `json:"extraData"`
-	MixHash          ethcommon.Hash `json:"mixHash"`
-	Nonce            EthUInt64      `json:"nonce"`
-	BaseFee          *int           `json:"baseFeePerGas,omitempty"`
+	ParentHash       ethcommon.Hash     `json:"parentHash"`
+	Sha3Uncles       ethcommon.Hash     `json:"sha3Uncles"`
+	Miner            *ethcommon.Address `json:"miner"`
+	StateRoot        ethcommon.Hash     `json:"stateRoot"`
+	TransactionsRoot ethcommon.Hash     `json:"transactionsRoot"`
+	ReceiptsRoot     ethcommon.Hash     `json:"receiptsRoot"`
+	LogsBloom        *big.Int           `json:"logsBloom"`
+	Difficulty       *big.Int           `json:"difficulty"`
+	Number           *big.Int           `json:"number"`
+	GasLimit         uint64             `json:"gasLimit"`
+	GasUsed          uint64             `json:"gasUsed"`
+	Timestamp        uint64             `json:"timestamp"`
+	ExtraData        []byte             `json:"extraData"`
+	MixHash          ethcommon.Hash     `json:"mixHash"`
+	Nonce            uint64             `json:"nonce"`
+	BaseFee          *int               `json:"baseFeePerGas,omitempty"`
 }
 
 // ConvertEthHeaderToBlockNotificationHeader converts Ethereum header to bloxroute Ethereum Header
@@ -40,19 +41,19 @@ func ConvertEthHeaderToBlockNotificationHeader(ethHeader *ethtypes.Header) *Head
 	newHeader := Header{
 		ParentHash:       ethHeader.ParentHash,
 		Sha3Uncles:       ethHeader.UncleHash,
-		Miner:            EthAddress{Address: &ethHeader.Coinbase},
+		Miner:            &ethHeader.Coinbase,
 		StateRoot:        ethHeader.Root,
 		TransactionsRoot: ethHeader.TxHash,
 		ReceiptsRoot:     ethHeader.ReceiptHash,
-		LogsBloom:        EthBigInt{Int: ethHeader.Bloom.Big()},
-		Difficulty:       EthBigInt{Int: ethHeader.Difficulty},
-		Number:           EthBigInt{Int: ethHeader.Number},
-		GasLimit:         EthUInt64{UInt64: ethHeader.GasLimit},
-		GasUsed:          EthUInt64{UInt64: ethHeader.GasUsed},
-		Timestamp:        EthUInt64{UInt64: ethHeader.Time},
-		ExtraData:        EthBytes{B: ethHeader.Extra},
+		LogsBloom:        ethHeader.Bloom.Big(),
+		Difficulty:       ethHeader.Difficulty,
+		Number:           ethHeader.Number,
+		GasLimit:         ethHeader.GasLimit,
+		GasUsed:          ethHeader.GasUsed,
+		Timestamp:        ethHeader.Time,
+		ExtraData:        ethHeader.Extra,
 		MixHash:          ethHeader.MixDigest,
-		Nonce:            EthUInt64{UInt64: ethHeader.Nonce.Uint64()},
+		Nonce:            ethHeader.Nonce.Uint64(),
 	}
 	if ethHeader.BaseFee != nil {
 		baseFee := int(ethHeader.BaseFee.Int64())

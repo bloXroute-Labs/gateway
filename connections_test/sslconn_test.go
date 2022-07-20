@@ -1,10 +1,12 @@
 package connections_test
 
 import (
-	"github.com/bloXroute-Labs/gateway/bxmessage"
-	"github.com/bloXroute-Labs/gateway/connections"
-	"github.com/bloXroute-Labs/gateway/test/bxmock"
-	"github.com/bloXroute-Labs/gateway/utils"
+	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
+	"github.com/bloXroute-Labs/gateway/v2/connections"
+	"github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/test"
+	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/stretchr/testify/assert"
 	"runtime"
 	"testing"
@@ -12,6 +14,7 @@ import (
 )
 
 func TestSSLConn_ClosingFromSend(t *testing.T) {
+	test.ConfigureLogger(logger.TraceLevel)
 	startCount := runtime.NumGoroutine()
 
 	_, s := sslConn(1)

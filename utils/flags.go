@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"github.com/bloXroute-Labs/gateway"
+	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/urfave/cli/v2"
 )
 
@@ -58,14 +58,25 @@ var (
 		Aliases: []string{"relay-ip"},
 		Value:   "auto",
 	}
+	PrysmPortFlag = &cli.IntFlag{
+		Name:    "prysm-port",
+		Usage:   "prysm-port",
+		Aliases: []string{"prp"},
+	}
+	PrysmHostFlag = &cli.StringFlag{
+		Name:    "prysm-host",
+		Usage:   "prysm host",
+		Aliases: []string{"prh"},
+	}
 	EnvFlag = &cli.StringFlag{
 		Name:  "env",
 		Usage: "development environment (local, localproxy, testnet, mainnet)",
 		Value: "mainnet",
 	}
 	SDNURLFlag = &cli.StringFlag{
-		Name:  "sdn-url",
-		Usage: "SDN URL",
+		Name:   "sdn-url",
+		Usage:  "SDN URL",
+		Hidden: true,
 	}
 	SDNSocketIPFlag = &cli.StringFlag{
 		Name:  "sdn-socket-ip",
@@ -112,11 +123,13 @@ var (
 		Usage:   "fluentd host",
 		Aliases: []string{"fh"},
 		Value:   "localhost",
+		Hidden:  true,
 	}
 	FluentDFlag = &cli.BoolFlag{
-		Name:  "fluentd",
-		Usage: "sends logs records to fluentD",
-		Value: false,
+		Name:   "fluentd",
+		Usage:  "sends logs records to fluentD",
+		Value:  false,
+		Hidden: true,
 	}
 	LogNetworkContentFlag = &cli.BoolFlag{
 		Name:   "log-network-content",
@@ -126,8 +139,9 @@ var (
 	}
 	// TODO: this currently must be a file path in current code, not a URL
 	RegistrationCertDirFlag = &cli.StringFlag{
-		Name:  "registration-cert-dir",
-		Usage: "base URL for retrieving SSL certificates",
+		Name:   "registration-cert-dir",
+		Usage:  "base URL for retrieving SSL certificates",
+		Hidden: true,
 	}
 	DisableProfilingFlag = &cli.BoolFlag{
 		Name:  "disable-profiling",
@@ -315,13 +329,62 @@ var (
 		Value: "eth_sendBundle",
 	}
 	SendBlockConfirmation = &cli.BoolFlag{
-		Name:  "send-block-confirmation",
-		Usage: "sending block confirmation to relay",
-		Value: false,
+		Name:   "send-block-confirmation",
+		Usage:  "sending block confirmation to relay",
+		Value:  false,
+		Hidden: true,
 	}
 	MegaBundleProcessing = &cli.BoolFlag{
 		Name:  "mega-bundle-processing",
 		Usage: "enabling mega-bundle processing",
 		Value: false,
+	}
+	ProxyIPFlag = &cli.StringFlag{
+		Name:  "proxy-ip",
+		Usage: "external ip address of the Python cloud-api",
+		Value: "172.17.0.1",
+	}
+	RPCProxyPortFlag = &cli.IntFlag{
+		Name:  "rpc-proxy-port",
+		Usage: "port of the Python cloud-api",
+		Value: 8888,
+	}
+	AuthHeaderFlag = &cli.StringFlag{
+		Name:  "auth-header",
+		Usage: "Authentication header for cloud services",
+	}
+	RPCSSLBaseURL = &cli.StringFlag{
+		Name:  "rpc-ssl-base-url",
+		Usage: "certs for https connection",
+	}
+	ETHGatewayEndpoint = &cli.StringFlag{
+		Name:  "eth-source-endpoint",
+		Usage: "websocket endpoint for Ethereum mainnet go-gateway",
+	}
+	BSCMainnetGatewayEndpoint = &cli.StringFlag{
+		Name:  "bsc-source-endpoint",
+		Usage: "websocket endpoint for BSC mainnet go-gateway",
+	}
+	PolygonMainnetGatewayEndpoint = &cli.StringFlag{
+		Name:  "polygon-source-endpoint",
+		Usage: "websocket endpoint for Polygon mainnet go-gateway",
+	}
+	RopstenGatewayEndpoint = &cli.StringFlag{
+		Name:  "ropsten-source-endpoint",
+		Usage: "websocket endpoint for Polygon mainnet go-gateway",
+	}
+	MEVRelayURL = &cli.StringFlag{
+		Name:  "mev-relay-url",
+		Usage: "mev relay connection for forwarding rpc requests",
+	}
+	CheckMevCredit = &cli.BoolFlag{
+		Name:  "check-mev-credit",
+		Usage: "enable this flag will forward the mev rpc request to cloud api",
+		Value: false,
+	}
+	TerminalTotalDifficulty = &cli.IntFlag{
+		Name:   "terminal-total-difficulty",
+		Usage:  "Overrides the terminal total difficulty settings of the blockchain network",
+		Hidden: true,
 	}
 )

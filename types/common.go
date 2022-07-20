@@ -56,6 +56,9 @@ type AccountID string
 // Sender represents sender type
 type Sender [20]byte
 
+// EmptySender represents empty sender
+var EmptySender = [20]byte{}
+
 // String returns string of the Sender
 func (s Sender) String() string {
 	return hex.EncodeToString(s[:])

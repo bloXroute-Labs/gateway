@@ -1,8 +1,8 @@
 package services
 
 import (
-	pbbase "github.com/bloXroute-Labs/gateway/protobuf"
-	"github.com/bloXroute-Labs/gateway/types"
+	pbbase "github.com/bloXroute-Labs/gateway/v2/protobuf"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	"time"
 )
 
@@ -25,7 +25,7 @@ type TxStore interface {
 	Stop()
 
 	Add(hash types.SHA256Hash, content types.TxContent, shortID types.ShortID, network types.NetworkNum,
-		validate bool, flags types.TxFlags, timestamp time.Time, networkChainID int64) TransactionResult
+		validate bool, flags types.TxFlags, timestamp time.Time, networkChainID int64, sender types.Sender) TransactionResult
 	Get(hash types.SHA256Hash) (*types.BxTransaction, bool)
 	Known(hash types.SHA256Hash) bool
 	HasContent(hash types.SHA256Hash) bool
@@ -53,5 +53,4 @@ type TransactionResult struct {
 	AssignedShortID  types.ShortID
 	DebugData        interface{}
 	AlreadySeen      bool
-	Sender           types.Sender
 }

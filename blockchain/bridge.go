@@ -2,8 +2,8 @@ package blockchain
 
 import (
 	"errors"
-	"github.com/bloXroute-Labs/gateway/blockchain/network"
-	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // NoActiveBlockchainPeersAlert is used to send an alert to the gateway on initial liveliness check if no active blockchain peers
@@ -16,8 +16,8 @@ type TransactionAnnouncement struct {
 	PeerID string
 }
 
-// TransactionsFromNode is used to pass transactions from a node to the BDN
-type TransactionsFromNode struct {
+// Transactions is used to pass transactions between a node and the BDN
+type Transactions struct {
 	Transactions []*types.BxTransaction
 	PeerEndpoint types.NodeEndpoint
 }
@@ -60,12 +60,12 @@ type Bridge interface {
 	UpdateNetworkConfig(network.EthConfig) error
 
 	AnnounceTransactionHashes(string, types.SHA256HashList) error
-	SendTransactionsFromBDN([]*types.BxTransaction) error
+	SendTransactionsFromBDN(transactions Transactions) error
 	SendTransactionsToBDN(txs []*types.BxTransaction, peerEndpoint types.NodeEndpoint) error
 	RequestTransactionsFromNode(string, types.SHA256HashList) error
 
-	ReceiveNodeTransactions() <-chan TransactionsFromNode
-	ReceiveBDNTransactions() <-chan []*types.BxTransaction
+	ReceiveNodeTransactions() <-chan Transactions
+	ReceiveBDNTransactions() <-chan Transactions
 	ReceiveTransactionHashesAnnouncement() <-chan TransactionAnnouncement
 	ReceiveTransactionHashesRequest() <-chan TransactionAnnouncement
 
@@ -93,8 +93,8 @@ var ErrChannelFull = errors.New("channel full")
 type BxBridge struct {
 	Converter
 	config                    chan network.EthConfig
-	transactionsFromNode      chan TransactionsFromNode
-	transactionsFromBDN       chan []*types.BxTransaction
+	transactionsFromNode      chan Transactions
+	transactionsFromBDN       chan Transactions
 	transactionHashesFromNode chan TransactionAnnouncement
 	transactionHashesRequests chan TransactionAnnouncement
 
@@ -111,9 +111,9 @@ type BxBridge struct {
 // NewBxBridge returns a BxBridge instance
 func NewBxBridge(converter Converter) Bridge {
 	return &BxBridge{
-		config:                    make(chan network.EthConfig),
-		transactionsFromNode:      make(chan TransactionsFromNode, transactionBacklog),
-		transactionsFromBDN:       make(chan []*types.BxTransaction, transactionBacklog),
+		config:                    make(chan network.EthConfig, 1),
+		transactionsFromNode:      make(chan Transactions, transactionBacklog),
+		transactionsFromBDN:       make(chan Transactions, transactionBacklog),
 		transactionHashesFromNode: make(chan TransactionAnnouncement, transactionHashesBacklog),
 		transactionHashesRequests: make(chan TransactionAnnouncement, transactionHashesBacklog),
 		blocksFromNode:            make(chan BlockFromNode, blockBacklog),
@@ -158,7 +158,7 @@ func (b BxBridge) RequestTransactionsFromNode(peerID string, hashes types.SHA256
 }
 
 // SendTransactionsFromBDN sends a set of transactions from the BDN for distribution to nodes
-func (b BxBridge) SendTransactionsFromBDN(transactions []*types.BxTransaction) error {
+func (b BxBridge) SendTransactionsFromBDN(transactions Transactions) error {
 	select {
 	case b.transactionsFromBDN <- transactions:
 		return nil
@@ -170,7 +170,7 @@ func (b BxBridge) SendTransactionsFromBDN(transactions []*types.BxTransaction) e
 // SendTransactionsToBDN sends a set of transactions from a node to the BDN for propagation
 func (b BxBridge) SendTransactionsToBDN(txs []*types.BxTransaction, peerEndpoint types.NodeEndpoint) error {
 	select {
-	case b.transactionsFromNode <- TransactionsFromNode{Transactions: txs, PeerEndpoint: peerEndpoint}:
+	case b.transactionsFromNode <- Transactions{Transactions: txs, PeerEndpoint: peerEndpoint}:
 		return nil
 	default:
 		return ErrChannelFull
@@ -188,12 +188,12 @@ func (b BxBridge) SendConfirmedBlockToGateway(block *types.BxBlock, peerEndpoint
 }
 
 // ReceiveNodeTransactions provides a channel that pushes transactions as they come in from nodes
-func (b BxBridge) ReceiveNodeTransactions() <-chan TransactionsFromNode {
+func (b BxBridge) ReceiveNodeTransactions() <-chan Transactions {
 	return b.transactionsFromNode
 }
 
 // ReceiveBDNTransactions provides a channel that pushes transactions as they arrive from the BDN
-func (b BxBridge) ReceiveBDNTransactions() <-chan []*types.BxTransaction {
+func (b BxBridge) ReceiveBDNTransactions() <-chan Transactions {
 	return b.transactionsFromBDN
 }
 

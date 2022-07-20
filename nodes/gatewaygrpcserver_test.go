@@ -2,11 +2,11 @@ package nodes
 
 import (
 	"context"
-	"github.com/bloXroute-Labs/gateway/config"
-	pb "github.com/bloXroute-Labs/gateway/protobuf"
-	"github.com/bloXroute-Labs/gateway/rpc"
-	"github.com/bloXroute-Labs/gateway/test"
-	"github.com/bloXroute-Labs/gateway/version"
+	"github.com/bloXroute-Labs/gateway/v2/config"
+	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
+	"github.com/bloXroute-Labs/gateway/v2/rpc"
+	"github.com/bloXroute-Labs/gateway/v2/test"
+	"github.com/bloXroute-Labs/gateway/v2/version"
 	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"

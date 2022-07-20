@@ -4,17 +4,18 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway"
-	"github.com/bloXroute-Labs/gateway/bxmessage"
-	"github.com/bloXroute-Labs/gateway/config"
-	"github.com/bloXroute-Labs/gateway/connections"
-	"github.com/bloXroute-Labs/gateway/connections/handler"
-	log "github.com/bloXroute-Labs/gateway/logger"
-	pbbase "github.com/bloXroute-Labs/gateway/protobuf"
-	"github.com/bloXroute-Labs/gateway/services"
-	"github.com/bloXroute-Labs/gateway/types"
-	"github.com/bloXroute-Labs/gateway/utils"
+	"github.com/bloXroute-Labs/gateway/v2"
+	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
+	"github.com/bloXroute-Labs/gateway/v2/config"
+	"github.com/bloXroute-Labs/gateway/v2/connections"
+	"github.com/bloXroute-Labs/gateway/v2/connections/handler"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	pbbase "github.com/bloXroute-Labs/gateway/v2/protobuf"
+	"github.com/bloXroute-Labs/gateway/v2/services"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 )
@@ -85,6 +86,9 @@ func (bn *Bx) HandleMsg(msg bxmessage.Message, source connections.Conn) error {
 	switch msg.(type) {
 	case *bxmessage.SyncTxsMessage:
 		txs := msg.(*bxmessage.SyncTxsMessage)
+		syncTxBuffer := strings.Builder{}
+		syncTxCount := 0
+		syncTxBuffer.WriteString("TxStore sync: ")
 		for _, csi := range txs.ContentShortIds {
 			var shortID types.ShortID
 			var flags types.TxFlags
@@ -92,11 +96,20 @@ func (bn *Bx) HandleMsg(msg bxmessage.Message, source connections.Conn) error {
 				shortID = csi.ShortIDs[0]
 				flags = csi.ShortIDFlags[0]
 			}
-			result := bn.TxStore.Add(csi.Hash, csi.Content, shortID, txs.GetNetworkNum(), false, flags, csi.Timestamp(), 0)
+			result := bn.TxStore.Add(csi.Hash, csi.Content, shortID, txs.GetNetworkNum(), false, flags, csi.Timestamp(), 0, types.EmptySender)
 			if result.NewTx || result.NewSID || result.NewContent {
-				source.Log().Tracef("TxStore sync: added hash %v newTx %v newContent %v newSid %v networkNum %v",
-					hex.EncodeToString(csi.Hash[:]), result.NewTx, result.NewContent, result.NewSID, result.Transaction.NetworkNum())
+				syncTxBuffer.WriteString(fmt.Sprintf("added hash %v newTx %v newContent %v newSid %v networkNum %v; ",
+					hex.EncodeToString(csi.Hash[:]), result.NewTx, result.NewContent, result.NewSID, result.Transaction.NetworkNum()))
+				syncTxCount++
+				if syncTxCount == 1000 {
+					source.Log().Tracef(syncTxBuffer.String())
+					syncTxBuffer.Reset()
+					syncTxCount = 0
+				}
 			}
+		}
+		if syncTxCount != 0 {
+			source.Log().Tracef(syncTxBuffer.String())
 		}
 
 	case *bxmessage.SyncReq:

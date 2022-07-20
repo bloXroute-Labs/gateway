@@ -93,6 +93,9 @@ const TimeToWaitBeforeClosing = 500 * time.Millisecond
 // WSProviderTimeout - sets timeout duration used by WSProvider
 const WSProviderTimeout = 10 * time.Second
 
+// SDNAccountRequestTimeout - duration after which SDN account requests are deleted if no response received
+const SDNAccountRequestTimeout = time.Minute * 2
+
 const (
 	// InternalError - status Code for an unexpected condition was encountered
 	InternalError = 500
@@ -108,3 +111,27 @@ const (
 
 // BloxrouteBuilderName - set bloxroute mev builder name
 const BloxrouteBuilderName = "bloxroute"
+
+// Mainnet - for Ethereum main net blockchain network name
+const Mainnet = "Mainnet"
+
+// BSCMainnet - for BSC main net blockchain network name
+const BSCMainnet = "BSC-Mainnet"
+
+// Ropsten - for Ropsten blockchain network name
+const Ropsten = "Ropsten"
+
+// PolygonMainnet - for Polygon main net blockchain network name
+const PolygonMainnet = "Polygon-Mainnet"
+
+//MainnetNum - for Ethereum main net blockchain network number
+const MainnetNum = 5
+
+//BSCMainnetNum - for BSC main net blockchain network number
+const BSCMainnetNum = 10
+
+// RopstenNum - for Ropsten blockchain network number
+const RopstenNum = 32
+
+//PolygonMainnetNum - for Polygon main net blockchain network number
+const PolygonMainnetNum = 36

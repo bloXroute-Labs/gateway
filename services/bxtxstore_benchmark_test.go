@@ -3,7 +3,7 @@ package services
 import (
 	"crypto/sha256"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/struCoder/pidusage"
 	"math/rand"
 	"os"
@@ -29,7 +29,7 @@ func generateSixHundredThousandTx(t *BxTxStore) {
 		}
 		hashMap[hash] = true
 		content := generateRandTxContent()
-		result := t.Add(hash, content, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
+		result := t.Add(hash, content, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 		result.Transaction.SetAddTime(timeNow.Add(time.Duration(-33*i) * time.Millisecond))
 		if result.NewTx {
 			i++
@@ -83,7 +83,7 @@ func BenchmarkTxService(b *testing.B) {
 			case <-ticker.C:
 				currTime := time.Now()
 				result := txManager.Add(generateRandTxHash(), generateRandTxContent(), 1, testNetworkNum,
-					false, types.TFPaidTx, time.Now(), testChainID)
+					false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 				after := time.Now().Sub(currTime)
 				durationForAdd += after
 				lock.Lock()
@@ -151,7 +151,7 @@ func TestRemoveTxsByShortIDs(t *testing.T) {
 	copy(hash[:], h.Sum(nil))
 
 	// add new transaction without short ID
-	result := txService.Add(hash, content, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
+	result := txService.Add(hash, content, types.ShortIDEmpty, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 	if !result.NewTx || txService.Count() != 1 {
 		t.Error("Failed to add transaction")
 	}
@@ -161,8 +161,8 @@ func TestRemoveTxsByShortIDs(t *testing.T) {
 		t.Error("Incorrect number of transactions in BxTxStore")
 	}
 	// assign 2 shortIDs to the existing transaction
-	txService.Add(hash, content, types.ShortID(1001), testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
-	result = txService.Add(hash, content, types.ShortID(1002), testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID)
+	txService.Add(hash, content, types.ShortID(1001), testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
+	result = txService.Add(hash, content, types.ShortID(1002), testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 
 	if result.NewTx || len(result.Transaction.ShortIDs()) != 2 || txService.Count() != 1 {
 		t.Error("something went wrong")

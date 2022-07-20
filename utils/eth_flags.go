@@ -19,9 +19,9 @@ var (
 	}
 	MultiNode = &cli.StringFlag{
 		Name: "multi-node",
-		Usage: "comma separated list of enode and Ethereum websockets endpoint pairs. " +
-			"Each pair is divided by a plus sign, and it is permissible to omit a websockets endpoint from any pair. " +
-			"Example: enode1+eth-ws-uri-1,enode2+,enode3+eth-ws-uri-3... " +
-			"(This parameter need only be used if multiple p2p or websockets connections are desired.)",
+		Usage: "comma separated list of nodes." +
+			"Each connection URI is divided by a plus sign, and it is permissible to omit websockets and beacon endpoint from any node. " +
+			"Example: enode[+eth-ws-uri][+beacon:prysm-host:prysm-port] " +
+			"(This parameter need only be used if multiple p2p, websockets or prysm connections are desired.)",
 	}
 )

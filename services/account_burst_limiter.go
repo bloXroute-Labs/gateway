@@ -1,9 +1,9 @@
 package services
 
 import (
-	"github.com/bloXroute-Labs/gateway/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/types"
-	"github.com/bloXroute-Labs/gateway/utils"
+	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	cmap "github.com/orcaman/concurrent-map"
 	"time"
 )
@@ -12,7 +12,7 @@ import (
 type AccountBurstLimiter interface {
 	AllowTransaction(id types.AccountID, paid bool) (bool, sdnmessage.BDNServiceBehaviorType)
 	Register(account *sdnmessage.Account)
-	BurstLimit(id types.AccountID, paid bool) int
+	BurstLimit(id types.AccountID, paid bool) uint64
 	TotalExcess() RateSnapshot
 	AccountExcess(id types.AccountID, paid bool) RateSnapshot
 	AccountTotal(id types.AccountID, paid bool) RateSnapshot
@@ -77,9 +77,9 @@ func (l *leakyBucketAccountBurstLimiter) Register(account *sdnmessage.Account) {
 	paidBehavior := account.PaidTransactionBurstLimit.MsgQuota.BehaviorLimitFail
 
 	l.accountToLimiter.Set(string(account.AccountID), accountLimiter{
-		unpaidBurstLimiter: utils.NewLeakyBucketRateLimiter(l.clock, unpaidBurstLimit, 5*time.Second),
+		unpaidBurstLimiter: utils.NewLeakyBucketRateLimiter(l.clock, uint64(unpaidBurstLimit), 5*time.Second),
 		unpaidBehavior:     unpaidBehavior,
-		paidBurstLimiter:   utils.NewLeakyBucketRateLimiter(l.clock, paidBurstLimit, 5*time.Second),
+		paidBurstLimiter:   utils.NewLeakyBucketRateLimiter(l.clock, uint64(paidBurstLimit), 5*time.Second),
 		paidBehavior:       paidBehavior,
 		unpaidExcess:       NewRateSnapshot(l.clock),
 		paidExcess:         NewRateSnapshot(l.clock),
@@ -88,7 +88,7 @@ func (l *leakyBucketAccountBurstLimiter) Register(account *sdnmessage.Account) {
 	})
 }
 
-func (l *leakyBucketAccountBurstLimiter) BurstLimit(id types.AccountID, paid bool) int {
+func (l *leakyBucketAccountBurstLimiter) BurstLimit(id types.AccountID, paid bool) uint64 {
 	al, ok := l.accountLimiter(id)
 	if !ok {
 		return 0

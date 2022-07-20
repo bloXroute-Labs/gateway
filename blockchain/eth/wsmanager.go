@@ -2,10 +2,11 @@ package eth
 
 import (
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/blockchain"
-	"github.com/bloXroute-Labs/gateway/blockchain/network"
-	log "github.com/bloXroute-Labs/gateway/logger"
-	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"sync"
 	"time"
 )
@@ -16,6 +17,7 @@ type WSManager struct {
 	lock         sync.Mutex
 	syncStatus   blockchain.NodeSyncStatus
 	syncStatusCh chan blockchain.NodeSyncStatus
+	log          *log.Entry
 }
 
 // NewEthWSManager - returns a new instance of WSManager
@@ -32,6 +34,11 @@ func NewEthWSManager(blockchainPeersInfo []network.PeerInfo, newWS func(string, 
 	}
 	wsManager.syncStatus = blockchain.Unsynced
 	wsManager.syncStatusCh = make(chan blockchain.NodeSyncStatus, 1)
+	wsManager.log = log.WithFields(log.Fields{
+		"component": "wsmanager",
+		"gid":       utils.GetGID(),
+	})
+
 	return &wsManager
 }
 
@@ -70,6 +77,7 @@ func (m *WSManager) Providers() map[string]blockchain.WSProvider {
 // SetBlockchainPeer sets the blockchain peer for corresponding ws provider
 func (m *WSManager) SetBlockchainPeer(peer interface{}) bool {
 	peerEndpoint := peer.(*Peer).endpoint.IPPort()
+	m.log.Debugf("WSManager: SetBlockchainPeer %v  process %v", peerEndpoint, utils.GetGID())
 	for endpoint, ws := range m.wsProviders {
 		if endpoint == peerEndpoint {
 			ws.SetBlockchainPeer(peer)
@@ -81,6 +89,7 @@ func (m *WSManager) SetBlockchainPeer(peer interface{}) bool {
 
 // UnsetBlockchainPeer unsets the blockchain peer for corresponding ws provider
 func (m *WSManager) UnsetBlockchainPeer(peerEndpoint types.NodeEndpoint) bool {
+	m.log.Debugf("WSManager: UnsetBlockchainPeer %v process %v", peerEndpoint.String(), utils.GetGID())
 	for endpoint, ws := range m.wsProviders {
 		if endpoint == peerEndpoint.IPPort() {
 			ws.UnsetBlockchainPeer()
@@ -136,7 +145,7 @@ func (m *WSManager) UpdateNodeSyncStatus(nodeEndpoint types.NodeEndpoint, syncSt
 
 	wsProvider, ok := m.wsProviders[nodeEndpoint.IPPort()]
 	if !ok {
-		log.Errorf("received request to update node sync status for unknown websockets provider %v", nodeEndpoint)
+		m.log.Errorf("received request to update node sync status for unknown websockets provider %v  process %v", nodeEndpoint, utils.GetGID())
 		return
 	}
 	if wsProvider.SyncStatus() == syncStatus {
@@ -159,7 +168,7 @@ func (m *WSManager) UpdateNodeSyncStatus(nodeEndpoint types.NodeEndpoint, syncSt
 		select {
 		case m.syncStatusCh <- blockchain.Synced:
 		default:
-			log.Error("unable to update node sync status to synced: channel full")
+			m.log.Errorf("unable to update node sync status to synced: channel full  process %v", utils.GetGID())
 		}
 		return
 	}
@@ -175,7 +184,7 @@ func (m *WSManager) UpdateNodeSyncStatus(nodeEndpoint types.NodeEndpoint, syncSt
 		select {
 		case m.syncStatusCh <- blockchain.Unsynced:
 		default:
-			log.Error("unable to update node sync status to unsynced: channel full")
+			m.log.Errorf("unable to update node sync status to unsynced: channel full  process %v", utils.GetGID())
 		}
 	}
 }

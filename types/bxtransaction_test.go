@@ -2,9 +2,7 @@ package types
 
 import (
 	"encoding/hex"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/stretchr/testify/assert"
-	"strings"
 	"testing"
 	"time"
 )
@@ -26,25 +24,26 @@ func TestValidContentParsing(t *testing.T) {
 
 	tx := NewBxTransaction(hash, testNetworkNum, TFPaidTx, time.Now())
 	tx.SetContent(content)
-	blockchainTx, err := tx.BlockchainTransaction(true)
+	blockchainTx, err := tx.BlockchainTransaction(EmptySender)
 	assert.Nil(t, err)
 
 	ethTx, ok := blockchainTx.(*EthTransaction)
+	ethTx.Filters([]string{})
 	assert.True(t, ok)
 
-	assert.Equal(t, uint8(0), ethTx.TxType.UInt8)
-	assert.Equal(t, 0, ethTx.AccessList.StorageKeys())
-	assert.Equal(t, "0xb877c7e556d50b0027053336b90f36becf67b3dd", strings.ToLower(ethTx.To.String()))
-	assert.Equal(t, "0x40266f84a2ecd4719057b0633cc80e3e0b3666f6f6ec1890a920239634ec6531", hexutil.Encode(ethTx.S.Bytes()))
-	assert.Equal(t, "0xaa803263146bda76a58ebf9f54be589280e920616bc57e7bd68248821f46fd0c", hexutil.Encode(ethTx.R.Bytes()))
-	assert.Equal(t, int64(0x1c), ethTx.V.Int64())
-	assert.Equal(t, int64(0x50b32f902486000), ethTx.Value.Int64())
-	assert.Equal(t, uint64(0x1b7f8), ethTx.Nonce.UInt64)
-	assert.Equal(t, []byte{}, ethTx.Input.B)
-	assert.Equal(t, "ed2b4580a766bc9d81c73c35a8496f0461e9c261621cb9f4565ae52ade56056d", ethTx.Hash.String())
-	assert.Equal(t, "0x832f166799a407275500430b61b622f0058f15d6", strings.ToLower(ethTx.From.String()))
-	assert.Equal(t, int64(0x1bf08eb000), ethTx.GasPrice.Int64())
-	assert.Equal(t, uint64(0x13880), ethTx.GasLimit.UInt64)
+	assert.Equal(t, "0x0", ethTx.fields["type"])
+	assert.Nil(t, ethTx.fields["AccessList"])
+	assert.Equal(t, "0xb877c7e556d50b0027053336b90f36becf67b3dd", ethTx.fields["to"])
+	assert.Equal(t, "0x40266f84a2ecd4719057b0633cc80e3e0b3666f6f6ec1890a920239634ec6531", ethTx.fields["s"])
+	assert.Equal(t, "0xaa803263146bda76a58ebf9f54be589280e920616bc57e7bd68248821f46fd0c", ethTx.fields["r"])
+	assert.Equal(t, "0x1c", ethTx.fields["v"])
+	assert.Equal(t, "0x50b32f902486000", ethTx.fields["value"])
+	assert.Equal(t, uint64(0x1b7f8), ethTx.Nonce)
+	assert.Equal(t, "0x", ethTx.fields["input"])
+	assert.Equal(t, "0xed2b4580a766bc9d81c73c35a8496f0461e9c261621cb9f4565ae52ade56056d", ethTx.fields["hash"])
+	assert.Equal(t, "0x832f166799a407275500430b61b622f0058f15d6", ethTx.fields["from"])
+	assert.Equal(t, "0x1bf08eb000", ethTx.fields["gasPrice"])
+	assert.Equal(t, "0x13880", ethTx.fields["gas"])
 
 }
 
@@ -88,7 +87,7 @@ func TestNotValidContentParsing(t *testing.T) {
 		networkNum: testNetworkNum,
 	}
 
-	blockchainTx, err := tx.BlockchainTransaction(true)
+	blockchainTx, err := tx.BlockchainTransaction(EmptySender)
 	assert.NotNil(t, err)
 	assert.Nil(t, blockchainTx)
 }

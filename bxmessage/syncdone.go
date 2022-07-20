@@ -2,7 +2,7 @@ package bxmessage
 
 import (
 	"encoding/binary"
-	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // SyncDone indicates that transaction service sync is completed

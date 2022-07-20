@@ -15,6 +15,12 @@ func (entry *Entry) WithField(key string, value interface{}) *Entry {
 	return &Entry{e: e}
 }
 
+// WithFields adds fields to the Entry.
+func (entry *Entry) WithFields(fields Fields) *Entry {
+	e := entry.e.WithFields(logrus.Fields(fields))
+	return &Entry{e: e}
+}
+
 // Logf logs using level and format
 func (entry *Entry) Logf(level Level, format string, args ...interface{}) {
 	if !IsLevelEnabled(level) {
@@ -76,6 +82,11 @@ func (entry *Entry) Trace(args ...interface{}) {
 // Debug logs debug level
 func (entry *Entry) Debug(args ...interface{}) {
 	entry.Log(DebugLevel, args...)
+}
+
+// Info logs info level
+func (entry *Entry) Info(args ...interface{}) {
+	entry.Log(InfoLevel, args...)
 }
 
 // Error logs error level

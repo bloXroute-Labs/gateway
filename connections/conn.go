@@ -1,9 +1,9 @@
 package connections
 
 import (
-	"github.com/bloXroute-Labs/gateway/bxmessage"
-	log "github.com/bloXroute-Labs/gateway/logger"
-	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	"time"
 )
 

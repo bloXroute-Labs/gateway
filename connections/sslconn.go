@@ -5,9 +5,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/bxmessage"
-	log "github.com/bloXroute-Labs/gateway/logger"
-	"github.com/bloXroute-Labs/gateway/utils"
+	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"time"
 )
 
@@ -332,7 +332,9 @@ func (s *SSLConn) close(reason string) error {
 	// don't close s.sendMessages - not needed and can create race with sendLoop
 
 	// stop sendLoop
-	s.done()
+	if s.done != nil {
+		s.done()
+	}
 
 	if s.Socket != nil {
 		err := s.Socket.Close(reason)

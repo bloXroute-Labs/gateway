@@ -3,7 +3,7 @@ package bxmessage
 import (
 	"bytes"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 

@@ -7,15 +7,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway"
-	"github.com/bloXroute-Labs/gateway/blockchain"
-	"github.com/bloXroute-Labs/gateway/bxmessage"
-	"github.com/bloXroute-Labs/gateway/connections"
-	"github.com/bloXroute-Labs/gateway/jsonrpc"
-	log "github.com/bloXroute-Labs/gateway/logger"
-	"github.com/bloXroute-Labs/gateway/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/types"
-	"github.com/bloXroute-Labs/gateway/utils"
+	"github.com/bloXroute-Labs/gateway/v2"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
+	"github.com/bloXroute-Labs/gateway/v2/connections"
+	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -34,10 +34,12 @@ import (
 	"time"
 )
 
-type clientHandler struct {
+// ClientHandler is a struct for gateway client handler object
+type ClientHandler struct {
 	feedManager     *FeedManager
 	websocketServer *http.Server
 	httpServer      *HTTPServer
+	log             *log.Entry
 }
 
 // TxResponse - response of the jsonrpc params
@@ -48,11 +50,20 @@ type TxResponse struct {
 
 // TxResult - request of jsonrpc params
 type TxResult struct {
-	TxHash      *string                     `json:"txHash,omitempty"`
-	TxContents  types.BlockchainTransaction `json:"txContents,omitempty"`
-	LocalRegion *bool                       `json:"localRegion,omitempty"`
-	Time        *string                     `json:"time,omitempty"`
-	RawTx       *string                     `json:"rawTx,omitempty"`
+	TxHash      *string     `json:"txHash,omitempty"`
+	TxContents  interface{} `json:"txContents,omitempty"`
+	LocalRegion *bool       `json:"localRegion,omitempty"`
+	Time        *string     `json:"time,omitempty"`
+	RawTx       *string     `json:"rawTx,omitempty"`
+}
+
+// TxResultWithEthTx - request of jsonrpc params with an eth type transaction
+type TxResultWithEthTx struct {
+	TxHash      *string               `json:"txHash,omitempty"`
+	TxContents  *ethtypes.Transaction `json:"txContents,omitempty"`
+	LocalRegion *bool                 `json:"localRegion,omitempty"`
+	Time        *string               `json:"time,omitempty"`
+	RawTx       *string               `json:"rawTx,omitempty"`
 }
 
 // BlockResponse - response of the jsonrpc params
@@ -66,6 +77,7 @@ type handlerObj struct {
 	ClientReq         *clientReq
 	remoteAddress     string
 	connectionAccount sdnmessage.Account
+	log               *log.Entry
 }
 
 type clientReq struct {
@@ -95,11 +107,26 @@ type RPCCall struct {
 	active        bool
 }
 
+var (
+	// ErrWSConnDelay amount of time to sleep before closing a bad connection. This is configured by tests to a shorted value
+	ErrWSConnDelay = time.Duration(10 * time.Second)
+)
+
 func newCall(name string) *RPCCall {
 	return &RPCCall{
 		callName:    name,
 		callPayload: make(map[string]string),
 		active:      true,
+	}
+}
+
+// NewClientHandler is a constructor for ClientHandler
+func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, httpServer *HTTPServer, log *log.Entry) ClientHandler {
+	return ClientHandler{
+		feedManager:     feedManager,
+		websocketServer: websocketServer,
+		httpServer:      httpServer,
+		log:             log,
 	}
 }
 
@@ -186,7 +213,12 @@ var availableFeeds = []types.FeedType{types.NewTxsFeed, types.NewBlocksFeed, typ
 func NewWSServer(feedManager *FeedManager) *http.Server {
 	handler := http.NewServeMux()
 	wsHandler := func(responseWriter http.ResponseWriter, request *http.Request) {
-		connectionAccountID, connectionSecretHash := getAccountIDSecretHashFromReq(request, feedManager.cfg.WebsocketTLSEnabled)
+		connectionAccountID, connectionSecretHash, err := getAccountIDSecretHashFromReq(request, feedManager.cfg.WebsocketTLSEnabled)
+		if err != nil {
+			log.Errorf("RemoteAddr: %v RequestURI: %v - %v.", request.RemoteAddr, request.RequestURI, err.Error())
+			errorWithDelay(responseWriter, request, "failed parsing the authorization header")
+			return
+		}
 		connectionAccountModel := sdnmessage.Account{}
 		serverAccountID := feedManager.accountModel.AccountID
 		// if gateway received request from a customer with a different account id, it should verify it with the SDN.
@@ -194,28 +226,30 @@ func NewWSServer(feedManager *FeedManager) *http.Server {
 		//SDN will return StatusUnauthorized and fail this connection. if SDN return any other error -
 		//assuming the issue is with the SDN and set default enterprise account for the customer. in order to send request to the gateway,
 		//customer must be enterprise / elite account
-		var err error
 		if connectionAccountID != serverAccountID {
 			connectionAccountModel, err = feedManager.getCustomerAccountModel(connectionAccountID)
 			if err != nil {
 				if strings.Contains(strconv.FormatInt(http.StatusUnauthorized, 10), err.Error()) {
 					log.Errorf("Account %v is not authorized to get other account %v information", serverAccountID, connectionAccountID)
+					errorWithDelay(responseWriter, request, "account is not authorized to get other accounts information")
 					return
 				}
 				log.Errorf("Failed to get customer account model, account id: %v, error: %v", connectionAccountID, err)
-				connectionAccountModel = sdnmessage.DefaultEnterpriseAccount
+				connectionAccountModel = sdnmessage.DefaultEliteAccount
 				connectionAccountModel.AccountID = connectionAccountID
 				connectionAccountModel.SecretHash = connectionSecretHash
 			}
-			if connectionAccountModel.TierName != sdnmessage.ATierEnterprise && connectionAccountModel.TierName != sdnmessage.ATierElite {
-				log.Errorf("Customer account %v must be enterprise / enterprise elite but it is %v", connectionAccountID, connectionAccountModel.TierName)
+			if !connectionAccountModel.TierName.IsEnterprise() {
+				log.Errorf("Customer account %v must be enterprise / enterprise elite / ultra but it is %v", connectionAccountID, connectionAccountModel.TierName)
+				errorWithDelay(responseWriter, request, "account must be enterprise / enterprise elite / ultra")
 				return
 			}
 		} else {
 			connectionAccountModel = feedManager.accountModel
 		}
 		if connectionAccountModel.SecretHash != connectionSecretHash && connectionSecretHash != "" {
-			log.Errorf("Account %v sent a different secret hash: %v then set in the account model: %v", connectionAccountID, connectionSecretHash, connectionAccountModel.SecretHash)
+			log.Errorf("Account %v sent a different secret hash than set in the account model, remoteAddress: %v", connectionAccountID, request.RemoteAddr)
+			errorWithDelay(responseWriter, request, "wrong value in the authorization header")
 			return
 		}
 		handleWSClientConnection(feedManager, responseWriter, request, connectionAccountModel)
@@ -231,48 +265,76 @@ func NewWSServer(feedManager *FeedManager) *http.Server {
 	return &server
 }
 
+func errorWithDelay(w http.ResponseWriter, r *http.Request, msg string) {
+	// sleep for 10 seconds to prevent the client (bot) to reissue the same requests in a loop
+	c, _ := upgrader.Upgrade(w, r, nil)
+	_ = c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, msg))
+	time.Sleep(ErrWSConnDelay)
+	c.Close()
+}
+
 // handleWsClientConnection - when new http connection is made we get here upgrade to ws, and start handling
 func handleWSClientConnection(feedManager *FeedManager, w http.ResponseWriter, r *http.Request, accountModel sdnmessage.Account) {
 	log.Debugf("New web-socket connection from %v", r.RemoteAddr)
 	connection, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Errorf("error upgrading HTTP server connection to the WebSocket protocol - %v", err.Error())
+		http.Error(w, "error upgrading HTTP server connection to the WebSocket protocol", http.StatusUpgradeRequired)
+		time.Sleep(ErrWSConnDelay)
 		return
 	}
 
-	handler := jsonrpc2.AsyncHandler(&handlerObj{FeedManager: feedManager, remoteAddress: r.RemoteAddr, connectionAccount: accountModel})
-	_ = jsonrpc2.NewConn(r.Context(), websocketjsonrpc2.NewObjectStream(connection), handler)
+	logger := log.WithFields(log.Fields{
+		"component":  "handlerObj",
+		"remoteAddr": r.RemoteAddr,
+	})
+
+	handler := &handlerObj{
+		FeedManager:       feedManager,
+		remoteAddress:     r.RemoteAddr,
+		connectionAccount: accountModel,
+		log:               logger,
+	}
+
+	asynHhandler := jsonrpc2.AsyncHandler(handler)
+	_ = jsonrpc2.NewConn(r.Context(), websocketjsonrpc2.NewObjectStream(connection), asynHhandler)
 }
 
-func getAccountIDSecretHashFromReq(request *http.Request, websocketTLSEnabled bool) (accountID types.AccountID, secretHash string) {
+func getAccountIDSecretHashFromReq(request *http.Request, websocketTLSEnabled bool) (accountID types.AccountID, secretHash string, err error) {
 	tokenString := request.Header.Get("Authorization")
+	var payload []byte
 	if tokenString != "" {
-		payload, err := base64.StdEncoding.DecodeString(tokenString)
+		payload, err = base64.StdEncoding.DecodeString(tokenString)
 		if err != nil {
-			log.Errorf("RemoteAddr: %v RequestURI: %v. DecodeString error: %v. invalid tokenString: %v.", request.RemoteAddr, request.RequestURI, err.Error(), tokenString)
+			err = fmt.Errorf("DecodeString error: %v invalid Authorization: %v", err, tokenString)
 			return
 		}
 		accountIDAndHash := strings.SplitN(string(payload), ":", 2)
 		if len(accountIDAndHash) == 1 {
-			log.Errorf("RemoteAddr: %v RequestURI: %v. invalid tokenString- %v palyoad: %v.", request.RemoteAddr, request.RequestURI, tokenString, payload)
+			err = fmt.Errorf("invalid Authorization: %v palyoad: %v, authorization can be generate from account_id", tokenString, payload)
 			return
 		}
 		accountID = types.AccountID(accountIDAndHash[0])
 		secretHash = accountIDAndHash[1]
 	} else if websocketTLSEnabled {
 		if request.TLS != nil && len(request.TLS.PeerCertificates) > 0 {
-			accountID = utils.GetAccountIDFromBxCertificate(request.TLS.PeerCertificates[0].Extensions)
+			accountID, err = utils.GetAccountIDFromBxCertificate(request.TLS.PeerCertificates[0].Extensions)
+			if err != nil {
+				err = fmt.Errorf("failed to get account_id extension, %w", err)
+				return
+			}
 		}
 	}
 	if accountID == "" {
-		log.Errorf("RemoteAddr: %v RequestURI: %v. missing authorization from method: %v.", request.RemoteAddr, request.RequestURI, request.Method)
+		err = fmt.Errorf("missing authorization from method: %v", request.Method)
+		return
 	}
 	return
 }
 
-func (ch *clientHandler) runWSServer() {
+func (ch *ClientHandler) runWSServer() {
 	ch.websocketServer = NewWSServer(ch.feedManager)
-	log.Infof("starting websockets RPC server at: %v", ch.websocketServer.Addr)
+	ch.log.Infof("starting websockets RPC server at: %v", ch.websocketServer.Addr)
 	var err error
 	if ch.feedManager.cfg.WebsocketTLSEnabled {
 		ch.websocketServer.TLSConfig = &tls.Config{
@@ -283,20 +345,21 @@ func (ch *clientHandler) runWSServer() {
 		err = ch.websocketServer.ListenAndServe()
 	}
 	if err != nil {
-		log.Warnf("websockets RPC server is closed: %v", err)
+		ch.log.Warnf("websockets RPC server is closed: %v", err)
 	}
 }
 
-func (ch *clientHandler) shutdownWSServer() {
-	log.Infof("shutting down websocket server")
+func (ch *ClientHandler) shutdownWSServer() {
+	ch.log.Infof("shutting down websocket server")
 	ch.feedManager.CloseAllClientConnections()
 	err := ch.websocketServer.Shutdown(ch.feedManager.context)
 	if err != nil {
-		log.Errorf("encountered error shutting down websocket server %v: %v", ch.feedManager.cfg.WebsocketPort, err)
+		ch.log.Errorf("encountered error shutting down websocket server %v: %v", ch.feedManager.cfg.WebsocketPort, err)
 	}
 }
 
-func (ch *clientHandler) manageWSServer(activeManagement bool) {
+// ManageWSServer manage the ws connection of the blockchain node
+func (ch *ClientHandler) ManageWSServer(activeManagement bool) {
 	if activeManagement {
 		for {
 			select {
@@ -319,7 +382,8 @@ func (ch *clientHandler) manageWSServer(activeManagement bool) {
 	}
 }
 
-func (ch *clientHandler) manageHTTPServer(ctx context.Context) {
+// ManageHTTPServer runs http server for the gateway client handler
+func (ch *ClientHandler) ManageHTTPServer(ctx context.Context) {
 	ch.httpServer.Start()
 	<-ctx.Done()
 	ch.httpServer.Stop()
@@ -334,6 +398,7 @@ func SendErrorMsg(ctx context.Context, code jsonrpc.RPCErrorCode, data string, c
 	rpcError.SetError(data)
 	err := conn.ReplyWithError(ctx, req.ID, rpcError)
 	if err != nil {
+		// TODO: move this to caller and add identifying information
 		log.Errorf("could not respond to client with error message: %v", err)
 	}
 }
@@ -368,7 +433,7 @@ func (h *handlerObj) validateFeed(feedName types.FeedType, feedStreaming sdnmess
 func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
 	start := time.Now()
 	defer func() {
-		log.Debugf("websocket handling for %v ended. Duration %v", jsonrpc.RPCRequestType(req.Method), time.Now().Sub(start))
+		h.log.Debugf("websocket handling for method %v ended. Duration %v", jsonrpc.RPCRequestType(req.Method), time.Since(start))
 	}()
 	switch jsonrpc.RPCRequestType(req.Method) {
 	case jsonrpc.RPCSubscribe:
@@ -383,20 +448,20 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 			SendErrorMsg(ctx, jsonrpc.InvalidParams, errMsg, conn, req)
 			return
 		}
-		subscriptionID, feedChan, errSubscribe := h.FeedManager.Subscribe(request.feed, conn, h.connectionAccount.TierName, h.connectionAccount.AccountID)
+		var filters string
+		if request.expr != nil {
+			filters = request.expr.String()
+		}
+		subscriptionID, feedChan, errSubscribe := h.FeedManager.Subscribe(request.feed, conn, h.connectionAccount.TierName, h.connectionAccount.AccountID, h.remoteAddress, filters, strings.Join(request.includes, ","))
 		if errSubscribe != nil {
 			SendErrorMsg(ctx, jsonrpc.InvalidParams, errSubscribe.Error(), conn, req)
 			return
 		}
 		defer h.FeedManager.Unsubscribe(*subscriptionID, false)
 		if err = reply(ctx, conn, req.ID, subscriptionID); err != nil {
-			log.Errorf("error reply to subscriptionID: %v : %v ", subscriptionID, err)
+			h.log.Errorf("error reply to %v with subscriptionID: %v : %v ", h.remoteAddress, subscriptionID, err)
 			SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req)
 			return
-		}
-		var filters string
-		if request.expr != nil {
-			filters = request.expr.String()
 		}
 		h.FeedManager.stats.LogSubscribeStats(subscriptionID,
 			h.connectionAccount.AccountID,
@@ -411,7 +476,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 			select {
 			case notification, ok := <-(*feedChan):
 				if !ok {
-					if h.FeedManager.subscriptionExists(*subscriptionID) {
+					if h.FeedManager.SubscriptionExists(*subscriptionID) {
 						SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req)
 					}
 					return
@@ -443,14 +508,15 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 					for _, t := range block.Transactions {
 						tx := t
 						g.Go(func() error {
-							response, err := nodeWS.FetchTransactionReceipt([]interface{}{tx.Hash.Format(true)}, blockchain.RPCOptions{RetryAttempts: bxgateway.MaxEthTxReceiptCallRetries, RetryInterval: bxgateway.EthTxReceiptCallRetrySleepInterval})
+							hash := tx["hash"]
+							response, err := nodeWS.FetchTransactionReceipt([]interface{}{hash}, blockchain.RPCOptions{RetryAttempts: bxgateway.MaxEthTxReceiptCallRetries, RetryInterval: bxgateway.EthTxReceiptCallRetrySleepInterval})
 							if err != nil || response == nil {
-								log.Errorf("failed to fetch transaction receipt for %v in block %v: %v", tx.Hash, block.BlockHash, err)
+								h.log.Errorf("failed to fetch transaction receipt for %v in block %v: %v", hash, block.BlockHash, err)
 								return err
 							}
 							txReceiptNotification := types.NewTxReceiptNotification(response.(map[string]interface{}))
 							if err = h.sendNotification(ctx, subscriptionID, request, conn, txReceiptNotification); err != nil {
-								log.Errorf("failed to send tx receipt for %v err %v", tx.Hash, err)
+								h.log.Errorf("failed to send tx receipt for %v err %v", hash, err)
 								return err
 							}
 							return err
@@ -459,7 +525,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 					if err := g.Wait(); err != nil {
 						return
 					}
-					log.Debugf("finished fetching transaction receipts for block %v", block.BlockHash)
+					h.log.Debugf("finished fetching transaction receipts for block %v", block.BlockHash)
 				case types.OnBlockFeed:
 					block := (*notification).(*types.BlockNotification)
 					nodeWS, ok := h.getSyncedWSProvider(block.Source())
@@ -484,11 +550,11 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 							}
 							response, err := nodeWS.CallRPC(call.commandMethod, payload, blockchain.RPCOptions{RetryAttempts: bxgateway.MaxEthOnBlockCallRetries, RetryInterval: bxgateway.EthOnBlockCallRetrySleepInterval})
 							if err != nil {
-								log.Debugf("disabling failed onBlock call %v: %v", call.callName, err)
+								h.log.Debugf("disabling failed onBlock call %v: %v", call.callName, err)
 								call.active = false
 								taskDisabledNotification := types.NewOnBlockNotification(bxgateway.TaskDisabledEvent, call.string(), blockHeightStr, tag, hashStr)
 								if h.sendNotification(ctx, subscriptionID, request, conn, taskDisabledNotification) != nil {
-									log.Errorf("failed to send TaskDisabledNotification for %v", call.callName)
+									h.log.Errorf("failed to send TaskDisabledNotification for %v", call.callName)
 								}
 								return
 							}
@@ -501,7 +567,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 					wg.Wait()
 					taskCompletedNotification := types.NewOnBlockNotification(bxgateway.TaskCompletedEvent, "", blockHeightStr, blockHeightStr, hashStr)
 					if h.sendNotification(ctx, subscriptionID, request, conn, taskCompletedNotification) != nil {
-						log.Errorf("failed to send TaskCompletedEvent on block %v", blockHeightStr)
+						h.log.Errorf("failed to send TaskCompletedEvent on block %v", blockHeightStr)
 						return
 					}
 				}
@@ -509,6 +575,11 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		}
 	case jsonrpc.RPCUnsubscribe:
 		var params []string
+		if req.Params == nil {
+			err := fmt.Errorf("params is missing in the request")
+			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
+			return
+		}
 		_ = json.Unmarshal(*req.Params, &params)
 		if len(params) != 1 {
 			err := fmt.Errorf("params %v with incorrect length", params)
@@ -517,24 +588,31 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		}
 		uid, _ := uuid.FromString(params[0])
 		if err := h.FeedManager.Unsubscribe(uid, false); err != nil {
-			log.Infof("subscription id %v was not found", uid)
+			h.log.Infof("subscription id %v was not found", uid)
 		}
 	case jsonrpc.RPCTx:
 		if h.FeedManager.accountModel.AccountID != h.connectionAccount.AccountID {
 			err := fmt.Errorf("blxr_tx is not allowed when account authentication is different from the node account")
-			log.Errorf("%v. account auth: %v, node account: %v ", err, h.connectionAccount.AccountID, h.FeedManager.accountModel.AccountID)
+			h.log.Errorf("%v. account auth: %v, node account: %v ", err, h.connectionAccount.AccountID, h.FeedManager.accountModel.AccountID)
 			SendErrorMsg(ctx, jsonrpc.InvalidRequest, err.Error(), conn, req)
 			return
 		}
 		var params jsonrpc.RPCTxPayload
 		err := json.Unmarshal(*req.Params, &params)
 		if err != nil {
-			log.Errorf("unmarshal req.Params error - %v", err.Error())
+			h.log.Errorf("unmarshal req.Params error - %v", err.Error())
 			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
 			return
 		}
 
-		ws := connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.FeedManager.networkNum, utils.Websocket)
+		var ws connections.RPCConn
+		if h.connectionAccount.AccountID == types.BloxrouteAccountID {
+			// Tx sent from cloud services, need to update account ID of the connection to be the origin sender
+			ws = connections.NewRPCConn(types.AccountID(params.OriginalSenderAccountID), h.remoteAddress, h.FeedManager.networkNum, utils.CloudAPI)
+		} else {
+			ws = connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.FeedManager.networkNum, utils.Websocket)
+		}
+
 		txHash, ok := h.handleSingleTransaction(ctx, conn, req, params.Transaction, ws, params.ValidatorsOnly, true)
 		if !ok {
 			return
@@ -545,26 +623,33 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		}
 
 		if err = reply(ctx, conn, req.ID, response); err != nil {
-			log.Errorf("%v reply error - %v", jsonrpc.RPCTx, err)
+			h.log.Errorf("%v reply error - %v", jsonrpc.RPCTx, err)
 			return
 		}
-		log.Infof("blxr_tx: Hash - 0x%v", response.TxHash)
+		h.log.Infof("blxr_tx: Hash - 0x%v", response.TxHash)
 	case jsonrpc.RPCBatchTx:
 		var txHashes []string
 		if h.FeedManager.accountModel.AccountID != h.connectionAccount.AccountID {
 			err := fmt.Errorf("blxr_batch_tx is not allowed when account authentication is different from the node account")
-			log.Errorf("%v. account auth: %v, node account: %v ", err, h.connectionAccount.AccountID, h.FeedManager.accountModel.AccountID)
+			h.log.Errorf("%v. account auth: %v, node account: %v ", err, h.connectionAccount.AccountID, h.FeedManager.accountModel.AccountID)
 			return
 		}
 		var params jsonrpc.RPCBatchTxPayload
 		err := json.Unmarshal(*req.Params, &params)
 		if err != nil {
-			log.Errorf("unmarshal req.Params error - %v", err.Error())
+			h.log.Errorf("unmarshal req.Params error - %v", err.Error())
 			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
 			return
 		}
 
-		ws := connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.FeedManager.networkNum, utils.Websocket)
+		var ws connections.RPCConn
+		if h.connectionAccount.AccountID == types.BloxrouteAccountID {
+			// Tx sent from cloud services, need to update account ID of the connection to be the origin sender
+			ws = connections.NewRPCConn(types.AccountID(params.OriginalSenderAccountID), h.remoteAddress, h.FeedManager.networkNum, utils.CloudAPI)
+		} else {
+			ws = connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.FeedManager.networkNum, utils.Websocket)
+		}
+
 		for _, transaction := range params.Transactions {
 			txHash, ok := h.handleSingleTransaction(ctx, conn, req, transaction, ws, params.ValidatorsOnly, false)
 			if !ok {
@@ -584,21 +669,21 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		}
 
 		if err = reply(ctx, conn, req.ID, response); err != nil {
-			log.Errorf("%v reply error - %v", jsonrpc.RPCBatchTx, err)
+			h.log.Errorf("%v reply error - %v", jsonrpc.RPCBatchTx, err)
 			return
 		}
-		log.Infof("blxr_batch_tx: Hashes - %v", response.TxHashes)
+		h.log.Infof("blxr_batch_tx: Hashes - %v", response.TxHashes)
 	case jsonrpc.RPCPing:
 		response := rpcPingResponse{
 			Pong: time.Now().UTC().Format(bxgateway.MicroSecTimeFormat),
 		}
 		if err := reply(ctx, conn, req.ID, response); err != nil {
-			log.Errorf("%v reply error - %v", jsonrpc.RPCPing, err)
+			h.log.Errorf("%v reply error - %v", jsonrpc.RPCPing, err)
 		}
 	case jsonrpc.RPCMEVSearcher:
 		if h.FeedManager.accountModel.AccountID != h.connectionAccount.AccountID {
 			err := fmt.Errorf("blxr_mev_searcher is not allowed when account authentication is different from the node account")
-			log.Errorf("%v. account auth: %v, node account: %v ", err, h.connectionAccount.AccountID, h.FeedManager.accountModel.AccountID)
+			h.log.Errorf("%v. account auth: %v, node account: %v ", err, h.connectionAccount.AccountID, h.FeedManager.accountModel.AccountID)
 			SendErrorMsg(ctx, jsonrpc.AccountIDError, err.Error(), conn, req)
 			return
 		}
@@ -610,14 +695,14 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 
 		if req.Params == nil {
 			err := errors.New("failed to unmarshal req.Params for mevSearcher, params not found")
-			log.Warn(err)
+			h.log.Error(err)
 			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
 			return
 		}
 
 		err := json.Unmarshal(*req.Params, &params)
 		if err != nil {
-			log.Errorf("failed to unmarshal req.Params for mevSearcher, error: %v", err.Error())
+			h.log.Errorf("failed to unmarshal req.Params for mevSearcher, error: %v", err.Error())
 			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
 			return
 		}
@@ -625,34 +710,32 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		sendBundleArgs := []sendBundleArgs{}
 		err = json.Unmarshal(params.Payload, &sendBundleArgs)
 		if err != nil {
-			log.Errorf("failed to unmarshal req.Params for mevSearcher, error: %v", err.Error())
+			h.log.Errorf("failed to unmarshal req.Params for mevSearcher, error: %v", err.Error())
 			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
 			return
 		}
 
 		if len(sendBundleArgs) != 1 {
-			log.Errorf("received invalid number of mevSearcher payload, must be 1 element")
+			h.log.Errorf("received invalid number of mevSearcher payload, must be 1 element")
 			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
 			return
 		}
 
 		if err := sendBundleArgs[0].validate(); err != nil {
-			log.Errorf("mevSearcher payload validation failed: %v", err)
+			h.log.Errorf("mevSearcher payload validation failed: %v", err)
 			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
 			return
 
 		}
 
 		for mevBuilder := range params.MEVBuilders {
-			// TODO add Ultra reference once SDN returns Ultra
 			if strings.ToLower(mevBuilder) == bxgateway.BloxrouteBuilderName && !h.connectionAccount.TierName.IsElite() {
-				log.Warnf("EnterpriseElite account is required in order to send %s to %s", jsonrpc.RPCMEVSearcher, bxgateway.BloxrouteBuilderName)
+				h.log.Warnf("EnterpriseElite account is required in order to send %s to %s", jsonrpc.RPCMEVSearcher, bxgateway.BloxrouteBuilderName)
 			}
-
 		}
-		mevSearcher, err := bxmessage.NewMEVSearcher(params.MEVMethod, params.MEVBuilders, params.Payload)
+		mevSearcher, err := bxmessage.NewMEVSearcher(params.MEVMethod, params.MEVBuilders, sendBundleArgs[0].UUID, params.Payload)
 		if err != nil {
-			log.Errorf("failed to create new mevSearcher: %v", err)
+			h.log.Errorf("failed to create new mevSearcher: %v", err)
 			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
 			return
 		}
@@ -663,13 +746,13 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		mevSearcher.SetNetworkNum(h.FeedManager.networkNum)
 		err = h.FeedManager.node.HandleMsg(&mevSearcher, ws, connections.RunForeground)
 		if err != nil {
-			log.Errorf("failed to process mevSearcher message: %v", err)
+			h.log.Errorf("failed to process mevSearcher message: %v", err)
 			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
 			return
 		}
 
 		if err := reply(ctx, conn, req.ID, map[string]string{"status": "ok"}); err != nil {
-			log.Errorf("%v mev searcher error: %v", jsonrpc.RPCMEVSearcher, err)
+			h.log.Errorf("%v mev searcher error: %v", jsonrpc.RPCMEVSearcher, err)
 		}
 
 	default:
@@ -699,7 +782,7 @@ func (h *handlerObj) sendNotification(ctx context.Context, subscriptionID *uuid.
 	response.Result = content
 	err := conn.Notify(ctx, "subscribe", response)
 	if err != nil {
-		log.Errorf("error reply to subscriptionID: %v : %v ", subscriptionID, err.Error())
+		h.log.Errorf("error reply to subscriptionID: %v : %v ", subscriptionID, err.Error())
 		return err
 	}
 	return nil
@@ -722,7 +805,7 @@ func (h *handlerObj) sendTxNotification(ctx context.Context, subscriptionID *uui
 		//Evaluate if we should send the tx
 		shouldSend, err := conditions.Evaluate(clientReq.expr, txFilters)
 		if err != nil {
-			log.Errorf("error evaluate Filters. feed: %v. method: %v. Filters: %v. remote adress: %v. account id: %v error - %v tx: %v.",
+			h.log.Errorf("error evaluate Filters. feed: %v. method: %v. Filters: %v. remote adress: %v. account id: %v error - %v tx: %v.",
 				clientReq.feed, clientReq.includes[0], clientReq.expr.String(), h.remoteAddress, h.connectionAccount.AccountID, err.Error(), txFilters)
 			return nil
 		}
@@ -751,17 +834,18 @@ func (h *handlerObj) sendTxNotification(ctx context.Context, subscriptionID *uui
 		}
 	}
 	if hasTxContent {
-		txContent := tx.WithFields(clientReq.includes)
-		// TODO: data race - need to lock or WithFields should return and error
-		if txContent.(*types.NewTransactionNotification).BlockchainTransaction == nil {
+		fields := tx.Fields(clientReq.includes)
+		if fields == nil {
+			log.Errorf("Got nil from tx.Fields - need to be checked")
 			return nil
 		}
-		response.Result.TxContents = txContent.(*types.NewTransactionNotification).BlockchainTransaction
+		response.Result.TxContents = fields
+
 	}
 
 	err := conn.Notify(ctx, "subscribe", response)
 	if err != nil {
-		log.Errorf("error reply to subscriptionID: %v : %v ", subscriptionID, err.Error())
+		h.log.Errorf("error notify to subscriptionID: %v : %v ", subscriptionID, err.Error())
 		return err
 	}
 
@@ -769,6 +853,9 @@ func (h *handlerObj) sendTxNotification(ctx context.Context, subscriptionID *uui
 }
 
 func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) {
+	if req.Params == nil {
+		return nil, fmt.Errorf("invalid json request: params is a required field")
+	}
 	request := subscriptionRequest{}
 	var rpcParams []json.RawMessage
 	err := json.Unmarshal(*req.Params, &rpcParams)
@@ -776,7 +863,7 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 		return nil, err
 	}
 	if len(rpcParams) < 2 {
-		log.Debugf("invalid param from request id: %v. method: %v. params: %s. remote adress: %v account id: %v.",
+		h.log.Debugf("invalid param from request id: %v. method: %v. params: %s. remote adress: %v account id: %v.",
 			req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID)
 		return nil, fmt.Errorf("number of params must be at least length 2. requested params: %s", *req.Params)
 	}
@@ -785,16 +872,23 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 		return nil, err
 	}
 	if !types.Exists(request.feed, availableFeeds) {
-		log.Debugf("invalid param from request id: %v. method: %v. params: %s. remote adress: %v account id: %v",
+		h.log.Debugf("invalid param from request id: %v. method: %v. params: %s. remote adress: %v account id: %v",
 			req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID)
 		return nil, fmt.Errorf("got unsupported feed name %v. possible feeds are %v", request.feed, availableFeeds)
 	}
+	if h.connectionAccount.AccountID != h.FeedManager.accountModel.AccountID &&
+		(request.feed == types.OnBlockFeed || request.feed == types.TxReceiptsFeed) {
+		err = fmt.Errorf("%v feed is not available via cloud services. %v feed is only supported on gateways", request.feed, request.feed)
+		h.log.Errorf("%v. caller account ID: %v, node account ID: %v ", err, h.connectionAccount.AccountID, h.FeedManager.accountModel.AccountID)
+		return nil, err
+	}
+
 	err = json.Unmarshal(rpcParams[1], &request.options)
 	if err != nil {
 		return nil, err
 	}
 	if request.options.Include == nil {
-		log.Debugf("invalid param from request id: %v. method: %v. params: %s. remote adress: %v account id: %v.",
+		h.log.Debugf("invalid param from request id: %v. method: %v. params: %s. remote adress: %v account id: %v.",
 			req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID)
 		return nil, fmt.Errorf("got unsupported params %v", string(rpcParams[1]))
 	}
@@ -848,19 +942,19 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 		// Parse the condition language and get expression
 		_, expr, err = request.options.parseFilter()
 		if err != nil {
-			log.Debugf("error parsing Filters from request id: %v. method: %v. params: %s. remote adress: %v account id: %v error - %v",
+			h.log.Debugf("error parsing Filters from request id: %v. method: %v. params: %s. remote adress: %v account id: %v error - %v",
 				req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID, err.Error())
 			return nil, fmt.Errorf("error parsing Filters %v", err.Error())
 
 		}
 		err = h.evaluateFilters(expr)
 		if err != nil {
-			log.Debugf("error evalued Filters from request id: %v. method: %v. params: %s. remote adress: %v account id: %v error - %v",
+			h.log.Debugf("error evalued Filters from request id: %v. method: %v. params: %s. remote adress: %v account id: %v error - %v",
 				req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID, err.Error())
 			return nil, fmt.Errorf("error evaluat Filters- %v", err.Error())
 		}
 		if expr != nil {
-			log.Infof("GetTxContentAndFilters string - %s, GetTxContentAndFilters args - %s", expr, expr.Args())
+			h.log.Infof("GetTxContentAndFilters string - %s, GetTxContentAndFilters args - %s", expr, expr.Args())
 		}
 	}
 
@@ -1076,9 +1170,11 @@ func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2
 		return "", false
 	}
 
-	var txFlags = types.TFPaidTx | types.TFLocalRegion | types.TFDeliverToNode
+	var txFlags = types.TFPaidTx | types.TFLocalRegion
 	if validatorsOnly {
 		txFlags |= types.TFValidatorsOnly
+	} else {
+		txFlags |= types.TFDeliverToNode
 	}
 
 	var hash types.SHA256Hash
@@ -1097,6 +1193,7 @@ func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2
 
 type sendBundleArgs struct {
 	Txs               []hexutil.Bytes `json:"txs"`
+	UUID              string          `json:"uuid,omitempty"`
 	BlockNumber       string          `json:"blockNumber"`
 	MinTimestamp      uint64          `json:"minTimestamp"`
 	MaxTimestamp      uint64          `json:"maxTimestamp"`
@@ -1104,7 +1201,7 @@ type sendBundleArgs struct {
 }
 
 func (s *sendBundleArgs) validate() error {
-	if len(s.Txs) == 0 {
+	if len(s.Txs) == 0 && s.UUID == "" {
 		return errors.New("bundle missing txs")
 	}
 
@@ -1116,6 +1213,13 @@ func (s *sendBundleArgs) validate() error {
 		tx := new(ethtypes.Transaction)
 		if err := tx.UnmarshalBinary(encodedTx); err != nil {
 			return err
+		}
+	}
+
+	if s.UUID != "" {
+		_, err := uuid.FromString(s.UUID)
+		if err != nil {
+			return fmt.Errorf("invalid UUID, %v", err)
 		}
 	}
 

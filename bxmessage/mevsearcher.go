@@ -1,14 +1,22 @@
 package bxmessage
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/bxmessage/utils"
-	"github.com/bloXroute-Labs/gateway/types"
+	"github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	uuid "github.com/satori/go.uuid"
 )
 
-const maxAuthNames = 255
+const (
+	maxAuthNames = 255
+	uuidSize     = 16
+)
+
+var emptyUUID = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 
 // MEVSearcherAuth alias for map[string]string
 type MEVSearcherAuth map[string]string
@@ -26,18 +34,25 @@ type MEVSearcher struct {
 	Method  string `json:"method"`
 
 	auth   MEVSearcherAuth
+	UUID   string            `json:"uuid"`
 	Params MEVSearcherParams `json:"params"`
 }
 
 // NewMEVSearcher create MEVSearcher
-func NewMEVSearcher(mevMinerMethod string, auth MEVSearcherAuth, params MEVSearcherParams) (MEVSearcher, error) {
+func NewMEVSearcher(mevMinerMethod string, auth MEVSearcherAuth, uuid string, params MEVSearcherParams) (MEVSearcher, error) {
 	if err := checkAuthSize(len(auth)); err != nil {
 		return MEVSearcher{}, err
 	}
+
+	if len(uuid) != 0 && len(uuid) != 36 {
+		return MEVSearcher{}, errors.New("invalid uuid len")
+	}
+
 	return MEVSearcher{
 		Method: mevMinerMethod,
 		auth:   auth,
 		Params: params,
+		UUID:   uuid,
 	}, nil
 }
 
@@ -48,6 +63,7 @@ func (m *MEVSearcher) SetHash() {
 		buf = append(buf, []byte(name+auth)...)
 	}
 	buf = append(buf, m.Params...)
+	buf = append(buf, m.UUID...)
 	m.hash = utils.DoubleSHA256(buf[:])
 }
 
@@ -58,6 +74,7 @@ func (m MEVSearcher) Clone(auth MEVSearcherAuth) MEVSearcher {
 		Method:          m.Method,
 		auth:            auth,
 		Params:          m.Params,
+		UUID:            m.UUID,
 	}
 }
 
@@ -66,18 +83,27 @@ func (m MEVSearcher) Auth() MEVSearcherAuth {
 	return m.auth
 }
 
-func (m MEVSearcher) size() uint32 {
+func (m MEVSearcher) size(protocol Protocol) uint32 {
 	var size uint32
 	for name, authorization := range m.auth {
 		size += uint32(types.UInt16Len + len(name) + types.UInt16Len + len(authorization))
 	}
 
-	return size + types.UInt16Len + uint32(len(m.Method)) + types.UInt8Len + uint32(len(m.Params)) + m.BroadcastHeader.Size()
+	size += types.UInt16Len + uint32(len(m.Method)) + types.UInt8Len + uint32(len(m.Params)) + m.BroadcastHeader.Size()
+
+	switch {
+	case protocol < MevSearcherWithUUID:
+	default:
+		size += uuidSize
+	}
+
+	return size
+
 }
 
 // Pack serializes a MEVBundle into a buffer for sending
-func (m MEVSearcher) Pack(_ Protocol) ([]byte, error) {
-	bufLen := m.size()
+func (m MEVSearcher) Pack(protocol Protocol) ([]byte, error) {
+	bufLen := m.size(protocol)
 	buf := make([]byte, bufLen)
 	m.BroadcastHeader.Pack(&buf, MEVSearcherType)
 	offset := BroadcastHeaderLen
@@ -110,14 +136,29 @@ func (m MEVSearcher) Pack(_ Protocol) ([]byte, error) {
 		offset += authorizationLength
 	}
 
+	switch {
+	case protocol < MevSearcherWithUUID:
+	default:
+		if m.UUID != "" {
+			uuidBytes, err := uuid.FromString(m.UUID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to set mev bundle uuid %v", err)
+			}
+
+			copy(buf[offset:], uuidBytes[:])
+		}
+
+		offset += uuidSize
+	}
+
 	copy(buf[offset:], m.Params)
 
 	return buf, nil
 }
 
 // Unpack deserializes a MEVBundle from a buffer
-func (m *MEVSearcher) Unpack(buf []byte, _ Protocol) error {
-	err := m.BroadcastHeader.Unpack(buf, 0)
+func (m *MEVSearcher) Unpack(buf []byte, protocol Protocol) error {
+	err := m.BroadcastHeader.Unpack(buf, protocol)
 	if err != nil {
 		return err
 	}
@@ -170,6 +211,26 @@ func (m *MEVSearcher) Unpack(buf []byte, _ Protocol) error {
 		m.auth[name] = auth
 	}
 
+	switch {
+	case protocol < MevSearcherWithUUID:
+	default:
+		if err := checkBufSize(&buf, offset, uuidSize); err != nil {
+			return err
+		}
+		if bytes.Compare(buf[offset:offset+uuidSize], emptyUUID) != 0 {
+			uuidRaw, err := uuid.FromBytes(buf[offset : offset+uuidSize])
+			if err != nil {
+				return fmt.Errorf("failed to parse uuid from bytes, %v", err)
+			}
+			m.UUID = uuidRaw.String()
+		}
+		offset += uuidSize
+	}
+
+	payloadOffsetEnd := len(buf) - ControlByteLen
+	if err := checkBufSize(&buf, offset, payloadOffsetEnd-offset); err != nil {
+		return err
+	}
 	m.Params = buf[offset : len(buf)-ControlByteLen]
 
 	return nil
