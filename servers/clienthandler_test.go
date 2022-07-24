@@ -201,6 +201,24 @@ func TestClientHandler(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
+	// check disconnected subscription
+	clearWSProviderStats(fm, blockchainPeers)
+	markAllPeersWithSyncStatus(fm, blockchainPeers, blockchain.Unsynced)
+	time.Sleep(time.Millisecond)
+	markAllPeersWithSyncStatus(fm, blockchainPeers, blockchain.Synced)
+	time.Sleep(5 * time.Millisecond)
+	authHeader := "Z3c6c2VjcmV0" //gw:secret
+	headers.Set("Authorization", authHeader)
+	ws, _, err := dialer.Dial(wsURLs[0], headers)
+	assert.Nil(t, err)
+	_, subscriptionID := assertSubscribe(t, ws, fm, `{"id": "1", "method": "subscribe", "params": ["newTxs", {"include": ["tx_hash"]}]}`)
+	time.Sleep(time.Millisecond)
+	assert.True(t, fm.SubscriptionExists(subscriptionID))
+	handlePingRequest(t, ws)
+	ws.Close()
+	time.Sleep(time.Millisecond)
+	assert.False(t, fm.SubscriptionExists(subscriptionID))
+
 	// check subscribe and unsubscribe using different endpoints
 	clearWSProviderStats(fm, blockchainPeers)
 	markAllPeersWithSyncStatus(fm, blockchainPeers, blockchain.Unsynced)
@@ -287,7 +305,7 @@ func TestClientHandler(t *testing.T) {
 
 func handleSubscribe(t *testing.T, fm *FeedManager, ws *websocket.Conn) {
 	unsubscribeFilter, subscriptionID := assertSubscribe(t, ws, fm, `{"id": "1", "method": "subscribe", "params": ["newTxs", {"include": ["tx_hash"]}]}`)
-	writeMessage(ws, []byte(unsubscribeFilter))
+	writeMsgToWsAndReadResponse(t, ws, []byte(unsubscribeFilter), nil)
 	time.Sleep(time.Millisecond)
 	assert.False(t, fm.SubscriptionExists(subscriptionID))
 	handlePingRequest(t, ws)
@@ -360,7 +378,7 @@ func getEthTransactions() []map[string]interface{} {
 
 func handleTxReceiptsSubscribe(t *testing.T, fm *FeedManager, ws *websocket.Conn) {
 	unsubscribeFilter, subscriptionID := assertSubscribe(t, ws, fm, `{"id": "1", "method": "subscribe", "params": ["txReceipts", {"include": []}]}`)
-	writeMessage(ws, []byte(unsubscribeFilter))
+	writeMsgToWsAndReadResponse(t, ws, []byte(unsubscribeFilter), nil)
 	time.Sleep(time.Millisecond)
 	assert.False(t, fm.SubscriptionExists(subscriptionID))
 	handlePingRequest(t, ws)
@@ -397,7 +415,7 @@ func handleTxReceiptsNotification(t *testing.T, fm *FeedManager, ws *websocket.C
 		assert.Nil(t, err)
 	}
 
-	writeMessage(ws, []byte(unsubscribeFilter))
+	writeMsgToWsAndReadResponse(t, ws, []byte(unsubscribeFilter), nil)
 	time.Sleep(time.Millisecond)
 	assert.False(t, fm.SubscriptionExists(subscriptionID))
 	handlePingRequest(t, ws)
@@ -433,7 +451,7 @@ func handleOnBlockNotification(t *testing.T, fm *FeedManager, ws *websocket.Conn
 		assert.Nil(t, err)
 	}
 
-	writeMessage(ws, []byte(unsubscribeFilter))
+	writeMsgToWsAndReadResponse(t, ws, []byte(unsubscribeFilter), nil)
 	time.Sleep(time.Millisecond)
 	assert.False(t, fm.SubscriptionExists(subscriptionID))
 	handlePingRequest(t, ws)
@@ -479,7 +497,7 @@ func handleTxReceiptsNotificationRequestedUnsynced(t *testing.T, fm *FeedManager
 		assert.Nil(t, err)
 	}
 
-	writeMessage(ws, []byte(unsubscribeFilter))
+	writeMsgToWsAndReadResponse(t, ws, []byte(unsubscribeFilter), nil)
 	time.Sleep(time.Millisecond)
 	assert.False(t, fm.SubscriptionExists(subscriptionID))
 	handlePingRequest(t, ws)
@@ -528,7 +546,7 @@ func handleOnBlockNotificationRequestedUnsynced(t *testing.T, fm *FeedManager, w
 		assert.Nil(t, err)
 	}
 
-	writeMessage(ws, []byte(unsubscribeFilter))
+	writeMsgToWsAndReadResponse(t, ws, []byte(unsubscribeFilter), nil)
 	time.Sleep(time.Millisecond)
 	assert.False(t, fm.SubscriptionExists(subscriptionID))
 	handlePingRequest(t, ws)
@@ -822,12 +840,6 @@ func writeMsgToWsAndReadResponse(t *testing.T, conn *websocket.Conn, msg []byte,
 	_, response, err = conn.ReadMessage()
 	assert.True(t, (expectedErr == nil && err == nil) || (expectedErr != nil && err != nil))
 	return response
-}
-
-func writeMessage(ws *websocket.Conn, response []byte) {
-	if err := ws.WriteMessage(websocket.TextMessage, response); err != nil {
-		panic(err)
-	}
 }
 
 func assertSubscribe(t *testing.T, ws *websocket.Conn, fm *FeedManager, filter string) (string, uuid.UUID) {

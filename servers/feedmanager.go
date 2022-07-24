@@ -112,7 +112,7 @@ func (f *FeedManager) checkFeedsLimit(clientSubscription *ClientSubscription, re
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 	activeFeeds := 0
-	for _, v := range f.idToClientSubscription {
+	for k, v := range f.idToClientSubscription {
 		if v.accountID == clientSubscription.accountID {
 			activeFeeds++
 			if v.feedType == clientSubscription.feedType &&
@@ -120,7 +120,7 @@ func (f *FeedManager) checkFeedsLimit(clientSubscription *ClientSubscription, re
 				v.includes == clientSubscription.includes &&
 				v.filters == clientSubscription.filters &&
 				strings.HasPrefix(v.remoteAddress, remoteIP) {
-				return fmt.Errorf("duplicate feed request - account %v tier %v ip %v", clientSubscription.accountID, clientSubscription.tier, remoteAddress)
+				return fmt.Errorf("duplicate feed request - account %v tier %v ip %v previous subscription ID %v", clientSubscription.accountID, clientSubscription.tier, remoteAddress, k)
 			}
 		}
 	}
@@ -180,7 +180,7 @@ func (f *FeedManager) Unsubscribe(subscriptionID uuid.UUID, closeClientConnectio
 		clientSub.tier)
 	close(clientSub.feed)
 	delete(f.idToClientSubscription, subscriptionID)
-	if closeClientConnection {
+	if closeClientConnection && clientSub.connection != nil {
 		// TODO: need to unsubscribe all other subsciptions on this connection.
 		err := clientSub.connection.Close()
 		if err != nil && err != jsonrpc2.ErrClosed {
