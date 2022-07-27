@@ -14,6 +14,5 @@ const (
 func TestEthBlock(t *testing.T) {
 	block := BlockNotification{}
 	_ = block.WithFields([]string{"hash", "header", "transactions", "uncles"})
-	//unpack
-
+	//TODO add test checking the header values
 }

@@ -2,6 +2,7 @@ package types
 
 import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"math/big"
 )
@@ -25,15 +26,21 @@ type Header struct {
 	TransactionsRoot ethcommon.Hash     `json:"transactionsRoot"`
 	ReceiptsRoot     ethcommon.Hash     `json:"receiptsRoot"`
 	LogsBloom        *big.Int           `json:"logsBloom"`
-	Difficulty       *big.Int           `json:"difficulty"`
-	Number           *big.Int           `json:"number"`
-	GasLimit         uint64             `json:"gasLimit"`
-	GasUsed          uint64             `json:"gasUsed"`
-	Timestamp        uint64             `json:"timestamp"`
-	ExtraData        []byte             `json:"extraData"`
+	Difficulty       string             `json:"difficulty"`
+	Number           string             `json:"number"`
+	GasLimit         string             `json:"gasLimit"`
+	GasUsed          string             `json:"gasUsed"`
+	Timestamp        string             `json:"timestamp"`
+	ExtraData        string             `json:"extraData"`
 	MixHash          ethcommon.Hash     `json:"mixHash"`
-	Nonce            uint64             `json:"nonce"`
+	Nonce            string             `json:"nonce"`
 	BaseFee          *int               `json:"baseFeePerGas,omitempty"`
+	hexNumber        uint64
+}
+
+// GetNumber returns the block number from the header in uint64
+func (h Header) GetNumber() uint64 {
+	return h.hexNumber
 }
 
 // ConvertEthHeaderToBlockNotificationHeader converts Ethereum header to bloxroute Ethereum Header
@@ -46,14 +53,15 @@ func ConvertEthHeaderToBlockNotificationHeader(ethHeader *ethtypes.Header) *Head
 		TransactionsRoot: ethHeader.TxHash,
 		ReceiptsRoot:     ethHeader.ReceiptHash,
 		LogsBloom:        ethHeader.Bloom.Big(),
-		Difficulty:       ethHeader.Difficulty,
-		Number:           ethHeader.Number,
-		GasLimit:         ethHeader.GasLimit,
-		GasUsed:          ethHeader.GasUsed,
-		Timestamp:        ethHeader.Time,
-		ExtraData:        ethHeader.Extra,
+		Difficulty:       hexutil.EncodeBig(ethHeader.Difficulty),
+		hexNumber:        ethHeader.Number.Uint64(),
+		Number:           hexutil.EncodeBig(ethHeader.Number),
+		GasLimit:         hexutil.EncodeUint64(ethHeader.GasLimit),
+		GasUsed:          hexutil.EncodeUint64(ethHeader.GasUsed),
+		Timestamp:        hexutil.EncodeUint64(ethHeader.Time),
+		ExtraData:        hexutil.Encode(ethHeader.Extra),
 		MixHash:          ethHeader.MixDigest,
-		Nonce:            ethHeader.Nonce.Uint64(),
+		Nonce:            hexutil.EncodeUint64(ethHeader.Nonce.Uint64()),
 	}
 	if ethHeader.BaseFee != nil {
 		baseFee := int(ethHeader.BaseFee.Int64())

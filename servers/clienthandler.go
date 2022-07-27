@@ -474,6 +474,8 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 
 		for {
 			select {
+			case <-conn.DisconnectNotify():
+				return
 			case notification, ok := <-(*feedChan):
 				if !ok {
 					if h.FeedManager.SubscriptionExists(*subscriptionID) {
@@ -532,7 +534,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 					if !ok {
 						return
 					}
-					blockHeightStr := block.Header.Number.String()
+					blockHeightStr := block.Header.Number
 					hashStr := block.BlockHash.String()
 
 					var wg sync.WaitGroup
@@ -543,7 +545,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 							if !call.active {
 								return
 							}
-							tag := "0x" + strconv.FormatInt(int64(int(block.Header.Number.Uint64())+call.blockOffset), 16)
+							tag := hexutil.EncodeUint64(block.Header.GetNumber() + uint64(call.blockOffset))
 							payload, err := h.FeedManager.nodeWSManager.ConstructRPCCallPayload(call.commandMethod, call.callPayload, tag)
 							if err != nil {
 								return
@@ -589,6 +591,16 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		uid, _ := uuid.FromString(params[0])
 		if err := h.FeedManager.Unsubscribe(uid, false); err != nil {
 			h.log.Infof("subscription id %v was not found", uid)
+			if err := reply(ctx, conn, req.ID, "false"); err != nil {
+				h.log.Errorf("error reply to %v on unsubscription on subscriptionID: %v : %v ", h.remoteAddress, uid, err)
+				SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req)
+				return
+			}
+		}
+		if err := reply(ctx, conn, req.ID, "true"); err != nil {
+			h.log.Errorf("error reply to %v on unsubscription on subscriptionID: %v : %v ", h.remoteAddress, uid, err)
+			SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req)
+			return
 		}
 	case jsonrpc.RPCTx:
 		if h.FeedManager.accountModel.AccountID != h.connectionAccount.AccountID {
@@ -805,7 +817,7 @@ func (h *handlerObj) sendTxNotification(ctx context.Context, subscriptionID *uui
 		//Evaluate if we should send the tx
 		shouldSend, err := conditions.Evaluate(clientReq.expr, txFilters)
 		if err != nil {
-			h.log.Errorf("error evaluate Filters. feed: %v. method: %v. Filters: %v. remote adress: %v. account id: %v error - %v tx: %v.",
+			h.log.Errorf("error evaluate Filters. feed: %v. method: %v. Filters: %v. remote address: %v. account id: %v error - %v tx: %v.",
 				clientReq.feed, clientReq.includes[0], clientReq.expr.String(), h.remoteAddress, h.connectionAccount.AccountID, err.Error(), txFilters)
 			return nil
 		}
@@ -863,7 +875,7 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 		return nil, err
 	}
 	if len(rpcParams) < 2 {
-		h.log.Debugf("invalid param from request id: %v. method: %v. params: %s. remote adress: %v account id: %v.",
+		h.log.Debugf("invalid param from request id: %v. method: %v. params: %s. remote address: %v account id: %v.",
 			req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID)
 		return nil, fmt.Errorf("number of params must be at least length 2. requested params: %s", *req.Params)
 	}
@@ -872,7 +884,7 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 		return nil, err
 	}
 	if !types.Exists(request.feed, availableFeeds) {
-		h.log.Debugf("invalid param from request id: %v. method: %v. params: %s. remote adress: %v account id: %v",
+		h.log.Debugf("invalid param from request id: %v. method: %v. params: %s. remote address: %v account id: %v",
 			req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID)
 		return nil, fmt.Errorf("got unsupported feed name %v. possible feeds are %v", request.feed, availableFeeds)
 	}
@@ -888,7 +900,7 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 		return nil, err
 	}
 	if request.options.Include == nil {
-		h.log.Debugf("invalid param from request id: %v. method: %v. params: %s. remote adress: %v account id: %v.",
+		h.log.Debugf("invalid param from request id: %v. method: %v. params: %s. remote address: %v account id: %v.",
 			req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID)
 		return nil, fmt.Errorf("got unsupported params %v", string(rpcParams[1]))
 	}
@@ -942,14 +954,14 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 		// Parse the condition language and get expression
 		_, expr, err = request.options.parseFilter()
 		if err != nil {
-			h.log.Debugf("error parsing Filters from request id: %v. method: %v. params: %s. remote adress: %v account id: %v error - %v",
+			h.log.Debugf("error parsing Filters from request id: %v. method: %v. params: %s. remote address: %v account id: %v error - %v",
 				req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID, err.Error())
 			return nil, fmt.Errorf("error parsing Filters %v", err.Error())
 
 		}
 		err = h.evaluateFilters(expr)
 		if err != nil {
-			h.log.Debugf("error evalued Filters from request id: %v. method: %v. params: %s. remote adress: %v account id: %v error - %v",
+			h.log.Debugf("error evalued Filters from request id: %v. method: %v. params: %s. remote address: %v account id: %v error - %v",
 				req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID, err.Error())
 			return nil, fmt.Errorf("error evaluat Filters- %v", err.Error())
 		}

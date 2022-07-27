@@ -188,23 +188,24 @@ type BDNPrivateRelayService interface{}
 // Account represents the account structure fetched from bxapi
 type Account struct {
 	AccountInfo
-	SecretHash                  string                 `json:"secret_hash"`
-	FreeTransactions            BDNQuotaService        `json:"tx_free"`
-	PaidTransactions            BDNQuotaService        `json:"tx_paid"`
-	CloudAPI                    BDNBasicService        `json:"cloud_api"`
-	NewTransactionStreaming     BDNFeedService         `json:"new_transaction_streaming"`
-	NewBlockStreaming           BDNFeedService         `json:"new_block_streaming"`
-	PendingTransactionStreaming BDNFeedService         `json:"new_pending_transaction_streaming"`
-	TransactionStateFeed        BDNFeedService         `json:"transaction_state_feed"`
-	OnBlockFeed                 BDNFeedService         `json:"on_block_feed"`
-	TransactionReceiptFeed      BDNFeedService         `json:"transaction_receipts_feed"`
-	PrivateRelay                BDNPrivateRelayService `json:"private_relays"`
-	PrivateTransaction          BDNQuotaService        `json:"private_transaction"`
-	PrivateTransactionFee       BDNQuotaService        `json:"private_transaction_fee"`
-	TxTraceRateLimit            BDNQuotaService        `json:"tx_trace_rate_limitation"`
-	RelayLimit                  BDNQuotaService        `json:"relay_limit"`
-	MinAllowedNodes             BDNQuotaService        `json:"min_allowed_nodes"`
-	MaxAllowedNodes             BDNQuotaService        `json:"max_allowed_nodes"`
+	SecretHash                   string                 `json:"secret_hash"`
+	FreeTransactions             BDNQuotaService        `json:"tx_free"`
+	PaidTransactions             BDNQuotaService        `json:"tx_paid"`
+	CloudAPI                     BDNBasicService        `json:"cloud_api"`
+	NewTransactionStreaming      BDNFeedService         `json:"new_transaction_streaming"`
+	NewBlockStreaming            BDNFeedService         `json:"new_block_streaming"`
+	PendingTransactionStreaming  BDNFeedService         `json:"new_pending_transaction_streaming"`
+	InternalTransactionStreaming BDNFeedService         `json:"new_internal_transaction_streaming"`
+	TransactionStateFeed         BDNFeedService         `json:"transaction_state_feed"`
+	OnBlockFeed                  BDNFeedService         `json:"on_block_feed"`
+	TransactionReceiptFeed       BDNFeedService         `json:"transaction_receipts_feed"`
+	PrivateRelay                 BDNPrivateRelayService `json:"private_relays"`
+	PrivateTransaction           BDNQuotaService        `json:"private_transaction"`
+	PrivateTransactionFee        BDNQuotaService        `json:"private_transaction_fee"`
+	TxTraceRateLimit             BDNQuotaService        `json:"tx_trace_rate_limitation"`
+	RelayLimit                   BDNQuotaService        `json:"relay_limit"`
+	MinAllowedNodes              BDNQuotaService        `json:"min_allowed_nodes"`
+	MaxAllowedNodes              BDNQuotaService        `json:"max_allowed_nodes"`
 
 	// txs allowed per 5s
 	UnpaidTransactionBurstLimit BDNQuotaService `json:"unpaid_tx_burst_limit"`
@@ -285,6 +286,13 @@ var DefaultEliteAccount = Account{
 	},
 	PendingTransactionStreaming: BDNFeedService{
 		ExpireDate: fmt.Sprintf("%s", time.Now().AddDate(0, 0, 1).Format("2006-01-02")),
+		Feed: FeedProperties{
+			AllowFiltering:  true,
+			AvailableFields: []string{"all"},
+		},
+	},
+	InternalTransactionStreaming: BDNFeedService{
+		ExpireDate: "2999-12-31",
 		Feed: FeedProperties{
 			AllowFiltering:  true,
 			AvailableFields: []string{"all"},
