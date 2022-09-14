@@ -97,6 +97,7 @@ type subscribeRecord struct {
 	FeedName       types.FeedType         `json:"feed_name"`
 	FeedInclude    []string               `json:"feed_include"`
 	NetworkNum     types.NetworkNum       `json:"network_num"`
+	FeedProject    string                 `json:"feed_project"`
 }
 
 type unsubscribeRecord struct {

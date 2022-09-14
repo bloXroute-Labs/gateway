@@ -38,7 +38,7 @@ type Stats interface {
 	AddGatewayBlockEvent(name string, source connections.Conn, blockHash types.SHA256Hash, networkNum types.NetworkNum,
 		sentPeers int, startTime time.Time, sentGatewayPeers int, originalSize int, compressSize int, shortIDsCount int, txsCount int, recoveredTxsCount int, block *types.BxBlock)
 	LogSubscribeStats(subscriptionID *uuid.UUID, accountID types.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
-		ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string)
+		ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string, feedProject string)
 	LogUnsubscribeStats(subscriptionID *uuid.UUID, feedName types.FeedType, networkNum types.NetworkNum, accountID types.AccountID, tierName sdnmessage.AccountTier)
 }
 
@@ -64,7 +64,7 @@ func (NoStats) AddTxsByShortIDsEvent(name string, source connections.Conn, txInf
 
 //LogSubscribeStats does nothing
 func (NoStats) LogSubscribeStats(subscriptionID *uuid.UUID, accountID types.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
-	ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string) {
+	ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string, feedProject string) {
 }
 
 //LogUnsubscribeStats does nothing
@@ -298,7 +298,7 @@ func (s FluentdStats) getLogPercentageByHash(networkNum types.NetworkNum) float6
 
 // LogSubscribeStats generates a fluentd STATS event
 func (s FluentdStats) LogSubscribeStats(subscriptionID *uuid.UUID, accountID types.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
-	ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string) {
+	ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string, feedProject string) {
 	now := time.Now()
 	record := subscribeRecord{
 		Type:           "subscriptions",
@@ -311,6 +311,7 @@ func (s FluentdStats) LogSubscribeStats(subscriptionID *uuid.UUID, accountID typ
 		FeedName:       feedName,
 		FeedInclude:    feedInclude,
 		FeedFilters:    feedFilter,
+		FeedProject:    feedProject,
 	}
 	s.LogToFluentD(record, now, "stats.subscriptions.events")
 }

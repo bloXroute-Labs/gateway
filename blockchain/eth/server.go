@@ -4,21 +4,19 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
-	"os"
-	"path"
-
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/version"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
+	"os"
+	"path"
 )
 
 // Server wraps the Ethereum p2p server, for use with the BDN
 type Server struct {
-	p2pServer   *p2p.Server
-	prysmClient *PrysmClient
-	cancel      context.CancelFunc
+	p2pServer *p2p.Server
+	cancel    context.CancelFunc
 }
 
 // NewServer return an Ethereum p2p server, configured with BDN friendly defaults
@@ -52,7 +50,7 @@ func NewServer(parent context.Context, config *network.EthConfig, bridge blockch
 	server := p2p.Server{
 		Config: p2p.Config{
 			PrivateKey:       privateKey,
-			MaxPeers:         len(config.StaticPeers),
+			MaxPeers:         len(config.StaticEnodes()),
 			MaxPendingPeers:  1,
 			DialRatio:        1,
 			NoDiscovery:      true,
@@ -75,18 +73,9 @@ func NewServer(parent context.Context, config *network.EthConfig, bridge blockch
 		DiscV5: nil,
 	}
 
-	var prysmClient *PrysmClient
-	for _, peerInfo := range config.StaticPeers {
-		if peerInfo.PrysmAddr != "" {
-			prysmClient = NewPrysmClient(ctx, peerInfo.PrysmAddr, bridge, backend, peerInfo.Enode)
-			break
-		}
-	}
-
 	s := &Server{
-		p2pServer:   &server,
-		prysmClient: prysmClient,
-		cancel:      cancel,
+		p2pServer: &server,
+		cancel:    cancel,
 	}
 	return s, nil
 }
@@ -105,9 +94,6 @@ func (s *Server) Start() error {
 		return err
 	}
 
-	if s.prysmClient != nil {
-		s.prysmClient.Start()
-	}
 	return nil
 }
 

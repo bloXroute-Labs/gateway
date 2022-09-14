@@ -1,6 +1,10 @@
 package services
 
 import (
+	"math/big"
+	"testing"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
@@ -10,9 +14,6 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/stretchr/testify/assert"
-	"math/big"
-	"testing"
-	"time"
 )
 
 func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
@@ -41,7 +42,7 @@ func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 	// The txs[2] will not be included in shortID since it's too recent
 	store.Add(txs[3].Hash(), txs[3].Content(), 2, testNetworkNum, false, 0, clock.Now(), 0, types.EmptySender)
 
-	bxBlock, err := types.NewBxBlock(blockHash, header, txs, trailer, big.NewInt(10000), big.NewInt(10), blockSize)
+	bxBlock, err := types.NewBxBlock(blockHash, types.BxBlockTypeEth, header, txs, trailer, big.NewInt(10000), big.NewInt(10), blockSize)
 	assert.Nil(t, err)
 
 	// assume the blockchain network MinTxAgeSecond is 2

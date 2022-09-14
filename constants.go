@@ -112,6 +112,12 @@ const (
 // BloxrouteBuilderName - set bloxroute mev builder name
 const BloxrouteBuilderName = "bloxroute"
 
+// FlashbotsBuilderName - set flashbots mev builder name
+const FlashbotsBuilderName = "flashbots"
+
+// AllBuilderName - set all other external mev builders name
+const AllBuilderName = "all"
+
 // Mainnet - for Ethereum main net blockchain network name
 const Mainnet = "Mainnet"
 

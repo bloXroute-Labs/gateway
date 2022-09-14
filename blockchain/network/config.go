@@ -2,6 +2,7 @@ package network
 
 import (
 	"crypto/ecdsa"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -20,6 +21,7 @@ import (
 // PeerInfo contains the enode and websockets endpoint for an Ethereum peer
 type PeerInfo struct {
 	Enode     *enode.Node
+	IsBeacon  bool
 	EthWSURI  string
 	PrysmAddr string
 }
@@ -28,6 +30,7 @@ type PeerInfo struct {
 type EthConfig struct {
 	StaticPeers []PeerInfo
 	PrivateKey  *ecdsa.PrivateKey
+	Port        int
 
 	Network                 uint64
 	TotalDifficulty         *big.Int
@@ -39,9 +42,11 @@ type EthConfig struct {
 	SendBlockConfirmation   bool
 
 	IgnoreBlockTimeout time.Duration
+	IgnoreSlotCount    int
 }
 
 const privateKeyLen = 64
+const invalidMultiNodeErrMsg = "unable to parse --multi-node argument node number %d. Expected format: enode[+eth-ws-uri],enr[+prysm://prysm-host:prysm-port]"
 
 // NewPresetEthConfigFromCLI builds a new EthConfig from the command line context. Selects a specific network configuration based on the provided startup flag.
 func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, string, error) {
@@ -50,40 +55,70 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 		return nil, "", err
 	}
 
-	var peers []PeerInfo
+	preset.Port = ctx.Int(utils.PortFlag.Name)
+
+	peers := make([]PeerInfo, 0)
 	if ctx.IsSet(utils.MultiNode.Name) {
-		if ctx.IsSet(utils.EnodesFlag.Name) {
-			return nil, "", fmt.Errorf("parameters --multi-node and --enodes should not be used simultaneously; if you would like to use multiple p2p or websockets connections, use --multi-node")
+		if ctx.IsSet(utils.EnodesFlag.Name) || ctx.IsSet(utils.BeaconENRFlag.Name) || ctx.IsSet(utils.PrysmGRPCFlag.Name) || ctx.IsSet(utils.EthWSUriFlag.Name) {
+			return nil, "", errors.New("parameters --multi-node and (--enodes, --enr, --prysm-grpc-uri or --eth-ws-uri) should not be used simultaneously; if you would like to use multiple p2p or websockets connections, use --multi-node")
 		}
 		peers, err = ParseMultiNode(ctx.String(utils.MultiNode.Name))
 		if err != nil {
 			return nil, "", err
 		}
-	} else if ctx.IsSet(utils.EnodesFlag.Name) {
-		enodeString := ctx.String(utils.EnodesFlag.Name)
-		peers = make([]PeerInfo, 0, 1)
-		var peer PeerInfo
+	} else {
+		if ctx.IsSet(utils.EnodesFlag.Name) {
+			enodeString := ctx.String(utils.EnodesFlag.Name)
+			var peer PeerInfo
 
-		enode, err := enode.Parse(enode.ValidSchemes, enodeString)
-		if err != nil {
-			return nil, "", err
-		}
-		peer.Enode = enode
-
-		if ctx.IsSet(utils.EthWSUriFlag.Name) {
-			ethWSURI := ctx.String(utils.EthWSUriFlag.Name)
-			err = validateWSURI(ethWSURI)
+			enode, err := enode.Parse(enode.ValidSchemes, enodeString)
 			if err != nil {
 				return nil, "", err
 			}
-			peer.EthWSURI = ethWSURI
-		}
+			peer.Enode = enode
+			if ctx.IsSet(utils.EthWSUriFlag.Name) {
+				ethWSURI := ctx.String(utils.EthWSUriFlag.Name)
+				err = validateWSURI(ethWSURI)
+				if err != nil {
+					return nil, "", err
+				}
+				peer.EthWSURI = ethWSURI
+			}
 
-		if ctx.IsSet(utils.PrysmHostFlag.Name) && ctx.IsSet(utils.PrysmPortFlag.Name) {
-			peer.PrysmAddr = fmt.Sprintf("%s:%d", ctx.String(utils.PrysmHostFlag.Name), ctx.Int(utils.PrysmPortFlag.Name))
+			// Prysm is using enode address for source of the blocks in stats
+			if ctx.IsSet(utils.PrysmGRPCFlag.Name) && !ctx.IsSet(utils.BeaconENRFlag.Name) {
+				prysmGRPCURI := ctx.String(utils.PrysmGRPCFlag.Name)
+				err = validatePrysmGRPC(prysmGRPCURI)
+				if err != nil {
+					return nil, "", err
+				}
+				peer.PrysmAddr = prysmGRPCURI
+			}
+			peers = append(peers, peer)
 		}
+		if ctx.IsSet(utils.BeaconENRFlag.Name) {
+			enodeString := ctx.String(utils.BeaconENRFlag.Name)
+			enode, err := enode.Parse(enode.ValidSchemes, enodeString)
+			if err != nil {
+				return nil, "", err
+			}
 
-		peers = append(peers, peer)
+			peer := PeerInfo{
+				Enode:    enode,
+				IsBeacon: true,
+			}
+
+			if ctx.IsSet(utils.PrysmGRPCFlag.Name) {
+				prysmGRPCURI := ctx.String(utils.PrysmGRPCFlag.Name)
+				err = validatePrysmGRPC(prysmGRPCURI)
+				if err != nil {
+					return nil, "", err
+				}
+				peer.PrysmAddr = prysmGRPCURI
+			}
+
+			peers = append(peers, peer)
+		}
 	}
 
 	preset.StaticPeers = peers
@@ -98,6 +133,10 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 		privateKey, err = crypto.HexToECDSA(privateKeyHexString)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to convert hex string to ECDSA key (%v)", err)
+		}
+		err = os.WriteFile(path.Join(dataDir, ".gatewaykey"), []byte(privateKeyHexString), 0644)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to save private key to file (%v)", err)
 		}
 	}
 
@@ -131,7 +170,11 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 	}
 
 	if ctx.IsSet(utils.TerminalTotalDifficulty.Name) {
-		preset.TerminalTotalDifficulty = big.NewInt(int64(ctx.Int(utils.TerminalTotalDifficulty.Name)))
+		ttd, ok := big.NewInt(0).SetString(ctx.String(utils.TerminalTotalDifficulty.Name), 0)
+		if !ok {
+			return nil, "", fmt.Errorf("unable to parse terminal-total-difficulty %v", ctx.String(utils.TerminalTotalDifficulty.Name))
+		}
+		preset.TerminalTotalDifficulty.Set(ttd)
 		preset.TTDOverrides = true
 	}
 
@@ -142,8 +185,6 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 func ParseMultiNode(multiNodeStr string) ([]PeerInfo, error) {
 	nodes := strings.Split(multiNodeStr, ",")
 	peers := make([]PeerInfo, 0, len(nodes))
-
-	invalidMultiNodeErrMsg := "unable to parse --multi-node %d connection URI. Expected format: enode[+eth-ws-uri][+beacon:prysm-host:prysm-port]"
 
 	for i, nodeStr := range nodes {
 		var peer PeerInfo
@@ -161,16 +202,22 @@ func ParseMultiNode(multiNodeStr string) ([]PeerInfo, error) {
 
 			connURIScheme := connURIParts[0]
 			switch connURIScheme {
+			case "enr":
+				peer.IsBeacon = true
+				fallthrough
 			case "enode":
 				enode, err := enode.Parse(enode.ValidSchemes, connURI)
 				if err != nil {
 					return nil, err
 				}
+				if peer.Enode != nil {
+					return nil, fmt.Errorf(invalidMultiNodeErrMsg, i)
+				}
 				peer.Enode = enode
 			case "ws", "wss":
 				peer.EthWSURI = connURI
-			case "beacon":
-				peer.PrysmAddr = strings.TrimPrefix(connURI, "beacon:")
+			case "prysm":
+				peer.PrysmAddr = strings.TrimPrefix(connURI, "prysm://")
 			default:
 				return nil, fmt.Errorf(invalidMultiNodeErrMsg, i)
 			}
@@ -192,12 +239,19 @@ func validateWSURI(ethWSURI string) error {
 	return nil
 }
 
+func validatePrysmGRPC(prysmGRPCUri string) error {
+	if len(strings.Split(prysmGRPCUri, ":")) < 2 {
+		return fmt.Errorf("unable to parse prysm-grpc-uri [%v]. Expected format: IP:PORT", prysmGRPCUri)
+	}
+	return nil
+}
+
 // Update updates properties of the EthConfig pushed down from server configuration
 func (ec *EthConfig) Update(otherConfig EthConfig) {
 	ec.Network = otherConfig.Network
 	ec.TotalDifficulty = otherConfig.TotalDifficulty
 	if !ec.TTDOverrides {
-		ec.TerminalTotalDifficulty = otherConfig.TerminalTotalDifficulty
+		ec.TerminalTotalDifficulty.Set(otherConfig.TerminalTotalDifficulty)
 	}
 	ec.Head = otherConfig.Head
 	ec.Genesis = otherConfig.Genesis
@@ -206,11 +260,25 @@ func (ec *EthConfig) Update(otherConfig EthConfig) {
 
 // StaticEnodes makes a list of enodes only from StaticPeers
 func (ec *EthConfig) StaticEnodes() []*enode.Node {
-	enodesList := make([]*enode.Node, len(ec.StaticPeers))
-	for i, peerInfo := range ec.StaticPeers {
-		enodesList[i] = peerInfo.Enode
+	var enodesList []*enode.Node
+	for _, peerInfo := range ec.StaticPeers {
+		if !peerInfo.IsBeacon {
+			enodesList = append(enodesList, peerInfo.Enode)
+		}
 	}
 	return enodesList
+}
+
+// BeaconNodes makes a list of nodes for beacon
+func (ec *EthConfig) BeaconNodes() []string {
+	var beaconNodes []string
+	for _, peer := range ec.StaticPeers {
+		if peer.IsBeacon {
+			beaconNodes = append(beaconNodes, peer.Enode.String())
+		}
+	}
+
+	return beaconNodes
 }
 
 // ValidWSAddr indicates whether a valid eth ws uri was parsed
