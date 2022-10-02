@@ -2,11 +2,12 @@ package bxmessage
 
 import (
 	"encoding/hex"
+	"testing"
+
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 const (
@@ -16,7 +17,7 @@ const (
 func TestBroadcastPackUnpack(t *testing.T) {
 	blockHash := types.GenerateSHA256Hash()
 	blockBody := test.GenerateBytes(500)
-	broadcast := NewBlockBroadcast(blockHash, blockBody, types.ShortIDList{}, networkNum)
+	broadcast := NewBlockBroadcast(blockHash, types.BxBlockTypeEth, blockBody, types.ShortIDList{}, networkNum)
 
 	b, err := broadcast.Pack(0)
 	assert.Nil(t, err)

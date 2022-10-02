@@ -84,7 +84,7 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 
 	bridge := blockchain.NewBxBridge(eth.Converter{})
 	blockchainPeers, blockchainPeersInfo := ethtest.GenerateBlockchainPeersInfo(numPeers)
-	node, _ := NewGateway(context.Background(), bxConfig, bridge, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), blockchainPeers, blockchainPeersInfo, "")
+	node, _ := NewGateway(context.Background(), bxConfig, bridge, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), blockchainPeers, blockchainPeersInfo, "", 0)
 
 	g := node.(*gateway)
 	g.sdn = sdn
@@ -705,7 +705,7 @@ func TestGateway_HandleBlockFromBlockchain_TwoRelays(t *testing.T) {
 
 func TestGateway_HandleBlockFromRelay(t *testing.T) {
 	bridge, g := setup(t, 1)
-	g.feedManager.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "")
+	g.feedManager.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "")
 	_, relayConn1 := addRelayConn(g)
 	mockTLS2, _ := addRelayConn(g)
 
@@ -728,7 +728,7 @@ func TestGateway_HandleBlockFromRelay(t *testing.T) {
 	assertNoBlockSentToRelay(t, mockTLS2)
 	time.Sleep(1 * time.Millisecond)
 
-	receivedBxBlock := <-bridge.ReceiveBlockFromBDN()
+	receivedBxBlock := <-bridge.ReceiveEthBlockFromBDN()
 	if receivedBxBlock == nil {
 		t.FailNow()
 	}
@@ -743,7 +743,7 @@ func TestGateway_HandleBlockFromRelay(t *testing.T) {
 	assert.Nil(t, err)
 
 	select {
-	case <-bridge.ReceiveBlockFromBDN():
+	case <-bridge.ReceiveEthBlockFromBDN():
 		assert.Fail(t, "unexpectedly processed block again")
 	default:
 	}
@@ -751,7 +751,7 @@ func TestGateway_HandleBlockFromRelay(t *testing.T) {
 
 func TestGateway_ValidateHeightBDNBlocksWithNode(t *testing.T) {
 	bridge, g := setup(t, 1)
-	g.feedManager.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "")
+	g.feedManager.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "")
 	g.feedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 	g.BxConfig.WebsocketEnabled = true
 
@@ -821,7 +821,7 @@ func TestGateway_BlockFeedIfSubscribeOnly(t *testing.T) {
 	heightFromNode := 0
 	expectNoFeedNotification(t, bridge, g, types.BDNBlocksFeed, heightFromNode, heightFromNode, 0)
 
-	g.feedManager.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "")
+	g.feedManager.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "")
 	heightFromNode = 10
 	expectFeedNotification(t, bridge, g, types.BDNBlocksFeed, heightFromNode, heightFromNode, 0)
 
@@ -829,7 +829,7 @@ func TestGateway_BlockFeedIfSubscribeOnly(t *testing.T) {
 
 func TestGateway_ValidateHeightBDNBlocksWithoutNode(t *testing.T) {
 	bridge, g := setup(t, 1)
-	g.feedManager.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "")
+	g.feedManager.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "")
 	g.feedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 	g.BxConfig.WebsocketEnabled = true
 	g.blockchainPeers = []types.NodeEndpoint{}

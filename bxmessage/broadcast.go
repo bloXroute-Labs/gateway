@@ -2,7 +2,18 @@ package bxmessage
 
 import (
 	"encoding/binary"
+	"fmt"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
+)
+
+type broadcastType string
+
+const (
+	broadcastTypeEth             broadcastType = "blck"
+	broadcastTypeBeaconPhase0    broadcastType = "bcn0"
+	broadcastTypeBeaconAltair    broadcastType = "bcna"
+	broadcastTypeBeaconBellatrix broadcastType = "bcnb"
 )
 
 // Broadcast - represent the "broadcast" message
@@ -14,10 +25,25 @@ type Broadcast struct {
 	sids          types.ShortIDList
 }
 
+func blockToBroadcastType(blockType types.BxBlockType) broadcastType {
+	switch blockType {
+	case types.BxBlockTypeBeaconPhase0:
+		return broadcastTypeBeaconPhase0
+	case types.BxBlockTypeBeaconAltair:
+		return broadcastTypeBeaconAltair
+	case types.BxBlockTypeBeaconBellatrix:
+		return broadcastTypeBeaconBellatrix
+	case types.BxBlockTypeEth:
+		fallthrough
+	default:
+		return broadcastTypeEth
+	}
+}
+
 // NewBlockBroadcast creates a new broadcast message containing block message bytes
-func NewBlockBroadcast(hash types.SHA256Hash, block []byte, shortIDs types.ShortIDList, networkNum types.NetworkNum) *Broadcast {
+func NewBlockBroadcast(hash types.SHA256Hash, bType types.BxBlockType, block []byte, shortIDs types.ShortIDList, networkNum types.NetworkNum) *Broadcast {
 	var broadcastType [BroadcastTypeLen]byte
-	copy(broadcastType[:], "blck")
+	copy(broadcastType[:], []byte(blockToBroadcastType(bType)))
 
 	b := &Broadcast{
 		broadcastType: broadcastType,
@@ -30,9 +56,28 @@ func NewBlockBroadcast(hash types.SHA256Hash, block []byte, shortIDs types.Short
 	return b
 }
 
-// BroadcastType returns the broadcast type
-func (b Broadcast) BroadcastType() [BroadcastTypeLen]byte {
-	return b.broadcastType
+// IsBeaconBlock returns true if block is beacon
+func (b *Broadcast) IsBeaconBlock() bool {
+	switch broadcastType(b.broadcastType[:]) {
+	case broadcastTypeBeaconPhase0, broadcastTypeBeaconAltair, broadcastTypeBeaconBellatrix:
+		return true
+	default:
+		return false
+	}
+}
+
+// BlockType returns block type
+func (b Broadcast) BlockType() types.BxBlockType {
+	switch broadcastType(b.broadcastType[:]) {
+	case broadcastTypeEth:
+		return types.BxBlockTypeEth
+	case broadcastTypeBeaconPhase0:
+		return types.BxBlockTypeBeaconPhase0
+	case broadcastTypeBeaconBellatrix:
+		return types.BxBlockTypeBeaconBellatrix
+	default:
+		return types.BxBlockTypeUnknown
+	}
 }
 
 // Encrypted returns the encrypted byte
@@ -76,6 +121,9 @@ func (b *Broadcast) Pack(protocol Protocol) ([]byte, error) {
 	buf := make([]byte, bufLen)
 	b.BroadcastHeader.Pack(&buf, BroadcastType)
 	offset := BroadcastHeaderLen
+	if broadcastType(b.broadcastType[:]) != broadcastTypeEth && protocol < BeaconBlockProtocol {
+		return nil, fmt.Errorf("should not pack beacon block to lower protocol %v", protocol)
+	}
 	copy(buf[offset:], b.broadcastType[:])
 	offset += BroadcastTypeLen
 	if b.encrypted {
@@ -106,6 +154,9 @@ func (b *Broadcast) Unpack(buf []byte, protocol Protocol) error {
 	offset := BroadcastHeaderLen
 	copy(b.broadcastType[:], buf[offset:])
 	offset += BroadcastTypeLen
+	if broadcastType(b.broadcastType[:]) != broadcastTypeEth && protocol < BeaconBlockProtocol {
+		return fmt.Errorf("should not pack beacon block to lower protocol %v", protocol)
+	}
 	b.encrypted = int(buf[offset : offset+EncryptedTypeLen][0]) != 0
 	offset += EncryptedTypeLen
 

@@ -30,6 +30,7 @@ type BdnPerformanceStatsData struct {
 	NewTxReceivedFromBdn            uint32
 	TxSentToNode                    uint32
 	DuplicateTxFromNode             uint32
+	IsBeacon                        bool
 }
 
 // BdnPerformanceStats - represent the "bdnstats" message
@@ -54,14 +55,33 @@ func NewBDNStats(blockchainPeers []types.NodeEndpoint) *BdnPerformanceStats {
 	}
 	for _, endpoint := range blockchainPeers {
 		newStatsData := BdnPerformanceStatsData{}
+		newStatsData.IsBeacon = endpoint.IsBeacon
 		bdnStats.nodeStats[endpoint.IPPort()] = &newStatsData
 	}
 	return &bdnStats
 }
 
 // IsGatewayAllow checks if gateway connected with too many peers
-func (bs *BdnPerformanceStats) IsGatewayAllow(minAllowedNodes uint64, maxAllowedNodes uint64) bool {
-	return uint64(len(bs.nodeStats)) >= minAllowedNodes && uint64(len(bs.nodeStats)) <= maxAllowedNodes
+func (bs *BdnPerformanceStats) IsGatewayAllow(minAllowedNodes uint64, maxAllowedNodes uint64, protocol Protocol) bool {
+	var countEnodes uint64
+
+	switch {
+	case protocol < IsBeaconProtocol:
+		// TODO when we upgrade all go gateways less than `IsBeaconProtocol`, can remove this block
+		for _, nodeStats := range bs.nodeStats {
+			if nodeStats.NewBlocksReceivedFromBlockchainNode > 0 || nodeStats.NewTxReceivedFromBlockchainNode > 0 {
+				countEnodes++
+			}
+		}
+	default:
+		for _, nodeStats := range bs.nodeStats {
+			if !nodeStats.IsBeacon {
+				countEnodes++
+			}
+		}
+	}
+
+	return countEnodes >= minAllowedNodes && countEnodes <= maxAllowedNodes
 }
 
 // CloseInterval sets the closing interval end time, starts new interval with cleared stats, and returns BdnPerformanceStats of closed interval
@@ -83,8 +103,9 @@ func (bs *BdnPerformanceStats) CloseInterval() BdnPerformanceStats {
 
 	// create fresh map with existing nodes for new interval
 	bs.nodeStats = make(map[string]*BdnPerformanceStatsData)
-	for endpoint := range prevBDNStats.nodeStats {
+	for endpoint, oldNodeStats := range prevBDNStats.nodeStats {
 		newStatsData := BdnPerformanceStatsData{}
+		newStatsData.IsBeacon = oldNodeStats.IsBeacon
 		bs.nodeStats[endpoint] = &newStatsData
 	}
 
@@ -303,6 +324,17 @@ func (bs *BdnPerformanceStats) Pack(protocol Protocol) ([]byte, error) {
 		offset += types.UInt32Len
 		binary.LittleEndian.PutUint32(buf[offset:], nodeStats.DuplicateTxFromNode)
 		offset += types.UInt32Len
+
+		switch {
+		case protocol < IsBeaconProtocol:
+		default:
+			if nodeStats.IsBeacon {
+				copy(buf[offset:], []uint8{1})
+			} else {
+				copy(buf[offset:], []uint8{0})
+			}
+			offset += IsBeaconLen
+		}
 	}
 
 	switch {
@@ -373,6 +405,13 @@ func (bs *BdnPerformanceStats) Unpack(buf []byte, protocol Protocol) error {
 		if endpoint.IPPort() != emptyEndpoint.IPPort() {
 			bs.nodeStats[endpoint.IPPort()] = &singleNodeStats
 		}
+
+		switch {
+		case protocol < IsBeaconProtocol:
+		default:
+			singleNodeStats.IsBeacon = int(buf[offset : offset+IsBeaconLen][0]) != 0
+			offset += IsBeaconLen
+		}
 	}
 	switch {
 	case protocol < FullTxTimeStampProtocol:
@@ -398,6 +437,9 @@ func (bs *BdnPerformanceStats) Log() {
 
 func (bs *BdnPerformanceStats) size(protocol Protocol) uint32 {
 	nodeStatsSize := utils.IPAddrSizeInBytes + (types.UInt32Len * 7) + (types.UInt16Len * 3)
+	if protocol >= IsBeaconProtocol {
+		nodeStatsSize += IsBeaconLen
+	}
 	total := bs.Header.Size() + uint32((types.UInt64Len*2)+(types.UInt16Len*2)+(len(bs.nodeStats)*nodeStatsSize))
 	if protocol >= FullTxTimeStampProtocol {
 		total += types.UInt16Len * 2

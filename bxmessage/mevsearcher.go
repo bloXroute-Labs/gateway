@@ -9,6 +9,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	uuid "github.com/satori/go.uuid"
+	"math/big"
 )
 
 const (
@@ -33,13 +34,19 @@ type MEVSearcher struct {
 	JSONRPC string `json:"jsonrpc"`
 	Method  string `json:"method"`
 
-	auth   MEVSearcherAuth
-	UUID   string            `json:"uuid"`
+	auth                 MEVSearcherAuth
+	UUID                 string `json:"uuid"`
+	Frontrunning         bool   `json:"frontrunning"`
+	effectiveGasPriceLen uint16
+	EffectiveGasPrice    big.Int `json:"effective_gas_price"`
+	coinbaseProfitLen    uint16
+	CoinbaseProfit       big.Int `json:"coinbase_profit"`
+
 	Params MEVSearcherParams `json:"params"`
 }
 
 // NewMEVSearcher create MEVSearcher
-func NewMEVSearcher(mevMinerMethod string, auth MEVSearcherAuth, uuid string, params MEVSearcherParams) (MEVSearcher, error) {
+func NewMEVSearcher(mevMinerMethod string, auth MEVSearcherAuth, uuid string, frontrunning bool, effectiveGasPrice, coinbaseProfit big.Int, params MEVSearcherParams) (MEVSearcher, error) {
 	if err := checkAuthSize(len(auth)); err != nil {
 		return MEVSearcher{}, err
 	}
@@ -48,11 +55,25 @@ func NewMEVSearcher(mevMinerMethod string, auth MEVSearcherAuth, uuid string, pa
 		return MEVSearcher{}, errors.New("invalid uuid len")
 	}
 
+	var effectiveGasPriceLen, coinbaseProfitLen uint16
+	if len(effectiveGasPrice.Bytes()) != 0 {
+		effectiveGasPriceLen = uint16(len(effectiveGasPrice.Bytes()))
+	}
+
+	if len(coinbaseProfit.Bytes()) != 0 {
+		coinbaseProfitLen = uint16(len(coinbaseProfit.Bytes()))
+	}
+
 	return MEVSearcher{
-		Method: mevMinerMethod,
-		auth:   auth,
-		Params: params,
-		UUID:   uuid,
+		Method:               mevMinerMethod,
+		auth:                 auth,
+		UUID:                 uuid,
+		Frontrunning:         frontrunning,
+		effectiveGasPriceLen: effectiveGasPriceLen,
+		EffectiveGasPrice:    effectiveGasPrice,
+		coinbaseProfitLen:    coinbaseProfitLen,
+		CoinbaseProfit:       coinbaseProfit,
+		Params:               params,
 	}, nil
 }
 
@@ -64,17 +85,33 @@ func (m *MEVSearcher) SetHash() {
 	}
 	buf = append(buf, m.Params...)
 	buf = append(buf, m.UUID...)
+	buf = append(buf, byte(m.effectiveGasPriceLen))
+	buf = append(buf, m.EffectiveGasPrice.Bytes()...)
+	buf = append(buf, byte(m.coinbaseProfitLen))
+	buf = append(buf, m.CoinbaseProfit.Bytes()...)
+
+	if m.Frontrunning {
+		buf = append(buf, []uint8{1}...)
+	} else {
+		buf = append(buf, []uint8{0}...)
+	}
+
 	m.hash = utils.DoubleSHA256(buf[:])
 }
 
 // Clone create new MEVSearcher entity based on auth
 func (m MEVSearcher) Clone(auth MEVSearcherAuth) MEVSearcher {
 	return MEVSearcher{
-		BroadcastHeader: m.BroadcastHeader,
-		Method:          m.Method,
-		auth:            auth,
-		Params:          m.Params,
-		UUID:            m.UUID,
+		BroadcastHeader:      m.BroadcastHeader,
+		Method:               m.Method,
+		auth:                 auth,
+		UUID:                 m.UUID,
+		Frontrunning:         m.Frontrunning,
+		effectiveGasPriceLen: m.effectiveGasPriceLen,
+		EffectiveGasPrice:    m.EffectiveGasPrice,
+		coinbaseProfitLen:    m.coinbaseProfitLen,
+		CoinbaseProfit:       m.CoinbaseProfit,
+		Params:               m.Params,
 	}
 }
 
@@ -93,8 +130,10 @@ func (m MEVSearcher) size(protocol Protocol) uint32 {
 
 	switch {
 	case protocol < MevSearcherWithUUID:
-	default:
+	case protocol == MevSearcherWithUUID:
 		size += uuidSize
+	default:
+		size += uuidSize + types.UInt8Len + types.UInt16Len + uint32(m.effectiveGasPriceLen) + types.UInt16Len + uint32(m.coinbaseProfitLen)
 	}
 
 	return size
@@ -136,9 +175,7 @@ func (m MEVSearcher) Pack(protocol Protocol) ([]byte, error) {
 		offset += authorizationLength
 	}
 
-	switch {
-	case protocol < MevSearcherWithUUID:
-	default:
+	if protocol >= MevSearcherWithUUID {
 		if m.UUID != "" {
 			uuidBytes, err := uuid.FromString(m.UUID)
 			if err != nil {
@@ -149,6 +186,27 @@ func (m MEVSearcher) Pack(protocol Protocol) ([]byte, error) {
 		}
 
 		offset += uuidSize
+	}
+
+	if protocol >= MevMaxProfitBuilder {
+		if m.Frontrunning {
+			copy(buf[offset:], []uint8{1})
+		} else {
+			copy(buf[offset:], []uint8{0})
+		}
+		offset += types.UInt8Len
+
+		binary.LittleEndian.PutUint16(buf[offset:], m.effectiveGasPriceLen)
+		offset += types.UInt16Len
+
+		copy(buf[offset:], m.EffectiveGasPrice.Bytes())
+		offset += int(m.effectiveGasPriceLen)
+
+		binary.LittleEndian.PutUint16(buf[offset:], m.coinbaseProfitLen)
+		offset += types.UInt16Len
+
+		copy(buf[offset:], m.CoinbaseProfit.Bytes())
+		offset += int(m.coinbaseProfitLen)
 	}
 
 	copy(buf[offset:], m.Params)
@@ -211,9 +269,7 @@ func (m *MEVSearcher) Unpack(buf []byte, protocol Protocol) error {
 		m.auth[name] = auth
 	}
 
-	switch {
-	case protocol < MevSearcherWithUUID:
-	default:
+	if protocol >= MevSearcherWithUUID {
 		if err := checkBufSize(&buf, offset, uuidSize); err != nil {
 			return err
 		}
@@ -225,6 +281,36 @@ func (m *MEVSearcher) Unpack(buf []byte, protocol Protocol) error {
 			m.UUID = uuidRaw.String()
 		}
 		offset += uuidSize
+	}
+
+	if protocol >= MevMaxProfitBuilder {
+		if err := checkBufSize(&buf, offset, types.UInt8Len); err != nil {
+			return err
+		}
+		m.Frontrunning = int(buf[offset]) != 0
+		offset += types.UInt8Len
+
+		if err := checkBufSize(&buf, offset, types.UInt16Len); err != nil {
+			return err
+		}
+		m.effectiveGasPriceLen = binary.LittleEndian.Uint16(buf[offset:])
+		offset += types.UInt16Len
+		if err := checkBufSize(&buf, offset, int(m.effectiveGasPriceLen)); err != nil {
+			return err
+		}
+		m.EffectiveGasPrice.SetBytes(buf[offset : offset+int(m.effectiveGasPriceLen)])
+		offset += int(m.effectiveGasPriceLen)
+
+		if err := checkBufSize(&buf, offset, types.UInt16Len); err != nil {
+			return err
+		}
+		m.coinbaseProfitLen = binary.LittleEndian.Uint16(buf[offset:])
+		offset += types.UInt16Len
+		if err := checkBufSize(&buf, offset, int(m.coinbaseProfitLen)); err != nil {
+			return err
+		}
+		m.CoinbaseProfit.SetBytes(buf[offset : offset+int(m.coinbaseProfitLen)])
+		offset += int(m.coinbaseProfitLen)
 	}
 
 	payloadOffsetEnd := len(buf) - ControlByteLen

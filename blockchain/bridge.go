@@ -2,6 +2,8 @@ package blockchain
 
 import (
 	"errors"
+	"fmt"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
@@ -73,7 +75,8 @@ type Bridge interface {
 	SendBlockToNode(*types.BxBlock) error
 	SendConfirmedBlockToGateway(block *types.BxBlock, peerEndpoint types.NodeEndpoint) error
 
-	ReceiveBlockFromBDN() <-chan *types.BxBlock
+	ReceiveEthBlockFromBDN() <-chan *types.BxBlock
+	ReceiveBeaconBlockFromBDN() <-chan *types.BxBlock
 	ReceiveBlockFromNode() <-chan BlockFromNode
 	ReceiveConfirmedBlockFromNode() <-chan BlockFromNode
 
@@ -86,8 +89,10 @@ type Bridge interface {
 	ReceiveBlockchainStatusResponse() <-chan []*types.NodeEndpoint
 }
 
-// ErrChannelFull is a special error for identifying overflowing channel buffers
-var ErrChannelFull = errors.New("channel full")
+// Errors
+var (
+	ErrChannelFull = errors.New("channel full") // ErrChannelFull is a special error for identifying overflowing channel buffers
+)
 
 // BxBridge is a channel based implementation of the Bridge interface
 type BxBridge struct {
@@ -98,8 +103,10 @@ type BxBridge struct {
 	transactionHashesFromNode chan TransactionAnnouncement
 	transactionHashesRequests chan TransactionAnnouncement
 
-	blocksFromNode         chan BlockFromNode
-	blocksFromBDN          chan *types.BxBlock
+	blocksFromNode      chan BlockFromNode
+	ethBlocksFromBDN    chan *types.BxBlock
+	beaconBlocksFromBDN chan *types.BxBlock
+
 	confirmedBlockFromNode chan BlockFromNode
 
 	noActiveBlockchainPeers chan NoActiveBlockchainPeersAlert
@@ -117,7 +124,8 @@ func NewBxBridge(converter Converter) Bridge {
 		transactionHashesFromNode: make(chan TransactionAnnouncement, transactionHashesBacklog),
 		transactionHashesRequests: make(chan TransactionAnnouncement, transactionHashesBacklog),
 		blocksFromNode:            make(chan BlockFromNode, blockBacklog),
-		blocksFromBDN:             make(chan *types.BxBlock, blockBacklog),
+		ethBlocksFromBDN:          make(chan *types.BxBlock, blockBacklog),
+		beaconBlocksFromBDN:       make(chan *types.BxBlock, blockBacklog),
 		confirmedBlockFromNode:    make(chan BlockFromNode, blockBacklog),
 		noActiveBlockchainPeers:   make(chan NoActiveBlockchainPeersAlert),
 		blockchainStatusRequest:   make(chan struct{}, statusBacklog),
@@ -219,12 +227,25 @@ func (b BxBridge) SendBlockToBDN(block *types.BxBlock, peerEndpoint types.NodeEn
 
 // SendBlockToNode sends a block from the BDN for distribution to nodes
 func (b BxBridge) SendBlockToNode(block *types.BxBlock) error {
-	select {
-	case b.blocksFromBDN <- block:
-		return nil
+	switch block.Type {
+	case types.BxBlockTypeEth:
+		select {
+		case b.ethBlocksFromBDN <- block:
+			return nil
+		default:
+			return ErrChannelFull
+		}
+	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix:
+		select {
+		case b.beaconBlocksFromBDN <- block:
+			return nil
+		default:
+			return ErrChannelFull
+		}
 	default:
-		return ErrChannelFull
+		return fmt.Errorf("could not send block %v with type %v", block.Hash(), block.Type)
 	}
+
 }
 
 // ReceiveBlockFromNode provides a channel that pushes blocks as they come in from nodes
@@ -232,9 +253,14 @@ func (b BxBridge) ReceiveBlockFromNode() <-chan BlockFromNode {
 	return b.blocksFromNode
 }
 
-// ReceiveBlockFromBDN provides a channel that pushes new blocks from the BDN
-func (b BxBridge) ReceiveBlockFromBDN() <-chan *types.BxBlock {
-	return b.blocksFromBDN
+// ReceiveEthBlockFromBDN provides a channel that pushes new eth blocks from the BDN
+func (b BxBridge) ReceiveEthBlockFromBDN() <-chan *types.BxBlock {
+	return b.ethBlocksFromBDN
+}
+
+// ReceiveBeaconBlockFromBDN provides a channel that pushes new beacon blocks from the BDN
+func (b BxBridge) ReceiveBeaconBlockFromBDN() <-chan *types.BxBlock {
+	return b.beaconBlocksFromBDN
 }
 
 // ReceiveConfirmedBlockFromNode provides a channel that pushes confirmed blocks from nodes

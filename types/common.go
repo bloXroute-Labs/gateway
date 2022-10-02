@@ -26,6 +26,7 @@ type NodeEndpoint struct {
 	IP        string
 	Port      int
 	PublicKey string
+	IsBeacon  bool
 }
 
 // String returns string representation of NodeEndpoint

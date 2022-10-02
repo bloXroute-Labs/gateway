@@ -58,16 +58,6 @@ var (
 		Aliases: []string{"relay-ip"},
 		Value:   "auto",
 	}
-	PrysmPortFlag = &cli.IntFlag{
-		Name:    "prysm-port",
-		Usage:   "prysm-port",
-		Aliases: []string{"prp"},
-	}
-	PrysmHostFlag = &cli.StringFlag{
-		Name:    "prysm-host",
-		Usage:   "prysm host",
-		Aliases: []string{"prh"},
-	}
 	EnvFlag = &cli.StringFlag{
 		Name:  "env",
 		Usage: "development environment (local, localproxy, testnet, mainnet)",
@@ -328,6 +318,11 @@ var (
 		Usage: "set custom method for mevBundle request",
 		Value: "eth_sendBundle",
 	}
+	MEVMaxProfitBuilder = &cli.BoolFlag{
+		Name:  "mev-max-profit-builder",
+		Usage: "enable max-profit-builder",
+		Value: false,
+	}
 	SendBlockConfirmation = &cli.BoolFlag{
 		Name:   "send-block-confirmation",
 		Usage:  "sending block confirmation to relay",
@@ -382,7 +377,7 @@ var (
 		Usage: "enable this flag will forward the mev rpc request to cloud api",
 		Value: false,
 	}
-	TerminalTotalDifficulty = &cli.IntFlag{
+	TerminalTotalDifficulty = &cli.StringFlag{
 		Name:   "terminal-total-difficulty",
 		Usage:  "Overrides the terminal total difficulty settings of the blockchain network",
 		Hidden: true,
