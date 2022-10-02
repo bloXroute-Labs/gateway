@@ -3,7 +3,12 @@ package eth
 import (
 	"context"
 	"fmt"
+	"math/big"
+	"testing"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
+	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/ethereum/go-ethereum/common"
@@ -11,14 +16,11 @@ import (
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/stretchr/testify/assert"
-	"math/big"
-	"testing"
-	"time"
 )
 
 func testPeer(writeChannelSize int, peerCount int) (*Peer, *test.MsgReadWriter) {
 	rw := test.NewMsgReadWriter(100, writeChannelSize)
-	peer := newPeer(context.Background(), p2p.NewPeerPipe(test.GenerateEnodeID(), fmt.Sprintf("test peer_%v", peerCount), []p2p.Cap{}, nil), rw, 0, &utils.MockClock{})
+	peer := newPeer(context.Background(), p2p.NewPeerPipe(test.GenerateEnodeID(), fmt.Sprintf("test peer_%v", peerCount), []p2p.Cap{}, nil), rw, bxmessage.CurrentProtocol, &utils.MockClock{})
 	return peer, rw
 }
 

@@ -42,6 +42,7 @@ type FeedManager struct {
 	lock                    sync.RWMutex
 	node                    connections.BxListener
 	networkNum              types.NetworkNum
+	chainID                 types.NetworkID
 	nodeWSManager           blockchain.WSManager
 	accountModel            sdnmessage.Account
 	getCustomerAccountModel func(types.AccountID) (sdnmessage.Account, error)
@@ -57,7 +58,7 @@ type FeedManager struct {
 
 // NewFeedManager    - create a new feedManager
 func NewFeedManager(parent context.Context, node connections.BxListener, feedChan chan types.Notification,
-	networkNum types.NetworkNum, wsManager blockchain.WSManager,
+	networkNum types.NetworkNum, networkID types.NetworkID, wsManager blockchain.WSManager,
 	accountModel sdnmessage.Account, getCustomerAccountModel func(types.AccountID) (sdnmessage.Account, error),
 	certFile string, keyFile string, cfg config.Bx, stats statistics.Stats) *FeedManager {
 	ctx, cancel := context.WithCancel(parent)
@@ -70,6 +71,7 @@ func NewFeedManager(parent context.Context, node connections.BxListener, feedCha
 		idToClientSubscription:  make(map[uuid.UUID]ClientSubscription),
 		node:                    node,
 		networkNum:              networkNum,
+		chainID:                 networkID,
 		nodeWSManager:           wsManager,
 		accountModel:            accountModel,
 		getCustomerAccountModel: getCustomerAccountModel,

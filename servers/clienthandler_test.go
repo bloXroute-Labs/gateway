@@ -118,7 +118,7 @@ func TestClientHandler(t *testing.T) {
 	cfg := config.Bx{WebsocketPort: 28332, ManageWSServer: true, WebsocketTLSEnabled: false}
 
 	blockchainPeers, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
-	fm := NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats)
+	fm := NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 1, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats)
 	providers := fm.nodeWSManager.Providers()
 	p1 := providers[blockchainPeers[0].IPPort()]
 	assert.NotNil(t, p1)
@@ -185,13 +185,14 @@ func TestClientHandler(t *testing.T) {
 			handleBlxrTxRequestDynamicFeeTx(t, ws)
 			handleBlxrTxRequestTxWithPrefix(t, ws)
 			handleBlxrTxRequestRLPTx(t, ws)
+			handleBlxrTxWithWrongChainID(t, ws)
 			handleSubscribe(t, fm, ws)
 			handleTxReceiptsSubscribe(t, fm, ws)
 			handleInvalidSubscribe(t, ws)
 			testWSShutdown(t, fm, ws, blockchainPeers)
 		})
 		// restart bc last test shut down ws server
-		fm = NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats)
+		fm = NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 1, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats)
 		clientHandler = NewClientHandler(fm, nil, NewHTTPServer(fm, cfg.HTTPPort), log.WithFields(log.Fields{
 			"component": "gatewayClientHandler",
 		}))
@@ -692,6 +693,7 @@ func handleBlxrTxRequestLegacyTx(t *testing.T, ws *websocket.Conn) {
 	clientRes := getClientResponse(t, msg)
 	res := parseBlxrTxResult(t, clientRes.Result)
 	assert.Equal(t, fixtures.LegacyTransactionHash[2:], res.TxHash)
+	assert.Nil(t, clientRes.Error)
 }
 
 func handleBlxrTxRequestRLPTx(t *testing.T, ws *websocket.Conn) {
@@ -700,6 +702,14 @@ func handleBlxrTxRequestRLPTx(t *testing.T, ws *websocket.Conn) {
 	clientRes := getClientResponse(t, msg)
 	res := parseBlxrTxResult(t, clientRes.Result)
 	assert.Equal(t, fixtures.RLPTransactionHash[2:], res.TxHash)
+	assert.Nil(t, clientRes.Error)
+}
+
+func handleBlxrTxWithWrongChainID(t *testing.T, ws *websocket.Conn) {
+	reqPayload := fmt.Sprintf(`{"id": "1", "method": "blxr_tx", "params": {"transaction": "%s"}}`, fixtures.LegacyTransactionBSC)
+	msg := writeMsgToWsAndReadResponse(t, ws, []byte(reqPayload), nil)
+	clientRes := getClientResponse(t, msg)
+	assert.NotNil(t, clientRes.Error)
 }
 
 func handleBlxrTxsRequestLegacyTx(t *testing.T, ws *websocket.Conn) {
@@ -798,6 +808,7 @@ type clientResponse struct {
 	Jsonrpc string      `json:"JSONRPC"`
 	ID      string      `json:"id"`
 	Result  interface{} `json:"result"`
+	Error   interface{} `json:"error"`
 }
 
 func getClientResponse(t *testing.T, msg []byte) (cr clientResponse) {
@@ -867,7 +878,7 @@ func TestFeedsLimit(t *testing.T) {
 	cfg := config.Bx{WebsocketPort: 28332, ManageWSServer: true, WebsocketTLSEnabled: false, NodeType: utils.InternalGateway}
 
 	_, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
-	fm := NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), bloxrouteAccount, getMockCustomerAccountModel, "", "", cfg, stats)
+	fm := NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 1, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), bloxrouteAccount, getMockCustomerAccountModel, "", "", cfg, stats)
 	fm.accountModel.NewTransactionStreaming.Feed.Limit = 10
 
 	for i := 0; i < 10; i++ {
@@ -881,7 +892,7 @@ func TestFeedsLimit(t *testing.T) {
 	cfg = config.Bx{WebsocketPort: 28332, ManageWSServer: true, WebsocketTLSEnabled: false}
 
 	_, blockchainPeersInfo = test.GenerateBlockchainPeersInfo(3)
-	fm = NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats)
+	fm = NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 1, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats)
 
 	for i := 0; i < 10; i++ {
 		_, _, err := fm.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID("gw"), "", "", "", "")

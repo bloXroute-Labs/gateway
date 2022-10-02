@@ -48,6 +48,9 @@ func (n *Node) sendStatusRequest(ctx context.Context, id peer.ID) (*pb.Status, e
 
 	n.p2p.Peers().Scorers().PeerStatusScorer().SetPeerStatus(id, msg, nil)
 
+	// Copy peer status
+	n.updateLastStatus(msg)
+
 	return msg, nil
 }
 

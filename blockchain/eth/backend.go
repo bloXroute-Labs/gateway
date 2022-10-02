@@ -38,25 +38,24 @@ type Backend interface {
 
 // Handler is the Ethereum backend implementation. It passes transactions and blocks to the BDN bridge and tracks received blocks and transactions from peers.
 type Handler struct {
-	bridge blockchain.Bridge
-	peers  *peerSet
-	cancel context.CancelFunc
-	config *network.EthConfig
-
-	wsManager blockchain.WSManager
 	chain     *Chain
+	bridge    blockchain.Bridge
+	peers     *peerSet
+	cancel    context.CancelFunc
+	config    *network.EthConfig
+	wsManager blockchain.WSManager
 }
 
 // NewHandler returns a new Handler and starts its processing go routines
-func NewHandler(parent context.Context, bridge blockchain.Bridge, config *network.EthConfig, wsManager blockchain.WSManager) *Handler {
+func NewHandler(parent context.Context, config *network.EthConfig, chain *Chain, bridge blockchain.Bridge, wsManager blockchain.WSManager) *Handler {
 	ctx, cancel := context.WithCancel(parent)
 	h := &Handler{
+		config:    config,
+		chain:     chain,
 		bridge:    bridge,
 		peers:     newPeerSet(),
 		cancel:    cancel,
-		config:    config,
 		wsManager: wsManager,
-		chain:     NewChain(ctx),
 	}
 	go h.checkInitialBlockchainLiveliness(100 * time.Second)
 	go h.handleBDNBridge(ctx)
@@ -548,6 +547,11 @@ func (h *Handler) processBlock(peer *Peer, blockInfo *BlockInfo) error {
 	blockHash := block.Hash()
 	blockHeight := block.Number()
 
+	if h.config.Network == network.EthMainnetChainID {
+		peer.Log().Errorf("ignoring block[hash=%s,height=%d] from old node", blockHash.String(), blockHeight)
+		return nil
+	}
+
 	if err := h.validateBlock(blockHash, blockHeight.Int64(), int64(block.Time())); err != nil {
 		if err == ErrAlreadySeen {
 			peer.Log().Debugf("skipping block %v (height %v): %v", blockHash.String(), blockHeight, err)
@@ -658,12 +662,8 @@ func (h *Handler) sendConfirmedBlocksToBDN(count int, peerEndpoint types.NodeEnd
 		return
 	}
 	blockHash := ethcommon.BytesToHash(b.Hash().Bytes())
-	metadata, ok := h.chain.getBlockMetadata(blockHash)
-	if !ok {
-		log.Debugf("cannot retrieve block metadata at depth %v, with hash %v", h.config.BlockConfirmationsCount, blockHash)
-		return
-	}
-	if metadata.cnfMsgSent {
+
+	if h.chain.HasConfirmationSendToBDN(blockHash) {
 		log.Debugf("block %v has already been sent in a block confirm message to gateway", b.Hash())
 		return
 	}
@@ -673,7 +673,7 @@ func (h *Handler) sendConfirmedBlocksToBDN(count int, peerEndpoint types.NodeEnd
 		log.Debugf("failed sending block(%v) confirmation message to gateway, %v", b.Hash(), err)
 		return
 	}
-	h.chain.storeBlockMetadata(blockHash, metadata.height, metadata.confirmed, true)
+	h.chain.MarkConfirmationSentToBDN(blockHash)
 }
 
 // GetBodies assembles and returns a set of block bodies

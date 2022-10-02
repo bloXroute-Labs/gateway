@@ -54,6 +54,8 @@ func (c Converter) BlockBlockchainToBDN(i interface{}) (*types.BxBlock, error) {
 		return c.ethBlockBlockchainToBDN(b)
 	case interfaces.SignedBeaconBlock:
 		return c.beaconBlockBlockchainToBDN(b)
+	case *ethtypes.Block:
+		return c.ethBlockBlockchainToBDN(NewBlockInfo(b, b.Difficulty()))
 	default:
 		return nil, fmt.Errorf("could not convert blockchain block type %v", b)
 	}
@@ -222,8 +224,19 @@ func (c Converter) ethBlockBDNtoBlockchain(block *types.BxBlock) (*BlockInfo, er
 
 func (c Converter) beaconBlockBDNtoBlockchain(block *types.BxBlock) (interfaces.SignedBeaconBlock, error) {
 	txs := make([][]byte, 0, len(block.Txs))
-	for _, tx := range block.Txs {
-		txs = append(txs, tx.Content())
+	for i, tx := range block.Txs {
+		t := new(ethtypes.Transaction)
+		if err := rlp.DecodeBytes(tx.Content(), t); err != nil {
+			return nil, fmt.Errorf("could not decode transaction %d: %v", i, err)
+		}
+
+		txBytes, err := t.MarshalBinary()
+		if err != nil {
+			return nil, fmt.Errorf("invalid transaction %d: %v", i, err)
+
+		}
+
+		txs = append(txs, txBytes)
 	}
 
 	// TODO: use SSZ instead of RLP ?

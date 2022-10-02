@@ -84,6 +84,7 @@ type gateway struct {
 	gatewayPublicKey string
 
 	staticEnodesCount int
+	startupArgs       string
 }
 
 func generatePeers(peersInfo []network.PeerInfo) string {
@@ -210,8 +211,8 @@ func (g *gateway) Run() error {
 		ProtocolVersion: bxmessage.CurrentProtocol,
 		IsGatewayMiner:  g.BxConfig.BlocksOnly,
 		NodeStartTime:   time.Now().Format(bxgateway.TimeLayoutISO),
+		StartupArgs:     strings.Join(os.Args[1:], " "),
 	}
-
 	g.sdn = connections.NewSDNHTTP(&sslCerts, g.BxConfig.SDNURL, nodeModel, g.BxConfig.DataDir)
 
 	err = g.sdn.InitGateway(bxgateway.Ethereum, g.BxConfig.BlockchainNetwork)
@@ -283,7 +284,13 @@ func (g *gateway) Run() error {
 	g.stats = statistics.NewStats(g.BxConfig.FluentDEnabled, g.BxConfig.FluentDHost, g.sdn.NodeID(), g.sdn.Networks(), g.BxConfig.LogNetworkContent)
 
 	g.feedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
-	g.feedManager = servers.NewFeedManager(g.context, g, g.feedChan, networkNum,
+
+	blockchainNetwork, err := g.sdn.FindNetwork(networkNum)
+	if err != nil {
+		return fmt.Errorf("failed to find the blockchainNetwork with networkNum %v, %v", networkNum, err)
+	}
+
+	g.feedManager = servers.NewFeedManager(g.context, g, g.feedChan, networkNum, types.NetworkID(blockchainNetwork.DefaultAttributes.NetworkID),
 		g.wsManager, accountModel, g.sdn.FetchCustomerAccountModel,
 		privateCertFile, privateKeyFile, *g.BxConfig, g.stats)
 	if g.BxConfig.WebsocketEnabled || g.BxConfig.WebsocketTLSEnabled {

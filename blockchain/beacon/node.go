@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"path"
+	"sync"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/logger"
 	bxTypes "github.com/bloXroute-Labs/gateway/v2/types"
@@ -68,16 +71,19 @@ type Node struct {
 	blockProcessor *blockProcessor
 	beaconBlock    bool
 
+	lStatus *pb.Status
+	m       sync.RWMutex
+
 	cancel func()
 	log    *logger.Entry
 }
 
 // NewNode creates beacon node
-func NewNode(parent context.Context, networkName string, config *network.EthConfig, genesisInitializer genesis.Initializer, bridge blockchain.Bridge, dataDir, externalIP string, beaconBlock bool) (*Node, error) {
-	return newNode(parent, networkName, config, genesisInitializer, bridge, dataDir, externalIP, beaconBlock, new(utils.PublicIPResolver))
+func NewNode(parent context.Context, networkName string, config *network.EthConfig, ethChain *eth.Chain, genesisInitializer genesis.Initializer, bridge blockchain.Bridge, dataDir, externalIP string, beaconBlock bool) (*Node, error) {
+	return newNode(parent, networkName, config, ethChain, genesisInitializer, bridge, dataDir, externalIP, beaconBlock, new(utils.PublicIPResolver))
 }
 
-func newNode(parent context.Context, networkName string, config *network.EthConfig, genesisInitializer genesis.Initializer, bridge blockchain.Bridge, dataDir, externalIP string, beaconBlock bool, ipResolver utils.IPResolver) (*Node, error) {
+func newNode(parent context.Context, networkName string, config *network.EthConfig, ethChain *eth.Chain, genesisInitializer genesis.Initializer, bridge blockchain.Bridge, dataDir, externalIP string, beaconBlock bool, ipResolver utils.IPResolver) (*Node, error) {
 	var err error
 
 	if err := initNetwork(networkName); err != nil {
@@ -125,7 +131,11 @@ func newNode(parent context.Context, networkName string, config *network.EthConf
 		return nil, err
 	}
 
-	n.blockProcessor = newBlockProcessor(ctx, config, bridge, n.Broadcast, beaconBlock, n.log)
+	// Do not limit reconnect tries
+	n.p2p.Peers().Scorers().BadResponsesScorer().Params().Threshold = math.MaxInt
+	n.p2p.Peers().Scorers().BadResponsesScorer().Params().DecayInterval = time.Second
+
+	n.blockProcessor = newBlockProcessor(ctx, config, ethChain, bridge, n.Broadcast, beaconBlock, n.log)
 
 	n.p2p.AddConnectionHandler(n.handshake, n.goodBye)
 	n.p2p.AddDisconnectionHandler(func(_ context.Context, peerID peer.ID) error {
@@ -170,7 +180,7 @@ func (n *Node) Broadcast(block interfaces.SignedBeaconBlock) error {
 
 // Start starts beacon node
 func (n *Node) Start() error {
-	n.log.Infof("Starting P2P beacon node: %v, peer ID: %v", n.p2p.Host().Addrs(), n.p2p.PeerID())
+	n.log.Infof("Starting P2P beacon node: %v, peer ID: p2p/%v", n.p2p.Host().Addrs(), n.p2p.PeerID())
 
 	digest, err := n.digest()
 	if err != nil {
@@ -379,8 +389,29 @@ func (n *Node) registerP2p(privateKey, externalIP string) (*p2p.Service, error) 
 	})
 }
 
+func (n *Node) updateLastStatus(status *pb.Status) {
+	n.m.Lock()
+	defer n.m.Unlock()
+
+	// Use latest slot
+	if n.lStatus != nil && status.HeadSlot <= n.lStatus.HeadSlot {
+		return
+	}
+
+	n.lStatus = status
+}
+
+func (n *Node) lastStatus() *pb.Status {
+	n.m.RLock()
+	defer n.m.RUnlock()
+
+	return n.lStatus
+}
+
 func (n *Node) status(ctx context.Context) (*pb.Status, error) {
-	// This should be not static
+	if status := n.lastStatus(); status != nil {
+		return status, nil
+	}
 
 	digest, err := n.digest()
 	if err != nil {

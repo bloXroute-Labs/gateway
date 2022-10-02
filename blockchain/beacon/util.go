@@ -15,6 +15,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/host"
 	p2pNetwork "github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
+	swarm "github.com/libp2p/go-libp2p-swarm"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/prysmaticlabs/prysm/v3/beacon-chain/p2p"
 	"github.com/prysmaticlabs/prysm/v3/beacon-chain/p2p/encoder"
@@ -100,6 +101,10 @@ func ensurePeerConnections(ctx context.Context, h host.Host, peers ...string) {
 		if len(c) == 0 {
 			if err := connectWithTimeout(ctx, h, peerInfo); err != nil {
 				log.WithField("peer", peerInfo.ID).WithField("addrs", peerInfo.Addrs).Errorf("Failed to reconnect to peer: %v", err)
+
+				// Try to reconnect as fast as possible again
+				// https://github.com/libp2p/go-libp2p/blob/ddfb6f9240679b840d3663021e8b4433f51379a7/examples/relay/main.go#L90
+				h.Network().(*swarm.Swarm).Backoff().Clear(peerInfo.ID)
 				continue
 			}
 		}

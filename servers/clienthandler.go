@@ -636,7 +636,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 			ws = connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.FeedManager.networkNum, utils.Websocket)
 		}
 
-		txHash, ok := h.handleSingleTransaction(ctx, conn, req, params.Transaction, ws, params.ValidatorsOnly, true)
+		txHash, ok := h.handleSingleTransaction(ctx, conn, req, params.Transaction, ws, params.ValidatorsOnly, true, h.FeedManager.chainID)
 		if !ok {
 			return
 		}
@@ -674,7 +674,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		}
 
 		for _, transaction := range params.Transactions {
-			txHash, ok := h.handleSingleTransaction(ctx, conn, req, transaction, ws, params.ValidatorsOnly, false)
+			txHash, ok := h.handleSingleTransaction(ctx, conn, req, transaction, ws, params.ValidatorsOnly, false, h.FeedManager.chainID)
 			if !ok {
 				continue
 			}
@@ -1167,7 +1167,7 @@ func (h *handlerObj) evaluateFilters(expr conditions.Expr) error {
 	return err
 }
 
-func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request, transaction string, ws connections.Conn, validatorsOnly bool, sendError bool) (string, bool) {
+func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request, transaction string, ws connections.Conn, validatorsOnly bool, sendError bool, gatewayChainID types.NetworkID) (string, bool) {
 	txBytes, err := types.DecodeHex(transaction)
 	if err != nil {
 		log.Errorf("invalid hex string: %v", err)
@@ -1194,6 +1194,15 @@ func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2
 		log.Warnf("Ethereum transaction was in RLP format instead of binary," +
 			" transaction has been processed anyway, but it'd be best to use the Ethereum binary standard encoding")
 	}
+
+	if ethTx.ChainId().Int64() != 0 && gatewayChainID != 0 && types.NetworkID(ethTx.ChainId().Int64()) != gatewayChainID {
+		log.Debugf("chainID mismatch for hash %v - tx chainID %v , gateway networkNum %v networkChainID %v", ethTx.Hash().String(), ethTx.ChainId().Int64(), h.FeedManager.networkNum, gatewayChainID)
+		if sendError {
+			SendErrorMsg(ctx, jsonrpc.InvalidParams, fmt.Sprintf("chainID mismatch for hash %v, expect %v got %v, make sure the tx is sent with the right blockchain network", ethTx.Hash().String(), gatewayChainID, ethTx.ChainId().Int64()), conn, req)
+		}
+		return "", false
+	}
+
 	txContent, err := rlp.EncodeToBytes(&ethTx)
 
 	if err != nil {
