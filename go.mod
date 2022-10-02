@@ -12,6 +12,7 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/jinzhu/copier v0.3.5
 	github.com/libp2p/go-libp2p-core v0.17.0
+	github.com/libp2p/go-libp2p-swarm v0.11.0
 	github.com/multiformats/go-multiaddr v0.6.0
 	github.com/orandin/lumberjackrus v1.0.1
 	github.com/orcaman/concurrent-map v0.0.0-20210106121528-16402b402231

@@ -594,6 +594,8 @@ github.com/libp2p/go-libp2p-quic-transport v0.16.0/go.mod h1:1BXjVMzr+w7EkPfiHkK
 github.com/libp2p/go-libp2p-resource-manager v0.3.0 h1:2+cYxUNi33tcydsVLt6K5Fv2E3OTiVeafltecAj15E0=
 github.com/libp2p/go-libp2p-resource-manager v0.3.0/go.mod h1:K+eCkiapf+ey/LADO4TaMpMTP9/Qde/uLlrnRqV4PLQ=
 github.com/libp2p/go-libp2p-swarm v0.10.0/go.mod h1:71ceMcV6Rg/0rIQ97rsZWMzto1l9LnNquef+efcRbmA=
+github.com/libp2p/go-libp2p-swarm v0.11.0 h1:ITgsTEY2tA4OxFJGcWeugiMh2x5+VOEnI2JStT1EWxI=
+github.com/libp2p/go-libp2p-swarm v0.11.0/go.mod h1:sumjVYrC84gPSZOFKL8hNcnN6HZvJSwJ8ymaXeko4Lk=
 github.com/libp2p/go-libp2p-testing v0.1.1/go.mod h1:xaZWMJrPUM5GlDBxCeGUi7kI4eqnjVyavGroI2nxEM0=
 github.com/libp2p/go-libp2p-testing v0.1.2-0.20200422005655-8775583591d8/go.mod h1:Qy8sAncLKpwXtS2dSnDOP8ktexIAHKu+J+pnZOFZLTc=
 github.com/libp2p/go-libp2p-testing v0.5.0/go.mod h1:QBk8fqIL1XNcno/l3/hhaIEn4aLRijpYOR+zVjjlh+A=

@@ -9,6 +9,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+// EthMainnetChainID ethereum mainnet chain ID
+const EthMainnetChainID = 1
+
 var networkMapping = map[string]EthConfig{
 	"Mainnet":         newEthereumMainnetConfig(),
 	"BSC-Mainnet":     newBSCMainnetConfig(),
@@ -34,7 +37,7 @@ func newEthereumMainnetConfig() EthConfig {
 
 	ttd, _ := big.NewInt(0).SetString("58750000000000000000000", 0)
 	return EthConfig{
-		Network:                 1,
+		Network:                 EthMainnetChainID,
 		TotalDifficulty:         td,
 		TerminalTotalDifficulty: ttd,
 		Head:                    common.HexToHash("0xd4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3"),

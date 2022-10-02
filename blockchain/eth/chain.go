@@ -5,16 +5,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
+	"strconv"
+	"sync"
+	"time"
+
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	cmap "github.com/orcaman/concurrent-map"
-	"math/big"
-	"strconv"
-	"sync"
-	"time"
 )
 
 const (
@@ -252,6 +253,19 @@ func (c *Chain) HasSentToBDN(hash ethcommon.Hash) bool {
 	return bm.sentToBDN
 }
 
+// HasConfirmationSendToBDN indicates if block confirmation has been sent to the BDN
+func (c *Chain) HasConfirmationSendToBDN(hash ethcommon.Hash) bool {
+	c.chainLock.Lock()
+	defer c.chainLock.Unlock()
+
+	bm, ok := c.getBlockMetadata(hash)
+	if !ok {
+		return false
+	}
+
+	return bm.cnfMsgSent
+}
+
 // HasConfirmedBlock indicates if the block has been confirmed by a reliable source
 func (c *Chain) HasConfirmedBlock(hash ethcommon.Hash) bool {
 	bm, ok := c.getBlockMetadata(hash)
@@ -272,6 +286,20 @@ func (c *Chain) MarkSentToBDN(hash ethcommon.Hash) {
 	}
 
 	bm.sentToBDN = true
+	c.blockHashMetadata.Set(hash.String(), bm)
+}
+
+// MarkConfirmationSentToBDN marks a block confirmation as having been sent to the BDN, so it does not need to be sent again in the future
+func (c *Chain) MarkConfirmationSentToBDN(hash ethcommon.Hash) {
+	c.chainLock.Lock()
+	defer c.chainLock.Unlock()
+
+	bm, ok := c.getBlockMetadata(hash)
+	if !ok {
+		return
+	}
+
+	bm.cnfMsgSent = true
 	c.blockHashMetadata.Set(hash.String(), bm)
 }
 
@@ -414,6 +442,11 @@ func (c *Chain) BlockAtDepth(chainDepth int) (*ethtypes.Block, error) {
 	}
 	block := ethtypes.NewBlockWithHeader(header).WithBody(body.Transactions, body.Uncles)
 	return block, nil
+}
+
+// HeadHeight returns head height
+func (c *Chain) HeadHeight() uint64 {
+	return c.chainState.head().height
 }
 
 // should be called with c.chainLock held

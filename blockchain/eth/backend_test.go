@@ -2,6 +2,10 @@ package eth
 
 import (
 	"context"
+	"math/big"
+	"testing"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
@@ -18,18 +22,26 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/stretchr/testify/assert"
-	"math/big"
-	"testing"
-	"time"
 )
 
 const expectTimeout = time.Millisecond
 
 func setup() (blockchain.Bridge, *Handler, []types.NodeEndpoint) {
 	bridge := blockchain.NewBxBridge(Converter{})
+	config, _ := network.NewEthereumPreset("BSC-Mainnet")
+	blockchainPeers, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
+	ctx := context.Background()
+	handler := NewHandler(ctx, &config, NewChain(ctx), bridge, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout))
+	gateway_test.ConfigureLogger(logger.TraceLevel)
+	return bridge, handler, blockchainPeers
+}
+
+func setupEthMainnet() (blockchain.Bridge, *Handler, []types.NodeEndpoint) {
+	bridge := blockchain.NewBxBridge(Converter{})
 	config, _ := network.NewEthereumPreset("Mainnet")
 	blockchainPeers, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
-	handler := NewHandler(context.Background(), bridge, &config, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout))
+	ctx := context.Background()
+	handler := NewHandler(ctx, &config, NewChain(ctx), bridge, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout))
 	gateway_test.ConfigureLogger(logger.TraceLevel)
 	return bridge, handler, blockchainPeers
 }
@@ -295,6 +307,22 @@ func TestHandler_HandleNewBlock(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, 1, len(storedHeaderByHeight))
 	assert.Equal(t, header, storedHeaderByHeight[0])
+}
+
+func TestHandler_HandleNewBlock_IgnoreAfterTheMerge(t *testing.T) {
+	bridge, handler, _ := setupEthMainnet()
+	peer, _ := testPeer(-1, 1)
+	_ = handler.peers.register(peer)
+	blockHeight := uint64(1)
+
+	header := bxmock.NewEthBlockHeader(blockHeight, common.Hash{})
+	block := bxmock.NewEthBlockWithHeader(header)
+	td := big.NewInt(10000)
+
+	err := testHandleNewBlock(handler, peer, block, td)
+	assert.Nil(t, err)
+
+	assertNoBlockSentToBDN(t, bridge)
 }
 
 func TestHandler_HandleNewBlock_TooOld(t *testing.T) {

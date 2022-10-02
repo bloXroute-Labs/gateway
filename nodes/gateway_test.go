@@ -38,6 +38,7 @@ import (
 
 var (
 	networkNum           types.NetworkNum = 5
+	chainID              int64            = 1
 	blockchainIPEndpoint                  = types.NodeEndpoint{IP: "127.0.0.1", Port: 8001}
 )
 
@@ -91,7 +92,7 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 	g.setupTxStore()
 	g.txTrace = loggers.NewTxTrace(nil)
 	g.setSyncWithRelay()
-	g.feedManager = servers.NewFeedManager(g.context, g, g.feedChan, networkNum,
+	g.feedManager = servers.NewFeedManager(g.context, g, g.feedChan, networkNum, types.NetworkID(chainID),
 		g.wsManager, g.sdn.AccountModel(), nil,
 		"", "", *g.BxConfig, g.stats)
 	return bridge, g

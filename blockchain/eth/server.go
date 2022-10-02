@@ -4,13 +4,14 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
+	"os"
+	"path"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/version"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
-	"os"
-	"path"
 )
 
 // Server wraps the Ethereum p2p server, for use with the BDN
@@ -20,7 +21,7 @@ type Server struct {
 }
 
 // NewServer return an Ethereum p2p server, configured with BDN friendly defaults
-func NewServer(parent context.Context, config *network.EthConfig, bridge blockchain.Bridge, dataDir string, logger log.Logger, ws blockchain.WSManager) (*Server, error) {
+func NewServer(parent context.Context, config *network.EthConfig, chain *Chain, bridge blockchain.Bridge, dataDir string, logger log.Logger, ws blockchain.WSManager) (*Server, error) {
 	var privateKey *ecdsa.PrivateKey
 
 	if config.PrivateKey != nil {
@@ -45,7 +46,7 @@ func NewServer(parent context.Context, config *network.EthConfig, bridge blockch
 	}
 
 	ctx, cancel := context.WithCancel(parent)
-	backend := NewHandler(ctx, bridge, config, ws)
+	backend := NewHandler(ctx, config, chain, bridge, ws)
 
 	server := p2p.Server{
 		Config: p2p.Config{
@@ -81,11 +82,11 @@ func NewServer(parent context.Context, config *network.EthConfig, bridge blockch
 }
 
 // NewServerWithEthLogger returns the p2p server preconfigured with the default Ethereum logger
-func NewServerWithEthLogger(ctx context.Context, config *network.EthConfig, bridge blockchain.Bridge, dataDir string, ws blockchain.WSManager) (*Server, error) {
+func NewServerWithEthLogger(ctx context.Context, config *network.EthConfig, chain *Chain, bridge blockchain.Bridge, dataDir string, ws blockchain.WSManager) (*Server, error) {
 	l := log.New()
 	l.SetHandler(log.StreamHandler(os.Stdout, log.TerminalFormat(true)))
 
-	return NewServer(ctx, config, bridge, dataDir, l, ws)
+	return NewServer(ctx, config, chain, bridge, dataDir, l, ws)
 }
 
 // Start starts eth server

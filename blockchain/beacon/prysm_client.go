@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
@@ -32,7 +33,7 @@ type PrysmClient struct {
 }
 
 // NewPrysmClient creates new Prysm gRPC client
-func NewPrysmClient(ctx context.Context, config *network.EthConfig, addr string, bridge blockchain.Bridge, enode *enode.Node, beaconBlock bool) *PrysmClient {
+func NewPrysmClient(ctx context.Context, config *network.EthConfig, ethChain *eth.Chain, addr string, bridge blockchain.Bridge, enode *enode.Node, beaconBlock bool) *PrysmClient {
 	pubKey := elliptic.Marshal(enode.Pubkey().Curve, enode.Pubkey().X, enode.Pubkey().Y)
 	endpoint := types.NodeEndpoint{IP: enode.IP().String(), Port: enode.TCP(), PublicKey: fmt.Sprintf("%x", pubKey)}
 
@@ -46,7 +47,7 @@ func NewPrysmClient(ctx context.Context, config *network.EthConfig, addr string,
 		addr:           addr,
 		bridge:         bridge,
 		endpoint:       endpoint,
-		blockProcessor: newBlockProcessor(ctx, config, bridge, nil, beaconBlock, log),
+		blockProcessor: newBlockProcessor(ctx, config, ethChain, bridge, nil, beaconBlock, log),
 		beaconBlock:    beaconBlock,
 		log:            log,
 	}

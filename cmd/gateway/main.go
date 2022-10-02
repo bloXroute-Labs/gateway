@@ -172,11 +172,14 @@ func runGateway(c *cli.Context) error {
 		log.Exit(0)
 	}
 
+	// Required for beacon node and prysm to sync
+	ethChain := eth.NewChain(ctx)
+
 	var blockchainServer *eth.Server
 	if startupBlockchainClient {
 		log.Infof("starting blockchain client with config for network ID: %v", ethConfig.Network)
 
-		blockchainServer, err = eth.NewServerWithEthLogger(ctx, ethConfig, bridge, dataDir, wsManager)
+		blockchainServer, err = eth.NewServerWithEthLogger(ctx, ethConfig, ethChain, bridge, dataDir, wsManager)
 		if err != nil {
 			return nil
 		}
@@ -211,7 +214,7 @@ func runGateway(c *cli.Context) error {
 			return fmt.Errorf("could not load genesis file initializer: %v", err)
 		}
 
-		beaconNode, err = beacon.NewNode(ctx, c.String(utils.BlockchainNetworkFlag.Name), ethConfig, genesisInitializer, bridge, dataDir, bxConfig.ExternalIP, c.Bool(utils.BeaconBlock.Name))
+		beaconNode, err = beacon.NewNode(ctx, c.String(utils.BlockchainNetworkFlag.Name), ethConfig, ethChain, genesisInitializer, bridge, dataDir, bxConfig.ExternalIP, c.Bool(utils.BeaconBlock.Name))
 		if err != nil {
 			return nil
 		}
@@ -223,7 +226,7 @@ func runGateway(c *cli.Context) error {
 
 	var prysmClient *beacon.PrysmClient
 	if startupPrysmClient {
-		prysmClient = beacon.NewPrysmClient(ctx, ethConfig, prysmAddr, bridge, prysmEnode, c.Bool(utils.BeaconBlock.Name))
+		prysmClient = beacon.NewPrysmClient(ctx, ethConfig, ethChain, prysmAddr, bridge, prysmEnode, c.Bool(utils.BeaconBlock.Name))
 		prysmClient.Start()
 	}
 
