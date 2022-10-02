@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"io/ioutil"
 	"math"
 	"math/big"
@@ -81,6 +82,9 @@ type gateway struct {
 	mevClient        *http.Client
 	gatewayPeers     string
 	gatewayPublicKey string
+
+	staticEnodesCount int
+	startupArgs       string
 }
 
 func generatePeers(peersInfo []network.PeerInfo) string {
@@ -97,7 +101,7 @@ func generatePeers(peersInfo []network.PeerInfo) string {
 
 // NewGateway returns a new gateway node to send messages from a blockchain node to the relay network
 func NewGateway(parent context.Context, bxConfig *config.Bx, bridge blockchain.Bridge, wsManager blockchain.WSManager,
-	blockchainPeers []types.NodeEndpoint, peersInfo []network.PeerInfo, gatewayPublicKeyStr string) (Node, error) {
+	blockchainPeers []types.NodeEndpoint, peersInfo []network.PeerInfo, gatewayPublicKeyStr string, staticEnodesCount int) (Node, error) {
 	ctx, cancel := context.WithCancel(parent)
 	clock := utils.RealClock{}
 
@@ -119,6 +123,7 @@ func NewGateway(parent context.Context, bxConfig *config.Bx, bridge blockchain.B
 		timeStarted:           clock.Now(),
 		gatewayPeers:          generatePeers(peersInfo),
 		gatewayPublicKey:      gatewayPublicKeyStr,
+		staticEnodesCount:     staticEnodesCount,
 	}
 	g.asyncMsgChannel = services.NewAsyncMsgChannel(g)
 	g.mevClient = &http.Client{
@@ -206,8 +211,8 @@ func (g *gateway) Run() error {
 		ProtocolVersion: bxmessage.CurrentProtocol,
 		IsGatewayMiner:  g.BxConfig.BlocksOnly,
 		NodeStartTime:   time.Now().Format(bxgateway.TimeLayoutISO),
+		StartupArgs:     strings.Join(os.Args[1:], " "),
 	}
-
 	g.sdn = connections.NewSDNHTTP(&sslCerts, g.BxConfig.SDNURL, nodeModel, g.BxConfig.DataDir)
 
 	err = g.sdn.InitGateway(bxgateway.Ethereum, g.BxConfig.BlockchainNetwork)
@@ -230,7 +235,7 @@ func (g *gateway) Run() error {
 		))
 	}
 
-	if uint64(len(g.blockchainPeers)) < uint64(accountModel.MinAllowedNodes.MsgQuota.Limit) {
+	if uint64(g.staticEnodesCount) < uint64(accountModel.MinAllowedNodes.MsgQuota.Limit) {
 		panic(fmt.Sprintf(
 			"account %v is not allowed to run %d blockchain nodes. Minimum is %d",
 			accountModel.AccountID,
@@ -239,7 +244,7 @@ func (g *gateway) Run() error {
 		))
 	}
 
-	if uint64(len(g.blockchainPeers)) > uint64(accountModel.MaxAllowedNodes.MsgQuota.Limit) {
+	if uint64(g.staticEnodesCount) > uint64(accountModel.MaxAllowedNodes.MsgQuota.Limit) {
 		panic(fmt.Sprintf(
 			"account %v is not allowed to run %d blockchain nodes. Maximum is %d",
 			accountModel.AccountID,
@@ -279,7 +284,13 @@ func (g *gateway) Run() error {
 	g.stats = statistics.NewStats(g.BxConfig.FluentDEnabled, g.BxConfig.FluentDHost, g.sdn.NodeID(), g.sdn.Networks(), g.BxConfig.LogNetworkContent)
 
 	g.feedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
-	g.feedManager = servers.NewFeedManager(g.context, g, g.feedChan, networkNum,
+
+	blockchainNetwork, err := g.sdn.FindNetwork(networkNum)
+	if err != nil {
+		return fmt.Errorf("failed to find the blockchainNetwork with networkNum %v, %v", networkNum, err)
+	}
+
+	g.feedManager = servers.NewFeedManager(g.context, g, g.feedChan, networkNum, types.NetworkID(blockchainNetwork.DefaultAttributes.NetworkID),
 		g.wsManager, accountModel, g.sdn.FetchCustomerAccountModel,
 		privateCertFile, privateKeyFile, *g.BxConfig, g.stats)
 	if g.BxConfig.WebsocketEnabled || g.BxConfig.WebsocketTLSEnabled {
@@ -291,7 +302,7 @@ func (g *gateway) Run() error {
 		g.feedManager.Start()
 	}
 
-	if err = log.InitFluentD(g.BxConfig.FluentDEnabled, g.BxConfig.FluentDHost, string(g.sdn.NodeID())); err != nil {
+	if err = log.InitFluentD(g.BxConfig.FluentDEnabled, g.BxConfig.FluentDHost, string(g.sdn.NodeID()), logrus.InfoLevel); err != nil {
 		return err
 	}
 
@@ -962,6 +973,10 @@ func (g gateway) handleMEVSearcherMessage(mevSearcher bxmessage.MEVSearcher, sou
 		if source.Info().IsRelay() {
 			if g.BxConfig.MEVBuilderURI == "" {
 				log.Warnf("received mevSearcher message, but mev-builder-uri is empty. Message %v from %v in network %v", mevSearcher.Hash(), mevSearcher.SourceID(), mevSearcher.GetNetworkNum())
+				return
+			}
+
+			if !g.BxConfig.MEVMaxProfitBuilder && mevSearcher.Frontrunning {
 				return
 			}
 

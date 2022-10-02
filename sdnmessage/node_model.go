@@ -63,6 +63,7 @@ type NodeModel struct {
 	PrivateNode               bool             `json:"private_node"`
 	ProgramName               string           `json:"program_name"`
 	RelayType                 types.RelayType  `json:"relay_type"`
+	StartupArgs               string           `json:"startup_args"`
 }
 
 // Pack serializes a NodeModel into a buffer for sending

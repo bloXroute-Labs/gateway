@@ -165,10 +165,24 @@ func (bdnQS BDNQuotaService) MarshalJSON() ([]byte, error) {
 	return json.Marshal(qs)
 }
 
+// SubscriptionPlanType represents the available feed subscription plan types
+type SubscriptionPlanType string
+
+// SubscriptionPlanType enumeration
+const (
+	SubscriptionPlanFeeds    SubscriptionPlanType = "FEEDS"
+	SubscriptionPlanNetworks SubscriptionPlanType = "NETWORKS"
+)
+
+// AllowedNetworksForFeedsPlan is the number of allowed networks for SubscriptionPlanFeeds plans
+const AllowedNetworksForFeedsPlan = 1
+
 // FeedProperties represent feed in BDN service
 type FeedProperties struct {
-	AllowFiltering  bool     `json:"allow_filtering"`
-	AvailableFields []string `json:"available_fields"`
+	AllowFiltering  bool                 `json:"allow_filtering"`
+	AvailableFields []string             `json:"available_fields"`
+	Plan            SubscriptionPlanType `json:"plan"`
+	Limit           int                  `json:"limit"`
 }
 
 // BDNBasicService is a placeholder for service model configs
@@ -212,6 +226,9 @@ type Account struct {
 	PaidTransactionBurstLimit   BDNQuotaService `json:"paid_tx_burst_limit"`
 
 	BoostMEVSearcher BDNBasicService `json:"boost_mevsearcher"`
+
+	SolanaDexAPIRateLimit   BDNQuotaService `json:"solana_dex_api_rate_limit"`
+	SolanaDexAPIStreamLimit BDNQuotaService `json:"solana_dex_api_stream_limit"`
 }
 
 // Validate verifies the response that the response from bxapi is well understood
@@ -275,6 +292,8 @@ var DefaultEliteAccount = Account{
 		Feed: FeedProperties{
 			AllowFiltering:  true,
 			AvailableFields: []string{"all"},
+			Plan:            SubscriptionPlanFeeds,
+			Limit:           20,
 		},
 	},
 	NewBlockStreaming: BDNFeedService{
@@ -282,6 +301,8 @@ var DefaultEliteAccount = Account{
 		Feed: FeedProperties{
 			AllowFiltering:  true,
 			AvailableFields: []string{"all"},
+			Plan:            SubscriptionPlanFeeds,
+			Limit:           20,
 		},
 	},
 	PendingTransactionStreaming: BDNFeedService{
@@ -289,13 +310,17 @@ var DefaultEliteAccount = Account{
 		Feed: FeedProperties{
 			AllowFiltering:  true,
 			AvailableFields: []string{"all"},
+			Plan:            SubscriptionPlanFeeds,
+			Limit:           20,
 		},
 	},
 	InternalTransactionStreaming: BDNFeedService{
-		ExpireDate: "2999-12-31",
+		ExpireDate: fmt.Sprintf("%s", time.Now().AddDate(0, 0, 1).Format("2006-01-02")),
 		Feed: FeedProperties{
 			AllowFiltering:  true,
 			AvailableFields: []string{"all"},
+			Plan:            SubscriptionPlanFeeds,
+			Limit:           20,
 		},
 	},
 	TransactionStateFeed: BDNFeedService{
@@ -375,6 +400,21 @@ var DefaultEliteAccount = Account{
 		MsgQuota: BDNService{
 			ServiceType: BDNServicePermit,
 			Limit:       2,
+		},
+		ExpireDateTime: time.Now().Add(time.Hour),
+	},
+
+	SolanaDexAPIRateLimit: BDNQuotaService{
+		MsgQuota: BDNService{
+			ServiceType: BDNServicePermit,
+			Limit:       100,
+		},
+		ExpireDateTime: time.Now().Add(time.Hour),
+	},
+	SolanaDexAPIStreamLimit: BDNQuotaService{
+		MsgQuota: BDNService{
+			ServiceType: BDNServicePermit,
+			Limit:       50,
 		},
 		ExpireDateTime: time.Now().Add(time.Hour),
 	},

@@ -26,6 +26,7 @@ type NodeEndpoint struct {
 	IP        string
 	Port      int
 	PublicKey string
+	IsBeacon  bool
 }
 
 // String returns string representation of NodeEndpoint
@@ -84,6 +85,9 @@ const ShortIDLen = UInt32Len
 
 // NetworkNum represents the network that a message is being routed in (Ethereum Mainnet, Ethereum Ropsten, etc.)
 type NetworkNum uint32
+
+// NetworkID represent the chain ID that a message is being routed in (1 for Ethereum Mainnet, 56 for BSC-Mainnet, etc.)
+type NetworkID int64
 
 // NetworkNumLen is the byte length of packed network numbers
 const NetworkNumLen = UInt32Len

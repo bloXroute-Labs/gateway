@@ -37,11 +37,12 @@ type Bx struct {
 	ManageWSServer      bool
 	HTTPPort            int
 
-	BlocksOnly       bool
-	AllTransactions  bool
-	SendConfirmation bool
-	MEVBuilderURI    string
-	MEVMinerURI      string
+	BlocksOnly          bool
+	AllTransactions     bool
+	SendConfirmation    bool
+	MEVMaxProfitBuilder bool
+	MEVBuilderURI       string
+	MEVMinerURI         string
 
 	ProcessMegaBundle            bool
 	MevMinerSendBundleMethodName string
@@ -108,6 +109,7 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		MEVBuilderURI:                ctx.String(utils.MEVBuilderURIFlag.Name),
 		MEVMinerURI:                  ctx.String(utils.MEVMinerURIFlag.Name),
 		MevMinerSendBundleMethodName: ctx.String(utils.MEVBundleMethodNameFlag.Name),
+		MEVMaxProfitBuilder:          ctx.Bool(utils.MEVMaxProfitBuilder.Name),
 
 		ProcessMegaBundle: ctx.Bool(utils.MegaBundleProcessing.Name),
 

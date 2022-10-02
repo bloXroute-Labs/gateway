@@ -1,10 +1,11 @@
 package types
 
 import (
+	"encoding/hex"
+	"fmt"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"math/big"
 )
 
 // BlockNotification - represents a single block
@@ -25,7 +26,7 @@ type Header struct {
 	StateRoot        ethcommon.Hash     `json:"stateRoot"`
 	TransactionsRoot ethcommon.Hash     `json:"transactionsRoot"`
 	ReceiptsRoot     ethcommon.Hash     `json:"receiptsRoot"`
-	LogsBloom        *big.Int           `json:"logsBloom"`
+	LogsBloom        string             `json:"logsBloom"`
 	Difficulty       string             `json:"difficulty"`
 	Number           string             `json:"number"`
 	GasLimit         string             `json:"gasLimit"`
@@ -52,7 +53,7 @@ func ConvertEthHeaderToBlockNotificationHeader(ethHeader *ethtypes.Header) *Head
 		StateRoot:        ethHeader.Root,
 		TransactionsRoot: ethHeader.TxHash,
 		ReceiptsRoot:     ethHeader.ReceiptHash,
-		LogsBloom:        ethHeader.Bloom.Big(),
+		LogsBloom:        fmt.Sprintf("0x%x", hex.EncodeToString(ethHeader.Bloom.Bytes())),
 		Difficulty:       hexutil.EncodeBig(ethHeader.Difficulty),
 		hexNumber:        ethHeader.Number.Uint64(),
 		Number:           hexutil.EncodeBig(ethHeader.Number),

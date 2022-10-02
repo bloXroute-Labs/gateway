@@ -118,7 +118,7 @@ func TestClientHandler(t *testing.T) {
 	cfg := config.Bx{WebsocketPort: 28332, ManageWSServer: true, WebsocketTLSEnabled: false}
 
 	blockchainPeers, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
-	fm := NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats)
+	fm := NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 1, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats)
 	providers := fm.nodeWSManager.Providers()
 	p1 := providers[blockchainPeers[0].IPPort()]
 	assert.NotNil(t, p1)
@@ -185,13 +185,14 @@ func TestClientHandler(t *testing.T) {
 			handleBlxrTxRequestDynamicFeeTx(t, ws)
 			handleBlxrTxRequestTxWithPrefix(t, ws)
 			handleBlxrTxRequestRLPTx(t, ws)
+			handleBlxrTxWithWrongChainID(t, ws)
 			handleSubscribe(t, fm, ws)
 			handleTxReceiptsSubscribe(t, fm, ws)
 			handleInvalidSubscribe(t, ws)
 			testWSShutdown(t, fm, ws, blockchainPeers)
 		})
 		// restart bc last test shut down ws server
-		fm = NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats)
+		fm = NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 1, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats)
 		clientHandler = NewClientHandler(fm, nil, NewHTTPServer(fm, cfg.HTTPPort), log.WithFields(log.Fields{
 			"component": "gatewayClientHandler",
 		}))
@@ -434,7 +435,7 @@ func handleOnBlockNotification(t *testing.T, fm *FeedManager, ws *websocket.Conn
 	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, td))
 	feedNotification, _ := bridge.BxBlockToCanonicFormat(bxBlock)
 	feedNotification.SetNotificationType(types.OnBlockFeed)
-	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, ""}
+	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, "", false}
 	feedNotification.SetSource(&sourceEndpoint)
 	assert.True(t, fm.nodeWSManager.Synced())
 
@@ -475,7 +476,7 @@ func handleTxReceiptsNotificationRequestedUnsynced(t *testing.T, fm *FeedManager
 	numTx := len(bxBlock.Txs)
 	feedNotification, _ := bridge.BxBlockToCanonicFormat(bxBlock)
 	feedNotification.SetNotificationType(types.TxReceiptsFeed)
-	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, ""}
+	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, "", false}
 	feedNotification.SetSource(&sourceEndpoint)
 
 	fm.nodeWSManager.UpdateNodeSyncStatus(requestedUnsyncedWSProvider.BlockchainPeerEndpoint(), blockchain.Unsynced)
@@ -524,7 +525,7 @@ func handleOnBlockNotificationRequestedUnsynced(t *testing.T, fm *FeedManager, w
 	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, td))
 	feedNotification, _ := bridge.BxBlockToCanonicFormat(bxBlock)
 	feedNotification.SetNotificationType(types.OnBlockFeed)
-	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, ""}
+	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, "", false}
 	feedNotification.SetSource(&sourceEndpoint)
 
 	fm.nodeWSManager.UpdateNodeSyncStatus(requestedUnsyncedWSProvider.BlockchainPeerEndpoint(), blockchain.Unsynced)
@@ -580,7 +581,7 @@ func handleTxReceiptsNotificationNoneSynced(t *testing.T, fm *FeedManager, ws *w
 	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, td))
 	feedNotification, err := bridge.BxBlockToCanonicFormat(bxBlock)
 	feedNotification.SetNotificationType(types.TxReceiptsFeed)
-	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, ""}
+	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, "", false}
 	feedNotification.SetSource(&sourceEndpoint)
 
 	fm.nodeWSManager.UpdateNodeSyncStatus(blockchainPeers[0], blockchain.Unsynced)
@@ -621,7 +622,7 @@ func handleOnBlockNotificationNoneSynced(t *testing.T, fm *FeedManager, ws *webs
 	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, td))
 	feedNotification, err := bridge.BxBlockToCanonicFormat(bxBlock)
 	feedNotification.SetNotificationType(types.OnBlockFeed)
-	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, ""}
+	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, "", false}
 	feedNotification.SetSource(&sourceEndpoint)
 
 	fm.nodeWSManager.UpdateNodeSyncStatus(blockchainPeers[0], blockchain.Unsynced)
@@ -692,6 +693,7 @@ func handleBlxrTxRequestLegacyTx(t *testing.T, ws *websocket.Conn) {
 	clientRes := getClientResponse(t, msg)
 	res := parseBlxrTxResult(t, clientRes.Result)
 	assert.Equal(t, fixtures.LegacyTransactionHash[2:], res.TxHash)
+	assert.Nil(t, clientRes.Error)
 }
 
 func handleBlxrTxRequestRLPTx(t *testing.T, ws *websocket.Conn) {
@@ -700,6 +702,14 @@ func handleBlxrTxRequestRLPTx(t *testing.T, ws *websocket.Conn) {
 	clientRes := getClientResponse(t, msg)
 	res := parseBlxrTxResult(t, clientRes.Result)
 	assert.Equal(t, fixtures.RLPTransactionHash[2:], res.TxHash)
+	assert.Nil(t, clientRes.Error)
+}
+
+func handleBlxrTxWithWrongChainID(t *testing.T, ws *websocket.Conn) {
+	reqPayload := fmt.Sprintf(`{"id": "1", "method": "blxr_tx", "params": {"transaction": "%s"}}`, fixtures.LegacyTransactionBSC)
+	msg := writeMsgToWsAndReadResponse(t, ws, []byte(reqPayload), nil)
+	clientRes := getClientResponse(t, msg)
+	assert.NotNil(t, clientRes.Error)
 }
 
 func handleBlxrTxsRequestLegacyTx(t *testing.T, ws *websocket.Conn) {
@@ -798,6 +808,7 @@ type clientResponse struct {
 	Jsonrpc string      `json:"JSONRPC"`
 	ID      string      `json:"id"`
 	Result  interface{} `json:"result"`
+	Error   interface{} `json:"error"`
 }
 
 func getClientResponse(t *testing.T, msg []byte) (cr clientResponse) {
@@ -863,29 +874,31 @@ func TestFeedsLimit(t *testing.T) {
 
 	bloxrouteAccount, _ := getMockCustomerAccountModel("bloxroute Labs")
 	gwAccount, _ := getMockCustomerAccountModel("gw")
+
 	cfg := config.Bx{WebsocketPort: 28332, ManageWSServer: true, WebsocketTLSEnabled: false, NodeType: utils.InternalGateway}
 
 	_, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
-	fm := NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), bloxrouteAccount, getMockCustomerAccountModel, "", "", cfg, stats)
+	fm := NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 1, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), bloxrouteAccount, getMockCustomerAccountModel, "", "", cfg, stats)
+	fm.accountModel.NewTransactionStreaming.Feed.Limit = 10
 
-	for i := 0; i < maxFeedsByTier[sdnmessage.ATierEnterprise]; i++ {
-		_, _, err := fm.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID("gw"), "", "", "")
+	for i := 0; i < 10; i++ {
+		_, _, err := fm.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID("gw"), "", "", "", "")
 		assert.Nil(t, err)
 	}
-	_, _, err := fm.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID("gw"), "", "", "")
+	_, _, err := fm.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID("gw"), "", "", "", "")
 	assert.NotNil(t, err)
 
 	// go it with external gw - should not block
 	cfg = config.Bx{WebsocketPort: 28332, ManageWSServer: true, WebsocketTLSEnabled: false}
 
 	_, blockchainPeersInfo = test.GenerateBlockchainPeersInfo(3)
-	fm = NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats)
+	fm = NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 1, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats)
 
-	for i := 0; i < maxFeedsByTier[sdnmessage.ATierEnterprise]; i++ {
-		_, _, err := fm.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID("gw"), "", "", "")
+	for i := 0; i < 10; i++ {
+		_, _, err := fm.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID("gw"), "", "", "", "")
 		assert.Nil(t, err)
 	}
-	_, _, err = fm.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID("gw"), "", "", "")
+	_, _, err = fm.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID("gw"), "", "", "", "")
 	assert.Nil(t, err)
 
 }

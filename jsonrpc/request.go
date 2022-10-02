@@ -10,30 +10,23 @@ type RPCRequestType string
 
 // RPCRequestType enumeration
 const (
-	RPCSubscribe         RPCRequestType = "subscribe"
-	RPCUnsubscribe       RPCRequestType = "unsubscribe"
-	RPCPrivateTxBalance  RPCRequestType = "private_tx_balance"
-	RPCPrivateTx         RPCRequestType = "blxr_private_tx"
-	RPCTx                RPCRequestType = "blxr_tx"
-	RPCPing              RPCRequestType = "ping"
-	RPCMEVSearcher       RPCRequestType = "blxr_mev_searcher"
-	RPCEthSendBundle     RPCRequestType = "eth_sendBundle"
-	RPCEthSendMegaBundle RPCRequestType = "eth_sendMegabundle"
-	RPCBatchTx           RPCRequestType = "blxr_batch_tx"
-	RPCQuotaUsage        RPCRequestType = "quota_usage"
-	RPCBundleSubmission  RPCRequestType = "blxr_submit_bundle"
-	RPCBundleSimulation  RPCRequestType = "blxr_simulate_bundle"
+	RPCSubscribe            RPCRequestType = "subscribe"
+	RPCUnsubscribe          RPCRequestType = "unsubscribe"
+	RPCPrivateTxBalance     RPCRequestType = "private_tx_balance"
+	RPCPrivateTx            RPCRequestType = "blxr_private_tx"
+	RPCBackrunPrivateTx     RPCRequestType = "backrun_private_tx"
+	RPCTx                   RPCRequestType = "blxr_tx"
+	RPCPing                 RPCRequestType = "ping"
+	RPCMEVSearcher          RPCRequestType = "blxr_mev_searcher"
+	RPCEthSendBundle        RPCRequestType = "eth_sendBundle"
+	RPCEthSendMegaBundle    RPCRequestType = "eth_sendMegabundle"
+	RPCEthCallBundle        RPCRequestType = "eth_callBundle"
+	RPCBatchTx              RPCRequestType = "blxr_batch_tx"
+	RPCQuotaUsage           RPCRequestType = "quota_usage"
+	RPCBundleSubmission     RPCRequestType = "blxr_submit_bundle"
+	RPCBundleSimulation     RPCRequestType = "blxr_simulate_bundle"
+	RPCMegaBundleSubmission RPCRequestType = "blxr_submit_mega_bundle"
 )
-
-// RPCPrivateTxPayload is the payload of blxr_private_tx requests
-type RPCPrivateTxPayload struct {
-	Transaction        string `json:"transaction"`
-	Pools              string `json:"pools"`
-	WalletAPIKey       string `json:"wallet_api_key"`
-	DetailResponse     bool   `json:"detail_response"`
-	BlockchainProtocol string `json:"blockchain_protocol"`
-	BlockchainNetwork  string `json:"blockchain_network"`
-}
 
 // RPCTxPayload is the payload of blxr_tx requests
 type RPCTxPayload struct {

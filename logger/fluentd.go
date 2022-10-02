@@ -7,10 +7,9 @@ import (
 )
 
 // InitFluentD - initialise logging
-func InitFluentD(fluentDEnabled bool, fluentDHost string, nodeID string) error {
-
+func InitFluentD(fluentDEnabled bool, fluentDHost, nodeID string, logLevel logrus.Level) error {
 	Formatter := new(logrus.TextFormatter)
-	Formatter.TimestampFormat = "2006-01-02T15:04:05.000000"
+	Formatter.TimestampFormat = timestampFormat
 	Formatter.FullTimestamp = true
 
 	if fluentDEnabled {
@@ -24,14 +23,16 @@ func InitFluentD(fluentDEnabled bool, fluentDHost string, nodeID string) error {
 			logrus.Warnf("Failed to create fluentd config with error %v", err)
 			return nil
 		}
-		hook.SetLevels([]logrus.Level{
-			logrus.PanicLevel,
-			logrus.FatalLevel,
-			logrus.ErrorLevel,
-			logrus.WarnLevel,
-			logrus.InfoLevel,
-		})
-		hook.SetTag("bx.go.log")
+
+		var hookLevels []logrus.Level
+		for _, level := range logrus.AllLevels {
+			if int(level) <= int(logLevel) {
+				hookLevels = append(hookLevels, level)
+			}
+		}
+		hook.SetLevels(hookLevels)
+
+		hook.SetTag(fluentDTag)
 		hook.SetMessageField("msg")
 		hook.AddCustomizer(func(entry *logrus.Entry, data logrus.Fields) {
 			data["level"] = strings.ToUpper(entry.Level.String())

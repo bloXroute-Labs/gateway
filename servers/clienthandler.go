@@ -26,6 +26,7 @@ import (
 	websocketjsonrpc2 "github.com/sourcegraph/jsonrpc2/websocket"
 	"github.com/zhouzhuojie/conditions"
 	"golang.org/x/sync/errgroup"
+	"math/big"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -267,7 +268,12 @@ func NewWSServer(feedManager *FeedManager) *http.Server {
 
 func errorWithDelay(w http.ResponseWriter, r *http.Request, msg string) {
 	// sleep for 10 seconds to prevent the client (bot) to reissue the same requests in a loop
-	c, _ := upgrader.Upgrade(w, r, nil)
+	c, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Errorf("error replying with delay to request from RemoteAddr %v - %v", r.RemoteAddr, err.Error())
+		time.Sleep(ErrWSConnDelay)
+		return
+	}
 	_ = c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, msg))
 	time.Sleep(ErrWSConnDelay)
 	c.Close()
@@ -452,7 +458,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		if request.expr != nil {
 			filters = request.expr.String()
 		}
-		subscriptionID, feedChan, errSubscribe := h.FeedManager.Subscribe(request.feed, conn, h.connectionAccount.TierName, h.connectionAccount.AccountID, h.remoteAddress, filters, strings.Join(request.includes, ","))
+		subscriptionID, feedChan, errSubscribe := h.FeedManager.Subscribe(request.feed, conn, h.connectionAccount.TierName, h.connectionAccount.AccountID, h.remoteAddress, filters, strings.Join(request.includes, ","), "")
 		if errSubscribe != nil {
 			SendErrorMsg(ctx, jsonrpc.InvalidParams, errSubscribe.Error(), conn, req)
 			return
@@ -470,7 +476,8 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 			h.remoteAddress,
 			h.FeedManager.networkNum,
 			request.includes,
-			filters)
+			filters,
+			"")
 
 		for {
 			select {
@@ -605,8 +612,12 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 	case jsonrpc.RPCTx:
 		if h.FeedManager.accountModel.AccountID != h.connectionAccount.AccountID {
 			err := fmt.Errorf("blxr_tx is not allowed when account authentication is different from the node account")
-			h.log.Errorf("%v. account auth: %v, node account: %v ", err, h.connectionAccount.AccountID, h.FeedManager.accountModel.AccountID)
-			SendErrorMsg(ctx, jsonrpc.InvalidRequest, err.Error(), conn, req)
+			if h.FeedManager.accountModel.AccountID == types.BloxrouteAccountID {
+				h.log.Infof("received a tx from user account %v, remoteAddr %v, %v", h.connectionAccount.AccountID, h.remoteAddress, err)
+			} else {
+				h.log.Errorf("%v. account auth: %v, node account: %v ", err, h.connectionAccount.AccountID, h.FeedManager.accountModel.AccountID)
+				SendErrorMsg(ctx, jsonrpc.InvalidRequest, err.Error(), conn, req)
+			}
 			return
 		}
 		var params jsonrpc.RPCTxPayload
@@ -625,7 +636,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 			ws = connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.FeedManager.networkNum, utils.Websocket)
 		}
 
-		txHash, ok := h.handleSingleTransaction(ctx, conn, req, params.Transaction, ws, params.ValidatorsOnly, true)
+		txHash, ok := h.handleSingleTransaction(ctx, conn, req, params.Transaction, ws, params.ValidatorsOnly, true, h.FeedManager.chainID)
 		if !ok {
 			return
 		}
@@ -663,7 +674,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		}
 
 		for _, transaction := range params.Transactions {
-			txHash, ok := h.handleSingleTransaction(ctx, conn, req, transaction, ws, params.ValidatorsOnly, false)
+			txHash, ok := h.handleSingleTransaction(ctx, conn, req, transaction, ws, params.ValidatorsOnly, false, h.FeedManager.chainID)
 			if !ok {
 				continue
 			}
@@ -700,9 +711,12 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 			return
 		}
 		params := struct {
-			MEVMethod   string            `json:"mev_method"`
-			Payload     json.RawMessage   `json:"payload"`
-			MEVBuilders map[string]string `json:"mev_builders"`
+			MEVMethod         string            `json:"mev_method"`
+			Payload           json.RawMessage   `json:"payload"`
+			MEVBuilders       map[string]string `json:"mev_builders"`
+			Frontrunning      bool              `json:"frontrunning"`
+			EffectiveGasPrice big.Int           `json:"effective_gas_price"`
+			CoinbaseProfit    big.Int           `json:"coinbase_profit"`
 		}{}
 
 		if req.Params == nil {
@@ -745,7 +759,15 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 				h.log.Warnf("EnterpriseElite account is required in order to send %s to %s", jsonrpc.RPCMEVSearcher, bxgateway.BloxrouteBuilderName)
 			}
 		}
-		mevSearcher, err := bxmessage.NewMEVSearcher(params.MEVMethod, params.MEVBuilders, sendBundleArgs[0].UUID, params.Payload)
+		mevSearcher, err := bxmessage.NewMEVSearcher(
+			params.MEVMethod,
+			params.MEVBuilders,
+			sendBundleArgs[0].UUID,
+			params.Frontrunning,
+			params.EffectiveGasPrice,
+			params.CoinbaseProfit,
+			params.Payload,
+		)
 		if err != nil {
 			h.log.Errorf("failed to create new mevSearcher: %v", err)
 			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
@@ -1145,7 +1167,7 @@ func (h *handlerObj) evaluateFilters(expr conditions.Expr) error {
 	return err
 }
 
-func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request, transaction string, ws connections.Conn, validatorsOnly bool, sendError bool) (string, bool) {
+func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request, transaction string, ws connections.Conn, validatorsOnly bool, sendError bool, gatewayChainID types.NetworkID) (string, bool) {
 	txBytes, err := types.DecodeHex(transaction)
 	if err != nil {
 		log.Errorf("invalid hex string: %v", err)
@@ -1172,6 +1194,15 @@ func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2
 		log.Warnf("Ethereum transaction was in RLP format instead of binary," +
 			" transaction has been processed anyway, but it'd be best to use the Ethereum binary standard encoding")
 	}
+
+	if ethTx.ChainId().Int64() != 0 && gatewayChainID != 0 && types.NetworkID(ethTx.ChainId().Int64()) != gatewayChainID {
+		log.Debugf("chainID mismatch for hash %v - tx chainID %v , gateway networkNum %v networkChainID %v", ethTx.Hash().String(), ethTx.ChainId().Int64(), h.FeedManager.networkNum, gatewayChainID)
+		if sendError {
+			SendErrorMsg(ctx, jsonrpc.InvalidParams, fmt.Sprintf("chainID mismatch for hash %v, expect %v got %v, make sure the tx is sent with the right blockchain network", ethTx.Hash().String(), gatewayChainID, ethTx.ChainId().Int64()), conn, req)
+		}
+		return "", false
+	}
+
 	txContent, err := rlp.EncodeToBytes(&ethTx)
 
 	if err != nil {

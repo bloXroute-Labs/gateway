@@ -97,8 +97,13 @@ func (n NoOpBxBridge) SendBlockToNode(block *types.BxBlock) error {
 	return nil
 }
 
-// ReceiveBlockFromBDN is a no-op
-func (n NoOpBxBridge) ReceiveBlockFromBDN() <-chan *types.BxBlock {
+// ReceiveEthBlockFromBDN is a no-op
+func (n NoOpBxBridge) ReceiveEthBlockFromBDN() <-chan *types.BxBlock {
+	return make(chan *types.BxBlock)
+}
+
+// ReceiveBeaconBlockFromBDN is a no-op
+func (n NoOpBxBridge) ReceiveBeaconBlockFromBDN() <-chan *types.BxBlock {
 	return make(chan *types.BxBlock)
 }
 

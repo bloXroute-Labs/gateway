@@ -19,7 +19,7 @@ export GO111MODULE=on
 
 .PHONY: all
 all: gateway
-gateway: $(BIN); $(info $(M) building gateway executable) @ ## Build program binary
+gateway: fmt | $(BIN); $(info $(M) building gateway executable) @ ## Build program binary
 	$Q $(GO) build \
 		-tags release \
 		-ldflags '-X $(MODULE)/version.BuildVersion=$(VERSION) -X $(MODULE)/version.BuildDate=$(DATE)' \
@@ -79,7 +79,7 @@ test-coverage: fmt lint test-coverage-tools ; $(info $(M) running coverage tests
 	$Q $(GO) tool cover -html=$(COVERAGE_PROFILE) -o $(COVERAGE_HTML)
 	$Q $(GOCOV) convert $(COVERAGE_PROFILE) | $(GOCOVXML) > $(COVERAGE_XML)
 
-GOLANGCI_VERSION=v1.45.0
+GOLANGCI_VERSION=v1.49.0
 GOLANGCI_REV=8cdecc968bf7b87ce85e09e42cabb3e3540e9344
 
 .PHONY: lint

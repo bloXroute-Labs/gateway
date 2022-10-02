@@ -2,11 +2,15 @@ package network
 
 import (
 	"fmt"
-	"github.com/ethereum/go-ethereum/common"
 	"math"
 	"math/big"
 	"time"
+
+	"github.com/ethereum/go-ethereum/common"
 )
+
+// EthMainnetChainID ethereum mainnet chain ID
+const EthMainnetChainID = 1
 
 var networkMapping = map[string]EthConfig{
 	"Mainnet":         newEthereumMainnetConfig(),
@@ -31,13 +35,15 @@ func newEthereumMainnetConfig() EthConfig {
 		panic("could not load Ethereum Mainnet configuration")
 	}
 
+	ttd, _ := big.NewInt(0).SetString("58750000000000000000000", 0)
 	return EthConfig{
-		Network:                 1,
+		Network:                 EthMainnetChainID,
 		TotalDifficulty:         td,
-		TerminalTotalDifficulty: big.NewInt(math.MaxInt),
+		TerminalTotalDifficulty: ttd,
 		Head:                    common.HexToHash("0xd4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3"),
 		Genesis:                 common.HexToHash("0xd4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3"),
 		IgnoreBlockTimeout:      150 * time.Second,
+		IgnoreSlotCount:         10,
 	}
 }
 
@@ -54,6 +60,7 @@ func newEthereumRopstenConfig() EthConfig {
 		Head:                    common.HexToHash("0x41941023680923e0fe4d74a34bdac8141f2540e3ae90623718e47d66d1ca4a2d"),
 		Genesis:                 common.HexToHash("0x41941023680923e0fe4d74a34bdac8141f2540e3ae90623718e47d66d1ca4a2d"),
 		IgnoreBlockTimeout:      150 * time.Second,
+		IgnoreSlotCount:         10,
 	}
 }
 

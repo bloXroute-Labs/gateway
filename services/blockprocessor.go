@@ -3,13 +3,14 @@ package services
 import (
 	"errors"
 	"fmt"
+	"math/big"
+	"sync"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/rlp"
-	"math/big"
-	"sync"
-	"time"
 )
 
 // error constants for identifying special processing casess
@@ -121,7 +122,7 @@ func (bp *rlpBlockProcessor) BxBlockToBroadcast(block *types.BxBlock, networkNum
 	}
 
 	bp.markProcessed(blockHash)
-	broadcastMessage := bxmessage.NewBlockBroadcast(block.Hash(), encodedBlock, usedShortIDs, networkNum)
+	broadcastMessage := bxmessage.NewBlockBroadcast(block.Hash(), block.Type, encodedBlock, usedShortIDs, networkNum)
 	return broadcastMessage, usedShortIDs, nil
 }
 
@@ -179,7 +180,7 @@ func (bp *rlpBlockProcessor) BxBlockFromBroadcast(broadcast *bxmessage.Broadcast
 	blockSize := int(rlp.ListSize(uint64(len(rlpBlock.Header)) + rlp.ListSize(txsBytes) + uint64(len(rlpBlock.Trailer))))
 
 	bp.markProcessed(blockHash)
-	block := types.NewRawBxBlock(broadcast.Hash(), rlpBlock.Header, txs, rlpBlock.Trailer, rlpBlock.TotalDifficulty, rlpBlock.Number, blockSize)
+	block := types.NewRawBxBlock(broadcast.Hash(), broadcast.BlockType(), rlpBlock.Header, txs, rlpBlock.Trailer, rlpBlock.TotalDifficulty, rlpBlock.Number, blockSize)
 	return block, missingShortIDs, err
 }
 

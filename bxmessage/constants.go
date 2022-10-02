@@ -2,6 +2,7 @@ package bxmessage
 
 import (
 	"bytes"
+
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
@@ -31,6 +32,9 @@ const TypeLength = 12
 
 // EncryptedTypeLen is the byte length of the encrypted byte
 const EncryptedTypeLen = 1
+
+// IsBeaconLen is the byte of isBeacon byte
+const IsBeaconLen = 1
 
 // BroadcastTypeLen is the byte length of the broadcastType byte
 const BroadcastTypeLen = 4
@@ -81,7 +85,16 @@ const EmptyProtocol = 0
 const MinProtocol = 19
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
-const CurrentProtocol = 27
+const CurrentProtocol = 30
+
+// IsBeaconProtocol tracks if the node is beacon
+const IsBeaconProtocol = 30
+
+// MevMaxProfitBuilder send mev searcher request with request
+const MevMaxProfitBuilder = 29
+
+// BeaconBlockProtocol is the minimum protocol version that supoprts beacon blocks
+const BeaconBlockProtocol = 28
 
 // MevSearcherWithUUID send mev searcher request with request
 const MevSearcherWithUUID = 27

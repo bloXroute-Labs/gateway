@@ -30,6 +30,7 @@ type ClientSubscription struct {
 	remoteAddress  string
 	filters        string
 	includes       string
+	project        string
 	timeOpenedFeed time.Time
 	messagesSent   uint64
 }
@@ -41,6 +42,7 @@ type FeedManager struct {
 	lock                    sync.RWMutex
 	node                    connections.BxListener
 	networkNum              types.NetworkNum
+	chainID                 types.NetworkID
 	nodeWSManager           blockchain.WSManager
 	accountModel            sdnmessage.Account
 	getCustomerAccountModel func(types.AccountID) (sdnmessage.Account, error)
@@ -56,7 +58,7 @@ type FeedManager struct {
 
 // NewFeedManager    - create a new feedManager
 func NewFeedManager(parent context.Context, node connections.BxListener, feedChan chan types.Notification,
-	networkNum types.NetworkNum, wsManager blockchain.WSManager,
+	networkNum types.NetworkNum, networkID types.NetworkID, wsManager blockchain.WSManager,
 	accountModel sdnmessage.Account, getCustomerAccountModel func(types.AccountID) (sdnmessage.Account, error),
 	certFile string, keyFile string, cfg config.Bx, stats statistics.Stats) *FeedManager {
 	ctx, cancel := context.WithCancel(parent)
@@ -69,6 +71,7 @@ func NewFeedManager(parent context.Context, node connections.BxListener, feedCha
 		idToClientSubscription:  make(map[uuid.UUID]ClientSubscription),
 		node:                    node,
 		networkNum:              networkNum,
+		chainID:                 networkID,
 		nodeWSManager:           wsManager,
 		accountModel:            accountModel,
 		getCustomerAccountModel: getCustomerAccountModel,
@@ -89,24 +92,13 @@ func (f *FeedManager) Start() error {
 	return nil
 }
 
-var maxFeedsByTier = map[sdnmessage.AccountTier]int{
-	sdnmessage.ATierUltra:        40,
-	sdnmessage.ATierElite:        20,
-	sdnmessage.ATierEnterprise:   10,
-	sdnmessage.ATierProfessional: 4,
-	sdnmessage.ATierDeveloper:    2,
-	sdnmessage.ATierIntroductory: 1,
-}
-
 func (f *FeedManager) checkFeedsLimit(clientSubscription *ClientSubscription, remoteAddress string) error {
 	// feeds check should not be tested for customer running local gateway
 	if clientSubscription.accountID == f.accountModel.AccountID {
 		return nil
 	}
-	allowFeeds, ok := maxFeedsByTier[clientSubscription.tier]
-	if !ok {
-		return fmt.Errorf("account %v tier %v is not aligable for feed subscriptions", clientSubscription.accountID, clientSubscription.tier)
-	}
+
+	allowFeeds := f.accountModel.NewTransactionStreaming.Feed.Limit
 	remoteIP := strings.Split(remoteAddress, ":")[0] + ":"
 
 	f.lock.RLock()
@@ -119,6 +111,7 @@ func (f *FeedManager) checkFeedsLimit(clientSubscription *ClientSubscription, re
 				v.network == clientSubscription.network &&
 				v.includes == clientSubscription.includes &&
 				v.filters == clientSubscription.filters &&
+				v.project == clientSubscription.project &&
 				strings.HasPrefix(v.remoteAddress, remoteIP) {
 				return fmt.Errorf("duplicate feed request - account %v tier %v ip %v previous subscription ID %v", clientSubscription.accountID, clientSubscription.tier, remoteAddress, k)
 			}
@@ -131,7 +124,7 @@ func (f *FeedManager) checkFeedsLimit(clientSubscription *ClientSubscription, re
 }
 
 // Subscribe - subscribe a client to a desired feed
-func (f *FeedManager) Subscribe(feedName types.FeedType, conn *jsonrpc2.Conn, accountTier sdnmessage.AccountTier, accountID types.AccountID, remoteAddress string, filters string, includes string) (*uuid.UUID, *chan *types.Notification, error) {
+func (f *FeedManager) Subscribe(feedName types.FeedType, conn *jsonrpc2.Conn, accountTier sdnmessage.AccountTier, accountID types.AccountID, remoteAddress string, filters string, includes string, project string) (*uuid.UUID, *chan *types.Notification, error) {
 	id := uuid.NewV4()
 	clientSubscription := ClientSubscription{
 		feed:           make(chan *types.Notification, bxgateway.BxNotificationChannelSize),
@@ -143,6 +136,7 @@ func (f *FeedManager) Subscribe(feedName types.FeedType, conn *jsonrpc2.Conn, ac
 		remoteAddress:  remoteAddress,
 		includes:       includes,
 		filters:        filters,
+		project:        project,
 		timeOpenedFeed: time.Now(),
 	}
 
@@ -289,4 +283,30 @@ func (f *FeedManager) GetGrpcSubscriptionReply() *pb.SubscriptionsReply {
 		resp.Subscriptions = append(resp.Subscriptions, subscribe)
 	}
 	return resp
+}
+
+// GetNumberOfSubscriptionsForAccount - returns the number of existing subscriptions for an account
+func (f *FeedManager) GetNumberOfSubscriptionsForAccount(account types.AccountID) int {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+	numberOfSubscriptions := 0
+	for _, clientSub := range f.idToClientSubscription {
+		if clientSub.accountID == account {
+			numberOfSubscriptions++
+		}
+	}
+	return numberOfSubscriptions
+}
+
+// GetFeedsForAccount - returns a list of types.FeedType for the existing subscriptions of an account
+func (f *FeedManager) GetFeedsForAccount(account types.AccountID) []types.FeedType {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+	subscriptions := make([]types.FeedType, 0)
+	for _, clientSub := range f.idToClientSubscription {
+		if clientSub.accountID == account {
+			subscriptions = append(subscriptions, clientSub.feedType)
+		}
+	}
+	return subscriptions
 }

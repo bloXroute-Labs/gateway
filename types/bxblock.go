@@ -9,6 +9,18 @@ import (
 	"time"
 )
 
+// BxBlockType is block type
+type BxBlockType int
+
+// block types of BxBlock
+const (
+	BxBlockTypeUnknown BxBlockType = iota
+	BxBlockTypeEth
+	BxBlockTypeBeaconPhase0
+	BxBlockTypeBeaconAltair
+	BxBlockTypeBeaconBellatrix
+)
+
 // BxBlockTransaction represents a tx in the BxBlock.
 type BxBlockTransaction struct {
 	hash    SHA256Hash
@@ -43,6 +55,7 @@ func (b BxBlockTransaction) Content() []byte {
 // BxBlock represents an encoded block ready for compression or decompression
 type BxBlock struct {
 	hash            SHA256Hash
+	Type            BxBlockType
 	Header          []byte
 	Txs             []*BxBlockTransaction
 	Trailer         []byte
@@ -53,19 +66,20 @@ type BxBlock struct {
 }
 
 // NewBxBlock creates a new BxBlock that's ready for compression. This means that all transaction hashes must be included.
-func NewBxBlock(hash SHA256Hash, header []byte, txs []*BxBlockTransaction, trailer []byte, totalDifficulty *big.Int, number *big.Int, size int) (*BxBlock, error) {
+func NewBxBlock(hash SHA256Hash, bType BxBlockType, header []byte, txs []*BxBlockTransaction, trailer []byte, totalDifficulty *big.Int, number *big.Int, size int) (*BxBlock, error) {
 	for _, tx := range txs {
 		if tx.Hash() == (SHA256Hash{}) {
 			return nil, errors.New("all transactions must contain hashes")
 		}
 	}
-	return NewRawBxBlock(hash, header, txs, trailer, totalDifficulty, number, size), nil
+	return NewRawBxBlock(hash, bType, header, txs, trailer, totalDifficulty, number, size), nil
 }
 
 // NewRawBxBlock create a new BxBlock without compression restrictions. This should only be used when parsing the result of an existing BxBlock.
-func NewRawBxBlock(hash SHA256Hash, header []byte, txs []*BxBlockTransaction, trailer []byte, totalDifficulty *big.Int, number *big.Int, size int) *BxBlock {
+func NewRawBxBlock(hash SHA256Hash, bType BxBlockType, header []byte, txs []*BxBlockTransaction, trailer []byte, totalDifficulty *big.Int, number *big.Int, size int) *BxBlock {
 	bxBlock := &BxBlock{
 		hash:            hash,
+		Type:            bType,
 		Header:          header,
 		Txs:             txs,
 		Trailer:         trailer,

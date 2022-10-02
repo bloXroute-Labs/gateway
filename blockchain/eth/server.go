@@ -16,13 +16,12 @@ import (
 
 // Server wraps the Ethereum p2p server, for use with the BDN
 type Server struct {
-	p2pServer   *p2p.Server
-	prysmClient *PrysmClient
-	cancel      context.CancelFunc
+	p2pServer *p2p.Server
+	cancel    context.CancelFunc
 }
 
 // NewServer return an Ethereum p2p server, configured with BDN friendly defaults
-func NewServer(parent context.Context, config *network.EthConfig, bridge blockchain.Bridge, dataDir string, logger log.Logger, ws blockchain.WSManager) (*Server, error) {
+func NewServer(parent context.Context, config *network.EthConfig, chain *Chain, bridge blockchain.Bridge, dataDir string, logger log.Logger, ws blockchain.WSManager) (*Server, error) {
 	var privateKey *ecdsa.PrivateKey
 
 	if config.PrivateKey != nil {
@@ -47,12 +46,12 @@ func NewServer(parent context.Context, config *network.EthConfig, bridge blockch
 	}
 
 	ctx, cancel := context.WithCancel(parent)
-	backend := NewHandler(ctx, bridge, config, ws)
+	backend := NewHandler(ctx, config, chain, bridge, ws)
 
 	server := p2p.Server{
 		Config: p2p.Config{
 			PrivateKey:       privateKey,
-			MaxPeers:         len(config.StaticPeers),
+			MaxPeers:         len(config.StaticEnodes()),
 			MaxPendingPeers:  1,
 			DialRatio:        1,
 			NoDiscovery:      true,
@@ -75,28 +74,19 @@ func NewServer(parent context.Context, config *network.EthConfig, bridge blockch
 		DiscV5: nil,
 	}
 
-	var prysmClient *PrysmClient
-	for _, peerInfo := range config.StaticPeers {
-		if peerInfo.PrysmAddr != "" {
-			prysmClient = NewPrysmClient(ctx, peerInfo.PrysmAddr, bridge, backend, peerInfo.Enode)
-			break
-		}
-	}
-
 	s := &Server{
-		p2pServer:   &server,
-		prysmClient: prysmClient,
-		cancel:      cancel,
+		p2pServer: &server,
+		cancel:    cancel,
 	}
 	return s, nil
 }
 
 // NewServerWithEthLogger returns the p2p server preconfigured with the default Ethereum logger
-func NewServerWithEthLogger(ctx context.Context, config *network.EthConfig, bridge blockchain.Bridge, dataDir string, ws blockchain.WSManager) (*Server, error) {
+func NewServerWithEthLogger(ctx context.Context, config *network.EthConfig, chain *Chain, bridge blockchain.Bridge, dataDir string, ws blockchain.WSManager) (*Server, error) {
 	l := log.New()
 	l.SetHandler(log.StreamHandler(os.Stdout, log.TerminalFormat(true)))
 
-	return NewServer(ctx, config, bridge, dataDir, l, ws)
+	return NewServer(ctx, config, chain, bridge, dataDir, l, ws)
 }
 
 // Start starts eth server
@@ -105,9 +95,6 @@ func (s *Server) Start() error {
 		return err
 	}
 
-	if s.prysmClient != nil {
-		s.prysmClient.Start()
-	}
 	return nil
 }
 
