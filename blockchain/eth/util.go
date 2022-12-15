@@ -10,12 +10,13 @@ import (
 
 // special error constant types
 var (
-	ErrInvalidRequest    = errors.New("invalid request")
-	ErrInvalidPacketType = errors.New("invalid packet type")
-	ErrBodyNotFound      = errors.New("block body not stored")
-	ErrAlreadySeen       = errors.New("already seen")
-	ErrAncientHeaders    = errors.New("headers requested are ancient")
-	ErrFutureHeaders     = errors.New("headers requested are in the future")
+	ErrInvalidRequest        = errors.New("invalid request")
+	ErrInvalidPacketType     = errors.New("invalid packet type")
+	ErrBodyNotFound          = errors.New("block body not stored")
+	ErrAlreadySeen           = errors.New("already seen")
+	ErrAncientHeaders        = errors.New("headers requested are ancient")
+	ErrFutureHeaders         = errors.New("headers requested are in the future")
+	ErrQueryAmountIsNotValid = errors.New("query amount is not valid")
 )
 
 // blockRef represents block info used for storing best block

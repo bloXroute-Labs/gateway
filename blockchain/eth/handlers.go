@@ -6,6 +6,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
+	"math"
 )
 
 func handleGetBlockHeaders(backend Backend, msg Decoder, peer *Peer) error {
@@ -78,6 +79,10 @@ func handleGetBlockHeaders66(backend Backend, msg Decoder, peer *Peer) error {
 func answerGetBlockHeaders(backend Backend, query *eth.GetBlockHeadersPacket, peer *Peer) ([]*ethtypes.Header, error) {
 	if !peer.checkpointPassed {
 		peer.checkpointPassed = true
+		return []*ethtypes.Header{}, nil
+	}
+	if query.Amount > math.MaxInt32 {
+		peer.Log().Warnf("could not retrieve all %v headers, maximum query amount is %v", query.Amount, math.MaxInt32)
 		return []*ethtypes.Header{}, nil
 	}
 	headers, err := backend.GetHeaders(query.Origin, int(query.Amount), int(query.Skip), query.Reverse)

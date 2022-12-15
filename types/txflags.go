@@ -16,6 +16,7 @@ const (
 	TFDeliverToNode
 	TFValidatorsOnly
 	TFReusedNonce
+	TFNextValidator
 
 	TFStatusTrack = TFStatusMonitoring | TFPaidTx
 	TFNonceTrack  = TFNonceMonitoring | TFStatusTrack
@@ -39,4 +40,19 @@ func (f TxFlags) IsValidatorsOnly() bool {
 // IsReuseSenderNonce indicates whether the transaction is reusing an existing nonce
 func (f TxFlags) IsReuseSenderNonce() bool {
 	return f&TFReusedNonce != 0
+}
+
+// IsPaidTx indicates is transaction is paid transaction
+func (f TxFlags) IsPaidTx() bool {
+	return f&TFPaidTx != 0
+}
+
+// IsDeliverToNode return true if transaction marked to deliver to node
+func (f TxFlags) IsDeliverToNode() bool {
+	return f&TFDeliverToNode != 0
+}
+
+//IsNextValidator return true if transaction marked for next validator
+func (f TxFlags) IsNextValidator() bool {
+	return f&TFNextValidator != 0
 }

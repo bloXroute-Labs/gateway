@@ -18,7 +18,7 @@ import (
 
 func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 	store := newTestBxTxStore()
-	bp := NewRLPBlockProcessor(&store)
+	bp := NewBlockProcessor(&store)
 	clock := utils.MockClock{}
 	clock.SetTime(time.Now())
 
@@ -42,7 +42,7 @@ func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 	// The txs[2] will not be included in shortID since it's too recent
 	store.Add(txs[3].Hash(), txs[3].Content(), 2, testNetworkNum, false, 0, clock.Now(), 0, types.EmptySender)
 
-	bxBlock, err := types.NewBxBlock(blockHash, types.BxBlockTypeEth, header, txs, trailer, big.NewInt(10000), big.NewInt(10), blockSize)
+	bxBlock, err := types.NewBxBlock(blockHash, types.EmptyHash, types.BxBlockTypeEth, header, txs, trailer, big.NewInt(10000), big.NewInt(10), blockSize)
 	assert.Nil(t, err)
 
 	// assume the blockchain network MinTxAgeSecond is 2
@@ -67,7 +67,7 @@ func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 	assert.Equal(t, ErrAlreadyProcessed, err)
 
 	// decompress same block works after clearing processed list
-	bp.(*rlpBlockProcessor).processedBlocks = NewHashHistory("processedBlocks", 30*time.Minute)
+	bp.(*blockProcessor).processedBlocks = NewHashHistory("processedBlocks", 30*time.Minute)
 	decodedBxBlock, missingShortIDs, err := bp.BxBlockFromBroadcast(broadcastMessage)
 	assert.Nil(t, err)
 	assert.Equal(t, 0, len(missingShortIDs))
@@ -85,7 +85,7 @@ func TestRLPBlockProcessor_BroadcastToBxBlockMissingShortIDs(t *testing.T) {
 	_ = broadcast.Unpack(common.Hex2Bytes(fixtures.BroadcastMessageWithShortIDs), 0)
 
 	store := newTestBxTxStore()
-	bp := NewRLPBlockProcessor(&store)
+	bp := NewBlockProcessor(&store)
 
 	bxBlock, missingShortIDs, err := bp.BxBlockFromBroadcast(broadcast)
 	assert.NotNil(t, err)
@@ -102,7 +102,7 @@ func TestRLPBlockProcessor_BroadcastToBxBlockShortIDs(t *testing.T) {
 	_ = broadcast.Unpack(common.Hex2Bytes(fixtures.BroadcastMessageWithShortIDs), 0)
 
 	store := newTestBxTxStore()
-	bp := NewRLPBlockProcessor(&store)
+	bp := NewBlockProcessor(&store)
 
 	txHash1, _ := types.NewSHA256HashFromString(fixtures.BroadcastTransactionHash1)
 	txContent1 := common.Hex2Bytes(fixtures.BroadcastTransactionContent1)
@@ -154,7 +154,7 @@ func TestRLPBlockProcessor_BroadcastToBxBlockFullTxs(t *testing.T) {
 	_ = broadcast.Unpack(common.Hex2Bytes(fixtures.BroadcastMessageFullTxs), 0)
 
 	store := newTestBxTxStore()
-	bp := NewRLPBlockProcessor(&store)
+	bp := NewBlockProcessor(&store)
 
 	txHash1, _ := types.NewSHA256HashFromString(fixtures.BroadcastTransactionHash1)
 	txContent1 := common.Hex2Bytes(fixtures.BroadcastTransactionContent1)
@@ -203,14 +203,14 @@ func TestRLPBlockProcessor_ProcessBroadcast(t *testing.T) {
 	store.Add(txHash1, txContent1, 1, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 	store.Add(txHash2, txContent2, 2, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 
-	bp := NewRLPBlockProcessor(&store)
+	bp := NewBlockProcessor(&store)
 
-	bxBlock, _, err := bp.ProcessBroadcast(broadcast)
+	bxBlock, _, err := bp.BxBlockFromBroadcast(broadcast)
 	assert.Nil(t, err)
 
 	assert.NotNil(t, bxBlock)
 	assert.Equal(t, broadcast.Hash(), bxBlock.Hash())
 
-	_, _, err = bp.ProcessBroadcast(broadcast)
+	_, _, err = bp.BxBlockFromBroadcast(broadcast)
 	assert.Equal(t, ErrAlreadyProcessed, err)
 }

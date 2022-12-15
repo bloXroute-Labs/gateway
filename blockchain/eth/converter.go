@@ -1,6 +1,7 @@
 package eth
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -11,6 +12,7 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
+	ssz "github.com/prysmaticlabs/fastssz"
 	"github.com/prysmaticlabs/prysm/v3/consensus-types/blocks"
 	"github.com/prysmaticlabs/prysm/v3/consensus-types/interfaces"
 	"github.com/prysmaticlabs/prysm/v3/encoding/bytesutil"
@@ -92,7 +94,7 @@ func (c Converter) ethBlockBlockchainToBDN(blockInfo *BlockInfo) (*types.BxBlock
 	if difficulty == nil {
 		difficulty = big.NewInt(0)
 	}
-	return types.NewBxBlock(hash, types.BxBlockTypeEth, encodedHeader, txs, encodedTrailer, difficulty, block.Number(), int(block.Size()))
+	return types.NewBxBlock(hash, types.EmptyHash, types.BxBlockTypeEth, encodedHeader, txs, encodedTrailer, difficulty, block.Number(), int(block.Size()))
 }
 
 func (c Converter) beaconBlockBlockchainToBDN(block interfaces.SignedBeaconBlock) (*types.BxBlock, error) {
@@ -107,85 +109,83 @@ func (c Converter) beaconBlockBlockchainToBDN(block interfaces.SignedBeaconBlock
 		return nil, fmt.Errorf("could not get header: %v", err)
 	}
 
-	hash, err := block.Block().HashTreeRoot()
+	rawHash, err := block.Block().HashTreeRoot()
 	if err != nil {
 		return nil, fmt.Errorf("could not get hash: %v: %v", header, err)
 	}
 
-	h, err := rlp.EncodeToBytes(header)
-	if err != nil {
-		return nil, fmt.Errorf("could not encode block header: %v: %v", header, err)
-	}
+	blockSize := block.SizeSSZ()
 
-	// TODO: check if bellatrix version
-	execution, err := block.Block().Body().Execution()
-	if err != nil {
-		return nil, fmt.Errorf("could not get block %v payload: %v", header, err)
-	}
+	// Bellatrix update sets hash to execution layer hash
+	// Phase0 and Altair update passed by all networks so probably code should be removed
+	var hash types.SHA256Hash
+	beaconHash := NewSHA256Hash(rawHash)
 
-	transactions, err := execution.Transactions()
-	if err != nil {
-		return nil, fmt.Errorf("could not fetch block %v transactions list: %v", header, err)
-	}
+	number := uint64(block.Block().Slot())
 
+	var concreteBlock ssz.Marshaler
 	var txs []*types.BxBlockTransaction
-	for i, tx := range transactions {
-		// This is also RLP but we need hash of tx
-		t := new(ethtypes.Transaction)
-		if err := t.UnmarshalBinary(tx); err != nil {
-			return nil, fmt.Errorf("invalid transaction %d: %v", i, err)
-		}
-
-		txBytes, err := rlp.EncodeToBytes(t)
-		if err != nil {
-			return nil, fmt.Errorf("could not encode transaction %d: %v", i, err)
-		}
-
-		txHash := NewSHA256Hash(t.Hash())
-		compressedTx := types.NewBxBlockTransaction(txHash, txBytes)
-		txs = append(txs, compressedTx)
-	}
-
-	var body interface{}
 	var bxBlockType types.BxBlockType
 	switch block.Version() {
 	case version.Phase0:
 		block, err := block.PbPhase0Block()
 		if err != nil {
-			return nil, fmt.Errorf("could not get phase 0 block: %v: %v", header, err)
+			return nil, fmt.Errorf("could not get phase 0 block %v: %v", beaconHash, err)
 		}
 
-		body = block.GetBlock().GetBody()
+		hash = beaconHash
+		concreteBlock = block
 		bxBlockType = types.BxBlockTypeBeaconPhase0
 	case version.Altair:
 		block, err := block.PbAltairBlock()
 		if err != nil {
-			return nil, fmt.Errorf("could not get altair block: %v: %v", header, err)
+			return nil, fmt.Errorf("could not get altair block %v: %v", beaconHash, err)
 		}
 
-		body = block.GetBlock().GetBody()
+		hash = beaconHash
+		concreteBlock = block
 		bxBlockType = types.BxBlockTypeBeaconAltair
 	case version.Bellatrix:
 		block, err := block.PbBellatrixBlock()
 		if err != nil {
-			return nil, fmt.Errorf("could not get bellatrix block: %v: %v", header, err)
+			return nil, fmt.Errorf("could not get bellatrix block %v: %v", beaconHash, err)
 		}
 
-		b := block.GetBlock().GetBody()
-		b.ExecutionPayload.Transactions = nil
-		body = b
+		copy(hash[:], block.GetBlock().GetBody().GetExecutionPayload().GetBlockHash())
+		number = block.GetBlock().GetBody().GetExecutionPayload().GetBlockNumber()
 
+		for i, tx := range block.GetBlock().GetBody().GetExecutionPayload().GetTransactions() {
+			t := new(ethtypes.Transaction)
+			if err := t.UnmarshalBinary(tx); err != nil {
+				return nil, fmt.Errorf("invalid transaction %d: %v", i, err)
+			}
+
+			// This is for back compatibility
+			// Beacon block encodes transaction using MarshalBinary instead of rlp.EncodeBytes
+			// For more info look at the comment of calcBeaconTransactionLength func
+			txBytes, err := rlp.EncodeToBytes(t)
+			if err != nil {
+				return nil, fmt.Errorf("could not encode transaction %d: %v", i, err)
+			}
+
+			txHash := NewSHA256Hash(t.Hash())
+			compressedTx := types.NewBxBlockTransaction(txHash, txBytes)
+			txs = append(txs, compressedTx)
+		}
+		block.Block.Body.ExecutionPayload.Transactions = nil
+
+		concreteBlock = block
 		bxBlockType = types.BxBlockTypeBeaconBellatrix
 	default:
-		return nil, fmt.Errorf("unrecognized beacon block version %v block hash %v", block.Version(), hash)
+		return nil, fmt.Errorf("unrecognized beacon block %v version %v", beaconHash, block.Version())
 	}
 
-	blockBody, err := rlp.EncodeToBytes(body)
+	encodedBlock, err := concreteBlock.MarshalSSZ()
 	if err != nil {
-		return nil, fmt.Errorf("could not encode block body: %v: %v", header, err)
+		return nil, fmt.Errorf("could not encode block %v body: %v", beaconHash, err)
 	}
 
-	return types.NewBxBlock(NewSHA256Hash(hash), bxBlockType, h, txs, blockBody, nil, new(big.Int).SetUint64(uint64(block.Block().Slot())), int(block.SizeSSZ()))
+	return types.NewBxBlock(hash, beaconHash, bxBlockType, nil, txs, encodedBlock, nil, new(big.Int).SetUint64(number), blockSize)
 }
 
 // BlockBDNtoBlockchain converts a BDN block to an Ethereum block
@@ -223,77 +223,47 @@ func (c Converter) ethBlockBDNtoBlockchain(block *types.BxBlock) (*BlockInfo, er
 }
 
 func (c Converter) beaconBlockBDNtoBlockchain(block *types.BxBlock) (interfaces.SignedBeaconBlock, error) {
-	txs := make([][]byte, 0, len(block.Txs))
-	for i, tx := range block.Txs {
-		t := new(ethtypes.Transaction)
-		if err := rlp.DecodeBytes(tx.Content(), t); err != nil {
-			return nil, fmt.Errorf("could not decode transaction %d: %v", i, err)
-		}
-
-		txBytes, err := t.MarshalBinary()
-		if err != nil {
-			return nil, fmt.Errorf("invalid transaction %d: %v", i, err)
-
-		}
-
-		txs = append(txs, txBytes)
-	}
-
-	// TODO: use SSZ instead of RLP ?
-	var header ethpb.SignedBeaconBlockHeader
-	if err := rlp.DecodeBytes(block.Header, &header); err != nil {
-		return nil, fmt.Errorf("could not convert block %v header to blockchain format:%v", block.Hash(), err)
-	}
-
 	var blk interface{}
 	switch block.Type {
 	case types.BxBlockTypeBeaconPhase0:
-		var body *ethpb.BeaconBlockBody
-		if err := rlp.DecodeBytes(block.Trailer, &body); err != nil {
+		b := new(ethpb.SignedBeaconBlock)
+		if err := b.UnmarshalSSZ(block.Trailer); err != nil {
 			return nil, fmt.Errorf("could not convert block %v body to blockchain format:%v", block.Hash(), err)
 		}
-		blk = &ethpb.SignedBeaconBlock{
-			Block: &ethpb.BeaconBlock{
-				Slot:          header.GetHeader().GetSlot(),
-				ProposerIndex: header.GetHeader().GetProposerIndex(),
-				ParentRoot:    header.GetHeader().GetParentRoot(),
-				StateRoot:     header.GetHeader().GetStateRoot(),
-				Body:          body,
-			},
-			Signature: header.GetSignature(),
-		}
+		blk = b
 	case types.BxBlockTypeBeaconAltair:
-		var body *ethpb.BeaconBlockBodyAltair
-		if err := rlp.DecodeBytes(block.Trailer, &body); err != nil {
+		b := new(ethpb.SignedBeaconBlockAltair)
+		if err := b.UnmarshalSSZ(block.Trailer); err != nil {
 			return nil, fmt.Errorf("could not convert block %v body to blockchain format:%v", block.Hash(), err)
 		}
-		blk = &ethpb.SignedBeaconBlockAltair{
-			Block: &ethpb.BeaconBlockAltair{
-				Slot:          header.GetHeader().GetSlot(),
-				ProposerIndex: header.GetHeader().GetProposerIndex(),
-				ParentRoot:    header.GetHeader().GetParentRoot(),
-				StateRoot:     header.GetHeader().GetStateRoot(),
-				Body:          body,
-			},
-			Signature: header.GetSignature(),
-		}
+		blk = b
 	case types.BxBlockTypeBeaconBellatrix:
-		var body *ethpb.BeaconBlockBodyBellatrix
-		if err := rlp.DecodeBytes(block.Trailer, &body); err != nil {
+		b := new(ethpb.SignedBeaconBlockBellatrix)
+		if err := b.UnmarshalSSZ(block.Trailer); err != nil {
 			return nil, fmt.Errorf("could not convert block %v body to blockchain format:%v", block.Hash(), err)
 		}
-		body.GetExecutionPayload().Transactions = txs
 
-		blk = &ethpb.SignedBeaconBlockBellatrix{
-			Block: &ethpb.BeaconBlockBellatrix{
-				Slot:          header.GetHeader().GetSlot(),
-				ProposerIndex: header.GetHeader().GetProposerIndex(),
-				ParentRoot:    header.GetHeader().GetParentRoot(),
-				StateRoot:     header.GetHeader().GetStateRoot(),
-				Body:          body,
-			},
-			Signature: header.GetSignature(),
+		txs := make([][]byte, 0, len(block.Txs))
+		for i, tx := range block.Txs {
+			t := new(ethtypes.Transaction)
+			if err := rlp.DecodeBytes(tx.Content(), t); err != nil {
+				return nil, fmt.Errorf("could not decode transaction %d: %v", i, err)
+			}
+
+			// This is for back compatibility
+			// Beacon block encodes transaction using MarshalBinary instead of rlp.EncodeBytes
+			// For more info look at the comment of calcBeaconTransactionLength func
+			txBytes, err := t.MarshalBinary()
+			if err != nil {
+				return nil, fmt.Errorf("invalid transaction %d: %v", i, err)
+
+			}
+
+			txs = append(txs, txBytes)
 		}
+
+		b.Block.Body.ExecutionPayload.Transactions = txs
+		blk = b
 	default:
 		return nil, fmt.Errorf("could not convert block %v to beacon block %v", block.Hash(), block.Type)
 	}
@@ -302,33 +272,81 @@ func (c Converter) beaconBlockBDNtoBlockchain(block *types.BxBlock) (interfaces.
 }
 
 // BxBlockToCanonicFormat converts a block from BDN format to BlockNotification format
-func (c Converter) BxBlockToCanonicFormat(bxBlock *types.BxBlock) (*types.BlockNotification, error) {
+func (c Converter) BxBlockToCanonicFormat(bxBlock *types.BxBlock, info []*types.FutureValidatorInfo) (types.BlockNotification, types.BlockNotification, error) {
 	result, err := c.BlockBDNtoBlockchain(bxBlock)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	var ethBlock *ethtypes.Block
+	var ethBlockNotification *types.EthBlockNotification
+	var beaconBlockNotification *types.BellatrixBlockNotification
 	switch res := result.(type) {
-	case *BlockInfo:
-		ethBlock = res.Block
 	case interfaces.SignedBeaconBlock:
-		ethBlock, err = BeaconBlockToEthBlock(res)
+		bxBlock.SetSize(res.SizeSSZ())
+
+		beaconBlockNotification, err = beaconBlockToNotification(res)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		// You could extract execution layer block only from bellatrix update
+		// Probably there are no networks with update less then bellatrix so it may be deleted
+		if res.Version() == version.Bellatrix {
+			ethBlock, err := BeaconBlockToEthBlock(res)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			ethBlockNotification, err = ethBlockToNotification(ethBlock, info)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+	case *BlockInfo:
+		ethBlock := res.Block
+
+		bxBlock.SetSize(int(ethBlock.Size()))
+
+		ethBlockNotification, err = ethBlockToNotification(ethBlock, info)
+		if err != nil {
+			return nil, nil, err
+		}
+	default:
+		return nil, nil, fmt.Errorf("could not convert block %v to canonic format", reflect.TypeOf(res))
+	}
+
+	return ethBlockNotification, beaconBlockNotification, nil
+}
+
+func beaconBlockToNotification(block interfaces.SignedBeaconBlock) (*types.BellatrixBlockNotification, error) {
+	switch block.Version() {
+	case version.Bellatrix:
+		blk, err := block.PbBellatrixBlock()
 		if err != nil {
 			return nil, err
 		}
+
+		hash, err := blk.GetBlock().HashTreeRoot()
+		if err != nil {
+			return nil, err
+		}
+
+		return &types.BellatrixBlockNotification{
+			Hash:                       hex.EncodeToString(hash[:]),
+			SignedBeaconBlockBellatrix: blk,
+		}, nil
 	default:
-		return nil, fmt.Errorf("could not convert block %v to canonic format", reflect.TypeOf(res))
+		return nil, fmt.Errorf("not supported %s", version.String(block.Version()))
 	}
+}
 
-	bxBlock.SetSize(int(ethBlock.Size()))
-
+func ethBlockToNotification(block *ethtypes.Block, info []*types.FutureValidatorInfo) (*types.EthBlockNotification, error) {
 	ethTxs := make([]map[string]interface{}, 0)
-	for _, tx := range ethBlock.Transactions() {
+	for _, tx := range block.Transactions() {
 		var ethTx *types.EthTransaction
 		txHash := NewSHA256Hash(tx.Hash())
 		// send EmptySender to cause extraction of real sender
-		ethTx, err = types.NewEthTransaction(txHash, tx, types.EmptySender)
+		ethTx, err := types.NewEthTransaction(txHash, tx, types.EmptySender)
 		if err != nil {
 			return nil, err
 		}
@@ -339,18 +357,19 @@ func (c Converter) BxBlockToCanonicFormat(bxBlock *types.BxBlock) (*types.BlockN
 		}
 		ethTxs = append(ethTxs, ethTx.Fields(types.AllFields))
 	}
-	ethUncles := make([]types.Header, 0, len(ethBlock.Uncles()))
-	for _, uncle := range ethBlock.Uncles() {
+	ethUncles := make([]types.Header, 0, len(block.Uncles()))
+	for _, uncle := range block.Uncles() {
 		ethUncle := types.ConvertEthHeaderToBlockNotificationHeader(uncle)
 		ethUncles = append(ethUncles, *ethUncle)
 	}
-	blockNotification := types.BlockNotification{
-		BlockHash:    ethBlock.Hash(),
-		Header:       types.ConvertEthHeaderToBlockNotificationHeader(ethBlock.Header()),
-		Transactions: ethTxs,
-		Uncles:       ethUncles,
-	}
-	return &blockNotification, nil
+	hash := block.Hash()
+	return &types.EthBlockNotification{
+		BlockHash:     &hash,
+		Header:        types.ConvertEthHeaderToBlockNotificationHeader(block.Header()),
+		Transactions:  ethTxs,
+		Uncles:        ethUncles,
+		ValidatorInfo: info,
+	}, nil
 }
 
 // BeaconBlockToEthBlock converts beacon block to ETH block
@@ -368,15 +387,14 @@ func BeaconBlockToEthBlock(block interfaces.SignedBeaconBlock) (*ethtypes.Block,
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch transactions: %v", err)
 	}
-
 	txs := make([]*ethtypes.Transaction, len(transactions))
 	for i, tx := range transactions {
-		var t ethtypes.Transaction
+		t := new(ethtypes.Transaction)
 		if err := t.UnmarshalBinary(tx); err != nil {
 			return nil, fmt.Errorf("invalid transaction %d: %v", i, err)
 		}
 
-		txs[i] = &t
+		txs[i] = t
 	}
 
 	header := &ethtypes.Header{

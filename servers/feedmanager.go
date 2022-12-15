@@ -3,6 +3,10 @@ package servers
 import (
 	"context"
 	"fmt"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/config"
@@ -12,11 +16,9 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/satori/go.uuid"
+	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
+	uuid "github.com/satori/go.uuid"
 	"github.com/sourcegraph/jsonrpc2"
-	"strings"
-	"sync"
-	"time"
 )
 
 // ClientSubscription contains client subscription feed and websocket connection
@@ -50,17 +52,18 @@ type FeedManager struct {
 	keyFile                 string
 	cfg                     config.Bx
 	log                     *log.Entry
+	nextValidatorMap        *orderedmap.OrderedMap
 
 	context context.Context
 	cancel  context.CancelFunc
 	stats   statistics.Stats
 }
 
-// NewFeedManager    - create a new feedManager
+// NewFeedManager - create a new feedManager
 func NewFeedManager(parent context.Context, node connections.BxListener, feedChan chan types.Notification,
 	networkNum types.NetworkNum, networkID types.NetworkID, wsManager blockchain.WSManager,
 	accountModel sdnmessage.Account, getCustomerAccountModel func(types.AccountID) (sdnmessage.Account, error),
-	certFile string, keyFile string, cfg config.Bx, stats statistics.Stats) *FeedManager {
+	certFile string, keyFile string, cfg config.Bx, stats statistics.Stats, nextValidatorMap *orderedmap.OrderedMap) *FeedManager {
 	ctx, cancel := context.WithCancel(parent)
 	logger := log.WithFields(log.Fields{
 		"component": "feedManager",
@@ -75,6 +78,7 @@ func NewFeedManager(parent context.Context, node connections.BxListener, feedCha
 		nodeWSManager:           wsManager,
 		accountModel:            accountModel,
 		getCustomerAccountModel: getCustomerAccountModel,
+		nextValidatorMap:        nextValidatorMap,
 		certFile:                certFile,
 		keyFile:                 keyFile,
 		cfg:                     cfg,
@@ -175,7 +179,7 @@ func (f *FeedManager) Unsubscribe(subscriptionID uuid.UUID, closeClientConnectio
 	close(clientSub.feed)
 	delete(f.idToClientSubscription, subscriptionID)
 	if closeClientConnection && clientSub.connection != nil {
-		// TODO: need to unsubscribe all other subsciptions on this connection.
+		// TODO: need to unsubscribe all other subscriptions on this connection.
 		err := clientSub.connection.Close()
 		if err != nil && err != jsonrpc2.ErrClosed {
 			f.log.Warnf("failed to close connection for %v - %v", subscriptionID, err)
@@ -224,13 +228,13 @@ func (f *FeedManager) run() {
 					//}
 				default:
 					f.log.Errorf("can't send %v to channel %v without blocking. Ignored hash %v and unsubscribing", clientSub.feedType, uid, notification.GetHash())
-					go func() {
+					go func(subscriptionID uuid.UUID) {
 						// running as go-routine since we are holding the lock. Closing the connection since we can't write
-						if err := f.Unsubscribe(uid, true); err != nil {
-							f.log.Errorf("unable to Unsubscribe %v - %v", uid, err)
+						if err := f.Unsubscribe(subscriptionID, true); err != nil {
+							f.log.Debugf("unable to Unsubscribe %v - %v", subscriptionID, err)
 						}
 						// TODO: mark clientSub as "being closed" to prevent multiple Unsubscribe
-					}()
+					}(uid)
 				}
 			}
 

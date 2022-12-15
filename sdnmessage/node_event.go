@@ -10,11 +10,13 @@ type NodeEventType string
 
 // NodeEventType enumerations
 const (
-	NeOnline              NodeEventType = "ONLINE"
-	NeOffline             NodeEventType = "OFFLINE"
-	NePeerConnEstablished NodeEventType = "PEER_CONN_ESTABLISHED"
-	NePeerConnClosed      NodeEventType = "PEER_CONN_CLOSED"
-	NePeerConnDisabled    NodeEventType = "PEER_CONN_DISABLED"
+	NeOnline                        NodeEventType = "ONLINE"
+	NeOffline                       NodeEventType = "OFFLINE"
+	NePeerConnEstablished           NodeEventType = "PEER_CONN_ESTABLISHED"
+	NePeerConnClosed                NodeEventType = "PEER_CONN_CLOSED"
+	NePeerConnDisabled              NodeEventType = "PEER_CONN_DISABLED"
+	NeBlockchainNodeConnEstablished NodeEventType = "BLOCKCHAIN_NODE_CONN_ESTABLISHED"
+	NeBlockchainNodeConnError       NodeEventType = "BLOCKCHAIN_NODE_CONN_ERR"
 )
 
 // NodeEvent represents a node event and its context being reported to the SDN
@@ -52,5 +54,27 @@ func NewNodeDisabledEvent(peerID types.NodeID, reason string) NodeEvent {
 		NodeID:    peerID,
 		EventType: NePeerConnDisabled,
 		Payload:   reason,
+	}
+}
+
+// NewBlockchainNodeConnEstablishedEvent returns an established NodeEvent for a peer.
+func NewBlockchainNodeConnEstablishedEvent(NodeID types.NodeID, peerIP string, peerPort int, timestamp string) NodeEvent {
+	return NodeEvent{
+		Timestamp: timestamp,
+		NodeID:    NodeID,
+		EventType: NeBlockchainNodeConnEstablished,
+		PeerIP:    peerIP,
+		PeerPort:  peerPort,
+	}
+}
+
+// NewBlockchainNodeConnError returns an error NodeEvent for a peer.
+func NewBlockchainNodeConnError(NodeID types.NodeID, peerIP string, peerPort int, timestamp string) NodeEvent {
+	return NodeEvent{
+		Timestamp: timestamp,
+		NodeID:    NodeID,
+		EventType: NeBlockchainNodeConnError,
+		PeerIP:    peerIP,
+		PeerPort:  peerPort,
 	}
 }

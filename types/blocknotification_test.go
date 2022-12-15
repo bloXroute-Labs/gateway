@@ -12,7 +12,7 @@ const (
 )
 
 func TestEthBlock(t *testing.T) {
-	block := BlockNotification{}
+	block := EthBlockNotification{}
 	_ = block.WithFields([]string{"hash", "header", "transactions", "uncles"})
 	//TODO add test checking the header values
 }

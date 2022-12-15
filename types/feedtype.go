@@ -5,12 +5,20 @@ type FeedType string
 
 // FeedType enumeration
 const (
-	NewTxsFeed     FeedType = "newTxs"
-	PendingTxsFeed FeedType = "pendingTxs"
-	BDNBlocksFeed  FeedType = "bdnBlocks"
-	NewBlocksFeed  FeedType = "newBlocks"
-	OnBlockFeed    FeedType = "ethOnBlock"
-	TxReceiptsFeed FeedType = "txReceipts"
+	NewTxsFeed            FeedType = "newTxs"
+	PendingTxsFeed        FeedType = "pendingTxs"
+	BDNBlocksFeed         FeedType = "bdnBlocks"
+	NewBlocksFeed         FeedType = "newBlocks"
+	OnBlockFeed           FeedType = "ethOnBlock"
+	TxReceiptsFeed        FeedType = "txReceipts"
+	TransactionStatusFeed FeedType = "transactionStatus"
+	CloudAPIFeed          FeedType = "cloudAPIFeed"
+)
+
+// Beacon blocks
+const (
+	NewBeaconBlocksFeed FeedType = "newBeaconBlocks"
+	BDNBeaconBlocksFeed FeedType = "bdnBeaconBlocks"
 )
 
 // Exists - checks if a field exists in feedType list

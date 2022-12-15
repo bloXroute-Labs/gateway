@@ -4,9 +4,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/crypto"
 	"math/rand"
+
+	"github.com/ethereum/go-ethereum/crypto"
 )
+
+// EmptyHash is the empty SHA256 hash
+var EmptyHash SHA256Hash
 
 // SHA256HashLen is the byte length of SHA256 hashes
 const SHA256HashLen = 32
@@ -50,6 +54,11 @@ func GenerateSHA256Hash() SHA256Hash {
 	var hash SHA256Hash
 	_, _ = rand.Read(hash[:])
 	return hash
+}
+
+// Empty return true if all bytes zero
+func (s SHA256Hash) Empty() bool {
+	return s == EmptyHash
 }
 
 // Bytes returns the underlying byte representation

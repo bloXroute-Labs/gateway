@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
@@ -17,22 +16,20 @@ import (
 type broadcastFunc func(interfaces.SignedBeaconBlock) error
 
 type blockProcessor struct {
-	config      *network.EthConfig
-	chain       *chainAdapter
-	log         *log.Entry
-	bridge      blockchain.Bridge
-	broadcast   broadcastFunc
-	beaconBlock bool
+	config    *network.EthConfig
+	chain     *chainAdapter
+	log       *log.Entry
+	bridge    blockchain.Bridge
+	broadcast broadcastFunc
 }
 
-func newBlockProcessor(ctx context.Context, config *network.EthConfig, ethChain *eth.Chain, bridge blockchain.Bridge, broadcast broadcastFunc, beaconBlock bool, log *log.Entry) *blockProcessor {
+func newBlockProcessor(ctx context.Context, config *network.EthConfig, chain *chainAdapter, bridge blockchain.Bridge, broadcast broadcastFunc, log *log.Entry) *blockProcessor {
 	return &blockProcessor{
-		config:      config,
-		chain:       newChainAdapter(beaconBlock, ethChain, NewChain(ctx)),
-		bridge:      bridge,
-		broadcast:   broadcast,
-		beaconBlock: beaconBlock,
-		log:         log,
+		config:    config,
+		chain:     chain,
+		bridge:    bridge,
+		broadcast: broadcast,
+		log:       log,
 	}
 }
 
@@ -55,15 +52,17 @@ func (n *blockProcessor) ProcessBDNBlock(bdnBlock *types.BxBlock) {
 	}
 
 	if n.broadcast != nil {
-		if err := n.broadcast(beaconBlock); err != nil {
-			n.log.Errorf("could not broadcast block %s: %v", hash, err)
-		}
+		go func() {
+			if err := n.broadcast(beaconBlock); err != nil {
+				n.log.Errorf("could not broadcast block %s: %v", ethcommon.Hash(hash), err)
+			}
+		}()
 	}
 }
 
 // storeBDNBlock will return a nil block and no error if block is a duplicate
 func (n *blockProcessor) storeBDNBlock(bdnBlock *types.BxBlock) (interfaces.SignedBeaconBlock, error) {
-	blockHash := ethcommon.BytesToHash(bdnBlock.Hash().Bytes())
+	blockHash := ethcommon.BytesToHash(bdnBlock.BeaconHash().Bytes())
 	if n.chain.HasBlock(blockHash) {
 		n.log.Debugf("duplicate block %v from BDN, skipping", blockHash)
 		return nil, nil
@@ -72,13 +71,13 @@ func (n *blockProcessor) storeBDNBlock(bdnBlock *types.BxBlock) (interfaces.Sign
 	blockchainBlock, err := n.bridge.BlockBDNtoBlockchain(bdnBlock)
 	if err != nil {
 		logBlockConverterFailure(err, bdnBlock)
-		return nil, errors.New("could not convert BDN block to Ethereum block")
+		return nil, errors.New("could not convert BDN block to beacon block")
 	}
 
 	beaconBlock, ok := blockchainBlock.(interfaces.SignedBeaconBlock)
 	if !ok {
 		logBlockConverterFailure(err, bdnBlock)
-		return nil, errors.New("could not convert BDN block to Ethereum block")
+		return nil, errors.New("could not convert BDN block to beacon block")
 	}
 
 	if _, err := n.chain.AddBlock(beaconBlock, BSBDN); err != nil {
@@ -96,7 +95,7 @@ func (n *blockProcessor) ProcessBlockchainBlock(log *log.Entry, endpoint types.N
 	blockHashString := ethcommon.BytesToHash(blockHash[:])
 	blockHeight := uint64(block.Block().Slot())
 
-	if err := n.validateBlock(blockHash, blockHeight); err != nil {
+	if err := n.chain.ValidateBlock(block); err != nil {
 		if err == ErrAlreadySeen {
 			log.Debugf("skipping block %v (height %v): %v", blockHashString, blockHeight, err)
 		} else {
@@ -115,18 +114,6 @@ func (n *blockProcessor) ProcessBlockchainBlock(log *log.Entry, endpoint types.N
 
 	// TODO: send to _others_ peers once we support multiple nodes
 
-	return nil
-}
-
-func (n *blockProcessor) validateBlock(blockHash ethcommon.Hash, blockHeight uint64) error {
-	if err := n.chain.ValidateBlock(blockHash, blockHeight); err != nil {
-		return err
-	}
-
-	chainHeight := n.chain.HeadHeight()
-	if chainHeight > 0 && int64(chainHeight)-int64(blockHeight) > int64(n.config.IgnoreSlotCount) {
-		return fmt.Errorf("block too old, chainstate height %v", chainHeight)
-	}
 	return nil
 }
 
@@ -151,7 +138,7 @@ func (n *blockProcessor) sendConfirmedBlocksToBDN(log *log.Entry, count int, pee
 			continue
 		}
 
-		n.chain.MarkSentToBDN(ethcommon.Hash(bdnBlock.Hash()))
+		n.chain.MarkSentToBDN(ethcommon.Hash(bdnBlock.BeaconHash()))
 	}
 
 	b, err := n.blockAtDepth(n.config.BlockConfirmationsCount)
@@ -159,7 +146,7 @@ func (n *blockProcessor) sendConfirmedBlocksToBDN(log *log.Entry, count int, pee
 		log.Debugf("cannot retrieve bxblock at depth %v, %v", n.config.BlockConfirmationsCount, err)
 		return
 	}
-	blockHash := ethcommon.Hash(b.Hash())
+	blockHash := ethcommon.Hash(b.BeaconHash())
 
 	if n.chain.HasConfirmationSentToBDN(blockHash) {
 		log.Debugf("block %v has already been sent in a block confirm message to gateway", blockHash)
@@ -182,7 +169,7 @@ func (n *blockProcessor) blockAtDepth(chainDepth int) (*types.BxBlock, error) {
 	}
 	bxBlock, err := n.bridge.BlockBlockchainToBDN(block)
 	if err != nil {
-		log.Debugf("cannot convert eth block to BDN block at the chain depth %v with hash %v, %v", chainDepth, bxBlock.Hash(), err)
+		log.Debugf("cannot convert eth block to BDN block at the chain depth %v with hash %v, %v", chainDepth, bxBlock.BeaconHash(), err)
 		return nil, err
 	}
 	return bxBlock, err

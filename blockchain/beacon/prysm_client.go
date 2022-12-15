@@ -47,7 +47,7 @@ func NewPrysmClient(ctx context.Context, config *network.EthConfig, ethChain *et
 		addr:           addr,
 		bridge:         bridge,
 		endpoint:       endpoint,
-		blockProcessor: newBlockProcessor(ctx, config, ethChain, bridge, nil, beaconBlock, log),
+		blockProcessor: newBlockProcessor(ctx, config, newChainAdapter(beaconBlock, ethChain, NewChain(ctx, config.GenesisTime, config.IgnoreSlotCount)), bridge, nil, log),
 		beaconBlock:    beaconBlock,
 		log:            log,
 	}
@@ -115,7 +115,7 @@ func (c *PrysmClient) run() {
 					continue
 				}
 
-				c.log.Tracef("eth2 block[slot=%d,hash=%s] sent to BDN", blk.Block().Slot(), blockHashHex)
+				c.log.Debugf("eth2 block[slot=%d,hash=%s] sent to BDN", blk.Block().Slot(), blockHashHex)
 			}
 		}()
 

@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
@@ -79,10 +80,10 @@ func (m MEVBundle) size() uint32 {
 }
 
 // Pack serializes a MEVBundle into a buffer for sending
-func (m MEVBundle) Pack(_ Protocol) ([]byte, error) {
+func (m MEVBundle) Pack(protocol Protocol) ([]byte, error) {
 	bufLen := m.size()
 	buf := make([]byte, bufLen)
-	m.BroadcastHeader.Pack(&buf, MEVBundleType)
+	m.BroadcastHeader.Pack(&buf, MEVBundleType, protocol)
 	offset := BroadcastHeaderLen
 
 	binary.LittleEndian.PutUint16(buf[offset:], uint16(len(m.Method)))

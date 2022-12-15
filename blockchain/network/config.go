@@ -28,13 +28,16 @@ type PeerInfo struct {
 
 // EthConfig represents Ethereum network configuration settings (e.g. indicate Mainnet, Rinkeby, BSC, etc.). Most of this information will be exchanged in the status messages.
 type EthConfig struct {
-	StaticPeers []PeerInfo
-	PrivateKey  *ecdsa.PrivateKey
-	Port        int
+	StaticPeers    []PeerInfo
+	BootstrapNodes []*enode.Node
+	PrivateKey     *ecdsa.PrivateKey
+	Port           int
 
+	ProgramName             string
 	Network                 uint64
 	TotalDifficulty         *big.Int
 	TerminalTotalDifficulty *big.Int
+	GenesisTime             uint64
 	TTDOverrides            bool
 	Head                    common.Hash
 	Genesis                 common.Hash
@@ -55,8 +58,6 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 		return nil, "", err
 	}
 
-	preset.Port = ctx.Int(utils.PortFlag.Name)
-
 	peers := make([]PeerInfo, 0)
 	if ctx.IsSet(utils.MultiNode.Name) {
 		if ctx.IsSet(utils.EnodesFlag.Name) || ctx.IsSet(utils.BeaconENRFlag.Name) || ctx.IsSet(utils.PrysmGRPCFlag.Name) || ctx.IsSet(utils.EthWSUriFlag.Name) {
@@ -70,7 +71,6 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 		if ctx.IsSet(utils.EnodesFlag.Name) {
 			enodeString := ctx.String(utils.EnodesFlag.Name)
 			var peer PeerInfo
-
 			enode, err := enode.Parse(enode.ValidSchemes, enodeString)
 			if err != nil {
 				return nil, "", err

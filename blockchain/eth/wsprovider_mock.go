@@ -80,6 +80,16 @@ func (m *MockWSProvider) FetchTransactionReceipt(payload []interface{}, options 
 	return testTxReceiptMap, nil
 }
 
+// FetchTransaction returns a fake response with no error
+func (m *MockWSProvider) FetchTransaction(payload []interface{}, options blockchain.RPCOptions) (interface{}, error) {
+	return nil, nil
+}
+
+//FetchBlock query a block given height via CallRPC
+func (m *MockWSProvider) FetchBlock(_ []interface{}, _ blockchain.RPCOptions) (interface{}, error) {
+	return nil, nil
+}
+
 // Dial is a no-op
 func (m *MockWSProvider) Dial() {
 	return

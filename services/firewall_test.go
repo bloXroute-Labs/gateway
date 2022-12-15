@@ -138,6 +138,11 @@ func TestFirewall_ConnectionAllowed(t *testing.T) {
 	assert.Nil(t, rejectConnection)
 
 	assert.Equal(t, 5, firewall.clean())
+
+	firewall.AddRule(sdnmessage.FirewallRule{AccountID: accountID2, PeerID: nodeID2, Duration: 200})
+	firewall.AddRule(sdnmessage.FirewallRule{AccountID: accountID2, PeerID: nodeID2, Duration: 3})
+	clock.IncTime(5 * time.Second)
+	assert.Equal(t, 1, firewall.clean())
 }
 
 func generateRandAccountID() types.AccountID {

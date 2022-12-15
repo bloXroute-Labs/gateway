@@ -6,6 +6,7 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // NoActiveBlockchainPeersAlert is used to send an alert to the gateway on initial liveliness check if no active blockchain peers
@@ -14,14 +15,16 @@ type NoActiveBlockchainPeersAlert struct {
 
 // TransactionAnnouncement represents an available transaction from a given peer that can be requested
 type TransactionAnnouncement struct {
-	Hashes types.SHA256HashList
-	PeerID string
+	Hashes       types.SHA256HashList
+	PeerID       string
+	PeerEndpoint types.NodeEndpoint
 }
 
 // Transactions is used to pass transactions between a node and the BDN
 type Transactions struct {
-	Transactions []*types.BxTransaction
-	PeerEndpoint types.NodeEndpoint
+	Transactions   []*types.BxTransaction
+	PeerEndpoint   types.NodeEndpoint
+	ConnectionType utils.NodeType
 }
 
 // BlockFromNode is used to pass blocks from a node to the BDN
@@ -37,13 +40,20 @@ type BlockAnnouncement struct {
 	PeerEndpoint types.NodeEndpoint
 }
 
+// ConnectionStatus represents blockchain connection status
+type ConnectionStatus struct {
+	PeerEndpoint types.NodeEndpoint
+	IsConnected  bool
+	IsInbound    bool
+}
+
 // Converter defines an interface for converting between blockchain and BDN transactions
 type Converter interface {
 	TransactionBlockchainToBDN(interface{}) (*types.BxTransaction, error)
 	TransactionBDNToBlockchain(*types.BxTransaction) (interface{}, error)
 	BlockBlockchainToBDN(interface{}) (*types.BxBlock, error)
 	BlockBDNtoBlockchain(block *types.BxBlock) (interface{}, error)
-	BxBlockToCanonicFormat(*types.BxBlock) (*types.BlockNotification, error)
+	BxBlockToCanonicFormat(*types.BxBlock, []*types.FutureValidatorInfo) (types.BlockNotification, types.BlockNotification, error)
 }
 
 // constants for transaction channel buffer sizes
@@ -61,7 +71,7 @@ type Bridge interface {
 	ReceiveNetworkConfigUpdates() <-chan network.EthConfig
 	UpdateNetworkConfig(network.EthConfig) error
 
-	AnnounceTransactionHashes(string, types.SHA256HashList) error
+	AnnounceTransactionHashes(string, types.SHA256HashList, types.NodeEndpoint) error
 	SendTransactionsFromBDN(transactions Transactions) error
 	SendTransactionsToBDN(txs []*types.BxTransaction, peerEndpoint types.NodeEndpoint) error
 	RequestTransactionsFromNode(string, types.SHA256HashList) error
@@ -87,12 +97,25 @@ type Bridge interface {
 	ReceiveBlockchainStatusRequest() <-chan struct{}
 	SendBlockchainStatusResponse([]*types.NodeEndpoint) error
 	ReceiveBlockchainStatusResponse() <-chan []*types.NodeEndpoint
+	SendValidatorListInfo(info *ValidatorListInfo) error
+	ReceiveValidatorListInfo() <-chan *ValidatorListInfo
+	SendBlockchainConnectionStatus(ConnectionStatus) error
+	ReceiveBlockchainConnectionStatus() <-chan ConnectionStatus
+
+	SendDisconnectEvent(endpoint types.NodeEndpoint) error
+	ReceiveDisconnectEvent() <-chan types.NodeEndpoint
 }
 
 // Errors
 var (
 	ErrChannelFull = errors.New("channel full") // ErrChannelFull is a special error for identifying overflowing channel buffers
 )
+
+// ValidatorListInfo is a struct for validator list
+type ValidatorListInfo struct {
+	ValidatorList []string
+	BlockHeight   uint64
+}
 
 // BxBridge is a channel based implementation of the Bridge interface
 type BxBridge struct {
@@ -103,6 +126,8 @@ type BxBridge struct {
 	transactionHashesFromNode chan TransactionAnnouncement
 	transactionHashesRequests chan TransactionAnnouncement
 
+	beaconBlock bool
+
 	blocksFromNode      chan BlockFromNode
 	ethBlocksFromBDN    chan *types.BxBlock
 	beaconBlocksFromBDN chan *types.BxBlock
@@ -111,26 +136,33 @@ type BxBridge struct {
 
 	noActiveBlockchainPeers chan NoActiveBlockchainPeersAlert
 
-	blockchainStatusRequest  chan struct{}
-	blockchainStatusResponse chan []*types.NodeEndpoint
+	blockchainStatusRequest    chan struct{}
+	blockchainStatusResponse   chan []*types.NodeEndpoint
+	blockchainConnectionStatus chan ConnectionStatus
+	disconnectEvent            chan types.NodeEndpoint
+	validatorInfo              chan *ValidatorListInfo
 }
 
 // NewBxBridge returns a BxBridge instance
-func NewBxBridge(converter Converter) Bridge {
+func NewBxBridge(converter Converter, beaconBlock bool) Bridge {
 	return &BxBridge{
-		config:                    make(chan network.EthConfig, 1),
-		transactionsFromNode:      make(chan Transactions, transactionBacklog),
-		transactionsFromBDN:       make(chan Transactions, transactionBacklog),
-		transactionHashesFromNode: make(chan TransactionAnnouncement, transactionHashesBacklog),
-		transactionHashesRequests: make(chan TransactionAnnouncement, transactionHashesBacklog),
-		blocksFromNode:            make(chan BlockFromNode, blockBacklog),
-		ethBlocksFromBDN:          make(chan *types.BxBlock, blockBacklog),
-		beaconBlocksFromBDN:       make(chan *types.BxBlock, blockBacklog),
-		confirmedBlockFromNode:    make(chan BlockFromNode, blockBacklog),
-		noActiveBlockchainPeers:   make(chan NoActiveBlockchainPeersAlert),
-		blockchainStatusRequest:   make(chan struct{}, statusBacklog),
-		blockchainStatusResponse:  make(chan []*types.NodeEndpoint, statusBacklog),
-		Converter:                 converter,
+		config:                     make(chan network.EthConfig, 1),
+		transactionsFromNode:       make(chan Transactions, transactionBacklog),
+		transactionsFromBDN:        make(chan Transactions, transactionBacklog),
+		transactionHashesFromNode:  make(chan TransactionAnnouncement, transactionHashesBacklog),
+		transactionHashesRequests:  make(chan TransactionAnnouncement, transactionHashesBacklog),
+		beaconBlock:                beaconBlock,
+		blocksFromNode:             make(chan BlockFromNode, blockBacklog),
+		ethBlocksFromBDN:           make(chan *types.BxBlock, blockBacklog),
+		beaconBlocksFromBDN:        make(chan *types.BxBlock, blockBacklog),
+		confirmedBlockFromNode:     make(chan BlockFromNode, blockBacklog),
+		noActiveBlockchainPeers:    make(chan NoActiveBlockchainPeersAlert),
+		blockchainStatusRequest:    make(chan struct{}, statusBacklog),
+		blockchainStatusResponse:   make(chan []*types.NodeEndpoint, statusBacklog),
+		blockchainConnectionStatus: make(chan ConnectionStatus, transactionBacklog),
+		disconnectEvent:            make(chan types.NodeEndpoint, statusBacklog),
+		Converter:                  converter,
+		validatorInfo:              make(chan *ValidatorListInfo, 1),
 	}
 }
 
@@ -146,9 +178,9 @@ func (b *BxBridge) UpdateNetworkConfig(config network.EthConfig) error {
 }
 
 // AnnounceTransactionHashes pushes a series of transaction announcements onto the announcements channel
-func (b BxBridge) AnnounceTransactionHashes(peerID string, hashes types.SHA256HashList) error {
+func (b BxBridge) AnnounceTransactionHashes(peerID string, hashes types.SHA256HashList, endpoint types.NodeEndpoint) error {
 	select {
-	case b.transactionHashesFromNode <- TransactionAnnouncement{Hashes: hashes, PeerID: peerID}:
+	case b.transactionHashesFromNode <- TransactionAnnouncement{Hashes: hashes, PeerID: peerID, PeerEndpoint: endpoint}:
 		return nil
 	default:
 		return ErrChannelFull
@@ -231,14 +263,17 @@ func (b BxBridge) SendBlockToNode(block *types.BxBlock) error {
 	case types.BxBlockTypeEth:
 		select {
 		case b.ethBlocksFromBDN <- block:
-			return nil
 		default:
 			return ErrChannelFull
 		}
 	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix:
+		// No listener, `b.beaconBlock` is true if the gateway started with a beacon P2P node
+		if !b.beaconBlock {
+			return nil
+		}
+
 		select {
 		case b.beaconBlocksFromBDN <- block:
-			return nil
 		default:
 			return ErrChannelFull
 		}
@@ -246,6 +281,7 @@ func (b BxBridge) SendBlockToNode(block *types.BxBlock) error {
 		return fmt.Errorf("could not send block %v with type %v", block.Hash(), block.Type)
 	}
 
+	return nil
 }
 
 // ReceiveBlockFromNode provides a channel that pushes blocks as they come in from nodes
@@ -311,4 +347,50 @@ func (b BxBridge) SendBlockchainStatusResponse(endpoints []*types.NodeEndpoint) 
 // ReceiveBlockchainStatusResponse handles blockchain connection status response from backend
 func (b BxBridge) ReceiveBlockchainStatusResponse() <-chan []*types.NodeEndpoint {
 	return b.blockchainStatusResponse
+}
+
+// SendValidatorListInfo sends a validator info to gateway
+func (b *BxBridge) SendValidatorListInfo(info *ValidatorListInfo) error {
+	select {
+	case b.validatorInfo <- info:
+		return nil
+	default:
+		return ErrChannelFull
+	}
+}
+
+// ReceiveValidatorListInfo called by gateway to receive the validator info
+func (b *BxBridge) ReceiveValidatorListInfo() <-chan *ValidatorListInfo {
+	return b.validatorInfo
+}
+
+// SendBlockchainConnectionStatus sends blockchain connection status
+func (b BxBridge) SendBlockchainConnectionStatus(connStatus ConnectionStatus) error {
+	select {
+	case b.blockchainConnectionStatus <- connStatus:
+		return nil
+	default:
+		return ErrChannelFull
+	}
+}
+
+// ReceiveBlockchainConnectionStatus handles blockchain connection status
+func (b BxBridge) ReceiveBlockchainConnectionStatus() <-chan ConnectionStatus {
+	return b.blockchainConnectionStatus
+}
+
+// SendDisconnectEvent send disconnect event
+func (b BxBridge) SendDisconnectEvent(endpoint types.NodeEndpoint) error {
+	select {
+	case b.disconnectEvent <- endpoint:
+		return nil
+	default:
+		return ErrChannelFull
+	}
+
+}
+
+// ReceiveDisconnectEvent handles disconnect event
+func (b BxBridge) ReceiveDisconnectEvent() <-chan types.NodeEndpoint {
+	return b.disconnectEvent
 }

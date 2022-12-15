@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
 	"time"
 )
@@ -20,6 +21,22 @@ const (
 	BxBlockTypeBeaconAltair
 	BxBlockTypeBeaconBellatrix
 )
+
+// String implements Stringer interface
+func (t BxBlockType) String() string {
+	switch t {
+	case BxBlockTypeEth:
+		return "eth"
+	case BxBlockTypeBeaconPhase0:
+		return "phase0"
+	case BxBlockTypeBeaconAltair:
+		return "altair"
+	case BxBlockTypeBeaconBellatrix:
+		return "bellatrix"
+	default:
+		return ""
+	}
+}
 
 // BxBlockTransaction represents a tx in the BxBlock.
 type BxBlockTransaction struct {
@@ -55,6 +72,7 @@ func (b BxBlockTransaction) Content() []byte {
 // BxBlock represents an encoded block ready for compression or decompression
 type BxBlock struct {
 	hash            SHA256Hash
+	beaconHash      SHA256Hash
 	Type            BxBlockType
 	Header          []byte
 	Txs             []*BxBlockTransaction
@@ -66,19 +84,20 @@ type BxBlock struct {
 }
 
 // NewBxBlock creates a new BxBlock that's ready for compression. This means that all transaction hashes must be included.
-func NewBxBlock(hash SHA256Hash, bType BxBlockType, header []byte, txs []*BxBlockTransaction, trailer []byte, totalDifficulty *big.Int, number *big.Int, size int) (*BxBlock, error) {
+func NewBxBlock(hash, beaconHash SHA256Hash, bType BxBlockType, header []byte, txs []*BxBlockTransaction, trailer []byte, totalDifficulty *big.Int, number *big.Int, size int) (*BxBlock, error) {
 	for _, tx := range txs {
 		if tx.Hash() == (SHA256Hash{}) {
 			return nil, errors.New("all transactions must contain hashes")
 		}
 	}
-	return NewRawBxBlock(hash, bType, header, txs, trailer, totalDifficulty, number, size), nil
+	return NewRawBxBlock(hash, beaconHash, bType, header, txs, trailer, totalDifficulty, number, size), nil
 }
 
 // NewRawBxBlock create a new BxBlock without compression restrictions. This should only be used when parsing the result of an existing BxBlock.
-func NewRawBxBlock(hash SHA256Hash, bType BxBlockType, header []byte, txs []*BxBlockTransaction, trailer []byte, totalDifficulty *big.Int, number *big.Int, size int) *BxBlock {
+func NewRawBxBlock(hash, beaconHash SHA256Hash, bType BxBlockType, header []byte, txs []*BxBlockTransaction, trailer []byte, totalDifficulty *big.Int, number *big.Int, size int) *BxBlock {
 	bxBlock := &BxBlock{
 		hash:            hash,
+		beaconHash:      beaconHash,
 		Type:            bType,
 		Header:          header,
 		Txs:             txs,
@@ -89,6 +108,25 @@ func NewRawBxBlock(hash SHA256Hash, bType BxBlockType, header []byte, txs []*BxB
 		size:            size,
 	}
 	return bxBlock
+}
+
+// String implements Stringer interface
+func (b BxBlock) String() string {
+	if b.IsBeaconBlock() {
+		return fmt.Sprintf("hash: %s, beacon hash: %s, type: %s, height: %d", b.hash, b.beaconHash, b.Type, b.Number.Uint64())
+	}
+
+	return fmt.Sprintf("hash: %s, type: %s, height: %d", b.hash, b.Type, b.Number.Uint64())
+}
+
+// IsBeaconBlock returns true if block is beacon
+func (b *BxBlock) IsBeaconBlock() bool {
+	switch b.Type {
+	case BxBlockTypeBeaconPhase0, BxBlockTypeBeaconAltair, BxBlockTypeBeaconBellatrix:
+		return true
+	default:
+		return false
+	}
 }
 
 // Serialize returns an expensive string representation of the BxBlock
@@ -112,6 +150,11 @@ func (b BxBlock) Serialize() string {
 // Hash returns block hash
 func (b BxBlock) Hash() SHA256Hash {
 	return b.hash
+}
+
+// BeaconHash returns beacon hash
+func (b BxBlock) BeaconHash() SHA256Hash {
+	return b.beaconHash
 }
 
 // Timestamp returns block add time

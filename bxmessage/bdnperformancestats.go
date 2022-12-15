@@ -2,8 +2,10 @@ package bxmessage
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"github.com/bloXroute-Labs/gateway/v2"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
@@ -30,6 +32,8 @@ type BdnPerformanceStatsData struct {
 	NewTxReceivedFromBdn            uint32
 	TxSentToNode                    uint32
 	DuplicateTxFromNode             uint32
+	Inbound                         bool
+	IsConnected                     bool
 	IsBeacon                        bool
 }
 
@@ -44,7 +48,9 @@ type BdnPerformanceStats struct {
 	burstLimitedTransactionsPaid   uint16
 	burstLimitedTransactionsUnpaid uint16
 
-	lock sync.Mutex
+	outboundConnections int64
+	inboundConnections  int64
+	lock                sync.Mutex
 }
 
 // NewBDNStats returns a new instance of BDNPerformanceStats
@@ -53,12 +59,18 @@ func NewBDNStats(blockchainPeers []types.NodeEndpoint) *BdnPerformanceStats {
 		intervalStartTime: time.Now(),
 		nodeStats:         make(map[string]*BdnPerformanceStatsData),
 	}
+
 	for _, endpoint := range blockchainPeers {
 		newStatsData := BdnPerformanceStatsData{}
 		newStatsData.IsBeacon = endpoint.IsBeacon
 		bdnStats.nodeStats[endpoint.IPPort()] = &newStatsData
 	}
 	return &bdnStats
+}
+
+// GetConnectionsCount return inbound/outbound connections
+func (bs *BdnPerformanceStats) GetConnectionsCount() (int64, int64) {
+	return bs.inboundConnections, bs.outboundConnections
 }
 
 // IsGatewayAllow checks if gateway connected with too many peers
@@ -85,29 +97,33 @@ func (bs *BdnPerformanceStats) IsGatewayAllow(minAllowedNodes uint64, maxAllowed
 }
 
 // CloseInterval sets the closing interval end time, starts new interval with cleared stats, and returns BdnPerformanceStats of closed interval
-func (bs *BdnPerformanceStats) CloseInterval() BdnPerformanceStats {
+func (bs *BdnPerformanceStats) CloseInterval() *BdnPerformanceStats {
 	bs.lock.Lock()
 
 	// close interval
 	bs.intervalEndTime = time.Now()
 
+	nodeStats := map[string]*BdnPerformanceStatsData{}
+	for endpoint, stat := range bs.nodeStats {
+		if !stat.Inbound {
+			newStatsData := BdnPerformanceStatsData{}
+			newStatsData.IsBeacon = stat.IsBeacon
+			newStatsData.IsConnected = stat.IsConnected
+			nodeStats[endpoint] = &newStatsData
+		}
+	}
+
 	// create BDNStats from closed interval for logging and sending
-	prevBDNStats := BdnPerformanceStats{
+	prevBDNStats := &BdnPerformanceStats{
 		intervalStartTime:              bs.intervalStartTime,
 		intervalEndTime:                bs.intervalEndTime,
 		memoryUtilizationMb:            bs.memoryUtilizationMb,
-		nodeStats:                      bs.nodeStats,
 		burstLimitedTransactionsPaid:   bs.burstLimitedTransactionsPaid,
 		burstLimitedTransactionsUnpaid: bs.burstLimitedTransactionsUnpaid,
+		nodeStats:                      bs.nodeStats,
 	}
 
-	// create fresh map with existing nodes for new interval
-	bs.nodeStats = make(map[string]*BdnPerformanceStatsData)
-	for endpoint, oldNodeStats := range prevBDNStats.nodeStats {
-		newStatsData := BdnPerformanceStatsData{}
-		newStatsData.IsBeacon = oldNodeStats.IsBeacon
-		bs.nodeStats[endpoint] = &newStatsData
-	}
+	bs.nodeStats = nodeStats
 
 	// start new interval
 	bs.intervalStartTime = time.Now()
@@ -127,13 +143,12 @@ func (bs *BdnPerformanceStats) SetMemoryUtilization(mb int) {
 func (bs *BdnPerformanceStats) LogNewBlockFromNode(node types.NodeEndpoint) {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
-	nodeStats, err := bs.getNodeStats(node)
-	if err != nil {
-		log.Error(err)
-		return
-	}
+	nodeStats := bs.getOrCreateNodeStats(node)
 	nodeStats.NewBlocksReceivedFromBlockchainNode++
 	for endpoint, stats := range bs.nodeStats {
+		if !stats.IsConnected {
+			continue
+		}
 		stats.NewBlocksSeen++
 		if endpoint == node.IPPort() {
 			continue
@@ -147,8 +162,10 @@ func (bs *BdnPerformanceStats) LogNewBlockFromBDN() {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
 	for _, stats := range bs.nodeStats {
-		stats.NewBlocksSeen++
-		stats.NewBlocksReceivedFromBdn++
+		if stats.IsConnected {
+			stats.NewBlocksSeen++
+			stats.NewBlocksReceivedFromBdn++
+		}
 	}
 }
 
@@ -156,11 +173,7 @@ func (bs *BdnPerformanceStats) LogNewBlockFromBDN() {
 func (bs *BdnPerformanceStats) LogNewBlockMessageFromNode(node types.NodeEndpoint) {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
-	nodeStats, err := bs.getNodeStats(node)
-	if err != nil {
-		log.Error(err)
-		return
-	}
+	nodeStats := bs.getOrCreateNodeStats(node)
 	nodeStats.NewBlockMessagesFromBlockchainNode++
 }
 
@@ -168,11 +181,7 @@ func (bs *BdnPerformanceStats) LogNewBlockMessageFromNode(node types.NodeEndpoin
 func (bs *BdnPerformanceStats) LogNewBlockAnnouncementFromNode(node types.NodeEndpoint) {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
-	nodeStats, err := bs.getNodeStats(node)
-	if err != nil {
-		log.Error(err)
-		return
-	}
+	nodeStats := bs.getOrCreateNodeStats(node)
 	nodeStats.NewBlockAnnouncementsFromBlockchainNode++
 }
 
@@ -180,12 +189,35 @@ func (bs *BdnPerformanceStats) LogNewBlockAnnouncementFromNode(node types.NodeEn
 func (bs *BdnPerformanceStats) LogNewTxFromNode(node types.NodeEndpoint) {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
+
+	bs.getOrCreateNodeStats(node)
 	for endpoint, stats := range bs.nodeStats {
 		if endpoint == node.IPPort() {
+			stats.IsConnected = true
 			stats.NewTxReceivedFromBlockchainNode++
 			continue
 		}
 		stats.NewTxReceivedFromBdn++
+	}
+}
+
+// SetBlockchainConnectionStatus logs blockchain connection status
+func (bs *BdnPerformanceStats) SetBlockchainConnectionStatus(status blockchain.ConnectionStatus) {
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
+
+	log.Debugf("Connection status: %v", status)
+	nodeStats, err := bs.getNodeStats(status.PeerEndpoint)
+	if err == nil {
+		nodeStats.IsConnected = status.IsConnected
+		return
+	}
+	nodeIPPort := status.PeerEndpoint.IPPort()
+
+	// if node is connected and does not exist in the peers, need to add it, else return with an error
+	if status.IsConnected {
+		stats := &BdnPerformanceStatsData{Inbound: status.PeerEndpoint.Inbound, IsConnected: true}
+		bs.nodeStats[nodeIPPort] = stats
 	}
 }
 
@@ -223,11 +255,7 @@ func (bs *BdnPerformanceStats) LogTxSentToNodes() {
 func (bs *BdnPerformanceStats) LogDuplicateTxFromNode(node types.NodeEndpoint) {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
-	nodeStats, err := bs.getNodeStats(node)
-	if err != nil {
-		log.Error(err)
-		return
-	}
+	nodeStats := bs.getOrCreateNodeStats(node)
 	nodeStats.DuplicateTxFromNode++
 }
 
@@ -277,7 +305,19 @@ func (bs *BdnPerformanceStats) getNodeStats(node types.NodeEndpoint) (*BdnPerfor
 		return stats, nil
 	}
 	return nil, fmt.Errorf("unable to find BDN stats for node %v", node.IPPort())
+}
 
+func (bs *BdnPerformanceStats) getOrCreateNodeStats(node types.NodeEndpoint) *BdnPerformanceStatsData {
+	stats, ok := bs.nodeStats[node.IPPort()]
+	if !ok {
+		stats = &BdnPerformanceStatsData{IsBeacon: node.IsBeacon, Inbound: true, IsConnected: true}
+		if !node.Inbound {
+			log.Debugf("override the inbound for node %v", node.IPPort())
+		}
+		bs.nodeStats[node.IPPort()] = stats
+	}
+	stats.IsConnected = true
+	return stats
 }
 
 // Pack serializes a BdnPerformanceStats into a buffer for sending
@@ -296,9 +336,30 @@ func (bs *BdnPerformanceStats) Pack(protocol Protocol) ([]byte, error) {
 	offset += types.UInt16Len
 
 	nodeStatsLen := len(bs.nodeStats)
+	if protocol < GatewayInboundConnections {
+		for _, nodeStats := range bs.nodeStats {
+			if nodeStats.Inbound {
+				nodeStatsLen--
+			}
+		}
+	}
+	if protocol < IsConnectedToGateway {
+		for _, nodeStats := range bs.nodeStats {
+			if !nodeStats.IsConnected {
+				nodeStatsLen--
+			}
+		}
+	}
+
 	binary.LittleEndian.PutUint16(buf[offset:], uint16(nodeStatsLen))
 	offset += types.UInt16Len
 	for endpoint, nodeStats := range bs.nodeStats {
+		if protocol < GatewayInboundConnections && nodeStats.Inbound {
+			continue
+		}
+		if protocol < IsConnectedToGateway && !nodeStats.IsConnected {
+			continue
+		}
 		ipPort := strings.Split(endpoint, " ")
 		port, err := strconv.Atoi(ipPort[1])
 		if err != nil {
@@ -335,6 +396,27 @@ func (bs *BdnPerformanceStats) Pack(protocol Protocol) ([]byte, error) {
 			}
 			offset += IsBeaconLen
 		}
+		switch {
+		case protocol < IsConnectedToGateway:
+		default:
+			if nodeStats.IsConnected {
+				copy(buf[offset:], []uint8{1})
+			} else {
+				copy(buf[offset:], []uint8{0})
+			}
+			offset++
+		}
+		switch {
+		case protocol < GatewayInboundConnections:
+		default:
+			if nodeStats.Inbound {
+				copy(buf[offset:], []uint8{1})
+			} else {
+				copy(buf[offset:], []uint8{0})
+			}
+
+			offset++
+		}
 	}
 
 	switch {
@@ -345,6 +427,8 @@ func (bs *BdnPerformanceStats) Pack(protocol Protocol) ([]byte, error) {
 		binary.LittleEndian.PutUint16(buf[offset:], bs.burstLimitedTransactionsUnpaid)
 	}
 	bs.Header.Pack(&buf, BDNPerformanceStatsType)
+
+	log.Debugf("BDN stats: %s", hex.EncodeToString(buf))
 	return buf, nil
 }
 
@@ -370,6 +454,15 @@ func (bs *BdnPerformanceStats) Unpack(buf []byte, protocol Protocol) error {
 	offset += types.UInt16Len
 
 	nodeStatsSize := int(nodesStatsLen) * ((utils.IPAddrSizeInBytes) + (types.UInt32Len * 7) + (types.UInt16Len * 3))
+	if protocol >= IsBeaconProtocol {
+		nodeStatsSize += IsBeaconLen
+	}
+	if protocol >= IsConnectedToGateway {
+		nodeStatsSize += int(nodesStatsLen)
+	}
+	if protocol >= GatewayInboundConnections {
+		nodeStatsSize += int(nodesStatsLen)
+	}
 	if err := checkBufSize(&buf, int(offset), nodeStatsSize); err != nil {
 		return err
 	}
@@ -412,6 +505,33 @@ func (bs *BdnPerformanceStats) Unpack(buf []byte, protocol Protocol) error {
 			singleNodeStats.IsBeacon = int(buf[offset : offset+IsBeaconLen][0]) != 0
 			offset += IsBeaconLen
 		}
+
+		switch {
+		case protocol < IsConnectedToGateway:
+			singleNodeStats.IsConnected = true
+		default:
+			singleNodeStats.IsConnected = int(buf[offset]) != 0
+			offset++
+		}
+
+		switch {
+		case protocol < GatewayInboundConnections:
+			if !singleNodeStats.IsBeacon && (protocol < IsConnectedToGateway || singleNodeStats.IsConnected) {
+				bs.outboundConnections++
+			}
+		default:
+			singleNodeStats.Inbound = int(buf[offset]) != 0
+			if singleNodeStats.Inbound {
+				bs.inboundConnections++
+			} else if !singleNodeStats.IsBeacon && (protocol < IsConnectedToGateway || singleNodeStats.IsConnected) {
+				bs.outboundConnections++
+			}
+			offset++
+		}
+
+		if endpoint.IPPort() != emptyEndpoint.IPPort() {
+			bs.nodeStats[endpoint.IPPort()] = &singleNodeStats
+		}
 	}
 	switch {
 	case protocol < FullTxTimeStampProtocol:
@@ -431,7 +551,7 @@ func (bs *BdnPerformanceStats) Log() {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
 	for endpoint, nodeStats := range bs.NodeStats() {
-		log.Infof("%v [%v - %v]: Processed %v blocks and %v transactions from the BDN", endpoint, bs.StartTime().Format(bxgateway.TimeLayoutISO), bs.EndTime().Format(bxgateway.TimeLayoutISO), nodeStats.NewBlocksReceivedFromBdn, nodeStats.NewTxReceivedFromBdn)
+		log.Infof("%v [%v - %v]: Received %v blocks and %v transactions from the BDN. Received transactions from node: %v", endpoint, bs.StartTime().Format(bxgateway.TimeLayoutISO), bs.EndTime().Format(bxgateway.TimeLayoutISO), nodeStats.NewBlocksReceivedFromBdn, nodeStats.NewTxReceivedFromBdn, nodeStats.NewTxReceivedFromBlockchainNode)
 	}
 }
 
@@ -439,6 +559,12 @@ func (bs *BdnPerformanceStats) size(protocol Protocol) uint32 {
 	nodeStatsSize := utils.IPAddrSizeInBytes + (types.UInt32Len * 7) + (types.UInt16Len * 3)
 	if protocol >= IsBeaconProtocol {
 		nodeStatsSize += IsBeaconLen
+	}
+	if protocol >= IsConnectedToGateway {
+		nodeStatsSize++
+	}
+	if protocol >= GatewayInboundConnections {
+		nodeStatsSize++
 	}
 	total := bs.Header.Size() + uint32((types.UInt64Len*2)+(types.UInt16Len*2)+(len(bs.nodeStats)*nodeStatsSize))
 	if protocol >= FullTxTimeStampProtocol {

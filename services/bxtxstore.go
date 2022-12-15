@@ -31,17 +31,19 @@ type BxTxStore struct {
 	lock                   sync.Mutex
 	assigner               ShortIDAssigner
 	cleanedShortIDsChannel chan types.ShortIDsByNetwork
+	bloom                  BloomFilter
 }
 
 // NewBxTxStore creates a new BxTxStore to store and processes all relevant transactions
 func NewBxTxStore(cleanupFreq time.Duration, maxTxAge time.Duration, noSIDAge time.Duration,
 	assigner ShortIDAssigner, seenTxs HashHistory, cleanedShortIDsChannel chan types.ShortIDsByNetwork,
-	timeToAvoidReEntry time.Duration) BxTxStore {
-	return newBxTxStore(utils.RealClock{}, cleanupFreq, maxTxAge, noSIDAge, assigner, seenTxs, cleanedShortIDsChannel, timeToAvoidReEntry)
+	timeToAvoidReEntry time.Duration, bloom BloomFilter) BxTxStore {
+	return newBxTxStore(utils.RealClock{}, cleanupFreq, maxTxAge, noSIDAge, assigner, seenTxs, cleanedShortIDsChannel, timeToAvoidReEntry, bloom)
 }
 
 func newBxTxStore(clock utils.Clock, cleanupFreq time.Duration, maxTxAge time.Duration,
-	noSIDAge time.Duration, assigner ShortIDAssigner, seenTxs HashHistory, cleanedShortIDsChannel chan types.ShortIDsByNetwork, timeToAvoidReEntry time.Duration) BxTxStore {
+	noSIDAge time.Duration, assigner ShortIDAssigner, seenTxs HashHistory, cleanedShortIDsChannel chan types.ShortIDsByNetwork,
+	timeToAvoidReEntry time.Duration, bloom BloomFilter) BxTxStore {
 	return BxTxStore{
 		clock:                  clock,
 		hashToContent:          cmap.New(),
@@ -54,6 +56,7 @@ func newBxTxStore(clock utils.Clock, cleanupFreq time.Duration, maxTxAge time.Du
 		quit:                   make(chan bool),
 		assigner:               assigner,
 		cleanedShortIDsChannel: cleanedShortIDsChannel,
+		bloom:                  bloom,
 	}
 }
 
@@ -94,8 +97,10 @@ func (t *BxTxStore) remove(hash string, reEntryProtection ReEntryProtectionFlags
 		case NoReEntryProtection:
 		case ShortReEntryProtection:
 			t.seenTxs.Add(hash, ShortReEntryProtectionDuration)
+			t.bloom.Add([]byte(hash))
 		case FullReEntryProtection:
 			t.seenTxs.Add(hash, t.timeToAvoidReEntry)
+			t.bloom.Add([]byte(hash))
 		default:
 			log.Fatalf("unknown reEntryProtection value %v for hash %v", reEntryProtection, hash)
 		}
@@ -169,8 +174,8 @@ func (t *BxTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID 
 	// if the hash is in history we treat it as IgnoreSeen
 	if t.refreshSeenTx(hash) {
 		// if the hash is in history, but we get a shortID for it, it means that the hash was not in the ATR history
-		//and some GWs may get and use this shortID. In such a case we should remove the hash from history and allow
-		//it to be added to the TxStore
+		// and some GWs may get and use this shortID. In such a case we should remove the hash from history and allow
+		// it to be added to the TxStore
 		if shortID != types.ShortIDEmpty {
 			t.seenTxs.Remove(hashStr)
 		} else {
@@ -206,11 +211,17 @@ func (t *BxTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID 
 		bxTransaction.AddFlags(types.TFDeliverToNode)
 	}
 
+	// check hash in the bloom filter only after it is not seen in txStore
+	if t.bloom != nil && shortID == types.ShortIDEmpty && !result.Reprocess && result.NewTx && t.bloom.Check(hash.Bytes()) {
+		result.DebugData = "Transaction ignored due to already seen in bloom filter"
+		result.AlreadySeen = true
+	}
+
 	// if shortID was not provided, assign shortID (if we are running as assigner)
 	// note that assigner.Next() provides ShortIDEmpty if we are not assigning
 	// also, shortID is not assigned if transaction is validators_only
 	// if we assigned shortID, result.AssignedShortID hold non ShortIDEmpty value
-	if result.NewTx && shortID == types.ShortIDEmpty && !bxTransaction.Flags().IsValidatorsOnly() {
+	if result.NewTx && shortID == types.ShortIDEmpty && !bxTransaction.Flags().IsValidatorsOnly() && !bxTransaction.Flags().IsNextValidator() && !bxTransaction.Flags().IsValidatorsOnly() {
 		shortID = t.assigner.Next()
 		result.AssignedShortID = shortID
 	}

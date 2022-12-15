@@ -88,6 +88,25 @@ func main() {
 				Flags:  []cli.Flag{},
 				Action: cmdListSubscriptions,
 			},
+			{
+				Name:  "disconnectinboundpeer",
+				Usage: "disconnect inbound node from gateway",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "ip",
+						Required: false,
+					},
+					&cli.StringFlag{
+						Name:     "port",
+						Required: false,
+					},
+					&cli.StringFlag{
+						Name:     "enode",
+						Required: false,
+					},
+				},
+				Action: cmdDisconnectInboundPeer,
+			},
 		},
 		Flags: []cli.Flag{
 			utils.GRPCHostFlag,
@@ -149,6 +168,19 @@ func cmdBlxrTX(ctx *cli.Context) error {
 	)
 	if err != nil {
 		return fmt.Errorf("could not process blxr tx: %v", err)
+	}
+	return nil
+}
+
+func cmdDisconnectInboundPeer(ctx *cli.Context) error {
+	err := rpc.GatewayConsoleCall(
+		config.NewGRPCFromCLI(ctx),
+		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
+			return client.DisconnectInboundPeer(callCtx, &pb.DisconnectInboundPeerRequest{PeerIp: ctx.String("ip"), PeerPort: ctx.Int64("port"), PublicKey: ctx.String("enode")})
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("could not process disconnect inbound node: %v", err)
 	}
 	return nil
 }

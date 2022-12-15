@@ -5,6 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
+	"net/http"
+	"testing"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
@@ -24,10 +29,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
-	"math/big"
-	"net/http"
-	"testing"
-	"time"
 )
 
 var accountIDToAccountModel = map[types.AccountID]sdnmessage.Account{
@@ -118,7 +119,7 @@ func TestClientHandler(t *testing.T) {
 	cfg := config.Bx{WebsocketPort: 28332, ManageWSServer: true, WebsocketTLSEnabled: false}
 
 	blockchainPeers, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
-	fm := NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 1, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats)
+	fm := NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 1, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil)
 	providers := fm.nodeWSManager.Providers()
 	p1 := providers[blockchainPeers[0].IPPort()]
 	assert.NotNil(t, p1)
@@ -134,6 +135,21 @@ func TestClientHandler(t *testing.T) {
 	go clientHandler.ManageWSServer(cfg.ManageWSServer)
 	go clientHandler.ManageHTTPServer(context.Background())
 	group.Go(fm.Start)
+
+	// BSC configuration
+	urlBSC := "127.0.0.1:28333"
+	cfgBSC := config.Bx{WebsocketPort: 28333, ManageWSServer: true, WebsocketTLSEnabled: false}
+	BscWsURLs := fmt.Sprintf("ws://%s/ws", urlBSC)
+	blockchainPeersBSC, blockchainPeersInfoBSC := test.GenerateBlockchainPeersInfo(1)
+	fmBSC := NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 56, eth.NewEthWSManager(blockchainPeersInfoBSC, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfgBSC, stats, nil)
+	p4 := providers[blockchainPeersBSC[0].IPPort()]
+	assert.NotNil(t, p4)
+	clientHandlerBSC := NewClientHandler(fmBSC, nil, NewHTTPServer(fmBSC, cfg.HTTPPort+1), log.WithFields(log.Fields{
+		"component": "gatewayClientHandlerBSC",
+	}))
+	go clientHandlerBSC.ManageWSServer(false)
+	go clientHandlerBSC.ManageHTTPServer(context.Background())
+	group.Go(fmBSC.Start)
 	time.Sleep(10 * time.Millisecond)
 
 	dialer := websocket.DefaultDialer
@@ -184,6 +200,7 @@ func TestClientHandler(t *testing.T) {
 			handleBlxrTxRequestAccessListTx(t, ws)
 			handleBlxrTxRequestDynamicFeeTx(t, ws)
 			handleBlxrTxRequestTxWithPrefix(t, ws)
+			handleBlxrTxRequestWithNextValidator(t, ws)
 			handleBlxrTxRequestRLPTx(t, ws)
 			handleBlxrTxWithWrongChainID(t, ws)
 			handleSubscribe(t, fm, ws)
@@ -192,7 +209,7 @@ func TestClientHandler(t *testing.T) {
 			testWSShutdown(t, fm, ws, blockchainPeers)
 		})
 		// restart bc last test shut down ws server
-		fm = NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 1, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats)
+		fm = NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 1, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil)
 		clientHandler = NewClientHandler(fm, nil, NewHTTPServer(fm, cfg.HTTPPort), log.WithFields(log.Fields{
 			"component": "gatewayClientHandler",
 		}))
@@ -201,6 +218,14 @@ func TestClientHandler(t *testing.T) {
 		group.Go(fm.Start)
 		time.Sleep(10 * time.Millisecond)
 	}
+
+	markAllPeersWithSyncStatus(fm, blockchainPeersBSC, blockchain.Synced)
+	wsBSC, _, err := dialer.Dial(BscWsURLs, headers)
+	assert.Nil(t, err)
+
+	t.Run(fmt.Sprintf("wsClient-%s", urlBSC), func(t *testing.T) {
+		handleBscBlxrTxRequestWithNextValidator(t, wsBSC)
+	})
 
 	// check disconnected subscription
 	clearWSProviderStats(fm, blockchainPeers)
@@ -212,12 +237,13 @@ func TestClientHandler(t *testing.T) {
 	headers.Set("Authorization", authHeader)
 	ws, _, err := dialer.Dial(wsURLs[0], headers)
 	assert.Nil(t, err)
+	assertSubscribe(t, ws, fm, `{"id": "1", "method": "subscribe", "params": ["newTxs", {"include": [], "multiTxs": true}]}`)
 	_, subscriptionID := assertSubscribe(t, ws, fm, `{"id": "1", "method": "subscribe", "params": ["newTxs", {"include": ["tx_hash"]}]}`)
 	time.Sleep(time.Millisecond)
 	assert.True(t, fm.SubscriptionExists(subscriptionID))
 	handlePingRequest(t, ws)
 	ws.Close()
-	time.Sleep(time.Millisecond)
+	time.Sleep(3 * time.Millisecond)
 	assert.False(t, fm.SubscriptionExists(subscriptionID))
 
 	// check subscribe and unsubscribe using different endpoints
@@ -386,7 +412,7 @@ func handleTxReceiptsSubscribe(t *testing.T, fm *FeedManager, ws *websocket.Conn
 }
 
 func handleTxReceiptsNotification(t *testing.T, fm *FeedManager, ws *websocket.Conn, blockchainPeers []types.NodeEndpoint) {
-	bridge := blockchain.NewBxBridge(eth.Converter{})
+	bridge := blockchain.NewBxBridge(eth.Converter{}, false)
 	wsProvider, ok := fm.nodeWSManager.Provider(&blockchainPeers[0])
 	assert.True(t, ok)
 	assert.Equal(t, wsProvider.BlockchainPeerEndpoint(), blockchainPeers[0])
@@ -397,7 +423,7 @@ func handleTxReceiptsNotification(t *testing.T, fm *FeedManager, ws *websocket.C
 	td := big.NewInt(10000)
 	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, td))
 	numTx := len(bxBlock.Txs)
-	feedNotification, _ := bridge.BxBlockToCanonicFormat(bxBlock)
+	feedNotification, _, _ := bridge.BxBlockToCanonicFormat(bxBlock, nil)
 	feedNotification.SetNotificationType(types.TxReceiptsFeed)
 	sourceEndpoint := types.NodeEndpoint{IP: blockchainPeers[0].IP, Port: blockchainPeers[0].Port}
 	feedNotification.SetSource(&sourceEndpoint)
@@ -423,7 +449,7 @@ func handleTxReceiptsNotification(t *testing.T, fm *FeedManager, ws *websocket.C
 }
 
 func handleOnBlockNotification(t *testing.T, fm *FeedManager, ws *websocket.Conn, blockchainPeers []types.NodeEndpoint) {
-	bridge := blockchain.NewBxBridge(eth.Converter{})
+	bridge := blockchain.NewBxBridge(eth.Converter{}, false)
 	wsProvider, ok := fm.nodeWSManager.Provider(&blockchainPeers[0])
 	assert.True(t, ok)
 	assert.Equal(t, wsProvider.BlockchainPeerEndpoint(), blockchainPeers[0])
@@ -433,9 +459,9 @@ func handleOnBlockNotification(t *testing.T, fm *FeedManager, ws *websocket.Conn
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
 	td := big.NewInt(10000)
 	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, td))
-	feedNotification, _ := bridge.BxBlockToCanonicFormat(bxBlock)
+	feedNotification, _, _ := bridge.BxBlockToCanonicFormat(bxBlock, nil)
 	feedNotification.SetNotificationType(types.OnBlockFeed)
-	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, "", false}
+	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, "", false, false}
 	feedNotification.SetSource(&sourceEndpoint)
 	assert.True(t, fm.nodeWSManager.Synced())
 
@@ -460,7 +486,7 @@ func handleOnBlockNotification(t *testing.T, fm *FeedManager, ws *websocket.Conn
 
 func handleTxReceiptsNotificationRequestedUnsynced(t *testing.T, fm *FeedManager, ws *websocket.Conn, blockchainPeers []types.NodeEndpoint) {
 	clearWSProviderStats(fm, blockchainPeers)
-	bridge := blockchain.NewBxBridge(eth.Converter{})
+	bridge := blockchain.NewBxBridge(eth.Converter{}, false)
 	requestedUnsyncedWSProvider, ok := fm.nodeWSManager.Provider(&blockchainPeers[0])
 	assert.True(t, ok)
 	assert.Equal(t, requestedUnsyncedWSProvider.BlockchainPeerEndpoint(), blockchainPeers[0])
@@ -474,9 +500,9 @@ func handleTxReceiptsNotificationRequestedUnsynced(t *testing.T, fm *FeedManager
 	td := big.NewInt(10000)
 	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, td))
 	numTx := len(bxBlock.Txs)
-	feedNotification, _ := bridge.BxBlockToCanonicFormat(bxBlock)
+	feedNotification, _, _ := bridge.BxBlockToCanonicFormat(bxBlock, nil)
 	feedNotification.SetNotificationType(types.TxReceiptsFeed)
-	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, "", false}
+	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, "", false, false}
 	feedNotification.SetSource(&sourceEndpoint)
 
 	fm.nodeWSManager.UpdateNodeSyncStatus(requestedUnsyncedWSProvider.BlockchainPeerEndpoint(), blockchain.Unsynced)
@@ -509,7 +535,7 @@ func handleOnBlockNotificationRequestedUnsynced(t *testing.T, fm *FeedManager, w
 	markAllPeersWithSyncStatus(fm, blockchainPeers, blockchain.Synced)
 	time.Sleep(time.Millisecond)
 
-	bridge := blockchain.NewBxBridge(eth.Converter{})
+	bridge := blockchain.NewBxBridge(eth.Converter{}, false)
 
 	requestedUnsyncedWSProvider, ok := fm.nodeWSManager.Provider(&blockchainPeers[0])
 	assert.True(t, ok)
@@ -523,9 +549,9 @@ func handleOnBlockNotificationRequestedUnsynced(t *testing.T, fm *FeedManager, w
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
 	td := big.NewInt(10000)
 	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, td))
-	feedNotification, _ := bridge.BxBlockToCanonicFormat(bxBlock)
+	feedNotification, _, _ := bridge.BxBlockToCanonicFormat(bxBlock, nil)
 	feedNotification.SetNotificationType(types.OnBlockFeed)
-	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, "", false}
+	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, "", false, false}
 	feedNotification.SetSource(&sourceEndpoint)
 
 	fm.nodeWSManager.UpdateNodeSyncStatus(requestedUnsyncedWSProvider.BlockchainPeerEndpoint(), blockchain.Unsynced)
@@ -558,7 +584,7 @@ func handleTxReceiptsNotificationNoneSynced(t *testing.T, fm *FeedManager, ws *w
 	markAllPeersWithSyncStatus(fm, blockchainPeers, blockchain.Synced)
 	time.Sleep(time.Millisecond)
 
-	bridge := blockchain.NewBxBridge(eth.Converter{})
+	bridge := blockchain.NewBxBridge(eth.Converter{}, false)
 
 	ws0, ok := fm.nodeWSManager.Provider(&blockchainPeers[0])
 	assert.True(t, ok)
@@ -579,9 +605,9 @@ func handleTxReceiptsNotificationNoneSynced(t *testing.T, fm *FeedManager, ws *w
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
 	td := big.NewInt(10000)
 	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, td))
-	feedNotification, err := bridge.BxBlockToCanonicFormat(bxBlock)
+	feedNotification, _, err := bridge.BxBlockToCanonicFormat(bxBlock, nil)
 	feedNotification.SetNotificationType(types.TxReceiptsFeed)
-	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, "", false}
+	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, "", false, false}
 	feedNotification.SetSource(&sourceEndpoint)
 
 	fm.nodeWSManager.UpdateNodeSyncStatus(blockchainPeers[0], blockchain.Unsynced)
@@ -599,7 +625,7 @@ func handleTxReceiptsNotificationNoneSynced(t *testing.T, fm *FeedManager, ws *w
 }
 
 func handleOnBlockNotificationNoneSynced(t *testing.T, fm *FeedManager, ws *websocket.Conn, blockchainPeers []types.NodeEndpoint) {
-	bridge := blockchain.NewBxBridge(eth.Converter{})
+	bridge := blockchain.NewBxBridge(eth.Converter{}, false)
 
 	ws0, ok := fm.nodeWSManager.Provider(&blockchainPeers[0])
 	assert.True(t, ok)
@@ -620,9 +646,9 @@ func handleOnBlockNotificationNoneSynced(t *testing.T, fm *FeedManager, ws *webs
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
 	td := big.NewInt(10000)
 	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, td))
-	feedNotification, err := bridge.BxBlockToCanonicFormat(bxBlock)
+	feedNotification, _, err := bridge.BxBlockToCanonicFormat(bxBlock, nil)
 	feedNotification.SetNotificationType(types.OnBlockFeed)
-	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, "", false}
+	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, "", false, false}
 	feedNotification.SetSource(&sourceEndpoint)
 
 	fm.nodeWSManager.UpdateNodeSyncStatus(blockchainPeers[0], blockchain.Unsynced)
@@ -742,6 +768,20 @@ func handleBlxrTxRequestTxWithPrefix(t *testing.T, ws *websocket.Conn) {
 	clientRes := getClientResponse(t, msg)
 	res := parseBlxrTxResult(t, clientRes.Result)
 	assert.Equal(t, fixtures.DynamicFeeTransactionHash[2:], res.TxHash)
+}
+
+func handleBlxrTxRequestWithNextValidator(t *testing.T, ws *websocket.Conn) {
+	reqPayload := fmt.Sprintf(`{"id": "1", "method": "blxr_tx", "params": {"transaction": "%s", "next_validator":true}}}`, "0x"+fixtures.LegacyTransaction)
+	msg := writeMsgToWsAndReadResponse(t, ws, []byte(reqPayload), nil)
+	clientRes := getClientResponse(t, msg)
+	assert.NotNil(t, clientRes.Error)
+}
+
+func handleBscBlxrTxRequestWithNextValidator(t *testing.T, ws *websocket.Conn) {
+	reqPayload := fmt.Sprintf(`{"id": "1", "method": "blxr_tx", "params": {"transaction": "%s", "next_validator":true}}}`, "0x"+fixtures.LegacyTransactionBSC)
+	msg := writeMsgToWsAndReadResponse(t, ws, []byte(reqPayload), nil)
+	clientRes := getClientResponse(t, msg)
+	assert.NotNil(t, clientRes.Error)
 }
 
 func TestSendBundleArgs_Validate(t *testing.T) {
@@ -878,7 +918,7 @@ func TestFeedsLimit(t *testing.T) {
 	cfg := config.Bx{WebsocketPort: 28332, ManageWSServer: true, WebsocketTLSEnabled: false, NodeType: utils.InternalGateway}
 
 	_, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
-	fm := NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 1, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), bloxrouteAccount, getMockCustomerAccountModel, "", "", cfg, stats)
+	fm := NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 1, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), bloxrouteAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil)
 	fm.accountModel.NewTransactionStreaming.Feed.Limit = 10
 
 	for i := 0; i < 10; i++ {
@@ -892,7 +932,7 @@ func TestFeedsLimit(t *testing.T) {
 	cfg = config.Bx{WebsocketPort: 28332, ManageWSServer: true, WebsocketTLSEnabled: false}
 
 	_, blockchainPeersInfo = test.GenerateBlockchainPeersInfo(3)
-	fm = NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 1, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats)
+	fm = NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 1, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil)
 
 	for i := 0; i < 10; i++ {
 		_, _, err := fm.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID("gw"), "", "", "", "")

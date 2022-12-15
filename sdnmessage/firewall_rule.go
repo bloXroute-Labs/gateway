@@ -10,6 +10,7 @@ type FirewallRule struct {
 	AccountID      types.AccountID `json:"account_id"`
 	PeerID         types.NodeID    `json:"node_id"`
 	Duration       int             `json:"duration"`
+	Reason         string          `json:"reason"`
 	expirationTime time.Time
 }
 

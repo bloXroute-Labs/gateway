@@ -77,7 +77,6 @@ func newPeer(parent context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version 
 		version:              version,
 		ctx:                  ctx,
 		cancel:               cancel,
-		endpoint:             types.NodeEndpoint{IP: p.Node().IP().String(), Port: p.Node().TCP(), PublicKey: p.Info().Enode},
 		clock:                clock,
 		newHeadCh:            make(chan blockRef, headChannelBacklog),
 		newBlockCh:           make(chan *eth.NewBlockPacket, blockChannelBacklog),
@@ -87,6 +86,7 @@ func newPeer(parent context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version 
 		responseQueue66:      cmap.New(),
 		RequestConfirmations: true,
 	}
+	peer.endpoint = types.NodeEndpoint{IP: p.Node().IP().String(), Port: p.Node().TCP(), PublicKey: p.Info().Enode, Inbound: p.Inbound()}
 	peerID := p.ID()
 	peer.log = log.WithFields(log.Fields{
 		"connType":   "ETH",
@@ -110,6 +110,11 @@ func (ep *Peer) String() string {
 // IPEndpoint provides the peer IP endpoint
 func (ep *Peer) IPEndpoint() types.NodeEndpoint {
 	return ep.endpoint
+}
+
+// Inbound returns true if the peer is inbound connection
+func (ep *Peer) Inbound() bool {
+	return ep.p.Inbound()
 }
 
 // Log returns the context logger for the peer connection

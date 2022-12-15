@@ -26,6 +26,7 @@ type GatewayClient interface {
 	Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionReply, error)
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 	Subscriptions(ctx context.Context, in *SubscriptionsRequest, opts ...grpc.CallOption) (*SubscriptionsReply, error)
+	DisconnectInboundPeer(ctx context.Context, in *DisconnectInboundPeerRequest, opts ...grpc.CallOption) (*DisconnectInboundPeerReply, error)
 }
 
 type gatewayClient struct {
@@ -108,6 +109,15 @@ func (c *gatewayClient) Subscriptions(ctx context.Context, in *SubscriptionsRequ
 	return out, nil
 }
 
+func (c *gatewayClient) DisconnectInboundPeer(ctx context.Context, in *DisconnectInboundPeerRequest, opts ...grpc.CallOption) (*DisconnectInboundPeerReply, error) {
+	out := new(DisconnectInboundPeerReply)
+	err := c.cc.Invoke(ctx, "/gateway.Gateway/DisconnectInboundPeer", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GatewayServer is the server API for Gateway service.
 // All implementations must embed UnimplementedGatewayServer
 // for forward compatibility
@@ -120,6 +130,7 @@ type GatewayServer interface {
 	Version(context.Context, *VersionRequest) (*VersionReply, error)
 	Status(context.Context, *StatusRequest) (*StatusResponse, error)
 	Subscriptions(context.Context, *SubscriptionsRequest) (*SubscriptionsReply, error)
+	DisconnectInboundPeer(context.Context, *DisconnectInboundPeerRequest) (*DisconnectInboundPeerReply, error)
 	mustEmbedUnimplementedGatewayServer()
 }
 
@@ -150,6 +161,9 @@ func (UnimplementedGatewayServer) Status(context.Context, *StatusRequest) (*Stat
 }
 func (UnimplementedGatewayServer) Subscriptions(context.Context, *SubscriptionsRequest) (*SubscriptionsReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Subscriptions not implemented")
+}
+func (UnimplementedGatewayServer) DisconnectInboundPeer(context.Context, *DisconnectInboundPeerRequest) (*DisconnectInboundPeerReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DisconnectInboundPeer not implemented")
 }
 func (UnimplementedGatewayServer) mustEmbedUnimplementedGatewayServer() {}
 
@@ -308,6 +322,24 @@ func _Gateway_Subscriptions_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Gateway_DisconnectInboundPeer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DisconnectInboundPeerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServer).DisconnectInboundPeer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/gateway.Gateway/DisconnectInboundPeer",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServer).DisconnectInboundPeer(ctx, req.(*DisconnectInboundPeerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Gateway_ServiceDesc is the grpc.ServiceDesc for Gateway service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -346,6 +378,10 @@ var Gateway_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Subscriptions",
 			Handler:    _Gateway_Subscriptions_Handler,
+		},
+		{
+			MethodName: "DisconnectInboundPeer",
+			Handler:    _Gateway_DisconnectInboundPeer_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

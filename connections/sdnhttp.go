@@ -64,6 +64,7 @@ type SDNHTTP interface {
 	DirectRelayConnections(ctx context.Context, relayHosts string, relayLimit uint64, relayInstructions chan<- RelayInstruction, autoRelayTimeout time.Duration) error
 	FindNetwork(networkNum types.NetworkNum) (*sdnmessage.BlockchainNetwork, error)
 	MinTxAge() time.Duration
+	SendNodeEvent(event sdnmessage.NodeEvent, id types.NodeID)
 	Get(endpoint string, requestBody []byte) ([]byte, error)
 }
 
@@ -74,6 +75,7 @@ type realSDNHTTP struct {
 	networks         sdnmessage.BlockchainNetworks
 	accountModel     *sdnmessage.Account
 	nodeID           types.NodeID
+	accountID        types.AccountID
 	sdnURL           string
 	dataDir          string
 	nodeModel        *sdnmessage.NodeModel
@@ -395,8 +397,13 @@ func (s *realSDNHTTP) Register() error {
 	if err = json.Unmarshal(resp, &s.nodeModel); err != nil {
 		return fmt.Errorf("could not deserialize node model: %v", err)
 	}
+	accountID, err := s.sslCerts.GetAccountID()
+	if err != nil {
+		return err
+	}
 
 	s.nodeID = s.nodeModel.NodeID
+	s.accountID = accountID
 
 	if s.sslCerts.NeedsPrivateCert() {
 		err := s.sslCerts.SavePrivateCert(s.nodeModel.Cert)
@@ -446,11 +453,11 @@ func (s *realSDNHTTP) getAccountModelWithEndpoint(accountID types.AccountID, end
 		return accountModel, fmt.Errorf("could not deserialize account model: %v", err)
 	}
 
-	return s.fillInAccountDefaults(&accountModel)
+	return s.fillInAccountDefaults(&accountModel, time.Now().UTC())
 }
 
-func (s *realSDNHTTP) fillInAccountDefaults(accountModel *sdnmessage.Account) (sdnmessage.Account, error) {
-	mappedAccountModel := sdnmessage.DefaultEliteAccount
+func (s *realSDNHTTP) fillInAccountDefaults(accountModel *sdnmessage.Account, now time.Time) (sdnmessage.Account, error) {
+	mappedAccountModel := sdnmessage.GetDefaultEliteAccount(now)
 	err := copier.CopyWithOption(&mappedAccountModel, *accountModel, copier.Option{IgnoreEmpty: true, DeepCopy: true})
 
 	if err != nil {
@@ -636,6 +643,20 @@ func getPingLatencies(peers sdnmessage.Peers) []nodeLatencyInfo {
 	sort.Slice(pingResults, func(i int, j int) bool { return pingResults[i].Latency < pingResults[j].Latency })
 	log.Infof("latency results for potential relays: %v", pingResults)
 	return pingResults
+}
+
+// SendNodeEvent sends node event to SDN through http
+func (s *realSDNHTTP) SendNodeEvent(event sdnmessage.NodeEvent, id types.NodeID) {
+	url := fmt.Sprintf("%v/nodes/%v/events", s.sdnURL, id)
+	eventBytes, err := json.Marshal(event)
+	if err != nil {
+		log.Errorf("error in sending node event to SDN through http, can't serialize node event, %v", err)
+	}
+	resp, err := s.http(url, bxgateway.PostMethod, bytes.NewBuffer(eventBytes))
+	if err != nil {
+		log.Errorf("error in sending node event to SDN through http, %v", err)
+	}
+	log.Infof("node event %v sent to SDN, resp is %v", event.EventType, resp)
 }
 
 // SDNURL getter for the private sdnURL field

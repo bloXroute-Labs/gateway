@@ -1,6 +1,8 @@
 package utils
 
-import "github.com/urfave/cli/v2"
+import (
+	"github.com/urfave/cli/v2"
+)
 
 // Ethereum specific flags
 var (
@@ -18,8 +20,19 @@ var (
 		Required: false,
 	}
 	EthWSUriFlag = &cli.StringFlag{
-		Name:  "eth-ws-uri",
-		Usage: "Ethereum websockets endpoint",
+		Name:        "eth-ws-uri",
+		Usage:       "Ethereum websockets endpoint",
+		DefaultText: "",
+	}
+	BSCWSUriFlag = &cli.StringFlag{
+		Name:        "bsc-ws-uri",
+		Usage:       "Ethereum websockets endpoint",
+		DefaultText: "",
+	}
+	PolygonWSUriFlag = &cli.StringFlag{
+		Name:        "polygon-ws-uri",
+		Usage:       "Ethereum websockets endpoint",
+		DefaultText: "",
 	}
 	PrysmGRPCFlag = &cli.StringFlag{
 		Name:  "prysm-grpc-uri",
@@ -40,6 +53,12 @@ var (
 	BeaconBlock = &cli.BoolFlag{
 		Name:   "beacon-block",
 		Usage:  "if true will propagate beacon block",
+		Hidden: true,
+	}
+	EthPropagationBlockDelay = &cli.DurationFlag{
+		Name:   "eth-propagation-delay",
+		Value:  0,
+		Usage:  "ethereum execution layer block propagation delay for gateways",
 		Hidden: true,
 	}
 )

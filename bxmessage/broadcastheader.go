@@ -3,6 +3,7 @@ package bxmessage
 import (
 	"encoding/binary"
 	"fmt"
+
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	uuid "github.com/satori/go.uuid"
@@ -26,7 +27,7 @@ func (b *BroadcastHeader) SetNetworkNum(networkNum types.NetworkNum) {
 	b.networkNumber = networkNum
 }
 
-// Hash returns the message hash
+// Hash returns the message identifier
 func (b *BroadcastHeader) Hash() (hash types.SHA256Hash) {
 	return b.hash
 }
@@ -58,7 +59,7 @@ func (b *BroadcastHeader) SetSourceID(sourceID types.NodeID) error {
 }
 
 // Pack serializes a BroadcastHeader into a buffer for sending on the wire
-func (b *BroadcastHeader) Pack(buf *[]byte, msgType string) {
+func (b *BroadcastHeader) Pack(buf *[]byte, msgType string, _ Protocol) {
 	offset := HeaderLen
 
 	copy((*buf)[offset:], b.hash[:])

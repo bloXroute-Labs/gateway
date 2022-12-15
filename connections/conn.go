@@ -12,6 +12,11 @@ type ConnHandler interface {
 	ProcessMessage(msg bxmessage.MessageBytes)
 }
 
+// EndpointConn describe all connections with endpoint
+type EndpointConn interface {
+	NodeEndpoint() types.NodeEndpoint
+}
+
 // Conn defines a network interface that sends and receives messages
 type Conn interface {
 	ID() Socket

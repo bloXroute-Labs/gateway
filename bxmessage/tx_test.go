@@ -120,3 +120,42 @@ func TestTx_TimeStamp(t *testing.T) {
 	_ = tx3.Unpack(b, FullTxTimeStampProtocol)
 	assert.Equal(t, packTime.UnixNano()>>10, tx3.Timestamp().UnixNano()>>10)
 }
+
+func TestTx_NextValidator(t *testing.T) {
+	var flags types.TxFlags
+	flags |= types.TFNextValidator
+
+	tx1 := Tx{
+		walletIDs: []string{"0x8b6c8fd93d6f4cea42bbb345dbc6f0dfdb5bec73", "0xe9ae3261a475a27bb1028f140bc2a7c843318afd"},
+		fallback:  10,
+		flags:     flags,
+		sender:    types.Sender{1},
+		content:   []byte{123},
+	}
+	b, _ := tx1.Pack(NextValidatorProtocol)
+	txMsg1 := Tx{}
+	_ = txMsg1.Unpack(b, NextValidatorProtocol)
+	assert.Equal(t, 10, int(txMsg1.fallback))
+	assert.Equal(t, "0x8b6c8fd93d6f4cea42bbb345dbc6f0dfdb5bec73", txMsg1.walletIDs[0])
+	assert.Equal(t, types.Sender{1}, txMsg1.sender)
+
+	b, _ = tx1.Pack(NextValidatorMultipleProtocol)
+	txMsg3 := Tx{}
+	_ = txMsg3.Unpack(b, NextValidatorMultipleProtocol)
+	assert.Equal(t, 10, int(txMsg3.fallback))
+	assert.Equal(t, "0x8b6c8fd93d6f4cea42bbb345dbc6f0dfdb5bec73", txMsg3.walletIDs[0])
+	assert.Equal(t, "0xe9ae3261a475a27bb1028f140bc2a7c843318afd", txMsg3.walletIDs[1])
+	assert.Equal(t, types.Sender{1}, txMsg3.sender)
+
+	flags = 0
+	tx2 := Tx{
+		walletIDs: []string{"0x8b6c8fd93d6f4cea42bbb345dbc6f0dfdb5bec73"},
+		fallback:  10,
+		flags:     flags,
+	}
+	b, _ = tx2.Pack(NextValidatorProtocol)
+	txMsg2 := Tx{}
+	_ = txMsg2.Unpack(b, NextValidatorProtocol)
+	assert.Equal(t, 0, int(txMsg2.fallback))
+	assert.Equal(t, "", txMsg2.walletIDs[0])
+}

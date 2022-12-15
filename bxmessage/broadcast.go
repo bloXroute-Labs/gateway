@@ -23,6 +23,7 @@ type Broadcast struct {
 	encrypted     bool
 	block         []byte
 	sids          types.ShortIDList
+	beaconHash    types.SHA256Hash
 }
 
 func blockToBroadcastType(blockType types.BxBlockType) broadcastType {
@@ -41,7 +42,7 @@ func blockToBroadcastType(blockType types.BxBlockType) broadcastType {
 }
 
 // NewBlockBroadcast creates a new broadcast message containing block message bytes
-func NewBlockBroadcast(hash types.SHA256Hash, bType types.BxBlockType, block []byte, shortIDs types.ShortIDList, networkNum types.NetworkNum) *Broadcast {
+func NewBlockBroadcast(hash, beaconHash types.SHA256Hash, bType types.BxBlockType, block []byte, shortIDs types.ShortIDList, networkNum types.NetworkNum) *Broadcast {
 	var broadcastType [BroadcastTypeLen]byte
 	copy(broadcastType[:], []byte(blockToBroadcastType(bType)))
 
@@ -52,8 +53,18 @@ func NewBlockBroadcast(hash types.SHA256Hash, bType types.BxBlockType, block []b
 		sids:          shortIDs,
 	}
 	b.SetHash(hash)
+	b.SetBeaconHash(beaconHash)
 	b.SetNetworkNum(networkNum)
 	return b
+}
+
+// String implements Stringer interface
+func (b Broadcast) String() string {
+	if b.IsBeaconBlock() {
+		return fmt.Sprintf("broadcast beacon(hash: %s, beacon hash: %s, type: %s, number: %d, txs: %d)", b.hash, b.beaconHash, b.broadcastType, b.networkNumber, len(b.ShortIDs()))
+	}
+
+	return fmt.Sprintf("broadcast(hash: %s, type: %s, number: %d, txs: %d)", b.hash, b.broadcastType, b.networkNumber, len(b.ShortIDs()))
 }
 
 // IsBeaconBlock returns true if block is beacon
@@ -110,6 +121,16 @@ func (b *Broadcast) SetBlock(block []byte) {
 	b.block = block
 }
 
+// SetBeaconHash sets the beacon block hash
+func (b *Broadcast) SetBeaconHash(hash types.SHA256Hash) {
+	b.beaconHash = hash
+}
+
+// BeaconHash returns the beacon block hash
+func (b *Broadcast) BeaconHash() (hash types.SHA256Hash) {
+	return b.beaconHash
+}
+
 // SetSids sets the sids
 func (b *Broadcast) SetSids(sids types.ShortIDList) {
 	b.sids = sids
@@ -117,11 +138,11 @@ func (b *Broadcast) SetSids(sids types.ShortIDList) {
 
 // Pack serializes a Broadcast into a buffer for sending
 func (b *Broadcast) Pack(protocol Protocol) ([]byte, error) {
-	bufLen := b.Size()
+	bufLen := b.Size(protocol)
 	buf := make([]byte, bufLen)
-	b.BroadcastHeader.Pack(&buf, BroadcastType)
+	b.BroadcastHeader.Pack(&buf, BroadcastType, protocol)
 	offset := BroadcastHeaderLen
-	if broadcastType(b.broadcastType[:]) != broadcastTypeEth && protocol < BeaconBlockProtocol {
+	if b.IsBeaconBlock() && protocol < BeaconBlockProtocol {
 		return nil, fmt.Errorf("should not pack beacon block to lower protocol %v", protocol)
 	}
 	copy(buf[offset:], b.broadcastType[:])
@@ -142,6 +163,13 @@ func (b *Broadcast) Pack(protocol Protocol) ([]byte, error) {
 		binary.LittleEndian.PutUint32(buf[offset:], uint32(sid))
 		offset += types.UInt32Len
 	}
+
+	// Put in the end to provide back compatibility
+	if b.IsBeaconBlock() && protocol >= BeaconBlockProtocol {
+		copy(buf[offset:], b.beaconHash[:])
+		offset += types.SHA256HashLen
+	}
+
 	return buf, nil
 }
 
@@ -154,8 +182,8 @@ func (b *Broadcast) Unpack(buf []byte, protocol Protocol) error {
 	offset := BroadcastHeaderLen
 	copy(b.broadcastType[:], buf[offset:])
 	offset += BroadcastTypeLen
-	if broadcastType(b.broadcastType[:]) != broadcastTypeEth && protocol < BeaconBlockProtocol {
-		return fmt.Errorf("should not pack beacon block to lower protocol %v", protocol)
+	if b.IsBeaconBlock() && protocol < BeaconBlockProtocol {
+		return fmt.Errorf("should not unpack beacon block from lower protocol %v", protocol)
 	}
 	b.encrypted = int(buf[offset : offset+EncryptedTypeLen][0]) != 0
 	offset += EncryptedTypeLen
@@ -187,16 +215,28 @@ func (b *Broadcast) Unpack(buf []byte, protocol Protocol) error {
 		b.sids = append(b.sids, sid)
 	}
 
+	// Put in the end to provide back compatibility
+	if b.IsBeaconBlock() && protocol >= BeaconBlockProtocol {
+		copy(b.beaconHash[:], buf[offset:])
+		offset += types.SHA256HashLen
+	}
+
 	return nil
 }
 
 // Size calculate msg size
-func (b *Broadcast) Size() uint32 {
-	return b.fixedSize() +
+func (b *Broadcast) Size(protocol Protocol) uint32 {
+	size := b.fixedSize() +
 		types.UInt64Len + // sids offset
 		uint32(len(b.block)) +
 		types.UInt32Len + // sids len
 		(uint32(len(b.sids)) * types.UInt32Len)
+
+	if b.IsBeaconBlock() && protocol >= BeaconBlockProtocol {
+		size += types.SHA256HashLen // beacon hash
+	}
+
+	return size
 }
 
 func (b *Broadcast) fixedSize() uint32 {

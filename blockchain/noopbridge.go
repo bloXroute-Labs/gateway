@@ -48,7 +48,7 @@ func (n NoOpBxBridge) UpdateNetworkConfig(config network.EthConfig) error {
 }
 
 // AnnounceTransactionHashes is a no-op
-func (n NoOpBxBridge) AnnounceTransactionHashes(s string, list types.SHA256HashList) error {
+func (n NoOpBxBridge) AnnounceTransactionHashes(s string, list types.SHA256HashList, e types.NodeEndpoint) error {
 	return nil
 }
 
@@ -144,4 +144,30 @@ func (n NoOpBxBridge) SendBlockchainStatusResponse([]*types.NodeEndpoint) error 
 // ReceiveBlockchainStatusResponse is a no-op
 func (n NoOpBxBridge) ReceiveBlockchainStatusResponse() <-chan []*types.NodeEndpoint {
 	return make(chan []*types.NodeEndpoint)
+}
+
+// SendValidatorListInfo is a no-op
+func (n *NoOpBxBridge) SendValidatorListInfo(info *ValidatorListInfo) error {
+	return nil
+}
+
+// ReceiveValidatorListInfo is a no-op
+func (n *NoOpBxBridge) ReceiveValidatorListInfo() <-chan *ValidatorListInfo {
+	return make(chan *ValidatorListInfo)
+}
+
+// SendBlockchainConnectionStatus is a no-op
+func (n NoOpBxBridge) SendBlockchainConnectionStatus(ConnectionStatus) error { return nil }
+
+// ReceiveBlockchainConnectionStatus is a no-op
+func (n NoOpBxBridge) ReceiveBlockchainConnectionStatus() <-chan ConnectionStatus {
+	return make(chan ConnectionStatus)
+}
+
+// SendDisconnectEvent is a no-op
+func (n NoOpBxBridge) SendDisconnectEvent(endpoint types.NodeEndpoint) error { return nil }
+
+// ReceiveDisconnectEvent is a no-op
+func (n NoOpBxBridge) ReceiveDisconnectEvent() <-chan types.NodeEndpoint {
+	return make(chan types.NodeEndpoint)
 }

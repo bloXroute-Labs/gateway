@@ -4,14 +4,15 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
+	"net"
 	"os"
 	"path"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
-	"github.com/bloXroute-Labs/gateway/v2/version"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/p2p/nat"
 )
 
 // Server wraps the Ethereum p2p server, for use with the BDN
@@ -21,7 +22,7 @@ type Server struct {
 }
 
 // NewServer return an Ethereum p2p server, configured with BDN friendly defaults
-func NewServer(parent context.Context, config *network.EthConfig, chain *Chain, bridge blockchain.Bridge, dataDir string, logger log.Logger, ws blockchain.WSManager) (*Server, error) {
+func NewServer(parent context.Context, port int, externalIP net.IP, config *network.EthConfig, chain *Chain, bridge blockchain.Bridge, dataDir string, logger log.Logger, ws blockchain.WSManager, maxInboundConn int) (*Server, error) {
 	var privateKey *ecdsa.PrivateKey
 
 	if config.PrivateKey != nil {
@@ -48,30 +49,48 @@ func NewServer(parent context.Context, config *network.EthConfig, chain *Chain, 
 	ctx, cancel := context.WithCancel(parent)
 	backend := NewHandler(ctx, config, chain, bridge, ws)
 
+	var (
+		maxDialedConn = len(config.StaticPeers)
+		maxPeers      = maxDialedConn + maxInboundConn
+
+		dialRatio int
+		noDial    bool
+	)
+
+	if maxDialedConn > 0 {
+		dialRatio = maxPeers / maxDialedConn
+		noDial = false
+	} else {
+		noDial = true
+	}
+
 	server := p2p.Server{
 		Config: p2p.Config{
 			PrivateKey:       privateKey,
-			MaxPeers:         len(config.StaticEnodes()),
+			MaxPeers:         maxPeers,
 			MaxPendingPeers:  1,
-			DialRatio:        1,
-			NoDiscovery:      true,
+			DialRatio:        dialRatio,
+			NoDiscovery:      false,
 			DiscoveryV5:      false,
-			Name:             fmt.Sprintf("bloXroute Gateway Go v%v", version.BuildVersion),
-			BootstrapNodes:   nil,
+			Name:             config.ProgramName,
 			BootstrapNodesV5: nil,
 			StaticNodes:      config.StaticEnodes(),
 			TrustedNodes:     nil,
 			NetRestrict:      nil,
 			NodeDatabase:     "",
 			Protocols:        MakeProtocols(ctx, backend),
-			ListenAddr:       "",
-			NAT:              nil,
+			NAT:              nat.ExtIP(externalIP),
 			Dialer:           nil,
-			NoDial:           false,
+			NoDial:           noDial,
 			EnableMsgEvents:  false,
 			Logger:           logger,
 		},
 		DiscV5: nil,
+	}
+
+	if maxInboundConn != 0 {
+		server.Config.BootstrapNodes = config.BootstrapNodes
+		server.Config.ListenAddr = fmt.Sprintf("0.0.0.0:%d", port)
 	}
 
 	s := &Server{
@@ -82,11 +101,11 @@ func NewServer(parent context.Context, config *network.EthConfig, chain *Chain, 
 }
 
 // NewServerWithEthLogger returns the p2p server preconfigured with the default Ethereum logger
-func NewServerWithEthLogger(ctx context.Context, config *network.EthConfig, chain *Chain, bridge blockchain.Bridge, dataDir string, ws blockchain.WSManager) (*Server, error) {
+func NewServerWithEthLogger(ctx context.Context, port int, externalIP net.IP, config *network.EthConfig, chain *Chain, bridge blockchain.Bridge, dataDir string, ws blockchain.WSManager, maxInboundConn int) (*Server, error) {
 	l := log.New()
 	l.SetHandler(log.StreamHandler(os.Stdout, log.TerminalFormat(true)))
 
-	return NewServer(ctx, config, chain, bridge, dataDir, l, ws)
+	return NewServer(ctx, port, externalIP, config, chain, bridge, dataDir, l, ws, maxInboundConn)
 }
 
 // Start starts eth server
@@ -110,6 +129,6 @@ func (s *Server) AddEthLoggerFileHandler(path string) error {
 	if err != nil {
 		return err
 	}
-	s.p2pServer.Logger.SetHandler(log.MultiHandler(fileHandler, s.p2pServer.Logger.GetHandler()))
+	s.p2pServer.Logger.SetHandler(log.LvlFilterHandler(log.LvlInfo, log.MultiHandler(fileHandler, s.p2pServer.Logger.GetHandler())))
 	return nil
 }

@@ -364,10 +364,6 @@ var (
 		Name:  "polygon-source-endpoint",
 		Usage: "websocket endpoint for Polygon mainnet go-gateway",
 	}
-	RopstenGatewayEndpoint = &cli.StringFlag{
-		Name:  "ropsten-source-endpoint",
-		Usage: "websocket endpoint for Polygon mainnet go-gateway",
-	}
 	MEVRelayURL = &cli.StringFlag{
 		Name:  "mev-relay-url",
 		Usage: "mev relay connection for forwarding rpc requests",
@@ -380,6 +376,17 @@ var (
 	TerminalTotalDifficulty = &cli.StringFlag{
 		Name:   "terminal-total-difficulty",
 		Usage:  "Overrides the terminal total difficulty settings of the blockchain network",
+		Hidden: true,
+	}
+	DisableInboundConnections = &cli.BoolFlag{
+		Name:  "disable-inbound-connections",
+		Usage: "enable this flag will disable inbound connections",
+		Value: true,
+	}
+	EnableBloomFilter = &cli.BoolFlag{
+		Name:   "enable-bloom-filter",
+		Usage:  "enables bloom filter for relayproxy to ignore already seen transactions",
+		Value:  false,
 		Hidden: true,
 	}
 )

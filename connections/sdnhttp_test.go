@@ -1150,7 +1150,8 @@ func TestSDNHTTP_HttpPostUnmarshallError(t *testing.T) {
 }
 
 func TestSDNHTTP_FillInAccountDefaults(t *testing.T) {
-	targetAccount := sdnmessage.DefaultEliteAccount
+	now := time.Now().UTC()
+	targetAccount := sdnmessage.GetDefaultEliteAccount(now)
 	tp := reflect.TypeOf(targetAccount)
 	numFields := tp.NumField()
 	for i := 0; i < numFields; i++ {
@@ -1159,10 +1160,10 @@ func TestSDNHTTP_FillInAccountDefaults(t *testing.T) {
 
 	sdnhttp := testSDNHTTP()
 
-	targetAccount, err := sdnhttp.fillInAccountDefaults(&targetAccount)
+	targetAccount, err := sdnhttp.fillInAccountDefaults(&targetAccount, now)
 
 	assert.Nil(t, err)
-	assert.Equal(t, sdnmessage.DefaultEliteAccount, targetAccount)
+	assert.Equal(t, sdnmessage.GetDefaultEliteAccount(now), targetAccount)
 
 }
 

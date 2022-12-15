@@ -6,8 +6,7 @@ import (
 	"testing"
 	"time"
 
-	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/eth/protocols/eth"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/prysmaticlabs/prysm/v3/consensus-types/blocks"
 	"github.com/prysmaticlabs/prysm/v3/consensus-types/interfaces"
 	types "github.com/prysmaticlabs/prysm/v3/consensus-types/primitives"
@@ -17,7 +16,7 @@ import (
 )
 
 func TestChain_AddBlock(t *testing.T) {
-	c := newChain(context.Background(), 5, 5, time.Hour, 1000)
+	c := newChain(context.Background(), 0, 10, 5, 5, time.Hour, 1000)
 
 	block1 := newBeaconBlock(t, 1, nil)
 	block2 := newBeaconBlock(t, 2, block1)
@@ -91,7 +90,7 @@ func TestChain_AddBlock(t *testing.T) {
 }
 
 func TestChain_AddBlock_MissingBlocks(t *testing.T) {
-	c := newChain(context.Background(), 5, 3, time.Hour, 1000)
+	c := newChain(context.Background(), 0, 10, 5, 3, time.Hour, 1000)
 
 	block1 := newBeaconBlock(t, 1, nil)
 	block2 := newBeaconBlock(t, 2, block1)
@@ -133,7 +132,7 @@ func TestChain_AddBlock_MissingBlocks(t *testing.T) {
 }
 
 func TestChain_AddBlock_LongFork(t *testing.T) {
-	c := newChain(context.Background(), 2, 5, time.Hour, 1000)
+	c := newChain(context.Background(), 0, 10, 2, 5, time.Hour, 1000)
 
 	block1 := newBeaconBlock(t, 1, nil)
 	block2a := newBeaconBlock(t, 2, block1)
@@ -170,161 +169,8 @@ func TestChain_AddBlock_LongFork(t *testing.T) {
 	assertChainState(t, c, block4b, 2, 3)
 }
 
-func TestChain_GetHeaders_ByNumber(t *testing.T) {
-	c := NewChain(context.Background())
-
-	// true chain: 1, 2, 3b, 4
-	block1 := newBeaconBlock(t, 1, nil)
-	block2 := newBeaconBlock(t, 2, block1)
-	block3a := newBeaconBlock(t, 3, block2)
-	block3b := newBeaconBlock(t, 3, block2)
-	block4 := newBeaconBlock(t, 4, block3b)
-
-	addBlock(t, c, block1)
-	addBlock(t, c, block2)
-	addBlock(t, c, block3a)
-	addBlock(t, c, block3b)
-	addBlock(t, c, block4)
-
-	var (
-		headers []*ethpb.SignedBeaconBlockHeader
-		err     error
-	)
-
-	// expected: err (neither header or hash provided)
-	headers, err = c.GetHeaders(eth.HashOrNumber{}, 1, 0, false)
-	assert.Nil(t, headers)
-	assert.Equal(t, ErrInvalidRequest, err)
-
-	// expected: err (headers in future)
-	headers, err = c.GetHeaders(eth.HashOrNumber{Number: 10}, 1, 0, false)
-	assert.Nil(t, headers)
-	assert.Equal(t, ErrFutureHeaders, err)
-
-	// expected: 1
-	headers, err = c.GetHeaders(eth.HashOrNumber{Number: 1}, 1, 0, false)
-	assert.Nil(t, err)
-	assert.Equal(t, 1, len(headers))
-	assert.Equal(t, blockHeader(t, block1), headers[0])
-
-	// fork point, expected: 3b
-	headers, err = c.GetHeaders(eth.HashOrNumber{Number: 3}, 1, 0, false)
-	assert.Nil(t, err)
-	assert.Equal(t, 1, len(headers))
-	assert.Equal(t, blockHeader(t, block3b), headers[0])
-
-	// expected: 1, 2, 3b, 4
-	headers, err = c.GetHeaders(eth.HashOrNumber{Number: 1}, 4, 0, false)
-	assert.Nil(t, err)
-	assert.Equal(t, 4, len(headers))
-	assert.Equal(t, blockHeader(t, block1), headers[0])
-	assert.Equal(t, blockHeader(t, block2), headers[1])
-	assert.Equal(t, blockHeader(t, block3b), headers[2])
-	assert.Equal(t, blockHeader(t, block4), headers[3])
-
-	// expected: 1, 3b
-	headers, err = c.GetHeaders(eth.HashOrNumber{Number: 1}, 2, 1, false)
-	assert.Nil(t, err)
-	assert.Equal(t, 2, len(headers))
-	assert.Equal(t, blockHeader(t, block1), headers[0])
-	assert.Equal(t, blockHeader(t, block3b), headers[1])
-
-	// expected: 4, 2
-	headers, err = c.GetHeaders(eth.HashOrNumber{Number: 4}, 2, 1, true)
-	assert.Nil(t, err)
-	assert.Equal(t, 2, len(headers))
-	assert.Equal(t, blockHeader(t, block4), headers[0])
-	assert.Equal(t, blockHeader(t, block2), headers[1])
-
-	// expected: 1, 2, 3b, 4 (found all that was possible)
-	headers, err = c.GetHeaders(eth.HashOrNumber{Number: 1}, 100, 0, false)
-	assert.Nil(t, err)
-	assert.Equal(t, 4, len(headers))
-	assert.Equal(t, blockHeader(t, block1), headers[0])
-	assert.Equal(t, blockHeader(t, block2), headers[1])
-	assert.Equal(t, blockHeader(t, block3b), headers[2])
-	assert.Equal(t, blockHeader(t, block4), headers[3])
-
-	// expected: err (header couldn't be located at the requested height in the past, so most create error)
-	headers, err = c.GetHeaders(eth.HashOrNumber{Number: 1}, 100, 0, true)
-	assert.Nil(t, headers)
-	assert.NotNil(t, err)
-}
-
-func TestChain_GetHeaders_ByHash(t *testing.T) {
-	c := NewChain(context.Background())
-
-	// true chain: 1, 2, 3b, 4
-	block1 := newBeaconBlock(t, 1, nil)
-	block2 := newBeaconBlock(t, 2, block1)
-	block3a := newBeaconBlock(t, 3, block2)
-	block3b := newBeaconBlock(t, 3, block2)
-	block4 := newBeaconBlock(t, 4, block3b)
-
-	addBlock(t, c, block1)
-	addBlock(t, c, block2)
-	addBlock(t, c, block3a)
-	addBlock(t, c, block3b)
-	addBlock(t, c, block4)
-
-	var (
-		headers []*ethpb.SignedBeaconBlockHeader
-		err     error
-	)
-
-	// expected: 1
-	headers, err = c.GetHeaders(eth.HashOrNumber{Hash: blockHash(t, block1)}, 1, 0, false)
-	assert.Nil(t, err)
-	assert.Equal(t, 1, len(headers))
-	assert.Equal(t, blockHeader(t, block1), headers[0])
-
-	// fork point, expected: 3a
-	headers, err = c.GetHeaders(eth.HashOrNumber{Hash: blockHash(t, block3a)}, 1, 0, false)
-	assert.Nil(t, err)
-	assert.Equal(t, 1, len(headers))
-	assert.Equal(t, blockHeader(t, block3a), headers[0])
-
-	// fork point, expected: 3b (even though it's not part of chain, still return it if requested)
-	headers, err = c.GetHeaders(eth.HashOrNumber{Hash: blockHash(t, block3b)}, 1, 0, false)
-	assert.Nil(t, err)
-	assert.Equal(t, 1, len(headers))
-	assert.Equal(t, blockHeader(t, block3b), headers[0])
-
-	// expected: 1, 2, 3b, 4
-	headers, err = c.GetHeaders(eth.HashOrNumber{Hash: blockHash(t, block1)}, 4, 0, false)
-	assert.Nil(t, err)
-	assert.Equal(t, 4, len(headers))
-	assert.Equal(t, blockHeader(t, block1), headers[0])
-	assert.Equal(t, blockHeader(t, block2), headers[1])
-	assert.Equal(t, blockHeader(t, block3b), headers[2])
-	assert.Equal(t, blockHeader(t, block4), headers[3])
-
-	// expected: 1, 3b
-	headers, err = c.GetHeaders(eth.HashOrNumber{Hash: blockHash(t, block1)}, 2, 1, false)
-	assert.Nil(t, err)
-	assert.Equal(t, 2, len(headers))
-	assert.Equal(t, blockHeader(t, block1), headers[0])
-	assert.Equal(t, blockHeader(t, block3b), headers[1])
-
-	// expected: 4, 2
-	headers, err = c.GetHeaders(eth.HashOrNumber{Hash: blockHash(t, block4)}, 2, 1, true)
-	assert.Nil(t, err)
-	assert.Equal(t, 2, len(headers))
-	assert.Equal(t, blockHeader(t, block4), headers[0])
-	assert.Equal(t, blockHeader(t, block2), headers[1])
-
-	// expected: 1, 2, 3b, 4 (found all that was possible)
-	headers, err = c.GetHeaders(eth.HashOrNumber{Hash: blockHash(t, block1)}, 100, 0, false)
-	assert.Nil(t, err)
-	assert.Equal(t, 4, len(headers))
-	assert.Equal(t, blockHeader(t, block1), headers[0])
-	assert.Equal(t, blockHeader(t, block2), headers[1])
-	assert.Equal(t, blockHeader(t, block3b), headers[2])
-	assert.Equal(t, blockHeader(t, block4), headers[3])
-}
-
 func TestChain_GetNewHeadsForBDN(t *testing.T) {
-	c := newChain(context.Background(), 5, 5, time.Hour, 1000)
+	c := newChain(context.Background(), 0, 10, 5, 5, time.Hour, 1000)
 
 	block1 := newBeaconBlock(t, 1, nil)
 	block2 := newBeaconBlock(t, 2, block1)
@@ -347,6 +193,98 @@ func TestChain_GetNewHeadsForBDN(t *testing.T) {
 	blocks, err = c.GetNewHeadsForBDN(2)
 	assert.Nil(t, err)
 	assert.Equal(t, blockHash(t, block3), blockHash(t, blocks[0]))
+}
+
+func TestChain_clean(t *testing.T) {
+	cleanInterval := 15 * time.Millisecond
+	c := newChain(context.Background(), 0, 10, 5, 5, cleanInterval, 3)
+
+	block1 := newBeaconBlock(t, 1, nil)
+	block2 := newBeaconBlock(t, 2, block1)
+	block3 := newBeaconBlock(t, 3, block2)
+	block4 := newBeaconBlock(t, 4, block3)
+	block5 := newBeaconBlock(t, 5, block4)
+	block6 := newBeaconBlock(t, 6, block5)
+
+	addBDNBlock(t, c, block1) // remove
+	addBDNBlock(t, c, block2) // remove
+	addBDNBlock(t, c, block3)
+	addBDNBlock(t, c, block4)
+	addBlock(t, c, block5) // chainstate head
+	addBDNBlock(t, c, block6)
+
+	expectedHashes := map[common.Hash]struct{}{
+		blockHash(t, block3): {},
+		blockHash(t, block4): {},
+		blockHash(t, block5): {},
+		blockHash(t, block6): {},
+	}
+
+	assert.Equal(t, 6, c.heightToBlockHeaders.Count())
+
+	// Clean can block last block adding
+	// So better to use (blockCount + 1) * cleanInterval
+	time.Sleep(7 * cleanInterval)
+
+	assert.Equal(t, 4, c.heightToBlockHeaders.Count())
+
+	for elem := range c.heightToBlockHeaders.IterBuffered() {
+		headers := elem.Val.([]ethBeaconHeader)
+		for _, header := range headers {
+			if _, ok := expectedHashes[header.hash]; !ok {
+				assert.Fail(t, "unexpected block", "height: %v", header.Header.Header.Slot)
+			}
+			delete(expectedHashes, header.hash)
+		}
+		c.heightToBlockHeaders.Remove(elem.Key)
+	}
+
+	assert.Empty(t, expectedHashes)
+	assert.Zero(t, c.heightToBlockHeaders.Count())
+}
+
+func TestChain_cleanNoChainstate(t *testing.T) {
+	cleanInterval := 15 * time.Millisecond
+	c := newChain(context.Background(), 0, 10, 5, 5, cleanInterval, 3)
+
+	block1 := newBeaconBlock(t, 1, nil)
+	block2 := newBeaconBlock(t, 2, block1)
+	block3 := newBeaconBlock(t, 3, block2)
+	block4 := newBeaconBlock(t, 4, block3)
+
+	// No Blockchain block = no chainstate
+	addBDNBlock(t, c, block1) // remove
+	addBDNBlock(t, c, block2)
+	addBDNBlock(t, c, block3)
+	addBDNBlock(t, c, block4) // taking last BDN block as base
+
+	expectedHashes := map[common.Hash]struct{}{
+		blockHash(t, block2): {},
+		blockHash(t, block3): {},
+		blockHash(t, block4): {},
+	}
+
+	assert.Equal(t, 4, c.heightToBlockHeaders.Count())
+
+	// Clean can block last block adding
+	// So better to use (blockCount + 1) * cleanInterval
+	time.Sleep(5 * cleanInterval)
+
+	assert.Equal(t, 3, c.heightToBlockHeaders.Count())
+
+	for elem := range c.heightToBlockHeaders.IterBuffered() {
+		headers := elem.Val.([]ethBeaconHeader)
+		for _, header := range headers {
+			if _, ok := expectedHashes[header.hash]; !ok {
+				assert.Fail(t, "unexpected block", "height: %v", header.Header.Header.Slot)
+			}
+			delete(expectedHashes, header.hash)
+		}
+		c.heightToBlockHeaders.Remove(elem.Key)
+	}
+
+	assert.Empty(t, expectedHashes)
+	assert.Zero(t, c.heightToBlockHeaders.Count())
 }
 
 func newBeaconBlock(t *testing.T, slot int, prevBlock interfaces.SignedBeaconBlock) interfaces.SignedBeaconBlock {
@@ -389,6 +327,13 @@ func newBeaconBlock(t *testing.T, slot int, prevBlock interfaces.SignedBeaconBlo
 	return blk
 }
 
+func addBDNBlock(t *testing.T, c *Chain, block interfaces.SignedBeaconBlock) int {
+	newHeads, err := c.AddBlock(block, BSBDN)
+	assert.NoError(t, err)
+
+	return newHeads
+}
+
 func addBlock(t *testing.T, c *Chain, block interfaces.SignedBeaconBlock) int {
 	newHeads, err := c.AddBlock(block, BSBlockchain)
 	assert.NoError(t, err)
@@ -409,7 +354,7 @@ func blockHeader(t *testing.T, block interfaces.SignedBeaconBlock) *ethpb.Signed
 	return header
 }
 
-func blockHash(t *testing.T, block interfaces.SignedBeaconBlock) ethcommon.Hash {
+func blockHash(t *testing.T, block interfaces.SignedBeaconBlock) common.Hash {
 	hash, err := block.Block().HashTreeRoot()
 	assert.NoError(t, err)
 

@@ -16,6 +16,7 @@ type BlockchainAttributes struct {
 	TerminalTotalDifficulty interface{} `json:"terminal_total_difficulty"`
 	GenesisHash             string      `json:"genesis_hash,omitempty"`
 	NetworkID               int64       `json:"network_id,omitempty"`
+	BootstrapNodes          []string    `json:"bootstrap_nodes"`
 }
 
 // BlockchainNetwork represents network config for a given blockchain network being routed by bloxroute
@@ -27,6 +28,7 @@ type BlockchainNetwork struct {
 	BlockInterval                          int64                `json:"block_interval"`
 	BlockRecoveryTimeoutS                  int64                `json:"block_recovery_timeout_s"`
 	DefaultAttributes                      BlockchainAttributes `json:"default_attributes"`
+	ProgramName                            string               `json:"program_name"`
 	EnableBlockCompression                 bool                 `json:"enable_block_compression"`
 	EnableCheckSenderNonce                 bool                 `json:"enable_check_sender_nonce"`
 	EnableNetworkContentLogs               bool                 `json:"enable_network_content_logs"`
@@ -77,5 +79,26 @@ func (bcns *BlockchainNetworks) FindNetwork(networkNum types.NetworkNum) (*Block
 	if network, exists := (*bcns)[networkNum]; exists {
 		return network, nil
 	}
-	return nil, fmt.Errorf("can't find blockchain network %v", networkNum)
+	return nil, fmt.Errorf("can't find blockchain network with network number %v", networkNum)
+}
+
+// IsAllowedTier check if tier is allowed in blockchain network
+func (bcn *BlockchainNetwork) IsAllowedTier(clientTier AccountTier) bool {
+	lowestTierAllowed := AccountTier(bcn.AllowedFromTier)
+	switch lowestTierAllowed {
+	case ATierIntroductory:
+		return true
+	case ATierDeveloper:
+		return clientTier != ATierIntroductory
+	case ATierProfessional:
+		return clientTier != ATierIntroductory && clientTier != ATierDeveloper
+	case ATierEnterprise:
+		return clientTier.IsEnterprise()
+	case ATierElite:
+		return clientTier.IsElite()
+	case ATierUltra:
+		return clientTier.IsUltra()
+	default:
+		return false
+	}
 }

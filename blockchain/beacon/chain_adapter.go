@@ -44,12 +44,17 @@ func (c *chainAdapter) HasBlock(hash ethcommon.Hash) bool {
 }
 
 // ValidateBlock determines if block can potentially be added to the chain
-func (c *chainAdapter) ValidateBlock(hash ethcommon.Hash, height uint64) error {
+func (c *chainAdapter) ValidateBlock(block interfaces.SignedBeaconBlock) error {
 	if c.beaconBlock {
-		return c.chain.ValidateBlock(hash, height)
+		return c.chain.ValidateBlock(block)
 	}
 
-	return c.ethChain.ValidateBlock(hash, int64(height))
+	ethBlock, err := eth.BeaconBlockToEthBlock(block)
+	if err != nil {
+		return err
+	}
+
+	return c.ethChain.ValidateBlock(ethBlock)
 }
 
 // GetNewHeadsForBDN fetches the newest blocks on the chainstate that have not previously been sent to the BDN. In cases of error, as many entries are still returned along with the error. Entries are returned in descending order.

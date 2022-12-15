@@ -16,6 +16,7 @@ import (
 	cmap "github.com/orcaman/concurrent-map"
 	"github.com/prysmaticlabs/prysm/v3/consensus-types/blocks"
 	"github.com/prysmaticlabs/prysm/v3/consensus-types/interfaces"
+	types "github.com/prysmaticlabs/prysm/v3/consensus-types/primitives"
 	enginev1 "github.com/prysmaticlabs/prysm/v3/proto/engine/v1"
 	ethpb "github.com/prysmaticlabs/prysm/v3/proto/prysm/v1alpha1"
 	"github.com/prysmaticlabs/prysm/v3/runtime/version"
@@ -24,15 +25,13 @@ import (
 const (
 	maxReorgLength       = 20
 	minValidChainLength  = 10
-	defaultMaxSize       = 500
-	defaultCleanInterval = 30 * time.Minute
-	maxFutureBlockNumber = 100
-	ignoreSlotCount      = 10
+	defaultMaxSize       = 100
+	defaultCleanInterval = 10 * time.Minute
 )
 
 // blockRef represents block info used for storing best block
 type blockRef struct {
-	height uint64
+	height uint64 // TODO: rename here and everywhere height to slot incl func definitions
 	hash   ethcommon.Hash
 }
 
@@ -67,11 +66,16 @@ type Chain struct {
 	chainLock  sync.RWMutex // lock for updating chainstate
 	headerLock sync.RWMutex // lock for block headers/heights
 
+	genesisTime uint64
+
 	// if reconciling a fork takes longer than this value, then trim the chain to this length
 	maxReorg int
 
 	// if a missing block is preventing updating the chain head, once a valid chain of this length is possible, discard the old chain
 	minValidChain int
+
+	// if a missing block too old discard to add it
+	ignoreSlotCount int
 
 	heightToBlockHeaders cmap.ConcurrentMap
 	blockHashMetadata    cmap.ConcurrentMap
@@ -105,20 +109,22 @@ type ethBeaconHeader struct {
 }
 
 // NewChain returns a new chainstate struct for usage
-func NewChain(ctx context.Context) *Chain {
-	return newChain(ctx, maxReorgLength, minValidChainLength, defaultCleanInterval, defaultMaxSize)
+func NewChain(ctx context.Context, genesisTime uint64, ignoreSlotCount int) *Chain {
+	return newChain(ctx, genesisTime, ignoreSlotCount, maxReorgLength, minValidChainLength, defaultCleanInterval, defaultMaxSize)
 }
 
-func newChain(ctx context.Context, maxReorg, minValidChain int, cleanInterval time.Duration, maxSize int) *Chain {
+func newChain(ctx context.Context, genesisTime uint64, ignoreSlotCount int, maxReorg, minValidChain int, cleanInterval time.Duration, maxSize int) *Chain {
 	c := &Chain{
 		chainLock:            sync.RWMutex{},
 		headerLock:           sync.RWMutex{},
+		genesisTime:          genesisTime,
 		heightToBlockHeaders: cmap.New(),
 		blockHashMetadata:    cmap.New(),
 		blockHashToBody:      cmap.New(),
 		chainState:           make([]blockRef, 0),
 		maxReorg:             maxReorg,
 		minValidChain:        minValidChain,
+		ignoreSlotCount:      ignoreSlotCount,
 		clock:                utils.RealClock{},
 	}
 	go c.cleanBlockStorage(ctx, cleanInterval, maxSize)
@@ -237,15 +243,27 @@ func (c *Chain) GetNewHeadsForBDN(count int) ([]interfaces.SignedBeaconBlock, er
 }
 
 // ValidateBlock determines if block can potentially be added to the chain
-func (c *Chain) ValidateBlock(hash ethcommon.Hash, height uint64) error {
+func (c *Chain) ValidateBlock(block interfaces.SignedBeaconBlock) error {
+	hash, err := block.Block().HashTreeRoot()
+	if err != nil {
+		return fmt.Errorf("could not get block hash: %v", err)
+	}
+	blockSlot := block.Block().Slot()
+
 	if c.HasBlock(hash) && c.HasSentToBDN(hash) && c.HasConfirmedBlock(hash) {
 		return ErrAlreadySeen
 	}
 
-	chainHead := c.chainState.head()
-	maxBlockNumber := chainHead.height + maxFutureBlockNumber
-	if chainHead.height != 0 && height > maxBlockNumber {
-		return fmt.Errorf("too far in future (best height: %v, max allowed height: %v)", chainHead.height, maxBlockNumber)
+	currentSlot := currentSlot(c.genesisTime)
+
+	maxSlot := currentSlot + types.Slot(c.ignoreSlotCount)
+	if blockSlot > maxSlot {
+		return fmt.Errorf("too far in future, current slot: %d, max slot: %d", currentSlot, maxSlot)
+	}
+
+	minSlot := currentSlot - types.Slot(c.ignoreSlotCount)
+	if blockSlot < minSlot {
+		return fmt.Errorf("too old, current slot: %d, min slot: %d", currentSlot, minSlot)
 	}
 
 	return nil
@@ -333,6 +351,9 @@ func (c *Chain) GetHeaders(start eth.HashOrNumber, count int, skip int, reverse 
 	c.chainLock.RLock()
 	defer c.chainLock.RUnlock()
 
+	if count < 0 {
+		return nil, ErrQueryAmountIsNotValid
+	}
 	requestedHeaders := make([]*ethpb.SignedBeaconBlockHeader, 0, count)
 
 	var (
@@ -372,7 +393,7 @@ func (c *Chain) GetHeaders(start eth.HashOrNumber, count int, skip int, reverse 
 		}
 		originHeader, ok := c.getBlockHeader(originHeight, originHash)
 		if !ok {
-			return nil, fmt.Errorf("no header was with height %v and hash %v", originHeight, originHash)
+			return nil, fmt.Errorf("no header was with slot %v and hash %v", originHeight, originHash)
 		}
 		requestedHeaders = append(requestedHeaders, originHeader.Header)
 	} else {
@@ -393,7 +414,7 @@ func (c *Chain) GetHeaders(start eth.HashOrNumber, count int, skip int, reverse 
 
 	nextHeight := int(originHeight) + increment
 	if len(c.chainState) == 0 {
-		return nil, fmt.Errorf("no entries stored at height: %v", nextHeight)
+		return nil, fmt.Errorf("no entries stored at slot: %v", nextHeight)
 	}
 
 	// iterate through all requested headers and fetch results
@@ -404,7 +425,7 @@ func (c *Chain) GetHeaders(start eth.HashOrNumber, count int, skip int, reverse 
 		}
 
 		if header == nil {
-			log.Tracef("requested height %v is beyond best height: ok", height)
+			log.Tracef("requested slot %v is beyond best slot: ok", height)
 			break
 		}
 
@@ -417,7 +438,7 @@ func (c *Chain) GetHeaders(start eth.HashOrNumber, count int, skip int, reverse 
 // BlockAtDepth returns the blockRefChain with depth from the head of the chain
 func (c *Chain) BlockAtDepth(chainDepth int) (interfaces.SignedBeaconBlock, error) {
 	if len(c.chainState) <= chainDepth {
-		return nil, fmt.Errorf("not enough block in the chain state for depth lookup with depth of %v", chainDepth)
+		return nil, fmt.Errorf("not enough block in the chain state with length %v for depth lookup with depth of %v", len(c.chainState), chainDepth)
 	}
 	ref := c.chainState[chainDepth]
 	header, err := c.getHeaderAtHeight(ref.height)
@@ -426,7 +447,7 @@ func (c *Chain) BlockAtDepth(chainDepth int) (interfaces.SignedBeaconBlock, erro
 	}
 	body, ok := c.getBlockBody(ref.hash)
 	if !ok {
-		return nil, fmt.Errorf("cannot get block body for block %v with height %v in the chain state ", ref.hash, ref.height)
+		return nil, fmt.Errorf("cannot get block body for block %v with slot %v in the chain state ", ref.hash, ref.height)
 	}
 	block, err := newSignedBeaconBlock(header.version, header.Header, body)
 	if err != nil {
@@ -533,7 +554,7 @@ func (c *Chain) updateChainState(height uint64, hash ethcommon.Hash, parentHash 
 // fetches correct header from chain, not store (require lock?)
 func (c *Chain) getHeaderAtHeight(height uint64) (*ethBeaconHeader, error) {
 	if len(c.chainState) == 0 {
-		return nil, fmt.Errorf("%v: no header at height %v", c.chainState, height)
+		return nil, fmt.Errorf("%v: no header at slot %v", c.chainState, height)
 	}
 
 	head := c.chainState[0]
@@ -546,14 +567,14 @@ func (c *Chain) getHeaderAtHeight(height uint64) (*ethBeaconHeader, error) {
 
 	// requested block too far in the past, fail out
 	if requestedIndex >= len(c.chainState) {
-		return nil, fmt.Errorf("%v: no header at height %v", c.chainState, height)
+		return nil, fmt.Errorf("%v: no header at slot %v", c.chainState, height)
 	}
 
 	header, ok := c.getBlockHeader(height, c.chainState[requestedIndex].hash)
 
 	// block in chainstate seems to no longer be in storage, error out
 	if !ok {
-		return nil, fmt.Errorf("%v: no header at height %v", c.chainState, height)
+		return nil, fmt.Errorf("%v: no header at slot %v", c.chainState, height)
 	}
 	return header, nil
 }
@@ -685,14 +706,29 @@ func (c *Chain) clean(maxSize int) (lowestCleaned int, highestCleaned int, numCl
 	c.chainLock.Lock()
 	defer c.chainLock.Unlock()
 
+	// Find largest height from headers if chainState is empty
+	// This may happened if no connection to node was established but we receiving blocks from BDN
 	if len(c.chainState) == 0 {
-		return
+		var maxHeight int
+		for elem := range c.heightToBlockHeaders.IterBuffered() {
+			heightStr := elem.Key
+			height, err := strconv.Atoi(heightStr)
+			if err != nil {
+				log.Errorf("failed to convert slot %v from string to integer: %v", heightStr, err)
+				continue
+			}
+
+			if height > maxHeight {
+				maxHeight = height
+			}
+		}
+
+		lowestCleaned = maxHeight
+	} else {
+		lowestCleaned = int(c.chainState[0].height)
 	}
 
-	head := c.chainState[0]
-
 	numCleaned = 0
-	lowestCleaned = int(head.height)
 	highestCleaned = 0
 
 	// minimum height to not be cleaned
@@ -704,7 +740,7 @@ func (c *Chain) clean(maxSize int) (lowestCleaned int, highestCleaned int, numCl
 			heightStr := elem.Key
 			height, err := strconv.Atoi(heightStr)
 			if err != nil {
-				log.Errorf("failed to convert height %v from string to integer: %v", heightStr, err)
+				log.Errorf("failed to convert slot %v from string to integer: %v", heightStr, err)
 				continue
 			}
 			if height < minHeight {
