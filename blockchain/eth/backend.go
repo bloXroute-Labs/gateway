@@ -9,6 +9,7 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/datatype"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
@@ -34,6 +35,7 @@ type Backend interface {
 	Handle(peer *Peer, packet eth.Packet) error
 	GetHeaders(start eth.HashOrNumber, count int, skip int, reverse bool) ([]*ethtypes.Header, error)
 	GetBodies(hashes []ethcommon.Hash) ([]*ethtypes.Body, error)
+	GetBridge() blockchain.Bridge
 }
 
 // Handler is the Ethereum backend implementation. It passes transactions and blocks to the BDN bridge and tracks received blocks and transactions from peers.
@@ -106,7 +108,7 @@ func (h *Handler) handleFeeds(wsCtx context.Context, nodeWS blockchain.WSProvide
 
 			nodeWS.Log().Tracef("received %v new pending txs. All pending %v, hashes %v", len(hashes), !morePendingTxs, hashes)
 
-			err = h.bridge.AnnounceTransactionHashes(bxgateway.WSConnectionID, hashes)
+			err = h.bridge.AnnounceTransactionHashes(bxgateway.WSConnectionID, hashes, nodeWS.BlockchainPeerEndpoint())
 			if err != nil {
 				nodeWS.Log().Errorf("failed to send %v transactions to the gateway: %v  process %v", len(hashes), err, utils.GetGID())
 			}
@@ -168,20 +170,24 @@ func (h *Handler) NetworkConfig() *network.EthConfig {
 
 // RunPeer registers a peer within the peer set and starts handling all its messages
 func (h *Handler) RunPeer(ep *Peer, handler func(*Peer) error) error {
-	ok := h.wsManager.SetBlockchainPeer(ep)
-	if !ok {
-		log.Warnf("unable to set blockchain peer for %v: no corresponding websockets provider found (ok if websockets URI was omitted)", ep.endpoint.IPPort())
-	}
-	if ws, ok := h.wsManager.Provider(&ep.endpoint); ok {
-		go h.runEthSub(ep.ctx, ws)
+	if !ep.p.Inbound() {
+		ok := h.wsManager.SetBlockchainPeer(ep)
+		if !ok {
+			log.Warnf("unable to set blockchain peer for %v: no corresponding websockets provider found (ok if websockets URI was omitted)", ep.endpoint.IPPort())
+		}
+		if ws, ok := h.wsManager.Provider(&ep.endpoint); ok {
+			go h.runEthSub(ep.ctx, ws)
+		}
 	}
 	if err := h.peers.register(ep); err != nil {
 		return err
 	}
 	defer func() {
-		ok := h.wsManager.UnsetBlockchainPeer(ep.endpoint)
-		if !ok {
-			log.Errorf("unable to unset blockchain peer for %v: no corresponding websockets provider found", ep.endpoint.IPPort())
+		if !ep.p.Inbound() {
+			ok := h.wsManager.UnsetBlockchainPeer(ep.endpoint)
+			if !ok {
+				log.Warnf("unable to unset blockchain peer for %v: no corresponding websockets provider found (ok if websockets URI was omitted)", ep.endpoint.IPPort())
+			}
 		}
 		// cancel context. Should stop the wsProvider
 		ep.Stop()
@@ -208,6 +214,8 @@ func (h *Handler) handleBDNBridge(ctx context.Context) {
 			h.config.Update(config)
 		case <-h.bridge.ReceiveBlockchainStatusRequest():
 			h.processBlockchainStatusRequest()
+		case endpoint := <-h.bridge.ReceiveDisconnectEvent():
+			h.processDisconnectEvent(endpoint)
 		case <-ctx.Done():
 			return
 		}
@@ -215,7 +223,7 @@ func (h *Handler) handleBDNBridge(ctx context.Context) {
 }
 
 func (h *Handler) processBDNTransactions(bdnTxs blockchain.Transactions) {
-	ethTxs := make([]*ethtypes.Transaction, 0, len(bdnTxs.Transactions))
+	p := datatype.NewProcessingETHTransaction(len(bdnTxs.Transactions))
 	for _, bdnTx := range bdnTxs.Transactions {
 		blockchainTx, err := h.bridge.TransactionBDNToBlockchain(bdnTx)
 		if err != nil {
@@ -229,10 +237,11 @@ func (h *Handler) processBDNTransactions(bdnTxs blockchain.Transactions) {
 			continue
 		}
 
-		ethTxs = append(ethTxs, ethTx)
+		// allow sending tx to inbound node only if it's paid tx or marked as deliver to node, but it cannot be next_validator tx or validators only
+		p.Add(ethTx, (bdnTx.Flags().IsPaidTx() || bdnTx.Flags().IsDeliverToNode()) && !bdnTx.Flags().IsNextValidator() && !bdnTx.Flags().IsValidatorsOnly())
 	}
 
-	h.broadcastTransactions(ethTxs, bdnTxs.PeerEndpoint)
+	h.broadcastTransactions(p, bdnTxs.PeerEndpoint, bdnTxs.ConnectionType)
 }
 
 func (h *Handler) processBDNTransactionRequests(request blockchain.TransactionAnnouncement) {
@@ -279,10 +288,18 @@ func (h *Handler) processBDNBlock(bdnBlock *types.BxBlock) {
 	} else {
 		h.broadcastBlock(ethBlock, ethBlockInfo.TotalDifficulty(), nil)
 	}
+
+	if h.config.Network == network.BSCMainnetChainID {
+		if ethBlock.Number().Uint64()%200 == 0 {
+			if err := h.processExtraData(ethBlock); err != nil {
+				log.Errorf("failed to process the epoch containing validator list, %v", err)
+			}
+		}
+	}
 }
 
 func (h *Handler) processBlockchainStatusRequest() {
-	var nodes = make([]*types.NodeEndpoint, 0)
+	nodes := make([]*types.NodeEndpoint, 0)
 
 	for _, peer := range h.peers.getAll() {
 		endpoint := peer.IPEndpoint()
@@ -295,10 +312,21 @@ func (h *Handler) processBlockchainStatusRequest() {
 	}
 }
 
+func (h *Handler) processDisconnectEvent(endpoint types.NodeEndpoint) {
+	// check if the peer is in the connections
+	for _, peer := range h.peers.getAll() {
+		if (endpoint.PublicKey != "" && endpoint.PublicKey == peer.IPEndpoint().PublicKey) || (endpoint.PublicKey == "" && endpoint.IPPort() == peer.IPEndpoint().IPPort()) {
+			peer.Disconnect(p2p.DiscUselessPeer)
+			return
+		}
+	}
+
+	log.Debugf("Peer was not found %v", endpoint)
+}
+
 func (h *Handler) awaitBlockResponse(peer *Peer, blockHash ethcommon.Hash, headersCh chan eth.Packet, bodiesCh chan eth.Packet, fetchResponse func(peer *Peer, blockHash ethcommon.Hash, headersCh chan eth.Packet, bodiesCh chan eth.Packet) (*eth.BlockHeadersPacket, *eth.BlockBodiesPacket, error)) {
 	startTime := time.Now()
 	headers, bodies, err := fetchResponse(peer, blockHash, headersCh, bodiesCh)
-
 	if err != nil {
 		if peer.disconnected {
 			peer.Log().Tracef("block %v response timed out for disconnected peer", blockHash.String())
@@ -316,7 +344,7 @@ func (h *Handler) awaitBlockResponse(peer *Peer, blockHash ethcommon.Hash, heade
 		return
 	}
 
-	elapsedTime := time.Now().Sub(startTime)
+	elapsedTime := time.Since(startTime)
 	peer.Log().Debugf("took %v to fetch block %v header and body", elapsedTime, blockHash.String())
 
 	if err := h.processBlockComponents(peer, headers, bodies); err != nil {
@@ -467,11 +495,12 @@ func (h *Handler) createBxBlockFromEthHeader(header *ethtypes.Header) (*types.Bx
 	return bxBlock, nil
 }
 
-func (h *Handler) broadcastTransactions(txs ethtypes.Transactions, sourceNode types.NodeEndpoint) {
+func (h *Handler) broadcastTransactions(p *datatype.ProcessingETHTransaction, sourceNode types.NodeEndpoint, connectionType utils.NodeType) {
 	for _, peer := range h.peers.getAll() {
 		if sourceNode.IPPort() == peer.IPEndpoint().IPPort() {
 			continue
 		}
+		txs := p.Transactions(connectionType, peer.Inbound())
 		if err := peer.SendTransactions(txs); err != nil {
 			peer.Log().Errorf("could not send %v transactions: %v", len(txs), err)
 		}
@@ -532,7 +561,7 @@ func (h *Handler) processTransactionHashes(peer *Peer, txHashes []ethcommon.Hash
 		sha256Hashes = append(sha256Hashes, NewSHA256Hash(hash))
 	}
 
-	err := h.bridge.AnnounceTransactionHashes(peer.ID(), sha256Hashes)
+	err := h.bridge.AnnounceTransactionHashes(peer.ID(), sha256Hashes, peer.endpoint)
 
 	if err == blockchain.ErrChannelFull {
 		log.Warnf("transaction announcement channel for sending to the BDN is full; dropping %v hashes...", len(txHashes))
@@ -540,6 +569,54 @@ func (h *Handler) processTransactionHashes(peer *Peer, txHashes []ethcommon.Hash
 	}
 
 	return err
+}
+
+func (h *Handler) processExtraData(block *ethtypes.Block) error {
+	var ed ExtraData
+	err := ed.UnmarshalJSON(block.Header().Extra)
+	if err != nil {
+		log.Errorf("can't extract extra data for block height %v", block.Number().Uint64())
+	} else {
+		// extraData contains list of validators now
+		validatorInfo := blockchain.ValidatorListInfo{
+			BlockHeight:   block.Number().Uint64(),
+			ValidatorList: ed.ValidatorList,
+		}
+		err = h.bridge.SendValidatorListInfo(&validatorInfo)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// ExtraData is used for processing extra data in a BSC block
+type ExtraData struct {
+	ValidatorList []string
+}
+
+// UnmarshalJSON is used for deserialize BSC block extra data
+func (ed *ExtraData) UnmarshalJSON(b []byte) error {
+	// the first 32 bytes and the last 65 byte of the extra data field are not interested, https://github.com/ethereum/EIPs/blob/master/EIPS/eip-225.md
+	// we grab the b[32:len(b)-65], every 20 bytes is a validator address
+	if len(b) < 97 {
+		return errors.New("wrong extra data, too small")
+	}
+	validatorListBytes := b[32 : len(b)-65]
+	if len(validatorListBytes)%20 != 0 {
+		return errors.New("wrong extra data format, validator list is not aligned")
+	}
+
+	validatorNum := len(validatorListBytes) / 20
+	validatorList := make([]string, 0, validatorNum)
+	for i := 0; i < validatorNum; i++ {
+		validatorAddr := ethcommon.BytesToAddress(validatorListBytes[i*20 : (i+1)*20])
+		validatorList = append(validatorList, validatorAddr.String())
+	}
+
+	ed.ValidatorList = validatorList
+	return nil
 }
 
 func (h *Handler) processBlock(peer *Peer, blockInfo *BlockInfo) error {
@@ -552,7 +629,15 @@ func (h *Handler) processBlock(peer *Peer, blockInfo *BlockInfo) error {
 		return nil
 	}
 
-	if err := h.validateBlock(blockHash, blockHeight.Int64(), int64(block.Time())); err != nil {
+	if h.config.Network == network.BSCMainnetChainID {
+		if blockHeight.Uint64()%200 == 0 {
+			if err := h.processExtraData(block); err != nil {
+				log.Errorf("failed to process the epoch containing validator list, %v", err)
+			}
+		}
+	}
+
+	if err := h.chain.ValidateBlock(block); err != nil {
 		if err == ErrAlreadySeen {
 			peer.Log().Debugf("skipping block %v (height %v): %v", blockHash.String(), blockHeight, err)
 		} else {
@@ -565,18 +650,6 @@ func (h *Handler) processBlock(peer *Peer, blockInfo *BlockInfo) error {
 	newHeadCount := h.chain.AddBlock(blockInfo, BSBlockchain)
 	h.sendConfirmedBlocksToBDN(newHeadCount, peer.IPEndpoint())
 	h.broadcastBlock(block, blockInfo.totalDifficulty, peer)
-	return nil
-}
-
-func (h *Handler) validateBlock(blockHash ethcommon.Hash, blockHeight int64, blockTime int64) error {
-	if err := h.chain.ValidateBlock(blockHash, blockHeight); err != nil {
-		return err
-	}
-
-	minTimestamp := time.Now().Add(-h.config.IgnoreBlockTimeout)
-	if minTimestamp.Unix() > blockTime {
-		return errors.New("timestamp too old")
-	}
 	return nil
 }
 
@@ -676,6 +749,11 @@ func (h *Handler) sendConfirmedBlocksToBDN(count int, peerEndpoint types.NodeEnd
 	h.chain.MarkConfirmationSentToBDN(blockHash)
 }
 
+// GetBridge return bridge
+func (h *Handler) GetBridge() blockchain.Bridge {
+	return h.bridge
+}
+
 // GetBodies assembles and returns a set of block bodies
 func (h *Handler) GetBodies(hashes []ethcommon.Hash) ([]*ethtypes.Body, error) {
 	return h.chain.GetBodies(hashes)
@@ -711,17 +789,12 @@ func (h *Handler) storeBDNBlock(bdnBlock *types.BxBlock) (*BlockInfo, error) {
 }
 
 func (h *Handler) checkInitialBlockchainLiveliness(initialLivelinessCheckDelay time.Duration) {
-	ticker := time.NewTicker(initialLivelinessCheckDelay)
-	for {
-		select {
-		case <-ticker.C:
-			if len(h.peers.getAll()) == 0 {
-				err := h.bridge.SendNoActiveBlockchainPeersAlert()
-				if err == blockchain.ErrChannelFull {
-					log.Warnf("no active blockchain peers alert channel is full")
-				}
-			}
-			ticker.Stop()
+	time.Sleep(initialLivelinessCheckDelay)
+
+	if len(h.peers.getAll()) == 0 {
+		err := h.bridge.SendNoActiveBlockchainPeersAlert()
+		if err == blockchain.ErrChannelFull {
+			log.Warnf("no active blockchain peers alert channel is full")
 		}
 	}
 }
@@ -735,14 +808,14 @@ func logTransactionConverterFailure(err error, bdnTx *types.BxTransaction) {
 }
 
 func logBlockConverterFailure(err error, bdnBlock *types.BxBlock) {
-	blockHex := "<omitted>"
+	var blockHex string
 	if log.IsLevelEnabled(log.TraceLevel) {
 		b, err := rlp.EncodeToBytes(bdnBlock)
 		if err != nil {
-			log.Error("bad block from BDN could not be encoded to RLP bytes")
-			return
+			blockHex = fmt.Sprintf("bad block from BDN could not be encoded to RLP bytes: %v", err)
+		} else {
+			blockHex = hexutil.Encode(b)
 		}
-		blockHex = hexutil.Encode(b)
 	}
 	log.Errorf("could not convert block (hash: %v) from BDN to Ethereum block: %v. contents: %v", bdnBlock.Hash(), err, blockHex)
 }

@@ -2,6 +2,7 @@ package bxmessage
 
 import (
 	"encoding/binary"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
@@ -13,11 +14,11 @@ type abstractCleanup struct {
 }
 
 // Pack serializes a cleanup message into a buffer for sending
-func (m abstractCleanup) Pack(_ Protocol, msgType string) ([]byte, error) {
+func (m abstractCleanup) Pack(protocol Protocol, msgType string) ([]byte, error) {
 	bufLen := m.size()
 	buf := make([]byte, bufLen)
 
-	m.BroadcastHeader.Pack(&buf, msgType)
+	m.BroadcastHeader.Pack(&buf, msgType, protocol)
 	offset := BroadcastHeaderLen
 	binary.LittleEndian.PutUint32(buf[offset:], uint32(len(m.ShortIDs)))
 	offset += types.UInt32Len

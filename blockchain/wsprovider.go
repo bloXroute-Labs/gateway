@@ -40,6 +40,8 @@ type WSProvider interface {
 	SyncStatus() NodeSyncStatus
 	Subscribe(responseChannel interface{}, feedName string) (*Subscription, error)
 	CallRPC(method string, payload []interface{}, options RPCOptions) (interface{}, error)
+	FetchTransaction(payload []interface{}, options RPCOptions) (interface{}, error)
+	FetchBlock(payload []interface{}, options RPCOptions) (interface{}, error)
 	FetchTransactionReceipt(payload []interface{}, options RPCOptions) (interface{}, error)
 	Log() *log.Entry
 }

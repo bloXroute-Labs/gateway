@@ -58,6 +58,7 @@ const (
 	GetTransactionsType          = "gettxs"
 	TransactionsType             = "txs"
 	BDNPerformanceStatsType      = "bdnstats"
+	ValidatorUpdatesType         = "validator"
 	MEVBundleType                = "mevbundle"
 	MEVSearcherType              = "mevsearcher"
 	ErrorNotificationType        = "notify"
@@ -85,7 +86,22 @@ const EmptyProtocol = 0
 const MinProtocol = 19
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
-const CurrentProtocol = 30
+const CurrentProtocol = NextValidatorMultipleProtocol
+
+// NextValidatorMultipleProtocol is an enhancement to NextValidatorProtocol
+const NextValidatorMultipleProtocol = 35
+
+// BeaconBlockProtocol is the minimum protocol version that supports beacon blocks
+const BeaconBlockProtocol = 34
+
+// NextValidatorProtocol is the minimum protocol version that supports next validator
+const NextValidatorProtocol = 33
+
+// GatewayInboundConnections adds inbound connections data to BdnPerformanceStatsData.
+const GatewayInboundConnections = 32
+
+// IsConnectedToGateway adds flag to check if node is connected to the gateway in BdnPerformanceStatsData.
+const IsConnectedToGateway = 31
 
 // IsBeaconProtocol tracks if the node is beacon
 const IsBeaconProtocol = 30
@@ -93,8 +109,8 @@ const IsBeaconProtocol = 30
 // MevMaxProfitBuilder send mev searcher request with request
 const MevMaxProfitBuilder = 29
 
-// BeaconBlockProtocol is the minimum protocol version that supoprts beacon blocks
-const BeaconBlockProtocol = 28
+// ETHPosProtocol is the protocol version happened after the merge
+const ETHPosProtocol = 28
 
 // MevSearcherWithUUID send mev searcher request with request
 const MevSearcherWithUUID = 27

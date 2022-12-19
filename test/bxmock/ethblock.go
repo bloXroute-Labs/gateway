@@ -1,11 +1,12 @@
 package bxmock
 
 import (
+	"math/big"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"math/big"
-	"time"
 )
 
 // NewEthBlockHeader generates a test header. Note that tx hash, uncle hash, receipt hash, and bloom will be overridden by when actually constructing a blocks
@@ -29,7 +30,12 @@ func NewEthBlockHeader(height uint64, parentHash common.Hash) *ethtypes.Header {
 		Extra:       []byte{},
 		MixDigest:   common.BytesToHash(types.GenerateSHA256Hash().Bytes()),
 		Nonce:       GenerateBlockNonce(),
-		BaseFee:     big.NewInt(1),
+		BaseFee: big.NewInt(0).SetBytes([]byte{
+			0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+			0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+			0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+			0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		}),
 	}
 	return &header
 }

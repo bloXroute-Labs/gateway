@@ -22,6 +22,8 @@ func (n *Node) subscribeRPC(topic string, handler p2pNetwork.StreamHandler) {
 }
 
 func (n *Node) statusRPCHandler(stream libp2pcore.Stream) {
+	SetRPCStreamDeadlines(stream)
+
 	log := n.log.WithField("peer", stream.Conn().RemotePeer())
 	log.Debug("receiving status RPC request")
 
@@ -32,6 +34,8 @@ func (n *Node) statusRPCHandler(stream libp2pcore.Stream) {
 	}
 
 	n.p2p.Peers().SetChainState(stream.Conn().RemotePeer(), msg)
+
+	n.updateLastStatus(msg)
 
 	status, err := n.status(n.ctx)
 	if err != nil {
@@ -56,6 +60,8 @@ func (n *Node) statusRPCHandler(stream libp2pcore.Stream) {
 }
 
 func (n *Node) goodbyeRPCHandler(stream libp2pcore.Stream) {
+	SetRPCStreamDeadlines(stream)
+
 	log := n.log.WithField("peer", stream.Conn().RemotePeer())
 
 	msg := new(types.SSZUint64)
@@ -80,6 +86,8 @@ func goodbyeMessage(num p2ptypes.RPCGoodbyeCode) string {
 }
 
 func (n *Node) metadataRPCHandler(stream libp2pcore.Stream) {
+	SetRPCStreamDeadlines(stream)
+
 	log := n.log.WithField("peer", stream.Conn().RemotePeer())
 	log.Debug("receiving metadata RPC request")
 
@@ -134,6 +142,8 @@ func (n *Node) metadataRPCHandler(stream libp2pcore.Stream) {
 }
 
 func (n *Node) pingRPCHandler(stream libp2pcore.Stream) {
+	SetRPCStreamDeadlines(stream)
+
 	log := n.log.WithField("peer", stream.Conn().RemotePeer())
 	log.Debug("receiving ping RPC request")
 
@@ -147,8 +157,6 @@ func (n *Node) pingRPCHandler(stream libp2pcore.Stream) {
 	if err != nil {
 		// Descore peer for giving us a bad sequence number.
 		if errors.Is(err, p2ptypes.ErrInvalidSequenceNum) {
-			n.p2p.Peers().Scorers().BadResponsesScorer().Increment(stream.Conn().RemotePeer())
-
 			buf := bytes.NewBuffer([]byte{responseCodeInvalidRequest})
 			errMsg := p2ptypes.ErrorMessage(p2ptypes.ErrInvalidSequenceNum.Error())
 			if _, err := n.p2p.Encoding().EncodeWithMaxLength(buf, &errMsg); err != nil {

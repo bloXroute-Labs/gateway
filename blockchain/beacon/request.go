@@ -27,18 +27,23 @@ func (n *Node) sendStatusRequest(ctx context.Context, id peer.ID) (*pb.Status, e
 		return nil, err
 	}
 
-	topic, err := p2p.TopicFromMessage(p2p.StatusMessageName, types.Epoch(n.currentSlot()))
+	topic, err := p2p.TopicFromMessage(p2p.StatusMessageName, types.Epoch(currentSlot(n.genesisState.GenesisTime())))
 	if err != nil {
 		return nil, err
 	}
 	stream, err := n.p2p.Send(ctx, status, topic, id)
 	if err != nil {
-		return nil, fmt.Errorf("could not handshake: %v", err)
+		return nil, fmt.Errorf("could not send status: %v", err)
 	}
 	defer stream.Close()
 
-	if err := readStatusCode(stream, n.p2p.Encoding()); err != nil {
-		return nil, fmt.Errorf("bad handshake status code: %v", err)
+	code, errMsg, err := readStatusCode(stream, n.p2p.Encoding())
+	if err != nil {
+		return nil, fmt.Errorf("could not read status code: %v", err)
+	}
+
+	if code != 0 {
+		return nil, errors.New(errMsg)
 	}
 
 	msg := new(pb.Status)
@@ -61,34 +66,36 @@ func (n *Node) sendPingRequest(ctx context.Context, id peer.ID) error {
 	defer cancel()
 
 	metadataSeq := types.SSZUint64(n.p2p.MetadataSeq())
-	topic, err := p2p.TopicFromMessage(p2p.PingMessageName, slots.ToEpoch(n.currentSlot()))
+	topic, err := p2p.TopicFromMessage(p2p.PingMessageName, slots.ToEpoch(currentSlot(n.genesisState.GenesisTime())))
 	if err != nil {
 		return err
 	}
 	stream, err := n.p2p.Send(ctx, &metadataSeq, topic, id)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not send: %v", err)
 	}
 	currentTime := time.Now()
 	defer stream.Close()
 
-	if err := readStatusCode(stream, n.p2p.Encoding()); err != nil {
-		return fmt.Errorf("ping bad status code: %v", err)
+	code, errMsg, err := readStatusCode(stream, n.p2p.Encoding())
+	if err != nil {
+		return fmt.Errorf("could not read status code: %v", err)
 	}
+
+	if code != 0 {
+		return errors.New(errMsg)
+	}
+
 	// Records the latency of the ping request for that peer.
 	n.p2p.Host().Peerstore().RecordLatency(id, time.Since(currentTime))
 
 	msg := new(types.SSZUint64)
 	if err := n.p2p.Encoding().DecodeWithMaxLength(stream, msg); err != nil {
-		return err
+		return fmt.Errorf("could not decode message: %v", err)
 	}
 
 	valid, err := n.validateSequenceNum(*msg, stream.Conn().RemotePeer())
 	if err != nil {
-		// Descore peer for giving us a bad sequence number.
-		if errors.Is(err, p2ptypes.ErrInvalidSequenceNum) {
-			n.p2p.Peers().Scorers().BadResponsesScorer().Increment(stream.Conn().RemotePeer())
-		}
 		return err
 	}
 
@@ -110,18 +117,23 @@ func (n *Node) sendMetaDataRequest(ctx context.Context, id peer.ID) (metadata.Me
 	ctx, cancel := context.WithTimeout(ctx, params.BeaconNetworkConfig().RespTimeout)
 	defer cancel()
 
-	topic, err := p2p.TopicFromMessage(p2p.MetadataMessageName, slots.ToEpoch(n.currentSlot()))
+	topic, err := p2p.TopicFromMessage(p2p.MetadataMessageName, slots.ToEpoch(currentSlot(n.genesisState.GenesisTime())))
 	if err != nil {
 		return nil, err
 	}
 	stream, err := n.p2p.Send(ctx, new(interface{}), topic, id)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not send: %v", err)
 	}
 	defer stream.Close()
 
-	if err := readStatusCode(stream, n.p2p.Encoding()); err != nil {
-		return nil, fmt.Errorf("invalid status for meta data request: %v", err)
+	code, errMsg, err := readStatusCode(stream, n.p2p.Encoding())
+	if err != nil {
+		return nil, fmt.Errorf("could not read status code: %v", err)
+	}
+
+	if code != 0 {
+		return nil, errors.New(errMsg)
 	}
 
 	genesisTime := time.Unix(int64(n.genesisState.GenesisTime()), 0)
@@ -148,7 +160,7 @@ func (n *Node) sendMetaDataRequest(ctx context.Context, id peer.ID) (metadata.Me
 		return nil, err
 	}
 	if err := n.p2p.Encoding().DecodeWithMaxLength(stream, msg); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not decode message: %v", err)
 	}
 	return msg, nil
 }

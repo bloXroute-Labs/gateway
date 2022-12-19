@@ -8,3 +8,13 @@ type Notification interface {
 	GetHash() string
 	NotificationType() FeedType
 }
+
+// BlockNotification represents a generic block notification
+type BlockNotification interface {
+	Notification
+
+	SetNotificationType(FeedType)
+	SetSource(*NodeEndpoint)
+	IsNil() bool
+	Clone() BlockNotification
+}

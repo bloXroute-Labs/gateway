@@ -2,18 +2,19 @@ package eth
 
 import (
 	"context"
+	"math/big"
+	"testing"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/stretchr/testify/assert"
-	"math/big"
-	"testing"
-	"time"
 )
 
 func TestChain_AddBlock(t *testing.T) {
-	c := newChain(context.Background(), 5, 5, time.Hour, 1000)
+	c := newChain(context.Background(), 10, 5, 5, time.Hour, 1000)
 
 	block1 := bxmock.NewEthBlock(1, common.Hash{})
 	block2 := bxmock.NewEthBlock(2, block1.Hash())
@@ -87,7 +88,7 @@ func TestChain_AddBlock(t *testing.T) {
 }
 
 func TestChain_AddBlock_MissingBlocks(t *testing.T) {
-	c := newChain(context.Background(), 5, 3, time.Hour, 1000)
+	c := newChain(context.Background(), 10, 5, 3, time.Hour, 1000)
 
 	block1 := bxmock.NewEthBlock(1, common.Hash{})
 	block2 := bxmock.NewEthBlock(2, block1.Hash())
@@ -129,7 +130,7 @@ func TestChain_AddBlock_MissingBlocks(t *testing.T) {
 }
 
 func TestChain_AddBlock_LongFork(t *testing.T) {
-	c := newChain(context.Background(), 2, 5, time.Hour, 1000)
+	c := newChain(context.Background(), 10, 2, 5, time.Hour, 1000)
 
 	block1 := bxmock.NewEthBlock(1, common.Hash{})
 	block2a := bxmock.NewEthBlock(2, block1.Hash())
@@ -167,7 +168,7 @@ func TestChain_AddBlock_LongFork(t *testing.T) {
 }
 
 func TestChain_GetHeaders_ByNumber(t *testing.T) {
-	c := NewChain(context.Background())
+	c := NewChain(context.Background(), 30*time.Second)
 
 	// true chain: 1, 2, 3b, 4
 	block1 := bxmock.NewEthBlock(1, common.Hash{})
@@ -245,7 +246,7 @@ func TestChain_GetHeaders_ByNumber(t *testing.T) {
 }
 
 func TestChain_GetHeaders_ByHash(t *testing.T) {
-	c := NewChain(context.Background())
+	c := NewChain(context.Background(), 30*time.Second)
 
 	// true chain: 1, 2, 3b, 4
 	block1 := bxmock.NewEthBlock(1, common.Hash{})
@@ -318,7 +319,7 @@ func TestChain_GetHeaders_ByHash(t *testing.T) {
 
 func TestChain_InitializeStatus(t *testing.T) {
 	var ok bool
-	c := NewChain(context.Background())
+	c := NewChain(context.Background(), 30*time.Second)
 
 	initialHash1 := common.Hash{1, 2, 3}
 	initialHash2 := common.Hash{2, 3, 4}
@@ -353,8 +354,14 @@ func TestChain_InitializeStatus(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestChain_GetHeadersQueryAmount(t *testing.T) {
+	c := newChain(context.Background(), 30*time.Second, 5, 5, time.Hour, 1000)
+	_, err := c.GetHeaders(eth.HashOrNumber{}, -1, 0, false)
+	assert.Equal(t, err, ErrQueryAmountIsNotValid)
+}
+
 func TestChain_GetNewHeadsForBDN(t *testing.T) {
-	c := newChain(context.Background(), 5, 5, time.Hour, 1000)
+	c := newChain(context.Background(), 30*time.Second, 5, 5, time.Hour, 1000)
 
 	block1 := bxmock.NewEthBlock(1, common.Hash{})
 	block2 := bxmock.NewEthBlock(2, block1.Hash())
@@ -377,6 +384,104 @@ func TestChain_GetNewHeadsForBDN(t *testing.T) {
 	blocks, err = c.GetNewHeadsForBDN(2)
 	assert.Nil(t, err)
 	assert.Equal(t, block3.Hash(), blocks[0].Block.Hash())
+}
+
+func TestChain_clean(t *testing.T) {
+	cleanInterval := 15 * time.Millisecond
+	c := newChain(context.Background(), 30*time.Second, 5, 5, cleanInterval, 3)
+
+	block1 := bxmock.NewEthBlock(1, common.Hash{})
+	block2 := bxmock.NewEthBlock(2, block1.Hash())
+	block3 := bxmock.NewEthBlock(3, block2.Hash())
+	block4 := bxmock.NewEthBlock(4, block3.Hash())
+	block5 := bxmock.NewEthBlock(5, block4.Hash())
+	block6 := bxmock.NewEthBlock(6, block5.Hash())
+
+	addBDNBlock(c, block1) // remove
+	addBDNBlock(c, block2) // remove
+	addBDNBlock(c, block3)
+	addBDNBlock(c, block4)
+	addBlock(c, block5) // chainstate head
+	addBDNBlock(c, block6)
+
+	expectedHashes := map[common.Hash]struct{}{
+		block3.Hash(): {},
+		block4.Hash(): {},
+		block5.Hash(): {},
+		block6.Hash(): {},
+	}
+
+	assert.Equal(t, 6, c.heightToBlockHeaders.Count())
+
+	// Clean can block last block adding
+	// So better to use (blockCount + 1) * cleanInterval
+	time.Sleep(7 * cleanInterval)
+
+	assert.Equal(t, 4, c.heightToBlockHeaders.Count())
+
+	for elem := range c.heightToBlockHeaders.IterBuffered() {
+		headers := elem.Val.([]ethHeader)
+		for _, header := range headers {
+			if _, ok := expectedHashes[header.Hash()]; !ok {
+				assert.Fail(t, "unexpected block", "height: %v", header.Number.Int64())
+			}
+			delete(expectedHashes, header.Hash())
+		}
+		c.heightToBlockHeaders.Remove(elem.Key)
+	}
+
+	assert.Empty(t, expectedHashes)
+	assert.Zero(t, c.heightToBlockHeaders.Count())
+}
+
+func TestChain_cleanNoChainstate(t *testing.T) {
+	cleanInterval := 15 * time.Millisecond
+	c := newChain(context.Background(), 30*time.Second, 5, 5, cleanInterval, 3)
+
+	block1 := bxmock.NewEthBlock(1, common.Hash{})
+	block2 := bxmock.NewEthBlock(2, block1.Hash())
+	block3 := bxmock.NewEthBlock(3, block2.Hash())
+	block4 := bxmock.NewEthBlock(4, block3.Hash())
+
+	// No Blockchain block = no chainstate
+	addBDNBlock(c, block1) // remove
+	addBDNBlock(c, block2)
+	addBDNBlock(c, block3)
+	addBDNBlock(c, block4) // taking last BDN block as base
+
+	expectedHashes := map[common.Hash]struct{}{
+		block2.Hash(): {},
+		block3.Hash(): {},
+		block4.Hash(): {},
+	}
+
+	assert.Equal(t, 4, c.heightToBlockHeaders.Count())
+
+	// Clean can block last block adding
+	// So better to use (blockCount + 1) * cleanInterval
+	time.Sleep(5 * cleanInterval)
+
+	assert.Equal(t, 3, c.heightToBlockHeaders.Count())
+
+	for elem := range c.heightToBlockHeaders.IterBuffered() {
+		headers := elem.Val.([]ethHeader)
+		for _, header := range headers {
+			if _, ok := expectedHashes[header.Hash()]; !ok {
+				assert.Fail(t, "unexpected block", "height: %v", header.Number.Int64())
+			}
+			delete(expectedHashes, header.Hash())
+		}
+		c.heightToBlockHeaders.Remove(elem.Key)
+	}
+
+	assert.Empty(t, expectedHashes)
+	assert.Zero(t, c.heightToBlockHeaders.Count())
+}
+
+func addBDNBlock(c *Chain, block *ethtypes.Block) int {
+	bi := NewBlockInfo(block, nil)
+	_ = c.SetTotalDifficulty(bi)
+	return c.AddBlock(bi, BSBDN)
 }
 
 func addBlock(c *Chain, block *ethtypes.Block) int {

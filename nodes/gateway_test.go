@@ -2,9 +2,11 @@ package nodes
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"math/big"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -83,24 +85,23 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 		TxTraceLog: &txTraceLog,
 	}
 
-	bridge := blockchain.NewBxBridge(eth.Converter{})
+	bridge := blockchain.NewBxBridge(eth.Converter{}, true)
 	blockchainPeers, blockchainPeersInfo := ethtest.GenerateBlockchainPeersInfo(numPeers)
-	node, _ := NewGateway(context.Background(), bxConfig, bridge, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), blockchainPeers, blockchainPeersInfo, "", 0)
+	node, _ := NewGateway(context.Background(), bxConfig, bridge, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), blockchainPeers, blockchainPeersInfo, "", sdn, nil, 0)
 
 	g := node.(*gateway)
-	g.sdn = sdn
 	g.setupTxStore()
 	g.txTrace = loggers.NewTxTrace(nil)
 	g.setSyncWithRelay()
 	g.feedManager = servers.NewFeedManager(g.context, g, g.feedChan, networkNum, types.NetworkID(chainID),
 		g.wsManager, g.sdn.AccountModel(), nil,
-		"", "", *g.BxConfig, g.stats)
+		"", "", *g.BxConfig, g.stats, nil)
 	return bridge, g
 }
 
 func newBP() (*services.BxTxStore, services.BlockProcessor) {
-	txStore := services.NewBxTxStore(time.Minute, time.Minute, time.Minute, services.NewEmptyShortIDAssigner(), services.NewHashHistory("seenTxs", time.Minute), nil, 30*time.Minute)
-	bp := services.NewRLPBlockProcessor(&txStore)
+	txStore := services.NewBxTxStore(time.Minute, time.Minute, time.Minute, services.NewEmptyShortIDAssigner(), services.NewHashHistory("seenTxs", time.Minute), nil, 30*time.Minute, services.NoOpBloomFilter{})
+	bp := services.NewBlockProcessor(&txStore)
 	return &txStore, bp
 }
 
@@ -111,7 +112,7 @@ func addRelayConn(g *gateway) (bxmock.MockTLS, *handler.Relay) {
 			return &mockTLS, nil
 		},
 		&utils.SSLCerts{}, "1.1.1.1", 1800, "", utils.Relay, true, g.sdn.Networks(), true, true, connections.LocalInitiatedPort, utils.RealClock{},
-		false, true)
+		false, true, false)
 
 	// set connection as established and ready for broadcast
 	_ = relayConn.Connect()
@@ -242,8 +243,37 @@ func TestGateway_HandleTransactionFromBlockchain(t *testing.T) {
 	}()
 
 	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil)
+	txHash := ethTx.Hash().String()
+	txHash = txHash[2:]
+	assert.Equal(t, false, g.pendingTxs.Exists(txHash))
 	processEthTxOnBridge(t, bridge, ethTx, g.blockchainPeers[0])
 	assertTransactionSentToRelay(t, ethTx, ethTxBytes, mockTLS, relayConn)
+	assert.Equal(t, true, g.pendingTxs.Exists(txHash))
+
+	select {
+	case <-bridge.ReceiveBDNTransactions():
+		assert.Fail(t, "unexpectedly received txs when tx was from only blockchain peer")
+	default:
+	}
+}
+
+func TestGateway_HandleTransactionFromInboundBlockchain(t *testing.T) {
+	bridge, g := setup(t, 1)
+	mockTLS, relayConn := addRelayConn(g)
+
+	go func() {
+		err := g.handleBridgeMessages()
+		assert.Nil(t, err)
+	}()
+
+	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil)
+	txHash := ethTx.Hash().String()
+	txHash = txHash[2:]
+	g.blockchainPeers[0].Inbound = true
+	assert.Equal(t, false, g.pendingTxs.Exists(txHash))
+	processEthTxOnBridge(t, bridge, ethTx, g.blockchainPeers[0])
+	assertTransactionSentToRelay(t, ethTx, ethTxBytes, mockTLS, relayConn)
+	assert.Equal(t, false, g.pendingTxs.Exists(txHash))
 
 	select {
 	case <-bridge.ReceiveBDNTransactions():
@@ -455,7 +485,7 @@ func TestGateway_HandleTransactionHashesFromBlockchain(t *testing.T) {
 	g.TxStore.Add(hashes[0], types.TxContent{}, 1, networkNum, false, 0, time.Now(), 0, types.EmptySender)
 	g.TxStore.Add(hashes[1], types.TxContent{1, 2, 3}, types.ShortIDEmpty, networkNum, false, 0, time.Now(), 0, types.EmptySender)
 
-	err := bridge.AnnounceTransactionHashes(peerID, hashes)
+	err := bridge.AnnounceTransactionHashes(peerID, hashes, types.NodeEndpoint{})
 	assert.Nil(t, err)
 
 	request := <-bridge.ReceiveTransactionHashesRequest()
@@ -500,37 +530,6 @@ func TestGateway_HandleTransactionFromRelay(t *testing.T) {
 
 	deliveredEthTx, deliveredTxMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0)
 	deliveredTxMessage.SetFlags(types.TFDeliverToNode)
-
-	err := g.HandleMsg(deliveredTxMessage, relayConn1, connections.RunForeground)
-	assert.Nil(t, err)
-	assertNoTransactionSentToRelay(t, mockTLS2)
-
-	bdnTxs := <-bridge.ReceiveBDNTransactions()
-	assert.Equal(t, 1, len(bdnTxs.Transactions))
-	assert.Equal(t, types.NodeEndpoint{IP: relayConn1.Info().PeerIP, Port: int(relayConn1.Info().PeerPort)}, bdnTxs.PeerEndpoint)
-
-	bdnTx := bdnTxs.Transactions[0]
-	assert.Equal(t, deliveredEthTx.Hash().Bytes(), bdnTx.Hash().Bytes())
-
-	_, undeliveredTxMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0)
-
-	err = g.HandleMsg(undeliveredTxMessage, relayConn1, connections.RunForeground)
-	assert.Nil(t, err)
-
-	select {
-	case <-bridge.ReceiveBDNTransactions():
-		assert.Fail(t, "unexpectedly received txs when TFDeliverToNode not set")
-	default:
-	}
-}
-
-func TestGateway_HandleTransactionFromRelayValidatorOnly(t *testing.T) {
-	bridge, g := setup(t, 1)
-	_, relayConn1 := addRelayConn(g)
-	mockTLS2, _ := addRelayConn(g)
-
-	deliveredEthTx, deliveredTxMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0)
-	deliveredTxMessage.SetFlags(types.TFValidatorsOnly)
 
 	err := g.HandleMsg(deliveredTxMessage, relayConn1, connections.RunForeground)
 	assert.Nil(t, err)
@@ -623,6 +622,20 @@ func TestGateway_HandleBlockFromBlockchain(t *testing.T) {
 		assert.Nil(t, err)
 	}()
 
+	g.BxConfig.WebsocketEnabled = true
+	g.feedManager.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.ATierEnterprise, "", "", "", "", "")
+	g.feedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	var count int32
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for v := range g.feedChan {
+			fmt.Println(v)
+			atomic.AddInt32(&count, 1)
+		}
+	}()
+
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
 	bxBlock, err := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
 	assert.Nil(t, err)
@@ -651,6 +664,66 @@ func TestGateway_HandleBlockFromBlockchain(t *testing.T) {
 	// times out, nothing sent (already processed)
 	msgBytes, err = mockTLS.MockAdvanceSent()
 	assert.NotNil(t, err, "unexpected bytes %v", string(msgBytes))
+	close(g.feedChan)
+	wg.Wait()
+	assert.Equal(t, int32(7), atomic.LoadInt32(&count))
+}
+
+func TestGateway_HandleBlockFromInboundBlockchain(t *testing.T) {
+	bridge, g := setup(t, 1)
+	mockTLS, relayConn := addRelayConn(g)
+
+	go func() {
+		err := g.handleBridgeMessages()
+		assert.Nil(t, err)
+	}()
+
+	g.BxConfig.WebsocketEnabled = true
+	g.feedManager.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.ATierEnterprise, "", "", "", "", "")
+	g.feedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	var count int32
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for v := range g.feedChan {
+			fmt.Println(v)
+			atomic.AddInt32(&count, 1)
+		}
+	}()
+
+	blockchainIPEndpoint = types.NodeEndpoint{IP: "127.0.0.1", Port: 8001, Inbound: true}
+	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
+	bxBlock, err := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
+	assert.Nil(t, err)
+
+	// send block over bridge from blockchain connection
+	err = bridge.SendBlockToBDN(bxBlock, blockchainIPEndpoint)
+	assert.Nil(t, err)
+	assert.Equal(t, int(ethBlock.Size()), bxBlock.Size())
+
+	msgBytes, err := mockTLS.MockAdvanceSent()
+	assert.Nil(t, err)
+
+	// block is broadcast to relays
+	var sentBroadcast bxmessage.Broadcast
+	err = sentBroadcast.Unpack(msgBytes, relayConn.Protocol())
+	assert.Nil(t, err)
+
+	assert.Equal(t, ethBlock.Hash().Bytes(), sentBroadcast.Hash().Bytes())
+	assert.Equal(t, networkNum, sentBroadcast.GetNetworkNum())
+	assert.Equal(t, 0, len(sentBroadcast.ShortIDs()))
+
+	// try sending block again
+	err = bridge.SendBlockToBDN(bxBlock, blockchainIPEndpoint)
+	assert.Nil(t, err)
+
+	// times out, nothing sent (already processed)
+	msgBytes, err = mockTLS.MockAdvanceSent()
+	assert.NotNil(t, err, "unexpected bytes %v", string(msgBytes))
+	close(g.feedChan)
+	wg.Wait()
+	assert.Equal(t, int32(1), atomic.LoadInt32(&count))
 }
 
 func TestGateway_HandleBlockFromBlockchain_TwoRelays(t *testing.T) {
@@ -750,6 +823,107 @@ func TestGateway_HandleBlockFromRelay(t *testing.T) {
 	}
 }
 
+func TestGateway_HandleBeaconBlockFromRelay(t *testing.T) {
+	bridge, g := setup(t, 1)
+	g.feedManager.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "")
+	_, relayConn1 := addRelayConn(g)
+	mockTLS2, _ := addRelayConn(g)
+
+	// separate service instance, to avoid already processed errors
+	txStore, bp := newBP()
+
+	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
+	bxBlock, _ := bridge.BlockBlockchainToBDN(ethBlock)
+
+	// compress a transaction
+	bxTransaction, _ := bridge.TransactionBlockchainToBDN(ethBlock.Transactions()[0])
+	txStore.Add(bxTransaction.Hash(), bxTransaction.Content(), 1, networkNum, false, 0, time.Now(), 0, types.EmptySender)
+	g.TxStore.Add(bxTransaction.Hash(), bxTransaction.Content(), 1, networkNum, false, 0, time.Now(), 0, types.EmptySender)
+
+	broadcastMessage, _, err := bp.BxBlockToBroadcast(bxBlock, networkNum, g.sdn.MinTxAge())
+	assert.Nil(t, err)
+
+	err = g.HandleMsg(broadcastMessage, relayConn1, connections.RunForeground)
+	assert.Nil(t, err)
+	assertNoBlockSentToRelay(t, mockTLS2)
+	time.Sleep(1 * time.Millisecond)
+
+	select {
+	case receivedBxBlock := <-bridge.ReceiveEthBlockFromBDN():
+		if receivedBxBlock == nil {
+			t.FailNow()
+		}
+
+		assert.Equal(t, bxBlock.Hash(), receivedBxBlock.Hash())
+		assert.Equal(t, bxBlock.Header, receivedBxBlock.Header)
+		assert.Equal(t, bxBlock.Trailer, receivedBxBlock.Trailer)
+		assert.True(t, bxBlock.Equals(receivedBxBlock))
+		assert.Equal(t, bxBlock.Size(), receivedBxBlock.Size())
+	case <-bridge.ReceiveBeaconBlockFromBDN():
+		assert.Fail(t, "unexpectedly processed beacon block")
+	default:
+		assert.Fail(t, "eth block expected")
+	}
+
+	// duplicate, no processing
+	err = g.HandleMsg(broadcastMessage, relayConn1, connections.RunForeground)
+	assert.Nil(t, err)
+
+	assertNoBlockSentToRelay(t, mockTLS2)
+	time.Sleep(1 * time.Millisecond)
+
+	select {
+	case <-bridge.ReceiveBeaconBlockFromBDN():
+		assert.Fail(t, "unexpectedly processed block again")
+	case <-bridge.ReceiveEthBlockFromBDN():
+		assert.Fail(t, "unexpectedly processed eth block")
+	default:
+	}
+
+	// beacon block after eth block is not treated as duplicate
+	beaconBlock := bxmock.NewBellatrixBeaconBlock(t, 11, nil, ethBlock)
+	bxBlock, _ = bridge.BlockBlockchainToBDN(beaconBlock)
+
+	broadcastMessage, _, err = bp.BxBlockToBroadcast(bxBlock, networkNum, g.sdn.MinTxAge())
+	assert.Nil(t, err)
+
+	err = g.HandleMsg(broadcastMessage, relayConn1, connections.RunForeground)
+	assert.Nil(t, err)
+	assertNoBlockSentToRelay(t, mockTLS2)
+	time.Sleep(1 * time.Millisecond)
+
+	select {
+	case receivedBxBlock := <-bridge.ReceiveBeaconBlockFromBDN():
+		if receivedBxBlock == nil {
+			t.FailNow()
+		}
+
+		assert.Equal(t, bxBlock.Hash(), receivedBxBlock.Hash())
+		assert.Nil(t, bxBlock.Header)
+		assert.Equal(t, bxBlock.Trailer, receivedBxBlock.Trailer)
+		assert.True(t, bxBlock.Equals(receivedBxBlock))
+		assert.Equal(t, bxBlock.Size(), receivedBxBlock.Size())
+	case <-bridge.ReceiveEthBlockFromBDN():
+		assert.Fail(t, "unexpectedly processed block again")
+	default:
+		assert.Fail(t, "beacon block expected")
+	}
+
+	// on other hand same beacon block is duplicate
+	err = g.HandleMsg(broadcastMessage, relayConn1, connections.RunForeground)
+	assert.Nil(t, err)
+	assertNoBlockSentToRelay(t, mockTLS2)
+	time.Sleep(1 * time.Millisecond)
+
+	select {
+	case <-bridge.ReceiveEthBlockFromBDN():
+		assert.Fail(t, "unexpectedly processed eth block")
+	case <-bridge.ReceiveBeaconBlockFromBDN():
+		assert.Fail(t, "unexpectedly processed beacon block")
+	default:
+	}
+}
+
 func TestGateway_ValidateHeightBDNBlocksWithNode(t *testing.T) {
 	bridge, g := setup(t, 1)
 	g.feedManager.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "")
@@ -758,58 +932,58 @@ func TestGateway_ValidateHeightBDNBlocksWithNode(t *testing.T) {
 
 	// block from node
 	heightFromNode := 10
-	expectFeedNotification(t, bridge, g, types.NewBlocksFeed, heightFromNode, heightFromNode, 0)
+	expectFeedNotification(t, bridge, g, false, heightFromNode, heightFromNode, 0)
 
 	// skip 1st too far ahead block from BDN
 	tooFarAheadHeight := heightFromNode + bxgateway.BDNBlocksMaxBlocksAway + 1
-	expectNoFeedNotification(t, bridge, g, types.BDNBlocksFeed, tooFarAheadHeight, heightFromNode, 1)
+	expectNoFeedNotification(t, bridge, g, true, tooFarAheadHeight, heightFromNode, 1)
 
 	// skip 2nd too far ahead block from BDN
 	offset := 5
-	expectNoFeedNotification(t, bridge, g, types.BDNBlocksFeed, tooFarAheadHeight+offset, heightFromNode, 2)
+	expectNoFeedNotification(t, bridge, g, true, tooFarAheadHeight+offset, heightFromNode, 2)
 
 	// skip 3rd too far ahead block from BDN
 	offset++
-	expectNoFeedNotification(t, bridge, g, types.BDNBlocksFeed, tooFarAheadHeight+offset, heightFromNode, 3)
+	expectNoFeedNotification(t, bridge, g, true, tooFarAheadHeight+offset, heightFromNode, 3)
 
 	// should publish block from BDN after 3 skipped, clear best height, clear skip count
 	offset++
-	expectFeedNotification(t, bridge, g, types.BDNBlocksFeed, tooFarAheadHeight+offset, 0, 0)
+	expectFeedNotification(t, bridge, g, true, tooFarAheadHeight+offset, 0, 0)
 
 	// block from node - set bestBlockHeight
 	offset++
 	bestBlockHeight := tooFarAheadHeight + offset
-	expectFeedNotification(t, bridge, g, types.NewBlocksFeed, tooFarAheadHeight+offset, bestBlockHeight, 0)
+	expectFeedNotification(t, bridge, g, false, tooFarAheadHeight+offset, bestBlockHeight, 0)
 
 	// skip 1st too far ahead block from BDN
 	tooFarAheadHeight = tooFarAheadHeight + offset + bxgateway.BDNBlocksMaxBlocksAway + 1
-	expectNoFeedNotification(t, bridge, g, types.BDNBlocksFeed, tooFarAheadHeight, bestBlockHeight, 1)
+	expectNoFeedNotification(t, bridge, g, true, tooFarAheadHeight, bestBlockHeight, 1)
 
 	// skip 2nd too far ahead block from BDN
 	offset = 1
-	expectNoFeedNotification(t, bridge, g, types.BDNBlocksFeed, tooFarAheadHeight+offset, bestBlockHeight, 2)
+	expectNoFeedNotification(t, bridge, g, true, tooFarAheadHeight+offset, bestBlockHeight, 2)
 
 	// skip 3rd too far block from BDN
 	offset++
-	expectNoFeedNotification(t, bridge, g, types.BDNBlocksFeed, tooFarAheadHeight+offset, bestBlockHeight, 3)
+	expectNoFeedNotification(t, bridge, g, true, tooFarAheadHeight+offset, bestBlockHeight, 3)
 
 	// old block from BDN - skip
 	tooOldHeight := bestBlockHeight - bxgateway.BDNBlocksMaxBlocksAway - 1
-	expectNoFeedNotification(t, bridge, g, types.BDNBlocksFeed, tooOldHeight, bestBlockHeight, 3)
+	expectNoFeedNotification(t, bridge, g, true, tooOldHeight, bestBlockHeight, 3)
 
 	// publish 4th too far ahead block, clear best height and skipped block count
 	offset++
-	expectFeedNotification(t, bridge, g, types.BDNBlocksFeed, tooFarAheadHeight+offset, 0, 0)
+	expectFeedNotification(t, bridge, g, true, tooFarAheadHeight+offset, 0, 0)
 
 	// block from node - set bestBlockHeight
-	expectFeedNotification(t, bridge, g, types.NewBlocksFeed, bestBlockHeight+1, bestBlockHeight+1, 0)
+	expectFeedNotification(t, bridge, g, false, bestBlockHeight+1, bestBlockHeight+1, 0)
 
 	// skip 1st too far ahead block from BDN
 	offset++
-	expectNoFeedNotification(t, bridge, g, types.BDNBlocksFeed, tooFarAheadHeight+offset, bestBlockHeight+1, 1)
+	expectNoFeedNotification(t, bridge, g, true, tooFarAheadHeight+offset, bestBlockHeight+1, 1)
 
 	// block from node - set bestBlockHeight and clear skipped block count
-	expectFeedNotification(t, bridge, g, types.NewBlocksFeed, bestBlockHeight+2, bestBlockHeight+2, 0)
+	expectFeedNotification(t, bridge, g, false, bestBlockHeight+2, bestBlockHeight+2, 0)
 }
 
 func TestGateway_BlockFeedIfSubscribeOnly(t *testing.T) {
@@ -820,11 +994,11 @@ func TestGateway_BlockFeedIfSubscribeOnly(t *testing.T) {
 
 	// first block from BDN (no blockchain node)
 	heightFromNode := 0
-	expectNoFeedNotification(t, bridge, g, types.BDNBlocksFeed, heightFromNode, heightFromNode, 0)
+	expectNoFeedNotification(t, bridge, g, true, heightFromNode, heightFromNode, 0)
 
 	g.feedManager.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "")
 	heightFromNode = 10
-	expectFeedNotification(t, bridge, g, types.BDNBlocksFeed, heightFromNode, heightFromNode, 0)
+	expectFeedNotification(t, bridge, g, true, heightFromNode, heightFromNode, 0)
 
 }
 
@@ -837,27 +1011,28 @@ func TestGateway_ValidateHeightBDNBlocksWithoutNode(t *testing.T) {
 
 	// first block from BDN (no blockchain node)
 	heightFromNode := 10
-	expectFeedNotification(t, bridge, g, types.BDNBlocksFeed, heightFromNode, heightFromNode, 0)
+	expectFeedNotification(t, bridge, g, true, heightFromNode, heightFromNode, 0)
 
 	// skip 1st too far block from BDN
 	tooFarHeight := heightFromNode + bxgateway.BDNBlocksMaxBlocksAway + 1
-	expectNoFeedNotification(t, bridge, g, types.BDNBlocksFeed, tooFarHeight, heightFromNode, 1)
+	expectNoFeedNotification(t, bridge, g, true, tooFarHeight, heightFromNode, 1)
 
 	// skip 2nd too far block from BDN
-	expectNoFeedNotification(t, bridge, g, types.BDNBlocksFeed, tooFarHeight+5, heightFromNode, 2)
+	expectNoFeedNotification(t, bridge, g, true, tooFarHeight+5, heightFromNode, 2)
 
 	// skip 3rd too far block from BDN
-	expectNoFeedNotification(t, bridge, g, types.BDNBlocksFeed, tooFarHeight+6, heightFromNode, 3)
+	expectNoFeedNotification(t, bridge, g, true, tooFarHeight+6, heightFromNode, 3)
 
 	// should publish block from BDN after 3 skipped, reset best height, clear skip count
-	expectFeedNotification(t, bridge, g, types.BDNBlocksFeed, tooFarHeight+7, tooFarHeight+7, 0)
+	expectFeedNotification(t, bridge, g, true, tooFarHeight+7, tooFarHeight+7, 0)
 }
 
-func expectNoFeedNotification(t *testing.T, bridge blockchain.Bridge, g *gateway, feedName types.FeedType, blockHeight int, expectedBestBlockHeight int, expectedSkipBlockCount int) {
+func expectNoFeedNotification(t *testing.T, bridge blockchain.Bridge, g *gateway, isBDNBlock bool, blockHeight int, expectedBestBlockHeight int, expectedSkipBlockCount int) {
 	ethBlock := bxmock.NewEthBlock(uint64(blockHeight), common.Hash{})
 	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
-	err := g.publishBlock(bxBlock, feedName, nil)
+	err := g.publishBlock(bxBlock, nil, nil, !isBDNBlock)
 	assert.Nil(t, err)
+
 	select {
 	case <-g.feedChan:
 		assert.Fail(t, "received unexpected feed notification")
@@ -867,30 +1042,36 @@ func expectNoFeedNotification(t *testing.T, bridge blockchain.Bridge, g *gateway
 	assert.Equal(t, expectedSkipBlockCount, g.bdnBlocksSkipCount)
 }
 
-func expectFeedNotification(t *testing.T, bridge blockchain.Bridge, g *gateway, feedName types.FeedType, blockHeight int, expectedBestBlockHeight int, expectedSkipBlockCount int) {
+func expectFeedNotification(t *testing.T, bridge blockchain.Bridge, g *gateway, isBDNBlock bool, blockHeight int, expectedBestBlockHeight int, expectedSkipBlockCount int) {
 	ethBlock := bxmock.NewEthBlock(uint64(blockHeight), common.Hash{})
 	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
-	err := g.publishBlock(bxBlock, feedName, nil)
+	err := g.publishBlock(bxBlock, nil, nil, !isBDNBlock)
 	assert.Nil(t, err)
-	select {
-	case <-g.feedChan:
-	default:
-		assert.Fail(t, "did not receive expected feed notification")
+
+	expectedNotifications := map[types.FeedType]struct{}{
+		types.BDNBlocksFeed: {},
 	}
-	if feedName == types.NewBlocksFeed {
-		// onBlock notification
+
+	if !isBDNBlock {
+		expectedNotifications[types.NewBlocksFeed] = struct{}{}
+		expectedNotifications[types.TxReceiptsFeed] = struct{}{}
+		expectedNotifications[types.OnBlockFeed] = struct{}{}
+	}
+
+	// It is neccessary to have FailNow to not wait until timeout when something goes wrong
+	for len(expectedNotifications) > 0 {
 		select {
-		case <-g.feedChan:
+		case notification := <-g.feedChan:
+			if _, ok := expectedNotifications[notification.NotificationType()]; ok {
+				delete(expectedNotifications, notification.NotificationType())
+				continue
+			}
+			assert.FailNowf(t, "not expected feed notification", string(notification.NotificationType()))
 		default:
-			assert.Fail(t, "did not receive expected feed notification")
-		}
-		// txReceipt Notification
-		select {
-		case <-g.feedChan:
-		default:
-			assert.Fail(t, "did not receive expected feed notification")
+			assert.FailNowf(t, "did not receive expected feed notifications", fmt.Sprintf("%v", expectedNotifications))
 		}
 	}
+
 	assert.Equal(t, expectedBestBlockHeight, g.bestBlockHeight)
 	assert.Equal(t, expectedSkipBlockCount, g.bdnBlocksSkipCount)
 }
@@ -924,10 +1105,127 @@ func TestGateway_Status(t *testing.T) {
 	assert.Equal(t, 0, len(sentBroadcast.ShortIDs()))
 
 	g.timeStarted = time.Now()
+
+	endpoints, stats := createPeerData()
+	for _, endpoint := range endpoints {
+		g.bdnStats.NodeStats()[endpoint.IPPort()] = stats[endpoint.IPPort()]
+	}
+	err = g.bridge.SendBlockchainStatusResponse(endpoints)
+	assert.Nil(t, err)
+
 	rsp, err := g.Status(context.Background(), &pb.StatusRequest{})
 	require.NoError(t, err)
 	require.NotNil(t, rsp)
 	require.Equal(t, rsp.GatewayInfo.IpAddress, "172.0.0.1")
 	require.NotEmpty(t, rsp.GatewayInfo.StartupParams)
 	require.Equal(t, g.timeStarted.Format(time.RFC3339), rsp.GatewayInfo.TimeStarted)
+
+	for _, endpoint := range endpoints {
+		var (
+			expected = stats[endpoint.IPPort()]
+			nodeInfo = rsp.Nodes[ipport(endpoint.IP, endpoint.Port)]
+		)
+
+		require.NotNil(t, expected)
+		require.NotNil(t, nodeInfo)
+		require.NotNil(t, nodeInfo.NodePerformance)
+
+		actual := nodeInfo.NodePerformance
+
+		require.Equal(t, uint32(expected.NewBlocksReceivedFromBlockchainNode), actual.NewBlocksReceivedFromBlockchainNode)
+		require.Equal(t, uint32(expected.NewBlocksReceivedFromBdn), actual.NewBlocksReceivedFromBdn)
+		require.Equal(t, expected.NewBlocksSeen, actual.NewBlocksSeen)
+		require.Equal(t, expected.NewBlockMessagesFromBlockchainNode, actual.NewBlockMessagesFromBlockchainNode)
+		require.Equal(t, expected.NewBlockAnnouncementsFromBlockchainNode, actual.NewBlockAnnouncementsFromBlockchainNode)
+		require.Equal(t, expected.NewTxReceivedFromBlockchainNode, actual.NewTxReceivedFromBlockchainNode)
+		require.Equal(t, expected.NewTxReceivedFromBdn, actual.NewTxReceivedFromBdn)
+		require.Equal(t, expected.TxSentToNode, actual.TxSentToNode)
+		require.Equal(t, expected.DuplicateTxFromNode, actual.DuplicateTxFromNode)
+		require.Equal(t, expected.Inbound, nodeInfo.Inbound)
+		require.Equal(t, expected.IsConnected, nodeInfo.IsConnected)
+	}
+}
+
+func TestGateway_ConnectionStatus(t *testing.T) {
+	_, g := setup(t, 1)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		for blockchainConnectionStatus := range g.bridge.ReceiveBlockchainConnectionStatus() {
+			g.bdnStats.SetBlockchainConnectionStatus(blockchainConnectionStatus)
+			wg.Done()
+		}
+	}()
+
+	g.timeStarted = time.Now()
+
+	err := g.bridge.SendBlockchainConnectionStatus(blockchain.ConnectionStatus{IsConnected: true, PeerEndpoint: types.NodeEndpoint{IP: "123.45.6.78", Port: 1234}})
+	assert.Nil(t, err)
+	wg.Wait()
+	require.True(t, g.bdnStats.NodeStats()["123.45.6.78 1234"].IsConnected)
+}
+
+func createPeerData() ([]*types.NodeEndpoint, map[string]*bxmessage.BdnPerformanceStatsData) {
+	endpoints := []*types.NodeEndpoint{
+		{
+			IP:        "192.168.10.20",
+			Port:      30303,
+			PublicKey: "pubkey1",
+			Inbound:   true,
+		},
+		{
+			IP:        "192.168.10.21",
+			Port:      30304,
+			PublicKey: "pubkey2",
+			Inbound:   false,
+		},
+		{
+			IP:        "192.168.10.22",
+			Port:      30305,
+			PublicKey: "pubkey3",
+			Inbound:   true,
+		},
+	}
+
+	stats := map[string]*bxmessage.BdnPerformanceStatsData{
+		endpoints[0].IPPort(): {
+			NewBlocksReceivedFromBlockchainNode:     20,
+			NewBlocksReceivedFromBdn:                30,
+			NewBlocksSeen:                           10,
+			NewBlockMessagesFromBlockchainNode:      10,
+			NewBlockAnnouncementsFromBlockchainNode: 20,
+			NewTxReceivedFromBlockchainNode:         40,
+			NewTxReceivedFromBdn:                    50,
+			TxSentToNode:                            100,
+			DuplicateTxFromNode:                     50,
+			Inbound:                                 true,
+		},
+		endpoints[1].IPPort(): {
+			NewBlocksReceivedFromBlockchainNode:     21,
+			NewBlocksReceivedFromBdn:                31,
+			NewBlocksSeen:                           11,
+			NewBlockMessagesFromBlockchainNode:      11,
+			NewBlockAnnouncementsFromBlockchainNode: 21,
+			NewTxReceivedFromBlockchainNode:         41,
+			NewTxReceivedFromBdn:                    51,
+			TxSentToNode:                            101,
+			DuplicateTxFromNode:                     51,
+			Inbound:                                 false,
+		},
+		endpoints[2].IPPort(): {
+			NewBlocksReceivedFromBlockchainNode:     22,
+			NewBlocksReceivedFromBdn:                32,
+			NewBlocksSeen:                           12,
+			NewBlockMessagesFromBlockchainNode:      12,
+			NewBlockAnnouncementsFromBlockchainNode: 22,
+			NewTxReceivedFromBlockchainNode:         42,
+			NewTxReceivedFromBdn:                    52,
+			TxSentToNode:                            102,
+			DuplicateTxFromNode:                     52,
+			Inbound:                                 true,
+		},
+	}
+
+	return endpoints, stats
 }

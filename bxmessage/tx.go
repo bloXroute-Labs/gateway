@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"math"
 	"time"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 const nanosInSecond = 1e9
@@ -24,6 +25,8 @@ type Tx struct {
 	BroadcastHeader
 	shortID   types.ShortID
 	flags     types.TxFlags
+	walletIDs []string
+	fallback  uint16
 	timestamp time.Time
 	accountID [AccountIDLen]byte
 	content   []byte
@@ -51,6 +54,7 @@ func NewTx(hash types.SHA256Hash, content []byte, networkNum types.NetworkNum, f
 	tx.SetContent(content)
 	tx.SetHash(hash)
 	tx.SetTimestamp(clock.Now())
+	tx.walletIDs = make([]string, 2, 2)
 	return tx
 }
 
@@ -67,6 +71,16 @@ func (m *Tx) Content() (content []byte) {
 // ShortID returns the assigned short ID of the transaction
 func (m *Tx) ShortID() (sid types.ShortID) {
 	return m.shortID
+}
+
+// Fallback returns the seconds they relay will broadcast the tx to all gateway if not zero
+func (m *Tx) Fallback() uint16 {
+	return m.fallback
+}
+
+// WalletIDs returns the wallet id for the next validator
+func (m *Tx) WalletIDs() []string {
+	return m.walletIDs
 }
 
 // Timestamp indicates when the TxMessage was sent.
@@ -102,6 +116,20 @@ func (m *Tx) SetTimestamp(timestamp time.Time) {
 	m.timestamp = timestamp
 }
 
+// SetFallback sets the seconds they relay will broadcast the tx to all gateway if not zero
+func (m *Tx) SetFallback(f uint16) {
+	m.fallback = f
+}
+
+// SetWalletID sets the wallet id for the next validator
+func (m *Tx) SetWalletID(index int, id string) {
+	// TODO, decide what to do in this case
+	if index >= 2 {
+		return
+	}
+	m.walletIDs[index] = id
+}
+
 // SetSender sets the sender
 func (m *Tx) SetSender(sender types.Sender) {
 	copy(m.sender[:], sender[:])
@@ -128,11 +156,11 @@ func (m *Tx) ClearInternalAttributes() {
 	// not reset timestamp. Gateways use it to see if transaction is old or not
 	m.sourceID = [SourceIDLen]byte{}
 	m.accountID = [AccountIDLen]byte{}
+	m.walletIDs = make([]string, 2, 2)
 
 	m.flags &= ^types.TFEnterpriseSender
 	m.flags &= ^types.TFEliteSender
 	m.flags &= ^types.TFPaidTx
-	m.flags &= ^types.TFValidatorsOnly
 }
 
 // Flags returns the transaction flags
@@ -186,16 +214,33 @@ func (m *Tx) CleanClone() Tx {
 		content:         m.content,
 		quota:           m.quota,
 		sender:          m.sender,
+		walletIDs:       make([]string, 2, 2),
 	}
 	tx.ClearInternalAttributes()
 	return tx
+}
+
+// Clone clones the caller Tx object and return cloned tx
+func (m Tx) Clone() *Tx {
+	return &Tx{
+		m.BroadcastHeader,
+		m.shortID,
+		m.flags,
+		m.walletIDs,
+		m.fallback,
+		m.timestamp,
+		m.accountID,
+		m.content,
+		m.quota,
+		m.sender,
+	}
 }
 
 // Pack serializes a Tx into a buffer for sending
 func (m Tx) Pack(protocol Protocol) ([]byte, error) {
 	bufLen := m.size(protocol)
 	buf := make([]byte, bufLen)
-	m.BroadcastHeader.Pack(&buf, TxType)
+	m.BroadcastHeader.Pack(&buf, TxType, protocol)
 	offset := BroadcastHeaderLen
 
 	binary.LittleEndian.PutUint32(buf[offset:], uint32(m.shortID))
@@ -224,6 +269,26 @@ func (m Tx) Pack(protocol Protocol) ([]byte, error) {
 		binary.LittleEndian.PutUint32(buf[offset:], uint32(timestamp))
 		offset += ShortTimestampLen
 	}
+	switch {
+	case protocol >= NextValidatorMultipleProtocol:
+		if m.flags.IsNextValidator() {
+			binary.LittleEndian.PutUint16(buf[offset:], m.fallback)
+			offset += types.UInt16Len
+			for _, walletID := range m.walletIDs {
+				copy(buf[offset:offset+types.WalletIDLen], walletID)
+				offset += types.WalletIDLen
+			}
+		}
+	case protocol >= NextValidatorProtocol:
+		if m.flags.IsNextValidator() {
+			binary.LittleEndian.PutUint16(buf[offset:], m.fallback)
+			offset += types.UInt16Len
+			copy(buf[offset:offset+types.WalletIDLen], m.walletIDs[0])
+			offset += types.WalletIDLen
+		}
+	default:
+	}
+
 	switch {
 	case protocol < 22:
 		// do nothing. accountID added in protocol 22
@@ -254,56 +319,69 @@ func (m *Tx) Unpack(buf []byte, protocol Protocol) error {
 		return err
 	}
 	offset := BroadcastHeaderLen
+	if err := checkBufSize(&buf, offset, types.ShortIDLen+types.TxFlagsLen); err != nil {
+		return err
+	}
 	m.shortID = types.ShortID(binary.LittleEndian.Uint32(buf[offset:]))
 	offset += types.ShortIDLen
 	m.flags = types.TxFlags(binary.LittleEndian.Uint16(buf[offset:]))
 	offset += types.TxFlagsLen
 	switch {
 	case protocol < 21:
+		if err := checkBufSize(&buf, offset, types.UInt32Len); err != nil {
+			return err
+		}
 		timestamp := float64(binary.LittleEndian.Uint32(buf[offset:]))
 		offset += types.UInt32Len
 		nanoseconds := int64(timestamp) * int64(nanosInSecond)
 		m.timestamp = time.Unix(0, nanoseconds)
 	case protocol < FullTxTimeStampProtocol:
+		if err := checkBufSize(&buf, offset, TimestampLen); err != nil {
+			return err
+		}
 		tmp := binary.LittleEndian.Uint64(buf[offset:])
 		timestamp := math.Float64frombits(tmp)
 		offset += TimestampLen
 		nanoseconds := int64(timestamp) * int64(nanosInSecond)
 		m.timestamp = time.Unix(0, nanoseconds)
 	default:
+		if err := checkBufSize(&buf, offset, ShortTimestampLen); err != nil {
+			return err
+		}
 		timestamp := binary.LittleEndian.Uint32(buf[offset:])
 		offset += ShortTimestampLen
-		toMerge := uint64(timestamp) << 10
-
-		// the leading 22 bits were wiped out during pack(), the trailing 10 bits (nanoseconds) were dropped out as well
-		// 0xFFFFFC0000000000 is hex for 0b1111111111111111111111000000000000000000000000000000000000000000
-		// leading 22 1s, following by 42 0s
-
-		now := clock.Now().UnixNano()
-		nanoseconds := toMerge | uint64(now)&0xFFFFFC0000000000
-		result := int64(nanoseconds)
-
-		// There are two edge cases we need to check
-		// 1. overflow, the Tx message only track 32 bit, if the sender time is 1234+FFFF..FF(32bit)+(10bits offset, not important)
-		//    the receiver time is 1235+00000(32bit)+(10 bits offset,not important), after the merge we will end up with 1235+FFF..FFF+..
-		//    the overflow will result in roughly 1 hour longer than expected.
-		//    To solve this, we need to compare the current time with the unpacked timestamp, if the gap is huge ( more than an hour )
-		//   then overflow happened, and we need to subtract the timestamp by 0x40000000000 nanoseconds
-		if result-now >= time.Hour.Nanoseconds() {
-			// overflow
-			result = result - 0x40000000000
-		}
-
-		// 2. underflow, 1234+0000..000+10bits for the sender, and 1233+FFFFF..FF+10bits due to the clock time difference of the machine.
-		//    after the merge this can become 1233+000000..00+10bit which is far older than expected, so we need to add 0x40000000000 to the
-		//    timestamp
-		if now-result >= time.Hour.Nanoseconds() {
-			// underflow
-			result = result + 0x40000000000
-		}
-
+		result := decodeTimestamp(timestamp)
 		m.timestamp = time.Unix(0, result)
 	}
+
+	switch {
+	case protocol >= NextValidatorMultipleProtocol:
+		m.walletIDs = make([]string, 2, 2)
+		if m.flags.IsNextValidator() {
+			if err := checkBufSize(&buf, offset, types.UInt16Len+types.WalletIDLen+types.WalletIDLen); err != nil {
+				return err
+			}
+			m.fallback = binary.LittleEndian.Uint16(buf[offset:])
+			offset += types.UInt16Len
+			for i := 0; i < 2; i++ {
+				m.SetWalletID(i, string(buf[offset:offset+types.WalletIDLen]))
+				offset += types.WalletIDLen
+			}
+		}
+	case protocol >= NextValidatorProtocol:
+		m.walletIDs = make([]string, 2, 2)
+		if m.flags.IsNextValidator() {
+			if err := checkBufSize(&buf, offset, types.UInt16Len+types.WalletIDLen); err != nil {
+				return err
+			}
+			m.fallback = binary.LittleEndian.Uint16(buf[offset:])
+			offset += types.UInt16Len
+			m.SetWalletID(0, string(buf[offset:offset+types.WalletIDLen]))
+			offset += types.WalletIDLen
+		}
+	default:
+	}
+
 	switch {
 	case protocol < 22:
 		// do nothing. accountID added in protocol 22
@@ -323,6 +401,39 @@ func (m *Tx) Unpack(buf []byte, protocol Protocol) error {
 	return nil
 }
 
+func decodeTimestamp(timestamp uint32) int64 {
+	toMerge := uint64(timestamp) << 10
+
+	// the leading 22 bits were wiped out during pack(), the trailing 10 bits (nanoseconds) were dropped out as well
+	// 0xFFFFFC0000000000 is hex for 0b1111111111111111111111000000000000000000000000000000000000000000
+	// leading 22 1s, following by 42 0s
+
+	now := clock.Now().UnixNano()
+	nanoseconds := toMerge | uint64(now)&0xFFFFFC0000000000
+	result := int64(nanoseconds)
+
+	// There are two edge cases we need to check
+	// 1. overflow, the Tx message only track 32 bit, if the sender time is 1234+FFFF..FF(32bit)+(10bits offset, not important)
+	//    the receiver time is 1235+00000(32bit)+(10 bits offset,not important), after the merge we will end up with 1235+FFF..FFF+..
+	//    the overflow will result in roughly 1 hour longer than expected.
+	//    To solve this, we need to compare the current time with the unpacked timestamp, if the gap is huge ( more than an hour )
+	//   then overflow happened, and we need to subtract the timestamp by 0x40000000000 nanoseconds
+	if result-now >= time.Hour.Nanoseconds() {
+		// overflow
+		result = result - 0x40000000000
+	}
+
+	// 2. underflow, 1234+0000..000+10bits for the sender, and 1233+FFFFF..FF+10bits due to the clock time difference of the machine.
+	//    after the merge this can become 1233+000000..00+10bit which is far older than expected, so we need to add 0x40000000000 to the
+	//    timestamp
+	if now-result >= time.Hour.Nanoseconds() {
+		// underflow
+		result = result + 0x40000000000
+	}
+
+	return result
+}
+
 func (m *Tx) size(protocol Protocol) uint32 {
 	switch {
 	case protocol < 19:
@@ -340,6 +451,13 @@ func (m *Tx) size(protocol Protocol) uint32 {
 		contentSize += SenderLen
 	}
 
+	if protocol >= NextValidatorProtocol && m.flags.IsNextValidator() {
+		contentSize += types.UInt16Len + types.WalletIDLen
+	}
+
+	if protocol >= NextValidatorMultipleProtocol && m.flags.IsNextValidator() {
+		contentSize += types.WalletIDLen
+	}
 	return m.BroadcastHeader.Size() + types.ShortIDLen + types.TxFlagsLen + ShortTimestampLen + AccountIDLen + contentSize
 }
 

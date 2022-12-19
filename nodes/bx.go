@@ -4,6 +4,11 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"reflect"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/config"
@@ -14,10 +19,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"reflect"
-	"strings"
-	"sync"
-	"time"
 )
 
 const (
@@ -162,7 +163,7 @@ func (bn *Bx) HandleMsg(msg bxmessage.Message, source connections.Conn) error {
 		startTime := time.Now()
 		bn.TxStore.RemoveShortIDs(&cleanup.ShortIDs, services.FullReEntryProtection, "TxCleanup message")
 		source.Log().Debugf("TxStore cleanup (go routine) by txcleanup message took %v. Size before %v, size after %v, shortIds %v",
-			time.Now().Sub(startTime), sizeBefore, bn.TxStore.Count(), len(cleanup.ShortIDs))
+			time.Since(startTime), sizeBefore, bn.TxStore.Count(), len(cleanup.ShortIDs))
 
 	case *bxmessage.BlockConfirmation:
 		blockConfirmation := msg.(*bxmessage.BlockConfirmation)
@@ -170,7 +171,7 @@ func (bn *Bx) HandleMsg(msg bxmessage.Message, source connections.Conn) error {
 		startTime := time.Now()
 		bn.TxStore.RemoveHashes(&blockConfirmation.Hashes, services.ShortReEntryProtection, "BlockConfirmation message")
 		source.Log().Debugf("TxStore cleanup (go routine) by %v message took %v. Size before %v, size after %v, hashes %v",
-			bxmessage.BlockConfirmationType, time.Now().Sub(startTime), sizeBefore, bn.TxStore.Count(), len(blockConfirmation.Hashes))
+			bxmessage.BlockConfirmationType, time.Since(startTime), sizeBefore, bn.TxStore.Count(), len(blockConfirmation.Hashes))
 
 	default:
 		source.Log().Errorf("unknown message type %v received", reflect.TypeOf(msg))

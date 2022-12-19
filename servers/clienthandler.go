@@ -7,6 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
+	"net/http"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
@@ -16,23 +24,17 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/gorilla/websocket"
-	"github.com/satori/go.uuid"
+	uuid "github.com/satori/go.uuid"
 	"github.com/sourcegraph/jsonrpc2"
 	websocketjsonrpc2 "github.com/sourcegraph/jsonrpc2/websocket"
 	"github.com/zhouzhuojie/conditions"
 	"golang.org/x/sync/errgroup"
-	"math/big"
-	"net/http"
-	"regexp"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
 )
 
 // ClientHandler is a struct for gateway client handler object
@@ -41,6 +43,12 @@ type ClientHandler struct {
 	websocketServer *http.Server
 	httpServer      *HTTPServer
 	log             *log.Entry
+}
+
+// MultiTransactions - response for MultiTransactions subscription
+type MultiTransactions struct {
+	Subscription string     `json:"subscription"`
+	Result       []TxResult `json:"result"`
 }
 
 // TxResponse - response of the jsonrpc params
@@ -86,6 +94,7 @@ type clientReq struct {
 	feed     types.FeedType
 	expr     conditions.Expr
 	calls    *map[string]*RPCCall
+	MultiTxs bool
 }
 
 type subscriptionRequest struct {
@@ -97,6 +106,7 @@ type subscriptionOptions struct {
 	Include    []string            `json:"Include"`
 	Filters    string              `json:"Filters"`
 	CallParams []map[string]string `json:"Call-Params"`
+	MultiTxs   bool                `json:"MultiTxs"`
 }
 
 // RPCCall represents customer call executed for onBlock feed
@@ -184,9 +194,11 @@ var txContentFields = []string{"tx_contents.nonce", "tx_contents.tx_hash",
 
 var validTxParams = append(txContentFields, "tx_contents", "tx_hash", "local_region", "time", "raw_tx")
 
-var validBlockParams = append(txContentFields, "hash", "header", "transactions", "uncles")
+var validBlockParams = append(txContentFields, "hash", "header", "transactions", "uncles", "future_validator_info")
 
 var validOnBlockParams = []string{"name", "response", "block_height", "tag"}
+
+var validBeaconBlockParams = []string{"hash", "header", "slot", "body"}
 
 var validTxReceiptParams = []string{"block_hash", "block_number", "contract_address",
 	"cumulative_gas_used", "effective_gas_price", "from", "gas_used", "logs", "logs_bloom",
@@ -199,6 +211,10 @@ var validParams = map[types.FeedType][]string{
 	types.PendingTxsFeed: validTxParams,
 	types.OnBlockFeed:    validOnBlockParams,
 	types.TxReceiptsFeed: validTxReceiptParams,
+
+	// Beacon
+	types.NewBeaconBlocksFeed: validBeaconBlockParams,
+	types.BDNBeaconBlocksFeed: validBeaconBlockParams,
 }
 
 var defaultTxParams = append(txContentFields, "tx_hash", "local_region", "time")
@@ -208,7 +224,7 @@ var availableFilters = []string{"gas", "gas_price", "value", "to", "from", "meth
 var operators = []string{"=", ">", "<", "!=", ">=", "<=", "in"}
 var operands = []string{"and", "or"}
 
-var availableFeeds = []types.FeedType{types.NewTxsFeed, types.NewBlocksFeed, types.BDNBlocksFeed, types.PendingTxsFeed, types.OnBlockFeed, types.TxReceiptsFeed}
+var availableFeeds = []types.FeedType{types.NewTxsFeed, types.NewBlocksFeed, types.BDNBlocksFeed, types.PendingTxsFeed, types.OnBlockFeed, types.TxReceiptsFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed}
 
 // NewWSServer creates and returns a new websocket server managed by FeedManager
 func NewWSServer(feedManager *FeedManager) *http.Server {
@@ -235,13 +251,14 @@ func NewWSServer(feedManager *FeedManager) *http.Server {
 					errorWithDelay(responseWriter, request, "account is not authorized to get other accounts information")
 					return
 				}
-				log.Errorf("Failed to get customer account model, account id: %v, error: %v", connectionAccountID, err)
-				connectionAccountModel = sdnmessage.DefaultEliteAccount
+				log.Errorf("Failed to get customer account model, account id: %v, remote addr: %v, connectionSecretHash: %v, error: %v",
+					connectionAccountID, request.RemoteAddr, connectionSecretHash, err)
+				connectionAccountModel = sdnmessage.GetDefaultEliteAccount(time.Now().UTC())
 				connectionAccountModel.AccountID = connectionAccountID
 				connectionAccountModel.SecretHash = connectionSecretHash
 			}
 			if !connectionAccountModel.TierName.IsEnterprise() {
-				log.Errorf("Customer account %v must be enterprise / enterprise elite / ultra but it is %v", connectionAccountID, connectionAccountModel.TierName)
+				log.Warnf("Customer account %v must be enterprise / enterprise elite / ultra but it is %v", connectionAccountID, connectionAccountModel.TierName)
 				errorWithDelay(responseWriter, request, "account must be enterprise / enterprise elite / ultra")
 				return
 			}
@@ -435,6 +452,126 @@ func (h *handlerObj) validateFeed(feedName types.FeedType, feedStreaming sdnmess
 	return nil
 }
 
+func (h *handlerObj) filterAndInclude(clientReq *clientReq, tx *types.NewTransactionNotification) *TxResult {
+	hasTxContent := false
+	if clientReq.expr != nil {
+		txFilters := tx.Filters(clientReq.expr.Args())
+		if txFilters == nil {
+			return nil
+		}
+		//Evaluate if we should send the tx
+		shouldSend, err := conditions.Evaluate(clientReq.expr, txFilters)
+		if err != nil {
+			h.log.Errorf("error evaluate Filters. feed: %v. method: %v. Filters: %v. remote address: %v. account id: %v error - %v tx: %v.",
+				clientReq.feed, clientReq.includes[0], clientReq.expr.String(), h.remoteAddress, h.connectionAccount.AccountID, err.Error(), txFilters)
+			return nil
+		}
+		if !shouldSend {
+			return nil
+		}
+	}
+	var response TxResult
+	for _, param := range clientReq.includes {
+		if strings.Contains(param, "tx_contents") {
+			hasTxContent = true
+		}
+		switch param {
+		case "tx_hash":
+			txHash := tx.GetHash()
+			response.TxHash = &txHash
+		case "time":
+			timeNow := time.Now().Format(bxgateway.MicroSecTimeFormat)
+			response.Time = &timeNow
+		case "local_region":
+			localRegion := tx.LocalRegion()
+			response.LocalRegion = &localRegion
+		case "raw_tx":
+			rawTx := hexutil.Encode(tx.RawTx())
+			response.RawTx = &rawTx
+		}
+	}
+	if hasTxContent {
+		fields := tx.Fields(clientReq.includes)
+		if fields == nil {
+			log.Errorf("Got nil from tx.Fields - need to be checked")
+			return nil
+		}
+		response.TxContents = fields
+	}
+	return &response
+}
+
+func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan *chan *types.Notification, subscriptionID *uuid.UUID, clientReq *clientReq, conn *jsonrpc2.Conn, req *jsonrpc2.Request, feedName types.FeedType) error {
+	for {
+		select {
+		case <-conn.DisconnectNotify():
+			return nil
+		case notification, ok := <-(*feedChan):
+			continueProcessing := true
+			multiTxsResponse := MultiTransactions{Subscription: subscriptionID.String()}
+			if !ok {
+				if h.FeedManager.SubscriptionExists(*subscriptionID) {
+					SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req)
+				}
+				return errors.New("error when reading new notification")
+			}
+			switch feedName {
+			case types.NewTxsFeed:
+				tx := (*notification).(*types.NewTransactionNotification)
+				response := h.filterAndInclude(clientReq, tx)
+				if response != nil {
+					multiTxsResponse.Result = append(multiTxsResponse.Result, *response)
+				}
+			case types.PendingTxsFeed:
+				tx := (*notification).(*types.PendingTransactionNotification)
+				response := h.filterAndInclude(clientReq, &tx.NewTransactionNotification)
+				if response != nil {
+					multiTxsResponse.Result = append(multiTxsResponse.Result, *response)
+				}
+			}
+			for continueProcessing {
+				select {
+				case <-conn.DisconnectNotify():
+					return nil
+				case notification, ok := <-(*feedChan):
+					if !ok {
+						if h.FeedManager.SubscriptionExists(*subscriptionID) {
+							SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req)
+						}
+						return errors.New("error when reading new notification")
+					}
+					switch feedName {
+					case types.NewTxsFeed:
+						tx := (*notification).(*types.NewTransactionNotification)
+						response := h.filterAndInclude(clientReq, tx)
+						if response != nil {
+							multiTxsResponse.Result = append(multiTxsResponse.Result, *response)
+						}
+					case types.PendingTxsFeed:
+						tx := (*notification).(*types.PendingTransactionNotification)
+						response := h.filterAndInclude(clientReq, &tx.NewTransactionNotification)
+						if response != nil {
+							multiTxsResponse.Result = append(multiTxsResponse.Result, *response)
+						}
+					}
+					if len(multiTxsResponse.Result) >= 50 {
+						continueProcessing = false
+					}
+				default:
+					continueProcessing = false
+				}
+			}
+			if len(multiTxsResponse.Result) > 0 {
+				err := conn.Notify(ctx, "subscribe", multiTxsResponse)
+				if err != nil {
+					h.log.Errorf("error notify to subscriptionID: %v : %v ", subscriptionID, err.Error())
+					return err
+				}
+			}
+		}
+	}
+}
+
 // Handle - handling client request
 func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
 	start := time.Now()
@@ -449,7 +586,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 			return
 		}
 		feedName := request.feed
-		if len(h.FeedManager.nodeWSManager.Providers()) == 0 && (feedName != types.NewTxsFeed && feedName != types.BDNBlocksFeed) {
+		if len(h.FeedManager.nodeWSManager.Providers()) == 0 && (feedName != types.NewTxsFeed && feedName != types.BDNBlocksFeed && feedName != types.NewBeaconBlocksFeed && feedName != types.BDNBeaconBlocksFeed) {
 			errMsg := fmt.Sprintf("%v feed requires a websockets endpoint to be specifed via either --eth-ws-uri or --multi-node startup parameter", feedName)
 			SendErrorMsg(ctx, jsonrpc.InvalidParams, errMsg, conn, req)
 			return
@@ -479,6 +616,19 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 			filters,
 			"")
 
+		if request.MultiTxs {
+			if feedName != types.NewTxsFeed && feedName != types.PendingTxsFeed {
+				SendErrorMsg(ctx, jsonrpc.InvalidParams, "multi tx support only in new txs or pending txs", conn, req)
+				log.Debugf("multi tx support only in new txs or pending txs, subscription id %v, account id %v, remote addr %v", subscriptionID.String(), h.connectionAccount.AccountID, h.remoteAddress)
+				return
+			}
+			err := h.subscribeMultiTxs(ctx, feedChan, subscriptionID, request, conn, req, feedName)
+			if err != nil {
+				log.Errorf("error while processing %v (%v) with multi tx argument, %v", feedName, subscriptionID, err)
+				return
+			}
+		}
+
 		for {
 			select {
 			case <-conn.DisconnectNotify():
@@ -501,13 +651,12 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 					if h.sendTxNotification(ctx, subscriptionID, request, conn, &tx.NewTransactionNotification) != nil {
 						return
 					}
-				case types.BDNBlocksFeed, types.NewBlocksFeed:
-					block := (*notification).(*types.BlockNotification)
-					if h.sendNotification(ctx, subscriptionID, request, conn, block) != nil {
+				case types.BDNBlocksFeed, types.NewBlocksFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed:
+					if h.sendNotification(ctx, subscriptionID, request, conn, *notification) != nil {
 						return
 					}
 				case types.TxReceiptsFeed:
-					block := (*notification).(*types.BlockNotification)
+					block := (*notification).(*types.EthBlockNotification)
 					nodeWS, ok := h.getSyncedWSProvider(block.Source())
 					if !ok {
 						return
@@ -520,7 +669,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 							hash := tx["hash"]
 							response, err := nodeWS.FetchTransactionReceipt([]interface{}{hash}, blockchain.RPCOptions{RetryAttempts: bxgateway.MaxEthTxReceiptCallRetries, RetryInterval: bxgateway.EthTxReceiptCallRetrySleepInterval})
 							if err != nil || response == nil {
-								h.log.Errorf("failed to fetch transaction receipt for %v in block %v: %v", hash, block.BlockHash, err)
+								h.log.Debugf("failed to fetch transaction receipt for %v in block %v: %v", hash, block.BlockHash, err)
 								return err
 							}
 							txReceiptNotification := types.NewTxReceiptNotification(response.(map[string]interface{}))
@@ -536,7 +685,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 					}
 					h.log.Debugf("finished fetching transaction receipts for block %v", block.BlockHash)
 				case types.OnBlockFeed:
-					block := (*notification).(*types.BlockNotification)
+					block := (*notification).(*types.EthBlockNotification)
 					nodeWS, ok := h.getSyncedWSProvider(block.Source())
 					if !ok {
 						return
@@ -636,7 +785,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 			ws = connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.FeedManager.networkNum, utils.Websocket)
 		}
 
-		txHash, ok := h.handleSingleTransaction(ctx, conn, req, params.Transaction, ws, params.ValidatorsOnly, true, h.FeedManager.chainID)
+		txHash, ok := h.handleSingleTransaction(ctx, conn, req, params.Transaction, ws, params.ValidatorsOnly, true, h.FeedManager.chainID, params.NextValidator, params.Fallback, h.FeedManager.nextValidatorMap)
 		if !ok {
 			return
 		}
@@ -674,7 +823,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		}
 
 		for _, transaction := range params.Transactions {
-			txHash, ok := h.handleSingleTransaction(ctx, conn, req, transaction, ws, params.ValidatorsOnly, false, h.FeedManager.chainID)
+			txHash, ok := h.handleSingleTransaction(ctx, conn, req, transaction, ws, params.ValidatorsOnly, false, h.FeedManager.chainID, false, 0, nil)
 			if !ok {
 				continue
 			}
@@ -824,57 +973,13 @@ func (h *handlerObj) sendNotification(ctx context.Context, subscriptionID *uuid.
 
 // sendTxNotification - build a response according to client request and notify client
 func (h *handlerObj) sendTxNotification(ctx context.Context, subscriptionID *uuid.UUID, clientReq *clientReq, conn *jsonrpc2.Conn, tx *types.NewTransactionNotification) error {
-	hasTxContent := false
-
+	result := h.filterAndInclude(clientReq, tx)
+	if result == nil {
+		return nil
+	}
 	response := TxResponse{
 		Subscription: subscriptionID.String(),
-		Result:       TxResult{},
-	}
-
-	if clientReq.expr != nil {
-		txFilters := tx.Filters(clientReq.expr.Args())
-		if txFilters == nil {
-			return nil
-		}
-		//Evaluate if we should send the tx
-		shouldSend, err := conditions.Evaluate(clientReq.expr, txFilters)
-		if err != nil {
-			h.log.Errorf("error evaluate Filters. feed: %v. method: %v. Filters: %v. remote address: %v. account id: %v error - %v tx: %v.",
-				clientReq.feed, clientReq.includes[0], clientReq.expr.String(), h.remoteAddress, h.connectionAccount.AccountID, err.Error(), txFilters)
-			return nil
-		}
-		if !shouldSend {
-			return nil
-		}
-	}
-
-	for _, param := range clientReq.includes {
-		if strings.Contains(param, "tx_contents") {
-			hasTxContent = true
-		}
-		switch param {
-		case "tx_hash":
-			txHash := tx.GetHash()
-			response.Result.TxHash = &txHash
-		case "time":
-			timeNow := time.Now().Format(bxgateway.MicroSecTimeFormat)
-			response.Result.Time = &timeNow
-		case "local_region":
-			localRegion := tx.LocalRegion()
-			response.Result.LocalRegion = &localRegion
-		case "raw_tx":
-			rawTx := hexutil.Encode(tx.RawTx())
-			response.Result.RawTx = &rawTx
-		}
-	}
-	if hasTxContent {
-		fields := tx.Fields(clientReq.includes)
-		if fields == nil {
-			log.Errorf("Got nil from tx.Fields - need to be checked")
-			return nil
-		}
-		response.Result.TxContents = fields
-
+		Result:       *result,
 	}
 
 	err := conn.Notify(ctx, "subscribe", response)
@@ -929,7 +1034,7 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 	var requestedFields []string
 	if len(request.options.Include) == 0 {
 		switch request.feed {
-		case types.BDNBlocksFeed, types.NewBlocksFeed:
+		case types.BDNBlocksFeed, types.NewBlocksFeed, types.BDNBeaconBlocksFeed, types.NewBeaconBlocksFeed:
 			requestedFields = validBlockParams
 		case types.NewTxsFeed:
 			requestedFields = defaultTxParams
@@ -945,6 +1050,18 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 		switch request.feed {
 		case types.BDNBlocksFeed:
 			if !utils.Exists(param, validParams[types.BDNBlocksFeed]) {
+				return nil, fmt.Errorf("got unsupported param %v", param)
+			}
+		case types.NewBlocksFeed:
+			if !utils.Exists(param, validParams[types.NewBlocksFeed]) {
+				return nil, fmt.Errorf("got unsupported param %v", param)
+			}
+		case types.BDNBeaconBlocksFeed:
+			if !utils.Exists(param, validParams[types.BDNBeaconBlocksFeed]) {
+				return nil, fmt.Errorf("got unsupported param %v", param)
+			}
+		case types.NewBeaconBlocksFeed:
+			if !utils.Exists(param, validParams[types.NewBeaconBlocksFeed]) {
 				return nil, fmt.Errorf("got unsupported param %v", param)
 			}
 		case types.NewTxsFeed:
@@ -1004,7 +1121,7 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 		feedStreaming = h.connectionAccount.NewTransactionStreaming
 	case types.PendingTxsFeed:
 		feedStreaming = h.connectionAccount.PendingTransactionStreaming
-	case types.BDNBlocksFeed, types.NewBlocksFeed:
+	case types.BDNBlocksFeed, types.NewBlocksFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed:
 		feedStreaming = h.connectionAccount.NewBlockStreaming
 	case types.OnBlockFeed:
 		feedStreaming = h.connectionAccount.OnBlockFeed
@@ -1071,6 +1188,7 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 	clientRequest.includes = request.options.Include
 	clientRequest.feed = request.feed
 	clientRequest.expr = expr
+	clientRequest.MultiTxs = request.options.MultiTxs
 	clientRequest.calls = &calls
 	return clientRequest, nil
 }
@@ -1167,7 +1285,7 @@ func (h *handlerObj) evaluateFilters(expr conditions.Expr) error {
 	return err
 }
 
-func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request, transaction string, ws connections.Conn, validatorsOnly bool, sendError bool, gatewayChainID types.NetworkID) (string, bool) {
+func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request, transaction string, ws connections.Conn, validatorsOnly bool, sendError bool, gatewayChainID types.NetworkID, nextValidator bool, fallback uint16, nextValidatorMap *orderedmap.OrderedMap) (string, bool) {
 	txBytes, err := types.DecodeHex(transaction)
 	if err != nil {
 		log.Errorf("invalid hex string: %v", err)
@@ -1177,7 +1295,7 @@ func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2
 		return "", false
 	}
 
-	// Ethereum transactions encoded for RPC interfaces is slightly different from the RLP encoded format, so much decoded + reencode the transaction for consistency.
+	// Ethereum's transactions encoding for RPC interfaces is slightly different from the RLP encoded format, so decode + re-encode the transaction for consistency.
 	// Specifically, note `UnmarshalBinary` should be used for RPC interfaces, and rlp.DecodeBytes should be used for the wire protocol.
 	var ethTx ethtypes.Transaction
 	err = ethTx.UnmarshalBinary(txBytes)
@@ -1216,6 +1334,8 @@ func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2
 	var txFlags = types.TFPaidTx | types.TFLocalRegion
 	if validatorsOnly {
 		txFlags |= types.TFValidatorsOnly
+	} else if nextValidator {
+		txFlags |= types.TFNextValidator
 	} else {
 		txFlags |= types.TFDeliverToNode
 	}
@@ -1224,6 +1344,26 @@ func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2
 	copy(hash[:], ethTx.Hash().Bytes())
 
 	tx := bxmessage.NewTx(hash, txContent, h.FeedManager.networkNum, txFlags, h.connectionAccount.AccountID)
+	if nextValidator {
+		if h.FeedManager.networkNum != bxgateway.BSCMainnetNum {
+			SendErrorMsg(ctx, jsonrpc.InvalidRequest, "currently next_validator is only supported on BSC network, please contract bloXroute support", conn, req)
+			return "", false
+		}
+		tx.SetFallback(fallback)
+		n2Validator := nextValidatorMap.Newest()
+		if n2Validator != nil {
+			n1Validator := n2Validator.Prev()
+			if n1Validator != nil {
+				tx.SetWalletID(0, n1Validator.Value.(string))
+				tx.SetWalletID(1, n2Validator.Value.(string))
+			} else {
+				tx.SetWalletID(0, n2Validator.Value.(string))
+			}
+		} else {
+			SendErrorMsg(ctx, jsonrpc.InternalError, "can't send tx with next_validator because gateway issue fetching epoch block, please try again later or contact bloXroute support", conn, req)
+			return "", false
+		}
+	}
 
 	// call the Handler. Don't invoke in a go routine
 	err = h.FeedManager.node.HandleMsg(tx, ws, connections.RunForeground)

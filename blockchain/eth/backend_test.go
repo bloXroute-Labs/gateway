@@ -27,21 +27,21 @@ import (
 const expectTimeout = time.Millisecond
 
 func setup() (blockchain.Bridge, *Handler, []types.NodeEndpoint) {
-	bridge := blockchain.NewBxBridge(Converter{})
+	bridge := blockchain.NewBxBridge(Converter{}, false)
 	config, _ := network.NewEthereumPreset("BSC-Mainnet")
 	blockchainPeers, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
 	ctx := context.Background()
-	handler := NewHandler(ctx, &config, NewChain(ctx), bridge, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout))
+	handler := NewHandler(ctx, &config, NewChain(ctx, config.IgnoreBlockTimeout), bridge, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout))
 	gateway_test.ConfigureLogger(logger.TraceLevel)
 	return bridge, handler, blockchainPeers
 }
 
 func setupEthMainnet() (blockchain.Bridge, *Handler, []types.NodeEndpoint) {
-	bridge := blockchain.NewBxBridge(Converter{})
+	bridge := blockchain.NewBxBridge(Converter{}, false)
 	config, _ := network.NewEthereumPreset("Mainnet")
 	blockchainPeers, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
 	ctx := context.Background()
-	handler := NewHandler(ctx, &config, NewChain(ctx), bridge, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout))
+	handler := NewHandler(ctx, &config, NewChain(ctx, config.IgnoreBlockTimeout), bridge, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout))
 	gateway_test.ConfigureLogger(logger.TraceLevel)
 	return bridge, handler, blockchainPeers
 }
@@ -730,7 +730,7 @@ func TestHandler_processBDNBlockUnresolvableDifficulty(t *testing.T) {
 }
 
 func TestHandler_BlockAtDepth(t *testing.T) {
-	c := newChain(context.Background(), 5, 5, time.Hour, 1000)
+	c := newChain(context.Background(), 10, 5, 5, time.Hour, 1000)
 	blockConfirmationCounts := 4
 	_, handler, _ := setup()
 	peer, _ := testPeer(1, 1)
@@ -943,6 +943,21 @@ func TestHandler_ConfirmBlockFromWS(t *testing.T) {
 	assertBlockSentToBDN(t, bridge, ethBlockB.Hash())
 	assertBlockSentToBDN(t, bridge, ethBlockB2.Hash())
 	assertConfirmationBlockSentToGateway(t, bridge, blockB2)
+}
+
+func TestHandler_DisconnectInboundPeer(t *testing.T) {
+	bridge, handler, _ := setup()
+
+	peer1, _ := testPeer(1, 1)
+	_ = handler.peers.register(peer1)
+
+	peer1.Start()
+	go func() {
+		handler.handleBDNBridge(context.Background())
+	}()
+
+	err := bridge.SendDisconnectEvent(types.NodeEndpoint{PublicKey: peer1.IPEndpoint().PublicKey})
+	assert.Nil(t, err)
 }
 
 // variety of handling functions here to trigger handlers in handlers.go instead of directly invoking the handler (useful for setting state on Peer during handling)

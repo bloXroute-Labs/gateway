@@ -29,9 +29,10 @@ type EthTxStore struct {
 
 // NewEthTxStore returns new manager for Ethereum transactions
 func NewEthTxStore(clock utils.Clock, cleanupInterval time.Duration, maxTxAge time.Duration,
-	noSIDAge time.Duration, assigner ShortIDAssigner, hashHistory HashHistory, cleanedShortIDsChannel chan types.ShortIDsByNetwork, networkConfig sdnmessage.BlockchainNetworks) *EthTxStore {
+	noSIDAge time.Duration, assigner ShortIDAssigner, hashHistory HashHistory, cleanedShortIDsChannel chan types.ShortIDsByNetwork,
+	networkConfig sdnmessage.BlockchainNetworks, bloom BloomFilter) *EthTxStore {
 	return &EthTxStore{
-		BxTxStore:    newBxTxStore(clock, cleanupInterval, maxTxAge, noSIDAge, assigner, hashHistory, cleanedShortIDsChannel, timeToAvoidReEntry),
+		BxTxStore:    newBxTxStore(clock, cleanupInterval, maxTxAge, noSIDAge, assigner, hashHistory, cleanedShortIDsChannel, timeToAvoidReEntry, bloom),
 		nonceTracker: newNonceTracker(clock, networkConfig, cleanNonceInterval),
 	}
 }
@@ -106,6 +107,7 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 	}
 
 	ethTx := blockchainTx.(*types.EthTransaction)
+	result.Nonce = ethTx.Nonce
 	seenNonce, otherTx := t.track(ethTx, network)
 	if !seenNonce {
 		return result

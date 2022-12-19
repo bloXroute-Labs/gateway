@@ -1,10 +1,11 @@
 package types
 
 import (
-	pbbase "github.com/bloXroute-Labs/gateway/v2/protobuf"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	"sync"
 	"time"
+
+	pbbase "github.com/bloXroute-Labs/gateway/v2/protobuf"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // TxContent represents a byte array containing full transaction bytes
@@ -12,7 +13,7 @@ type TxContent []byte
 
 // BxTransaction represents a single bloXroute transaction
 type BxTransaction struct {
-	m          sync.Mutex
+	m          sync.RWMutex
 	hash       SHA256Hash
 	content    TxContent
 	shortIDs   ShortIDList
@@ -67,11 +68,17 @@ func (bt *BxTransaction) RemoveFlags(flags TxFlags) {
 
 // Content returns the transaction contents (usually the blockchain transaction bytes)
 func (bt *BxTransaction) Content() TxContent {
+	bt.m.RLock()
+	defer bt.m.RUnlock()
+
 	return bt.content
 }
 
 // HasContent indicates if transaction has content bytes
 func (bt *BxTransaction) HasContent() bool {
+	bt.m.RLock()
+	defer bt.m.RUnlock()
+
 	return len(bt.content) > 0
 }
 

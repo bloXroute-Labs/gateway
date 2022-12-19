@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
+	"time"
 
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	bxTypes "github.com/bloXroute-Labs/gateway/v2/types"
@@ -19,32 +21,47 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/prysmaticlabs/prysm/v3/beacon-chain/p2p"
 	"github.com/prysmaticlabs/prysm/v3/beacon-chain/p2p/encoder"
+	p2pTypes "github.com/prysmaticlabs/prysm/v3/beacon-chain/p2p/types"
 	"github.com/prysmaticlabs/prysm/v3/config/params"
+	types "github.com/prysmaticlabs/prysm/v3/consensus-types/primitives"
 	ecdsaprysm "github.com/prysmaticlabs/prysm/v3/crypto/ecdsa"
 )
 
 // special error constant types
 var (
-	ErrInvalidRequest = errors.New("invalid request")
-	ErrBodyNotFound   = errors.New("block body not stored")
-	ErrAlreadySeen    = errors.New("already seen")
-	ErrAncientHeaders = errors.New("headers requested are ancient")
-	ErrFutureHeaders  = errors.New("headers requested are in the future")
+	ErrInvalidRequest        = errors.New("invalid request")
+	ErrBodyNotFound          = errors.New("block body not stored")
+	ErrAlreadySeen           = errors.New("already seen")
+	ErrAncientHeaders        = errors.New("headers requested are ancient")
+	ErrFutureHeaders         = errors.New("headers requested are in the future")
+	ErrQueryAmountIsNotValid = errors.New("query amount is not valid")
 )
 
 // readStatusCode response from a RPC stream.
-func readStatusCode(stream p2pNetwork.Stream, encoding encoder.NetworkEncoding) error {
+func readStatusCode(stream p2pNetwork.Stream, encoding encoder.NetworkEncoding) (uint8, string, error) {
+	// Set ttfb deadline.
+	SetStreamReadDeadline(stream, params.BeaconNetworkConfig().TtfbTimeout)
 	b := make([]byte, 1)
 	_, err := stream.Read(b)
 	if err != nil {
-		return err
+		return 0, "", err
 	}
 
-	if b[0] != responseCodeSuccess {
-		return errResponseNotOK
+	if b[0] == responseCodeSuccess {
+		// Set response deadline on a successful response code.
+		SetStreamReadDeadline(stream, params.BeaconNetworkConfig().TtfbTimeout)
+
+		return 0, "", nil
 	}
 
-	return nil
+	// Set response deadline, when reading error message.
+	SetStreamReadDeadline(stream, params.BeaconNetworkConfig().RespTimeout)
+	msg := &p2pTypes.ErrorMessage{}
+	if err := encoding.DecodeWithMaxLength(stream, msg); err != nil {
+		return 0, "", err
+	}
+
+	return b[0], string(*msg), nil
 }
 
 func parseMultiAddr(addr ma.Multiaddr) (string, int, error) {
@@ -100,12 +117,13 @@ func ensurePeerConnections(ctx context.Context, h host.Host, peers ...string) {
 		c := h.Network().ConnsToPeer(peerInfo.ID)
 		if len(c) == 0 {
 			if err := connectWithTimeout(ctx, h, peerInfo); err != nil {
-				log.WithField("peer", peerInfo.ID).WithField("addrs", peerInfo.Addrs).Errorf("Failed to reconnect to peer: %v", err)
+				log.WithField("peer", peerInfo.ID).WithField("addrs", peerInfo.Addrs).Warnf("Failed to reconnect to peer: %v", err)
 
 				// Try to reconnect as fast as possible again
 				// https://github.com/libp2p/go-libp2p/blob/ddfb6f9240679b840d3663021e8b4433f51379a7/examples/relay/main.go#L90
 				h.Network().(*swarm.Swarm).Backoff().Clear(peerInfo.ID)
-				continue
+
+				h.Network().Peerstore().RemovePeer(peerInfo.ID)
 			}
 		}
 	}
@@ -145,14 +163,28 @@ func connectWithTimeout(ctx context.Context, h host.Host, peer *peer.AddrInfo) e
 }
 
 func logBlockConverterFailure(err error, bdnBlock *bxTypes.BxBlock) {
-	blockHex := "<omitted>"
+	var blockHex string
 	if log.IsLevelEnabled(log.TraceLevel) {
 		b, err := rlp.EncodeToBytes(bdnBlock)
 		if err != nil {
-			log.Error("bad block from BDN could not be encoded to RLP bytes")
-			return
+			blockHex = fmt.Sprintf("bad block from BDN could not be encoded to RLP bytes: %v", err)
+		} else {
+			blockHex = hexutil.Encode(b)
 		}
-		blockHex = hexutil.Encode(b)
 	}
-	log.Errorf("could not convert block (hash: %v) from BDN to Ethereum block: %v. contents: %v", bdnBlock.Hash(), err, blockHex)
+	log.Errorf("could not convert block (hash: %v) from BDN to beacon block: %v. contents: %v", bdnBlock.Hash(), err, blockHex)
+}
+
+func replaceForkDigest(topic string) (string, error) {
+	subStrings := strings.Split(topic, "/")
+	if len(subStrings) != 4 {
+		return "", errors.New("invalid topic")
+	}
+	subStrings[2] = "%x"
+
+	return strings.Join(subStrings, "/"), nil
+}
+
+func currentSlot(genesisTime uint64) types.Slot {
+	return types.Slot(uint64(time.Now().Unix()-int64(genesisTime)) / params.BeaconConfig().SecondsPerSlot)
 }

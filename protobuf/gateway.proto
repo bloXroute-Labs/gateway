@@ -14,6 +14,18 @@ service Gateway {
   rpc Version (VersionRequest) returns (VersionReply){}
   rpc Status (StatusRequest) returns (StatusResponse) {}
   rpc Subscriptions (SubscriptionsRequest) returns (SubscriptionsReply){}
+  rpc DisconnectInboundPeer (DisconnectInboundPeerRequest) returns (DisconnectInboundPeerReply){}
+
+}
+
+message DisconnectInboundPeerRequest {
+  string peer_ip = 1;
+  int64 peer_port = 2;
+  string public_key = 3;
+}
+
+message DisconnectInboundPeerReply {
+  string status = 1;
 }
 
 message SubscriptionsRequest{
@@ -169,6 +181,8 @@ message NodeConnStatus {
   string conn_status = 1;
   WsConnStatus ws_connection = 2;
   NodePerformance node_performance = 3;
+  bool Inbound = 4;
+  bool IsConnected = 5;
 }
 
 message BDNConnStatus {

@@ -291,3 +291,13 @@ func (s SSLCerts) LoadRegistrationConfig() (*tls.Config, error) {
 	}
 	return config, nil
 }
+
+// PrivateCertFile return source of private cert
+func (s SSLCerts) PrivateCertFile() string {
+	return s.privateCertFile
+}
+
+// PrivateKeyFile return source of private key
+func (s SSLCerts) PrivateKeyFile() string {
+	return s.privateKeyFile
+}

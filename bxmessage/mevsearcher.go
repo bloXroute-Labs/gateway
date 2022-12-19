@@ -6,10 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	uuid "github.com/satori/go.uuid"
-	"math/big"
 )
 
 const (
@@ -144,7 +145,7 @@ func (m MEVSearcher) size(protocol Protocol) uint32 {
 func (m MEVSearcher) Pack(protocol Protocol) ([]byte, error) {
 	bufLen := m.size(protocol)
 	buf := make([]byte, bufLen)
-	m.BroadcastHeader.Pack(&buf, MEVSearcherType)
+	m.BroadcastHeader.Pack(&buf, MEVSearcherType, protocol)
 	offset := BroadcastHeaderLen
 
 	binary.LittleEndian.PutUint16(buf[offset:], uint16(len(m.Method)))

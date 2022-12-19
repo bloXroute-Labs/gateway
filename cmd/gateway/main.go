@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -84,6 +85,7 @@ func main() {
 			utils.MegaBundleProcessing,
 			utils.TerminalTotalDifficulty,
 			utils.BeaconBlock,
+			utils.DisableInboundConnections,
 		},
 		Action: runGateway,
 	}
@@ -119,7 +121,6 @@ func runGateway(c *cli.Context) error {
 	}
 
 	dataDir := c.String(utils.DataDirFlag.Name)
-
 	ethConfig, gatewayPublicKey, err := network.NewPresetEthConfigFromCLI(c, dataDir)
 	if err != nil {
 		return err
@@ -139,13 +140,19 @@ func runGateway(c *cli.Context) error {
 			prysmEnode = blockchainPeerInfo.Enode
 		}
 	}
+
+	sslCerts, sdn, err := nodes.InitSDN(bxConfig, blockchainPeers, nodes.GeneratePeers(ethConfig.StaticPeers), len(ethConfig.StaticEnodes()))
+	if err != nil {
+		return err
+	}
+
 	startupBeaconNode := bxConfig.GatewayMode.IsBDN() && len(ethConfig.BeaconNodes()) > 0
 	startupBlockchainClient := startupBeaconNode || len(ethConfig.StaticEnodes()) > 0 // if beacon node running we need to receive txs also
 	startupPrysmClient := bxConfig.GatewayMode.IsBDN() && prysmAddr != ""
 
 	var bridge blockchain.Bridge
 	if startupBlockchainClient || startupBeaconNode || startupPrysmClient {
-		bridge = blockchain.NewBxBridge(eth.Converter{})
+		bridge = blockchain.NewBxBridge(eth.Converter{}, startupBeaconNode)
 	} else {
 		bridge = blockchain.NewNoOpBridge(eth.Converter{})
 	}
@@ -161,7 +168,7 @@ func runGateway(c *cli.Context) error {
 		return fmt.Errorf("if websocket server management is enabled, a valid websocket address must be provided")
 	}
 
-	gateway, err := nodes.NewGateway(ctx, bxConfig, bridge, wsManager, blockchainPeers, ethConfig.StaticPeers, gatewayPublicKey, len(ethConfig.StaticEnodes()))
+	gateway, err := nodes.NewGateway(ctx, bxConfig, bridge, wsManager, blockchainPeers, ethConfig.StaticPeers, gatewayPublicKey, sdn, sslCerts, len(ethConfig.StaticEnodes()))
 	if err != nil {
 		return err
 	}
@@ -173,13 +180,21 @@ func runGateway(c *cli.Context) error {
 	}
 
 	// Required for beacon node and prysm to sync
-	ethChain := eth.NewChain(ctx)
+	ethChain := eth.NewChain(ctx, ethConfig.IgnoreBlockTimeout)
 
 	var blockchainServer *eth.Server
 	if startupBlockchainClient {
 		log.Infof("starting blockchain client with config for network ID: %v", ethConfig.Network)
 
-		blockchainServer, err = eth.NewServerWithEthLogger(ctx, ethConfig, ethChain, bridge, dataDir, wsManager)
+		// TODO: use resolver to get public IP if externalIP flag is omitted
+		port, externalIP := c.Int(utils.PortFlag.Name), net.ParseIP(c.String(utils.ExternalIPFlag.Name))
+
+		maxInboundConn := int(sdn.AccountModel().InboundNodeConnections.MsgQuota.Limit)
+		if c.Bool(utils.DisableInboundConnections.Name) {
+			maxInboundConn = 0
+		}
+
+		blockchainServer, err = eth.NewServerWithEthLogger(ctx, port, externalIP, ethConfig, ethChain, bridge, dataDir, wsManager, maxInboundConn)
 		if err != nil {
 			return nil
 		}

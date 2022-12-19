@@ -23,6 +23,7 @@ type blockRecord struct {
 	ExtraData        blockExtraData   `json:"extra_data,omitempty"`
 	EndDateTime      string           `json:"end_date_time"`
 	SentGatewayPeers int              `json:"gateway_peers"`
+	BeaconBlockHash  string           `json:"beacon_block_hash,omitempty"`
 }
 
 type gatewayBlockRecord struct {
@@ -41,6 +42,7 @@ type gatewayBlockRecord struct {
 	ShortIDsCount     int              `json:"short_ids_count"`
 	TxsCount          int              `json:"txs_count"`
 	RecoveredTxsCount int              `json:"recovered_txs_count"`
+	BeaconBlockHash   string           `json:"beacon_block_hash,omitempty"`
 }
 
 type ethBlockContent struct {

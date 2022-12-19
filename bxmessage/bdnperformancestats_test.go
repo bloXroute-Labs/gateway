@@ -11,7 +11,7 @@ import (
 var BDNStatsMsgBytes = []byte("\xff\xfe\xfd\xfcbdnstats\x00\x00\x00\x00y\x00\x00\x00W\xe8\xf6\xde\x005\xd8A`\xea\xf6\xde\x005\xd8Ad\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\x7f\x00\x00\x01A\x1f\x14\x00\x1e\x00(\x00\x00\x002\x00\x00\x00\n\x00\x00\x00\n\x00\x00\x00\x14\x00\x00\x00d\x00\x00\x002\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\xac\x11\x00\x01B\x1f\x15\x00\x1f\x00)\x00\x00\x003\x00\x00\x00\x0b\x00\x00\x00\x0b\x00\x00\x00\x15\x00\x00\x00e\x00\x00\x003\x00\x00\x003\x00\x14\x00\x01")
 
 // msg supports IsBeacon flag
-var BDNStatsMsgBytesForIsBeacon = []byte("\xff\xfe\xfd\xfcbdnstats\x00\x00\x00\x00y\x00\x00\x00W\xe8\xf6\xde\x005\xd8A`\xea\xf6\xde\x005\xd8Ad\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\x7f\x00\x00\x01A\x1f\x14\x00\x1e\x00(\x00\x00\x002\x00\x00\x00\n\x00\x00\x00\n\x00\x00\x00\x14\x00\x00\x00d\x00\x00\x002\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\xac\x11\x00\x01B\x1f\x15\x00\x1f\x00)\x00\x00\x003\x00\x00\x00\x0b\x00\x00\x00\x0b\x00\x00\x00\x15\x00\x00\x00e\x00\x00\x003\x00\x00\x00\x003\x00\x14\x00\x01")
+var BDNStatsMsgBytesForIsBeacon = []byte("\xff\xfe\xfd\xfcbdnstats\x00\x00\x00\x00y\x00\x00\x00W\xe8\xf6\xde\x005\xd8A`\xea\xf6\xde\x005\xd8Ad\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\x7f\x00\x00\x01A\x1f\x14\x00\x1e\x00(\x00\x00\x002\x00\x00\x00\n\x00\x00\x00\n\x00\x00\x00\x14\x00\x00\x00d\x00\x00\x002\x00\x00\x00\x00\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\xac\x11\x00\x01B\x1f\x15\x00\x1f\x00)\x00\x00\x003\x00\x00\x00\x0b\x00\x00\x00\x0b\x00\x00\x00\x15\x00\x00\x00e\x00\x00\x003\x00\x00\x00\x003\x00\x00\x14\x00\x00\x01")
 
 func TestBdnPerformanceStats_Unpack(t *testing.T) {
 	bdnStats := BdnPerformanceStats{}
@@ -23,6 +23,9 @@ func TestBdnPerformanceStats_Unpack(t *testing.T) {
 		IP:   "127.0.0.1",
 		Port: 8001,
 	}
+	inbound, outbound := bdnStats.GetConnectionsCount()
+	assert.Equal(t, int64(0), inbound)
+	assert.Equal(t, int64(2), outbound)
 
 	nodeStats, _ := bdnStats.nodeStats[ipEndpoint.IPPort()]
 	assert.Equal(t, uint16(20), nodeStats.NewBlocksReceivedFromBlockchainNode)
@@ -63,6 +66,9 @@ func TestBdnPerformanceStats_UnpackBurstLimit(t *testing.T) {
 		IP:   "127.0.0.1",
 		Port: 8001,
 	}
+	inbound, outbound := bdnStats.GetConnectionsCount()
+	assert.Equal(t, int64(0), inbound)
+	assert.Equal(t, int64(2), outbound)
 
 	nodeStats, _ := bdnStats.nodeStats[ipEndpoint.IPPort()]
 	assert.Equal(t, uint16(20), nodeStats.NewBlocksReceivedFromBlockchainNode)
@@ -98,6 +104,9 @@ func TestBdnPerformanceStats_Pack_BurstLimitTx_MinFastSyncProtocol(t *testing.T)
 	bdnStatsFromBytes := BdnPerformanceStats{}
 	err := bdnStatsFromBytes.Unpack(BDNStatsMsgBytes, MinFastSyncProtocol)
 	assert.Nil(t, err)
+	inbound, outbound := bdnStatsFromBytes.GetConnectionsCount()
+	assert.Equal(t, int64(0), inbound)
+	assert.Equal(t, int64(2), outbound)
 
 	endpoint1 := types.NodeEndpoint{IP: "127.0.0.1", Port: 8001}
 	endpoint2 := types.NodeEndpoint{IP: "127.0.0.1", Port: 8002}
@@ -117,6 +126,7 @@ func TestBdnPerformanceStats_Pack_BurstLimitTx_MinFastSyncProtocol(t *testing.T)
 		NewTxReceivedFromBdn:                    50,
 		TxSentToNode:                            100,
 		DuplicateTxFromNode:                     50,
+		IsConnected:                             true,
 	}
 	bdnStats.nodeStats[endpoint1.IPPort()] = &nodeStats1
 	nodeStats2 := BdnPerformanceStatsData{
@@ -129,6 +139,7 @@ func TestBdnPerformanceStats_Pack_BurstLimitTx_MinFastSyncProtocol(t *testing.T)
 		NewTxReceivedFromBdn:                    51,
 		TxSentToNode:                            101,
 		DuplicateTxFromNode:                     51,
+		IsConnected:                             true,
 	}
 	bdnStats.nodeStats[endpoint2.IPPort()] = &nodeStats2
 	bdnStats.burstLimitedTransactionsPaid = bdnStatsFromBytes.burstLimitedTransactionsPaid
@@ -180,6 +191,9 @@ func TestBdnPerformanceStats_Pack_BurstLimitTx_FullTxTimeStampProtocol(t *testin
 	bdnStatsFromBytes := BdnPerformanceStats{}
 	err := bdnStatsFromBytes.Unpack(BDNStatsMsgBytes, FullTxTimeStampProtocol)
 	require.NoError(t, err)
+	inbound, outbound := bdnStatsFromBytes.GetConnectionsCount()
+	assert.Equal(t, int64(0), inbound)
+	assert.Equal(t, int64(2), outbound)
 
 	endpoint1 := types.NodeEndpoint{IP: "127.0.0.1", Port: 8001}
 	endpoint2 := types.NodeEndpoint{IP: "127.0.0.1", Port: 8002}
@@ -199,6 +213,7 @@ func TestBdnPerformanceStats_Pack_BurstLimitTx_FullTxTimeStampProtocol(t *testin
 		NewTxReceivedFromBdn:                    50,
 		TxSentToNode:                            100,
 		DuplicateTxFromNode:                     50,
+		IsConnected:                             true,
 	}
 	bdnStats.nodeStats[endpoint1.IPPort()] = &nodeStats1
 	nodeStats2 := BdnPerformanceStatsData{
@@ -211,6 +226,7 @@ func TestBdnPerformanceStats_Pack_BurstLimitTx_FullTxTimeStampProtocol(t *testin
 		NewTxReceivedFromBdn:                    51,
 		TxSentToNode:                            101,
 		DuplicateTxFromNode:                     51,
+		IsConnected:                             true,
 	}
 	bdnStats.nodeStats[endpoint2.IPPort()] = &nodeStats2
 	bdnStats.burstLimitedTransactionsPaid = 51
@@ -258,6 +274,178 @@ func TestBdnPerformanceStats_Pack_BurstLimitTx_FullTxTimeStampProtocol(t *testin
 	assert.Equal(t, uint16(20), bdnStats.burstLimitedTransactionsUnpaid)
 }
 
+func TestBdnPerformanceStats_Pack_GatewayInboundConnections(t *testing.T) {
+	bdnStatsFromBytes := BdnPerformanceStats{}
+	err := bdnStatsFromBytes.Unpack(BDNStatsMsgBytes, MevSearcherWithUUID)
+	require.NoError(t, err)
+	inbound, outbound := bdnStatsFromBytes.GetConnectionsCount()
+	assert.Equal(t, int64(0), inbound)
+	assert.Equal(t, int64(2), outbound)
+
+	endpoint1 := types.NodeEndpoint{IP: "127.0.0.1", Port: 8001}
+	endpoint2 := types.NodeEndpoint{IP: "127.0.0.1", Port: 8002}
+	endpoint3 := types.NodeEndpoint{IP: "127.0.0.1", Port: 8003}
+	endpoint4 := types.NodeEndpoint{IP: "127.0.0.1", Port: 8004}
+	blockchainPeers := []types.NodeEndpoint{endpoint1}
+
+	bdnStats := NewBDNStats(blockchainPeers)
+	bdnStats.intervalStartTime = bdnStatsFromBytes.intervalStartTime
+	bdnStats.intervalEndTime = bdnStatsFromBytes.intervalEndTime
+	bdnStats.memoryUtilizationMb = 100
+	nodeStats1 := BdnPerformanceStatsData{
+		NewBlocksReceivedFromBlockchainNode:     20,
+		NewBlocksReceivedFromBdn:                30,
+		NewBlocksSeen:                           10,
+		NewBlockMessagesFromBlockchainNode:      10,
+		NewBlockAnnouncementsFromBlockchainNode: 20,
+		NewTxReceivedFromBlockchainNode:         40,
+		NewTxReceivedFromBdn:                    50,
+		TxSentToNode:                            100,
+		DuplicateTxFromNode:                     50,
+		Inbound:                                 true,
+		IsConnected:                             true,
+	}
+	bdnStats.nodeStats[endpoint1.IPPort()] = &nodeStats1
+	nodeStats3 := BdnPerformanceStatsData{
+		NewBlocksReceivedFromBlockchainNode:     20,
+		NewBlocksReceivedFromBdn:                30,
+		NewBlocksSeen:                           10,
+		NewBlockMessagesFromBlockchainNode:      10,
+		NewBlockAnnouncementsFromBlockchainNode: 20,
+		NewTxReceivedFromBlockchainNode:         40,
+		NewTxReceivedFromBdn:                    50,
+		TxSentToNode:                            100,
+		DuplicateTxFromNode:                     50,
+		Inbound:                                 true,
+		IsConnected:                             true,
+	}
+	bdnStats.nodeStats[endpoint3.IPPort()] = &nodeStats3
+	nodeStats2 := BdnPerformanceStatsData{
+		NewBlocksReceivedFromBlockchainNode:     21,
+		NewBlocksReceivedFromBdn:                31,
+		NewBlocksSeen:                           11,
+		NewBlockMessagesFromBlockchainNode:      11,
+		NewBlockAnnouncementsFromBlockchainNode: 21,
+		NewTxReceivedFromBlockchainNode:         41,
+		NewTxReceivedFromBdn:                    51,
+		TxSentToNode:                            101,
+		DuplicateTxFromNode:                     51,
+		Inbound:                                 false,
+		IsConnected:                             true,
+	}
+	bdnStats.nodeStats[endpoint2.IPPort()] = &nodeStats2
+	nodeStats4 := BdnPerformanceStatsData{
+		NewBlocksReceivedFromBlockchainNode:     21,
+		NewBlocksReceivedFromBdn:                31,
+		NewBlocksSeen:                           11,
+		NewBlockMessagesFromBlockchainNode:      11,
+		NewBlockAnnouncementsFromBlockchainNode: 21,
+		NewTxReceivedFromBlockchainNode:         41,
+		NewTxReceivedFromBdn:                    51,
+		TxSentToNode:                            101,
+		DuplicateTxFromNode:                     51,
+		Inbound:                                 false,
+		IsConnected:                             true,
+	}
+	bdnStats.nodeStats[endpoint4.IPPort()] = &nodeStats4
+
+	// Inbound connections should be included
+	packed, err := bdnStats.Pack(GatewayInboundConnections)
+	require.NoError(t, err)
+
+	bdnStatsFromBytes = BdnPerformanceStats{}
+	err = bdnStatsFromBytes.Unpack(packed, GatewayInboundConnections)
+	assert.Nil(t, err)
+	inbound, outbound = bdnStatsFromBytes.GetConnectionsCount()
+
+	assert.Equal(t, int64(2), inbound)
+	assert.Equal(t, int64(2), outbound)
+	assert.Equal(t, 4, len(bdnStatsFromBytes.nodeStats))
+	assert.Equal(t, int64(2), bdnStatsFromBytes.inboundConnections)
+	assert.True(t, bdnStatsFromBytes.nodeStats[endpoint1.IPPort()].Inbound)
+	assert.False(t, bdnStatsFromBytes.nodeStats[endpoint2.IPPort()].Inbound)
+
+	// Inbound connections should be excluded, lower protocol version, in this case there are no inbound connection
+	delete(bdnStats.nodeStats, endpoint1.IPPort())
+	packed, err = bdnStats.Pack(IsBeaconProtocol)
+	require.NoError(t, err)
+
+	bdnStatsFromBytes = BdnPerformanceStats{}
+	err = bdnStatsFromBytes.Unpack(packed, IsBeaconProtocol)
+	assert.Nil(t, err)
+	inbound, outbound = bdnStatsFromBytes.GetConnectionsCount()
+	assert.Equal(t, int64(0), inbound)
+	assert.Equal(t, int64(2), outbound)
+	assert.Equal(t, 2, len(bdnStatsFromBytes.nodeStats))
+	assert.False(t, bdnStatsFromBytes.nodeStats[endpoint2.IPPort()].Inbound)
+}
+
+func TestBdnPerformanceStats_Pack_IsConnectedToGateway(t *testing.T) {
+	bdnStatsFromBytes := BdnPerformanceStats{}
+	err := bdnStatsFromBytes.Unpack(BDNStatsMsgBytes, MevSearcherWithUUID)
+	require.NoError(t, err)
+
+	endpoint1 := types.NodeEndpoint{IP: "127.0.0.1", Port: 8001}
+	endpoint2 := types.NodeEndpoint{IP: "127.0.0.1", Port: 8002}
+	blockchainPeers := []types.NodeEndpoint{endpoint1}
+
+	bdnStats := NewBDNStats(blockchainPeers)
+	bdnStats.intervalStartTime = bdnStatsFromBytes.intervalStartTime
+	bdnStats.intervalEndTime = bdnStatsFromBytes.intervalEndTime
+	bdnStats.memoryUtilizationMb = 100
+	nodeStats1 := BdnPerformanceStatsData{
+		NewBlocksReceivedFromBlockchainNode:     20,
+		NewBlocksReceivedFromBdn:                30,
+		NewBlocksSeen:                           10,
+		NewBlockMessagesFromBlockchainNode:      10,
+		NewBlockAnnouncementsFromBlockchainNode: 20,
+		NewTxReceivedFromBlockchainNode:         40,
+		NewTxReceivedFromBdn:                    50,
+		TxSentToNode:                            100,
+		DuplicateTxFromNode:                     50,
+		Inbound:                                 false,
+		IsConnected:                             true,
+	}
+	bdnStats.nodeStats[endpoint1.IPPort()] = &nodeStats1
+	nodeStats2 := BdnPerformanceStatsData{
+		NewBlocksReceivedFromBlockchainNode:     21,
+		NewBlocksReceivedFromBdn:                31,
+		NewBlocksSeen:                           11,
+		NewBlockMessagesFromBlockchainNode:      11,
+		NewBlockAnnouncementsFromBlockchainNode: 21,
+		NewTxReceivedFromBlockchainNode:         41,
+		NewTxReceivedFromBdn:                    51,
+		TxSentToNode:                            101,
+		DuplicateTxFromNode:                     51,
+		Inbound:                                 false,
+		IsConnected:                             false,
+	}
+	bdnStats.nodeStats[endpoint2.IPPort()] = &nodeStats2
+
+	// isConnected connections should be included
+	packed, err := bdnStats.Pack(IsConnectedToGateway)
+	require.NoError(t, err)
+
+	bdnStatsFromBytes = BdnPerformanceStats{}
+	err = bdnStatsFromBytes.Unpack(packed, IsConnectedToGateway)
+	assert.Nil(t, err)
+	assert.Equal(t, 2, len(bdnStatsFromBytes.nodeStats))
+	assert.True(t, bdnStatsFromBytes.nodeStats[endpoint1.IPPort()].IsConnected)
+	assert.False(t, bdnStatsFromBytes.nodeStats[endpoint2.IPPort()].IsConnected)
+
+	// IsConnected connections should be excluded, lower protocol version
+	packed, err = bdnStats.Pack(MevSearcherWithUUID)
+	require.NoError(t, err)
+
+	bdnStatsFromBytes = BdnPerformanceStats{}
+	err = bdnStatsFromBytes.Unpack(packed, MevSearcherWithUUID)
+	assert.Nil(t, err)
+	assert.Equal(t, 1, len(bdnStatsFromBytes.nodeStats))
+	assert.True(t, bdnStatsFromBytes.nodeStats[endpoint1.IPPort()].IsConnected)
+	_, exits := bdnStatsFromBytes.nodeStats[endpoint2.IPPort()]
+	assert.False(t, exits)
+}
+
 func TestBdnPerformanceStats_UnpackBadBuffer(t *testing.T) {
 	bdnStats := BdnPerformanceStats{}
 	// truncated msg bytes
@@ -289,6 +477,8 @@ func TestBdnPerformanceStats_Pack_IsBeaconProtocol(t *testing.T) {
 		NewTxReceivedFromBdn:                    50,
 		TxSentToNode:                            100,
 		DuplicateTxFromNode:                     50,
+		Inbound:                                 false,
+		IsConnected:                             true,
 		IsBeacon:                                true,
 	}
 	bdnStats.nodeStats[endpoint1.IPPort()] = &nodeStats1
@@ -302,6 +492,8 @@ func TestBdnPerformanceStats_Pack_IsBeaconProtocol(t *testing.T) {
 		NewTxReceivedFromBdn:                    51,
 		TxSentToNode:                            101,
 		DuplicateTxFromNode:                     51,
+		Inbound:                                 false,
+		IsConnected:                             true,
 		IsBeacon:                                false,
 	}
 	bdnStats.nodeStats[endpoint2.IPPort()] = &nodeStats2

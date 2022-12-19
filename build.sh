@@ -4,5 +4,5 @@ IMAGE=bloxroute/gateway:${1:-latest}
 tag=`git describe --tags --always --dirty --match=v2* 2> /dev/null`
 echo $tag > .gittag
 echo "Building container... $IMAGE"
-docker build . -f Dockerfile --rm=true --platform linux/x86_64 -t $IMAGE
+docker build --no-cache . -f Dockerfile --rm=true --platform linux/x86_64 -t $IMAGE
 rm .gittag

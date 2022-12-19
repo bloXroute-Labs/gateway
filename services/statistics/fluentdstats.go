@@ -4,6 +4,11 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	"math"
+	"sync"
+	"time"
+	"unsafe"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
@@ -11,10 +16,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/fluent/fluent-logger-golang/fluent"
 	uuid "github.com/satori/go.uuid"
-	"math"
-	"sync"
-	"time"
-	"unsafe"
 )
 
 const (
@@ -30,12 +31,12 @@ const (
 
 // Stats is used to generate STATS record for transactions
 type Stats interface {
-	AddBlockEvent(name string, source connections.Conn, blockHash types.SHA256Hash, networkNum types.NetworkNum,
+	AddBlockEvent(name string, source connections.Conn, blockHash, beaconBlockHash types.SHA256Hash, networkNum types.NetworkNum,
 		sentPeers int, startTime time.Time, sentGatewayPeers int)
 	AddTxsByShortIDsEvent(name string, source connections.Conn, txInfo *types.BxTransaction,
 		shortID types.ShortID, sourceID types.NodeID, sentPeers int, sentGatewayPeers int,
 		startTime time.Time, priority bxmessage.SendPriority, debugData interface{})
-	AddGatewayBlockEvent(name string, source connections.Conn, blockHash types.SHA256Hash, networkNum types.NetworkNum,
+	AddGatewayBlockEvent(name string, source connections.Conn, blockHash, beaconBlockHash types.SHA256Hash, networkNum types.NetworkNum,
 		sentPeers int, startTime time.Time, sentGatewayPeers int, originalSize int, compressSize int, shortIDsCount int, txsCount int, recoveredTxsCount int, block *types.BxBlock)
 	LogSubscribeStats(subscriptionID *uuid.UUID, accountID types.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
 		ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string, feedProject string)
@@ -47,12 +48,12 @@ type NoStats struct {
 }
 
 // AddBlockEvent does nothing
-func (NoStats) AddBlockEvent(name string, source connections.Conn, blockHash types.SHA256Hash, networkNum types.NetworkNum,
+func (NoStats) AddBlockEvent(name string, source connections.Conn, blockHash, beaconBlockHash types.SHA256Hash, networkNum types.NetworkNum,
 	sentPeers int, startTime time.Time, sentGatewayPeers int) {
 }
 
 // AddGatewayBlockEvent does nothing
-func (NoStats) AddGatewayBlockEvent(name string, source connections.Conn, blockHash types.SHA256Hash, networkNum types.NetworkNum,
+func (NoStats) AddGatewayBlockEvent(name string, source connections.Conn, blockHash, beaconBlockHash types.SHA256Hash, networkNum types.NetworkNum,
 	sentPeers int, startTime time.Time, sentGatewayPeers int, originalSize int, compressSize int, shortIDsCount int, txsCount int, recoveredTxsCount int, block *types.BxBlock) {
 }
 
@@ -127,7 +128,7 @@ func (s FluentdStats) AddTxsByShortIDsEvent(name string, source connections.Conn
 }
 
 // AddBlockEvent generates a fluentd STATS event
-func (s FluentdStats) AddBlockEvent(name string, source connections.Conn, blockHash types.SHA256Hash, networkNum types.NetworkNum,
+func (s FluentdStats) AddBlockEvent(name string, source connections.Conn, blockHash, beaconBlockHash types.SHA256Hash, networkNum types.NetworkNum,
 	sentPeers int, startTime time.Time, sentGatewayPeers int) {
 	now := time.Now()
 
@@ -146,13 +147,14 @@ func (s FluentdStats) AddBlockEvent(name string, source connections.Conn, blockH
 			ExtraData: blockExtraData{
 				MoreInfo: fmt.Sprintf("source: %v - %v, sent: %v", source, source.Info().ConnectionType.FormatShortNodeType(), sentPeers),
 			},
+			BeaconBlockHash: beaconBlockHash.String(),
 		},
 	}
 	s.LogToFluentD(record, now, "stats.blocks.events.p")
 }
 
 // AddGatewayBlockEvent add block event for the gateway
-func (s FluentdStats) AddGatewayBlockEvent(name string, source connections.Conn, blockHash types.SHA256Hash, networkNum types.NetworkNum,
+func (s FluentdStats) AddGatewayBlockEvent(name string, source connections.Conn, blockHash, beaconBlockHash types.SHA256Hash, networkNum types.NetworkNum,
 	sentPeers int, startTime time.Time, sentGatewayPeers int, originalSize int, compressSize int, shortIDsCount int, txsCount int, recoveredTxsCount int, block *types.BxBlock) {
 	now := time.Now()
 
@@ -176,6 +178,7 @@ func (s FluentdStats) AddGatewayBlockEvent(name string, source connections.Conn,
 			ShortIDsCount:     shortIDsCount,
 			TxsCount:          txsCount,
 			RecoveredTxsCount: recoveredTxsCount,
+			BeaconBlockHash:   beaconBlockHash.String(),
 		},
 	}
 	s.LogToFluentD(record, now, "stats.gateway.blocks.events.p")

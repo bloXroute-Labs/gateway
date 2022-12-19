@@ -53,4 +53,5 @@ type TransactionResult struct {
 	AssignedShortID  types.ShortID
 	DebugData        interface{}
 	AlreadySeen      bool
+	Nonce            uint64
 }

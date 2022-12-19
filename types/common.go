@@ -21,12 +21,16 @@ const UInt8Len = 1
 // TxFlagsLen represents the byte length of transaction flag
 const TxFlagsLen = 2
 
+// WalletIDLen represents the bytes length of the wallet id
+const WalletIDLen = 42
+
 // NodeEndpoint - represent the node endpoint struct sent in BdnPerformanceStats
 type NodeEndpoint struct {
 	IP        string
 	Port      int
 	PublicKey string
 	IsBeacon  bool
+	Inbound   bool
 }
 
 // String returns string representation of NodeEndpoint
@@ -37,6 +41,11 @@ func (e NodeEndpoint) String() string {
 // IPPort returns string of IP and Port
 func (e NodeEndpoint) IPPort() string {
 	return fmt.Sprintf("%v %v", e.IP, e.Port)
+}
+
+// IsInbound return true if endpoint is inbound
+func (e NodeEndpoint) IsInbound() bool {
+	return e.Inbound
 }
 
 // ShortID represents the compressed transaction ID

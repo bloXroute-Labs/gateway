@@ -61,7 +61,7 @@ func (pq *MsgPriorityQueue) Push(msg Message) {
 		return
 	}
 	// if pq is empty we might skip the priority queue
-	if pq.len() == 0 && time.Now().Sub(pq.lastPopTime) > pq.callBackInterval {
+	if pq.len() == 0 && time.Since(pq.lastPopTime) > pq.callBackInterval {
 		go pq.callBack(item.msg)
 		pq.lastPopTime = time.Now()
 		return

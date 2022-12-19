@@ -175,6 +175,11 @@ func (m *MockSDNHTTP) MinTxAge() time.Duration {
 	return ret0
 }
 
+// MinTxAge is a no-op
+func (m *MockSDNHTTP) SendNodeEvent(event sdnmessage.NodeEvent, id types.NodeID) {
+	return
+}
+
 // MinTxAge indicates an expected call of MinTxAge.
 func (mr *MockSDNHTTPMockRecorder) MinTxAge() *gomock.Call {
 	mr.mock.ctrl.T.Helper()

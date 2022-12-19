@@ -16,17 +16,19 @@ const (
 
 func TestBroadcastPackUnpack(t *testing.T) {
 	blockHash := types.GenerateSHA256Hash()
+	beaconBlockHash := types.GenerateSHA256Hash()
 	blockBody := test.GenerateBytes(500)
-	broadcast := NewBlockBroadcast(blockHash, types.BxBlockTypeEth, blockBody, types.ShortIDList{}, networkNum)
+	broadcast := NewBlockBroadcast(blockHash, beaconBlockHash, types.BxBlockTypeBeaconBellatrix, blockBody, types.ShortIDList{}, networkNum)
 
-	b, err := broadcast.Pack(0)
+	b, err := broadcast.Pack(BeaconBlockProtocol)
 	assert.Nil(t, err)
 
 	var decodedBroadcast Broadcast
-	err = decodedBroadcast.Unpack(b, 0)
+	err = decodedBroadcast.Unpack(b, BeaconBlockProtocol)
 	assert.Nil(t, err)
 
 	assert.Equal(t, blockHash, decodedBroadcast.Hash())
+	assert.Equal(t, beaconBlockHash, decodedBroadcast.BeaconHash())
 	assert.Equal(t, blockBody, decodedBroadcast.Block())
 	assert.Equal(t, networkNum, decodedBroadcast.GetNetworkNum())
 }

@@ -21,8 +21,8 @@ import (
 const (
 	maxReorgLength       = 20
 	minValidChainLength  = 10
-	defaultMaxSize       = 500
-	defaultCleanInterval = 30 * time.Minute
+	defaultMaxSize       = 100
+	defaultCleanInterval = 10 * time.Minute
 )
 
 // Chain represents and stores blockchain state info in memory
@@ -35,6 +35,9 @@ type Chain struct {
 
 	// if a missing block is preventing updating the chain head, once a valid chain of this length is possible, discard the old chain
 	minValidChain int
+
+	// if a missing block too old discard to add it
+	ignoreBlockTimeout time.Duration
 
 	heightToBlockHeaders  cmap.ConcurrentMap
 	blockHashMetadata     cmap.ConcurrentMap
@@ -100,11 +103,11 @@ type ethHeader struct {
 }
 
 // NewChain returns a new chainstate struct for usage
-func NewChain(ctx context.Context) *Chain {
-	return newChain(ctx, maxReorgLength, minValidChainLength, defaultCleanInterval, defaultMaxSize)
+func NewChain(ctx context.Context, ignoreBlockTimeout time.Duration) *Chain {
+	return newChain(ctx, ignoreBlockTimeout, maxReorgLength, minValidChainLength, defaultCleanInterval, defaultMaxSize)
 }
 
-func newChain(ctx context.Context, maxReorg, minValidChain int, cleanInterval time.Duration, maxSize int) *Chain {
+func newChain(ctx context.Context, ignoreBlockTimeout time.Duration, maxReorg, minValidChain int, cleanInterval time.Duration, maxSize int) *Chain {
 	c := &Chain{
 		chainLock:             sync.RWMutex{},
 		headerLock:            sync.RWMutex{},
@@ -115,6 +118,7 @@ func newChain(ctx context.Context, maxReorg, minValidChain int, cleanInterval ti
 		chainState:            make([]blockRef, 0),
 		maxReorg:              maxReorg,
 		minValidChain:         minValidChain,
+		ignoreBlockTimeout:    ignoreBlockTimeout,
 		clock:                 utils.RealClock{},
 	}
 	go c.cleanBlockStorage(ctx, cleanInterval, maxSize)
@@ -225,15 +229,22 @@ func (c *Chain) GetNewHeadsForBDN(count int) ([]*BlockInfo, error) {
 }
 
 // ValidateBlock determines if block can potentially be added to the chain
-func (c *Chain) ValidateBlock(hash ethcommon.Hash, height int64) error {
+func (c *Chain) ValidateBlock(block *ethtypes.Block) error {
+	hash := block.Hash()
+	blockTime := time.Unix(int64(block.Time()), 0)
+
 	if c.HasBlock(hash) && c.HasSentToBDN(hash) && c.HasConfirmedBlock(hash) {
 		return ErrAlreadySeen
 	}
 
-	chainHead := c.chainState.head()
-	maxBlockNumber := chainHead.height + maxFutureBlockNumber
-	if chainHead.height != 0 && height > int64(maxBlockNumber) {
-		return fmt.Errorf("too far in future (best height: %v, max allowed height: %v)", chainHead.height, maxBlockNumber)
+	maxBlockTime := time.Now().Add(c.ignoreBlockTimeout)
+	if blockTime.After(maxBlockTime) {
+		return fmt.Errorf("too far in the future, block time: %s, max block time: %s", blockTime, maxBlockTime)
+	}
+
+	minBlockTime := time.Now().Add(-c.ignoreBlockTimeout)
+	if blockTime.Before(minBlockTime) {
+		return fmt.Errorf("too old, block time: %s, min block time: %s", blockTime, minBlockTime)
 	}
 
 	return nil
@@ -345,6 +356,9 @@ func (c *Chain) GetHeaders(start eth.HashOrNumber, count int, skip int, reverse 
 	c.chainLock.RLock()
 	defer c.chainLock.RUnlock()
 
+	if count < 0 {
+		return nil, ErrQueryAmountIsNotValid
+	}
 	requestedHeaders := make([]*ethtypes.Header, 0, count)
 
 	var (
@@ -429,7 +443,7 @@ func (c *Chain) GetHeaders(start eth.HashOrNumber, count int, skip int, reverse 
 // BlockAtDepth returns the blockRefChain with depth from the head of the chain
 func (c *Chain) BlockAtDepth(chainDepth int) (*ethtypes.Block, error) {
 	if len(c.chainState) <= chainDepth {
-		return nil, fmt.Errorf("not enough block in the chain state for depth lookup with depth of %v", chainDepth)
+		return nil, fmt.Errorf("not enough block in the chain state with length %v for depth lookup with depth of %v", len(c.chainState), chainDepth)
 	}
 	ref := c.chainState[chainDepth]
 	header, err := c.getHeaderAtHeight(ref.height)
@@ -711,14 +725,29 @@ func (c *Chain) clean(maxSize int) (lowestCleaned int, highestCleaned int, numCl
 	c.chainLock.Lock()
 	defer c.chainLock.Unlock()
 
+	// Find largest height from headers if chainState is empty
+	// This may happened if no connection to node was established but we receiving blocks from BDN
 	if len(c.chainState) == 0 {
-		return
+		var maxHeight int
+		for elem := range c.heightToBlockHeaders.IterBuffered() {
+			heightStr := elem.Key
+			height, err := strconv.Atoi(heightStr)
+			if err != nil {
+				log.Errorf("failed to convert height %v from string to integer: %v", heightStr, err)
+				continue
+			}
+
+			if height > maxHeight {
+				maxHeight = height
+			}
+		}
+
+		lowestCleaned = maxHeight
+	} else {
+		lowestCleaned = int(c.chainState[0].height)
 	}
 
-	head := c.chainState[0]
-
 	numCleaned = 0
-	lowestCleaned = int(head.height)
 	highestCleaned = 0
 
 	// minimum height to not be cleaned

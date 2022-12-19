@@ -1,6 +1,9 @@
 package bxgateway
 
-import "time"
+import (
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"time"
+)
 
 // MaxConnectionBacklog in addition to the socket write buffer and remote socket read buffer.
 const MaxConnectionBacklog = 100000
@@ -63,7 +66,7 @@ const TaskCompletedEvent = "TaskCompletedEvent"
 // TaskDisabledEvent - sent as notification on onBlock feed when a RPC call is disabled due to failure
 const TaskDisabledEvent = "TaskDisabledEvent"
 
-// BDNBlocksMaxBlocksAway - gateway should not publish blocks to BDNBlocks feed that are older than best height from node minus BDNBlocksMaxBlocksAway
+// BDNBlocksMaxBlocksAway - gateway should not publish blocks to BDNBlocks feed that are older than the best height from node minus BDNBlocksMaxBlocksAway
 const BDNBlocksMaxBlocksAway = 50
 
 // MaxOldBDNBlocksToSkipPublish is the max number of blocks beyond BDNBlocksMaxBlocksAway to skip publishing to BDNBlocks feed
@@ -109,14 +112,23 @@ const (
 	GatewayTimeout = 504
 )
 
-// BloxrouteBuilderName - set bloxroute mev builder name
-const BloxrouteBuilderName = "bloxroute"
+//
+const (
+	// BloxrouteBuilderName - set bloxroute mev builder name
+	BloxrouteBuilderName = "bloxroute"
 
-// FlashbotsBuilderName - set flashbots mev builder name
-const FlashbotsBuilderName = "flashbots"
+	// FlashbotsBuilderName - set flashbots mev builder name
+	FlashbotsBuilderName = "flashbots"
 
-// AllBuilderName - set all other external mev builders name
-const AllBuilderName = "all"
+	// AllBuilderName - set all other external mev builders name
+	AllBuilderName = "all"
+
+	// External0x69BuilderName - set builder0x69 external mev builders name
+	External0x69BuilderName = "builder0x69"
+
+	// ExternalBeaverBuilderName - set beaverbuild external mev builders name
+	ExternalBeaverBuilderName = "beaverbuild"
+)
 
 // Mainnet - for Ethereum main net blockchain network name
 const Mainnet = "Mainnet"
@@ -141,3 +153,11 @@ const RopstenNum = 32
 
 //PolygonMainnetNum - for Polygon main net blockchain network number
 const PolygonMainnetNum = 36
+
+// BlockchainNetworkToNetworkNum converts blockchain network to number
+var BlockchainNetworkToNetworkNum = map[string]types.NetworkNum{
+	Mainnet:        MainnetNum,
+	BSCMainnet:     BSCMainnetNum,
+	PolygonMainnet: PolygonMainnetNum,
+	Ropsten:        RopstenNum,
+}

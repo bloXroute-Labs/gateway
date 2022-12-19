@@ -2,6 +2,7 @@ package eth
 
 import (
 	"context"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -16,11 +17,11 @@ const (
 
 // SupportedProtocols is the list of all Ethereum devp2p protocols supported by this client
 var SupportedProtocols = []uint{
-	ETH65, eth.ETH66,
+	ETH65, eth.ETH66, eth.ETH67,
 }
 
 // ProtocolLengths is a mapping of each supported devp2p protocol to its message version length
-var ProtocolLengths = map[uint]uint64{ETH65: 17, eth.ETH66: 17}
+var ProtocolLengths = map[uint]uint64{ETH65: 17, eth.ETH66: 17, eth.ETH67: 17}
 
 // MakeProtocols generates the set of supported protocols structs for the p2p server
 func MakeProtocols(ctx context.Context, backend Backend) []p2p.Protocol {
@@ -38,27 +39,38 @@ func makeProtocol(ctx context.Context, backend Backend, version uint, versionLen
 		Length:  versionLength,
 		Run: func(p *p2p.Peer, rw p2p.MsgReadWriter) error {
 			ep := NewPeer(ctx, p, rw, version)
-
 			config := backend.NetworkConfig()
 			peerStatus, err := ep.Handshake(uint32(version), config.Network, config.TotalDifficulty, config.Head, config.Genesis)
 			if err != nil {
-				log.Errorf("Peer %v handshake failed with error - %v", ep.endpoint, err)
+				log.Debugf("Peer %v handshake failed with error - %v", ep.endpoint, err)
 				return err
 			}
 
 			log.Infof("Peer %v is starting", ep.endpoint)
-
+			err = backend.GetBridge().SendBlockchainConnectionStatus(blockchain.ConnectionStatus{PeerEndpoint: ep.endpoint, IsConnected: true, IsInbound: ep.Inbound()})
+			if err != nil {
+				log.Errorf("Failed to send blockchain connect status for %v - %v", ep.endpoint, err)
+				return err
+			}
 			// process status message on backend to set initial total difficulty
 			_ = backend.Handle(ep, peerStatus)
 
-			err = backend.RunPeer(ep, func(peer *Peer) error {
+			peerErr := backend.RunPeer(ep, func(peer *Peer) error {
 				for {
 					if err = handleMessage(backend, ep); err != nil {
 						return err
 					}
 				}
 			})
-			log.Errorf("Peer %v terminated with error - %v", ep.endpoint, err)
+
+			err = backend.GetBridge().SendBlockchainConnectionStatus(blockchain.ConnectionStatus{PeerEndpoint: ep.endpoint, IsConnected: false, IsInbound: ep.Inbound()})
+			if err != nil {
+				log.Errorf("Failed to send blockchain disconnect status for %v - %v, peer error - %v", ep.endpoint, err, peerErr)
+				return err
+			}
+			// TODO Here we have disconnection, but that disconnection does not affect BDNPerformanceStats
+
+			log.Errorf("Peer %v terminated with error - %v", ep.endpoint, peerErr)
 			return err
 		},
 		NodeInfo: func() interface{} {
@@ -112,6 +124,21 @@ var eth66 = map[uint64]msgHandler{
 	eth.PooledTransactionsMsg:    handlePooledTransactions66,
 }
 
+var eth67 = map[uint64]msgHandler{
+	eth.NewBlockHashesMsg:             handleNewBlockHashes,
+	eth.NewBlockMsg:                   handleNewBlockMsg,
+	eth.TransactionsMsg:               handleTransactions,
+	eth.NewPooledTransactionHashesMsg: handleNewPooledTransactionHashes,
+	eth.GetBlockHeadersMsg:            handleGetBlockHeaders66,
+	eth.BlockHeadersMsg:               handleBlockHeaders66,
+	eth.GetBlockBodiesMsg:             handleGetBlockBodies66,
+	eth.BlockBodiesMsg:                handleBlockBodies66,
+	eth.GetReceiptsMsg:                handleUnimplemented,
+	eth.ReceiptsMsg:                   handleUnimplemented,
+	eth.GetPooledTransactionsMsg:      handleUnimplemented,
+	eth.PooledTransactionsMsg:         handlePooledTransactions66,
+}
+
 func handleMessage(backend Backend, peer *Peer) error {
 	msg, err := peer.rw.ReadMsg()
 	if err != nil {
@@ -125,7 +152,9 @@ func handleMessage(backend Backend, peer *Peer) error {
 	}()
 
 	handlers := eth65
-	if peer.version >= eth.ETH66 {
+	if peer.version >= eth.ETH67 {
+		handlers = eth67
+	} else if peer.version >= eth.ETH66 {
 		handlers = eth66
 	}
 	handler, ok := handlers[msg.Code]

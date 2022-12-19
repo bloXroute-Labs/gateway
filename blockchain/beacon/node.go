@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +18,8 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/libp2p/go-libp2p-core/peer"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	ssz "github.com/prysmaticlabs/fastssz"
 	"github.com/prysmaticlabs/prysm/v3/async"
 	"github.com/prysmaticlabs/prysm/v3/async/event"
 	"github.com/prysmaticlabs/prysm/v3/beacon-chain/core/blocks"
@@ -25,6 +28,7 @@ import (
 	"github.com/prysmaticlabs/prysm/v3/beacon-chain/core/signing"
 	"github.com/prysmaticlabs/prysm/v3/beacon-chain/db"
 	"github.com/prysmaticlabs/prysm/v3/beacon-chain/p2p"
+	"github.com/prysmaticlabs/prysm/v3/beacon-chain/p2p/peers/peerdata"
 	p2ptypes "github.com/prysmaticlabs/prysm/v3/beacon-chain/p2p/types"
 	"github.com/prysmaticlabs/prysm/v3/beacon-chain/state"
 	"github.com/prysmaticlabs/prysm/v3/beacon-chain/sync/genesis"
@@ -34,13 +38,12 @@ import (
 	"github.com/prysmaticlabs/prysm/v3/encoding/bytesutil"
 	"github.com/prysmaticlabs/prysm/v3/network/forks"
 	pb "github.com/prysmaticlabs/prysm/v3/proto/prysm/v1alpha1"
+	"google.golang.org/protobuf/proto"
 )
 
 const forkDigestLength = 4
 
 var (
-	errResponseNotOK = errors.New("response is not OK")
-
 	responseCodeSuccess        = byte(0x00)
 	responseCodeInvalidRequest = byte(0x01)
 	responseCodeServerError    = byte(0x02)
@@ -135,7 +138,9 @@ func newNode(parent context.Context, networkName string, config *network.EthConf
 	n.p2p.Peers().Scorers().BadResponsesScorer().Params().Threshold = math.MaxInt
 	n.p2p.Peers().Scorers().BadResponsesScorer().Params().DecayInterval = time.Second
 
-	n.blockProcessor = newBlockProcessor(ctx, config, ethChain, bridge, n.Broadcast, beaconBlock, n.log)
+	chainAdapter := newChainAdapter(beaconBlock, ethChain, NewChain(ctx, n.genesisState.GenesisTime(), config.IgnoreSlotCount))
+
+	n.blockProcessor = newBlockProcessor(ctx, config, chainAdapter, bridge, n.BroadcastBlock, n.log)
 
 	n.p2p.AddConnectionHandler(n.handshake, n.goodBye)
 	n.p2p.AddDisconnectionHandler(func(_ context.Context, peerID peer.ID) error {
@@ -168,8 +173,8 @@ func initNetwork(networkName string) error {
 	return nil
 }
 
-// Broadcast broadcasts block to peers
-func (n *Node) Broadcast(block interfaces.SignedBeaconBlock) error {
+// BroadcastBlock broadcasts block to peers
+func (n *Node) BroadcastBlock(block interfaces.SignedBeaconBlock) error {
 	proto, err := block.Proto()
 	if err != nil {
 		return err
@@ -182,15 +187,21 @@ func (n *Node) Broadcast(block interfaces.SignedBeaconBlock) error {
 func (n *Node) Start() error {
 	n.log.Infof("Starting P2P beacon node: %v, peer ID: p2p/%v", n.p2p.Host().Addrs(), n.p2p.PeerID())
 
-	digest, err := n.digest()
-	if err != nil {
-		return fmt.Errorf("could not load digest: %v", err)
-	}
-
 	// Attempt to reconnect if disconnected
 	async.RunEvery(n.ctx, params.BeaconNetworkConfig().TtfbTimeout, func() {
 		ensurePeerConnections(n.ctx, n.p2p.Host(), n.config.BeaconNodes()...)
 	})
+	// Update and send status
+	async.RunEvery(n.ctx, time.Duration(time.Second*time.Duration(params.BeaconConfig().SecondsPerSlot)), func() {
+		for _, pid := range n.p2p.Peers().Connected() {
+			_, err := n.sendStatusRequest(n.ctx, pid)
+			if err != nil {
+				n.log.Warnf("could not send status: %v", err)
+			}
+		}
+	})
+	// Prune output peer list if disconnected to not receive "no good addresses"
+	async.RunEvery(n.ctx, time.Minute, n.p2p.Peers().Prune)
 
 	go n.p2p.Start()
 
@@ -206,7 +217,33 @@ func (n *Node) Start() error {
 		},
 	})
 
-	if err := n.subscribeBlocks(digest); err != nil {
+	if err := n.subscribe(p2p.BlockSubnetTopicFormat, n.blockSubscriber); err != nil {
+		return err
+	}
+
+	// Required to be on top gossip score rating and not be disconnected by prysm
+
+	// TODO: replace with broadcast when tested
+	// broadcast should perform validation, for example check slot
+	dontCare := func(msg *pubsub.Message) {}
+
+	if err := n.subscribe(p2p.AggregateAndProofSubnetTopicFormat, dontCare); err != nil {
+		return err
+	}
+
+	if err := n.subscribe(p2p.AggregateAndProofSubnetTopicFormat, dontCare); err != nil {
+		return err
+	}
+
+	if err := n.subscribe(p2p.ProposerSlashingSubnetTopicFormat, dontCare); err != nil {
+		return err
+	}
+
+	if err := n.subscribe(p2p.AttesterSlashingSubnetTopicFormat, dontCare); err != nil {
+		return err
+	}
+
+	if err := n.subscribe(p2p.SyncContributionAndProofSubnetTopicFormat, dontCare); err != nil {
 		return err
 	}
 
@@ -235,6 +272,38 @@ func (n *Node) handleBDNBridge(ctx context.Context) {
 	}
 }
 
+func (n *Node) broadcast(msg *pubsub.Message) {
+	topic := strings.TrimSuffix(*msg.Topic, n.p2p.Encoding().ProtocolSuffix())
+
+	var err error
+	topic, err = replaceForkDigest(topic)
+	if err != nil {
+		n.log.Errorf("could not replace topic: %v", err)
+		return
+	}
+
+	base := p2p.GossipTopicMappings(topic, 0)
+	if base == nil {
+		n.log.Errorf("could not get basic")
+		return
+	}
+	m, ok := proto.Clone(base).(ssz.Unmarshaler)
+	if !ok {
+		n.log.Errorf("message of %T does not support marshaller interface", base)
+		return
+	}
+
+	if err := n.p2p.Encoding().DecodeGossip(msg.Data, m); err != nil {
+		n.log.Errorf("could not encode gossip: %v", err)
+		return
+	}
+
+	if err := n.p2p.Broadcast(n.ctx, m.(proto.Message)); err != nil {
+		n.log.Errorf("could not broadcast: %v", err)
+		return
+	}
+}
+
 func (n *Node) digest() ([4]byte, error) {
 	genesisTime := time.Unix(int64(n.genesisState.GenesisTime()), 0)
 	genesisValidatorsRoot := n.genesisState.GenesisValidatorsRoot()
@@ -242,91 +311,105 @@ func (n *Node) digest() ([4]byte, error) {
 	return forks.CreateForkDigest(genesisTime, genesisValidatorsRoot)
 }
 
-func (n *Node) subscribeBlocks(digest [4]byte) error {
-	topic := fmt.Sprintf(p2p.BlockSubnetTopicFormat, digest) + n.p2p.Encoding().ProtocolSuffix()
-	sub, err := n.p2p.SubscribeToTopic(topic)
+func (n *Node) subscribe(topic string, f func(msg *pubsub.Message)) error {
+	digest, err := n.digest()
 	if err != nil {
-		return fmt.Errorf("could not subscribe: %v", err)
+		return fmt.Errorf("could not load digest: %v", err)
+	}
+
+	sub, err := n.p2p.SubscribeToTopic(fmt.Sprintf(topic, digest) + n.p2p.Encoding().ProtocolSuffix())
+	if err != nil {
+		return fmt.Errorf("could not subscribe to topic %v: %v", topic, err)
 	}
 
 	go func() {
 		for {
 			select {
 			case <-n.ctx.Done():
-				n.log.Info("stopping beacon node")
-
-				if err := n.p2p.LeaveTopic(topic); err != nil {
-					n.log.Errorf("could not unsubscribe: %v", err)
-				}
-
-				return
 			default:
 				msg, err := sub.Next(n.ctx)
 				if err != nil {
-					n.log.Errorf("could not get block: %v", err)
+					n.log.Errorf("could not get message: %v", err)
 					continue
 				}
 
-				endpoint, err := n.loadNodeEndpointFromPeerID(msg.ReceivedFrom)
-				if err != nil {
-					n.log.Errorf("could not load peer endpoint: %v", err)
+				if msg.ReceivedFrom == n.p2p.PeerID() {
 					continue
 				}
 
-				log := n.log.WithField("remoteAddr", fmt.Sprintf("%v:%v", endpoint.IP, endpoint.Port))
-
-				if msg.Data == nil {
-					log.Errorf("msg is nil from peer: %v", msg.ReceivedFrom)
-					continue
-				}
-
-				fDigest, err := p2p.ExtractGossipDigest(*msg.Topic)
-				if err != nil {
-					log.Errorf("extraction failed for topic %v: %v", topic, err)
-					continue
-				}
-
-				blk, err := extractBlockDataType(fDigest[:], n.genesisState.GenesisValidatorsRoot())
-				if err != nil {
-					log.Errorf("could not extract block data type: %v", err)
-					continue
-				}
-
-				if err := n.p2p.Encoding().DecodeGossip(msg.Data, blk); err != nil {
-					log.Errorf("could not decode block: %v", err)
-					continue
-				}
-
-				blockHash, err := blk.Block().HashTreeRoot()
-				if err != nil {
-					log.Errorf("could not get block[slot=%d] hash: %v", blk.Block().Slot(), err)
-					continue
-				}
-				blockHashHex := ethcommon.BytesToHash(blockHash[:]).String()
-
-				execution, err := blk.Block().Body().Execution()
-				if err != nil {
-					log.Errorf("could not get block[slot=%d,hash=%s] execution: %v", blk.Block().Slot(), blockHashHex, err)
-					continue
-				}
-
-				// If it pre-merge state execution is empty
-				if !n.beaconBlock && execution.BlockNumber() == 0 {
-					log.Tracef("skip eth1 block[slot=%d,hash=%s] for pre-merge", blk.Block().Slot(), blockHashHex)
-					continue
-				}
-
-				if err := n.blockProcessor.ProcessBlockchainBlock(log, *endpoint, blk); err != nil {
-					log.Errorf("could not process block[slot=%d,hash=%s]: %v", blk.Block().Slot(), blockHashHex, err)
-					continue
-				}
-
-				log.Tracef("eth2 p2p block[slot=%d,hash=%s] sent to BDN", blk.Block().Slot(), blockHashHex)
+				// do not block subscription
+				go f(msg)
 			}
 		}
 	}()
 
 	return nil
+}
+
+func (n *Node) blockSubscriber(msg *pubsub.Message) {
+	if msg.ReceivedFrom == n.p2p.PeerID() {
+		return
+	}
+
+	endpoint, err := n.loadNodeEndpointFromPeerID(msg.ReceivedFrom)
+	if err != nil {
+		if err == peerdata.ErrPeerUnknown {
+			n.log.Debugf("skipping block, the peer ID %v that broadcasted the block is not trusted", msg.ReceivedFrom)
+		} else {
+			n.log.Errorf("could not load peer endpoint: %v", err)
+		}
+		return
+	}
+
+	log := n.log.WithField("remoteAddr", fmt.Sprintf("%v:%v", endpoint.IP, endpoint.Port))
+
+	if msg.Data == nil {
+		log.Errorf("msg is nil from peer: %v", msg.ReceivedFrom)
+		return
+	}
+
+	fDigest, err := p2p.ExtractGossipDigest(*msg.Topic)
+	if err != nil {
+		log.Errorf("extraction failed for topic %v", err)
+		return
+	}
+
+	blk, err := extractBlockDataType(fDigest[:], n.genesisState.GenesisValidatorsRoot())
+	if err != nil {
+		log.Errorf("could not extract block data type: %v", err)
+		return
+	}
+
+	if err := n.p2p.Encoding().DecodeGossip(msg.Data, blk); err != nil {
+		log.Errorf("could not decode block: %v", err)
+		return
+	}
+
+	blockHash, err := blk.Block().HashTreeRoot()
+	if err != nil {
+		log.Errorf("could not get block[slot=%d] hash: %v", blk.Block().Slot(), err)
+		return
+	}
+	blockHashHex := ethcommon.BytesToHash(blockHash[:]).String()
+
+	execution, err := blk.Block().Body().Execution()
+	if err != nil {
+		log.Errorf("could not get block[slot=%d,hash=%s] execution: %v", blk.Block().Slot(), blockHashHex, err)
+		return
+	}
+
+	// If it pre-merge state execution is empty
+	if !n.beaconBlock && execution.BlockNumber() == 0 {
+		log.Tracef("skip eth1 block[slot=%d,hash=%s] for pre-merge", blk.Block().Slot(), blockHashHex)
+		return
+	}
+
+	if err := n.blockProcessor.ProcessBlockchainBlock(log, *endpoint, blk); err != nil {
+		log.Errorf("could not process block[slot=%d,hash=%s]: %v", blk.Block().Slot(), blockHashHex, err)
+		return
+	}
+
+	log.Debugf("eth2 p2p block[slot=%d,hash=%s] sent to BDN", blk.Block().Slot(), blockHashHex)
 }
 
 func extractBlockDataType(digest []byte, vRoot []byte) (interfaces.SignedBeaconBlock, error) {
@@ -442,7 +525,7 @@ func (n *Node) handshake(ctx context.Context, id peer.ID) error {
 
 	_, err := n.sendStatusRequest(ctx, id)
 	if err != nil {
-		return fmt.Errorf("could not receive status: %v", err)
+		return fmt.Errorf("could not send status: %v", err)
 	}
 
 	// Do not return an error for ping requests.
@@ -473,11 +556,4 @@ func (n *Node) validateSequenceNum(seq types.SSZUint64, id peer.ID) (bool, error
 		return false, p2ptypes.ErrInvalidSequenceNum
 	}
 	return md.SequenceNumber() == uint64(seq), nil
-}
-
-// currentSlot gets current slot
-func (n *Node) currentSlot() types.Slot {
-	genesisTime := time.Unix(int64(n.genesisState.GenesisTime()), 0)
-
-	return types.Slot(uint64(time.Now().Unix()-genesisTime.Unix()) / params.BeaconConfig().SecondsPerSlot)
 }

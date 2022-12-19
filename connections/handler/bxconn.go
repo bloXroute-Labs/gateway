@@ -246,6 +246,14 @@ func (b *BxConn) ProcessMessage(msg bxmessage.MessageBytes) {
 			ping := &bxmessage.Ping{}
 			_ = b.Conn.Send(ping)
 		}
+	case bxmessage.ValidatorUpdatesType:
+		vu := &bxmessage.ValidatorUpdates{}
+		err := vu.Unpack(msg, b.Protocol())
+		if err != nil {
+			b.Log().Errorf("could not unpack validator update message %v. Failed bytes: %v", err, msg)
+			return
+		}
+		_ = b.Node.HandleMsg(vu, b, connections.RunForeground)
 	case bxmessage.BroadcastType:
 		block := &bxmessage.Broadcast{}
 		err := block.Unpack(msg, b.Protocol())

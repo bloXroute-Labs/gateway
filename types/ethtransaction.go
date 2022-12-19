@@ -139,6 +139,8 @@ func (et *EthTransaction) createFields() {
 		fields["maxFeePerGas"] = hexutil.EncodeBig(tx.GasFeeCap())
 		transactionFilters["max_priority_fee_per_gas"] = int(tx.GasTipCap().Int64())
 		fields["maxPriorityFeePerGas"] = hexutil.EncodeBig(tx.GasTipCap())
+		transactionFilters["gas_price"] = nil
+		fields["gasPrice"] = nil
 	} else {
 		transactionFilters["gas_price"] = bigIngAsFloat64(tx.GasPrice())
 		fields["gasPrice"] = hexutil.EncodeBig(tx.GasPrice())

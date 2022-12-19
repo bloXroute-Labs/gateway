@@ -36,6 +36,26 @@ const (
 	ATierIntroductory AccountTier = "Introductory"
 )
 
+// GetRequestPriority return priority for blxr_private_tx and blxr_submit_bundle requests
+func (at AccountTier) GetRequestPriority() int {
+	var priority int
+	switch at {
+	case ATierUltra:
+		priority = 5
+	case ATierElite:
+		priority = 4
+	case ATierEnterprise:
+		priority = 3
+	case ATierProfessional, ATierDeveloper:
+		priority = 2
+	case ATierIntroductory:
+		priority = 1
+	default:
+		priority = 0
+	}
+	return priority
+}
+
 // IsUltra indicates whether the account tier is ultra
 func (at AccountTier) IsUltra() bool {
 	return at == ATierUltra
@@ -220,6 +240,7 @@ type Account struct {
 	RelayLimit                   BDNQuotaService        `json:"relay_limit"`
 	MinAllowedNodes              BDNQuotaService        `json:"min_allowed_nodes"`
 	MaxAllowedNodes              BDNQuotaService        `json:"max_allowed_nodes"`
+	InboundNodeConnections       BDNQuotaService        `json:"inbound_node_connections"`
 
 	// txs allowed per 5s
 	UnpaidTransactionBurstLimit BDNQuotaService `json:"unpaid_tx_burst_limit"`
@@ -256,167 +277,176 @@ type AccountInfo struct {
 	MEVMiner           string          `json:"mev_miner"`
 }
 
-// DefaultEliteAccount default Elite account
-var DefaultEliteAccount = Account{
-	AccountInfo: AccountInfo{
-		AccountID:          "",
-		LogicalAccountID:   "",
-		Certificate:        "",
-		ExpireDate:         fmt.Sprintf("%s", time.Now().AddDate(0, 0, 1).Format("2006-01-02")),
-		BlockchainProtocol: "Ethereum",
-		BlockchainNetwork:  "Mainnet",
-		TierName:           ATierElite,
-		Miner:              false,
-	},
-	FreeTransactions: BDNQuotaService{
-		MsgQuota: BDNService{
-			TimeInterval: TimeIntervalDaily,
-			ServiceType:  BDNServiceMsgQuota,
-			Limit:        1,
+// GetDefaultEliteAccount get a default elite account by current time
+func GetDefaultEliteAccount(now time.Time) Account {
+	return Account{
+		AccountInfo: AccountInfo{
+			AccountID:          "",
+			LogicalAccountID:   "",
+			Certificate:        "",
+			ExpireDate:         now.AddDate(0, 0, 1).Format("2006-01-02"),
+			BlockchainProtocol: "Ethereum",
+			BlockchainNetwork:  "Mainnet",
+			TierName:           ATierElite,
+			Miner:              false,
 		},
-		ExpireDateTime: time.Now().Add(time.Hour),
-	},
-	PaidTransactions: BDNQuotaService{
-		MsgQuota: BDNService{
-			TimeInterval: TimeIntervalDaily,
-			ServiceType:  BDNServiceMsgQuota,
-			Limit:        1,
+		FreeTransactions: BDNQuotaService{
+			MsgQuota: BDNService{
+				TimeInterval: TimeIntervalDaily,
+				ServiceType:  BDNServiceMsgQuota,
+				Limit:        1,
+			},
+			ExpireDateTime: now.Add(time.Hour),
 		},
-		ExpireDateTime: time.Now().Add(time.Hour),
-	},
-	CloudAPI: BDNBasicService{
-		ExpireDate: fmt.Sprintf("%s", time.Now().AddDate(0, 0, 1).Format("2006-01-02")),
-	},
-	NewTransactionStreaming: BDNFeedService{
-		ExpireDate: fmt.Sprintf("%s", time.Now().AddDate(0, 0, 1).Format("2006-01-02")),
-		Feed: FeedProperties{
-			AllowFiltering:  true,
-			AvailableFields: []string{"all"},
-			Plan:            SubscriptionPlanFeeds,
-			Limit:           20,
+		PaidTransactions: BDNQuotaService{
+			MsgQuota: BDNService{
+				TimeInterval: TimeIntervalDaily,
+				ServiceType:  BDNServiceMsgQuota,
+				Limit:        1,
+			},
+			ExpireDateTime: now.Add(time.Hour),
 		},
-	},
-	NewBlockStreaming: BDNFeedService{
-		ExpireDate: fmt.Sprintf("%s", time.Now().AddDate(0, 0, 1).Format("2006-01-02")),
-		Feed: FeedProperties{
-			AllowFiltering:  true,
-			AvailableFields: []string{"all"},
-			Plan:            SubscriptionPlanFeeds,
-			Limit:           20,
+		CloudAPI: BDNBasicService{
+			ExpireDate: now.AddDate(0, 0, 1).Format("2006-01-02"),
 		},
-	},
-	PendingTransactionStreaming: BDNFeedService{
-		ExpireDate: fmt.Sprintf("%s", time.Now().AddDate(0, 0, 1).Format("2006-01-02")),
-		Feed: FeedProperties{
-			AllowFiltering:  true,
-			AvailableFields: []string{"all"},
-			Plan:            SubscriptionPlanFeeds,
-			Limit:           20,
+		NewTransactionStreaming: BDNFeedService{
+			ExpireDate: now.AddDate(0, 0, 1).Format("2006-01-02"),
+			Feed: FeedProperties{
+				AllowFiltering:  true,
+				AvailableFields: []string{"all"},
+				Plan:            SubscriptionPlanFeeds,
+				Limit:           20,
+			},
 		},
-	},
-	InternalTransactionStreaming: BDNFeedService{
-		ExpireDate: fmt.Sprintf("%s", time.Now().AddDate(0, 0, 1).Format("2006-01-02")),
-		Feed: FeedProperties{
-			AllowFiltering:  true,
-			AvailableFields: []string{"all"},
-			Plan:            SubscriptionPlanFeeds,
-			Limit:           20,
+		NewBlockStreaming: BDNFeedService{
+			ExpireDate: now.AddDate(0, 0, 1).Format("2006-01-02"),
+			Feed: FeedProperties{
+				AllowFiltering:  true,
+				AvailableFields: []string{"all"},
+				Plan:            SubscriptionPlanFeeds,
+				Limit:           20,
+			},
 		},
-	},
-	TransactionStateFeed: BDNFeedService{
-		ExpireDate: fmt.Sprintf("%s", time.Now().AddDate(0, 0, 1).Format("2006-01-02")),
-		Feed: FeedProperties{
-			AllowFiltering:  false,
-			AvailableFields: nil,
+		PendingTransactionStreaming: BDNFeedService{
+			ExpireDate: now.AddDate(0, 0, 1).Format("2006-01-02"),
+			Feed: FeedProperties{
+				AllowFiltering:  true,
+				AvailableFields: []string{"all"},
+				Plan:            SubscriptionPlanFeeds,
+				Limit:           20,
+			},
 		},
-	},
-	OnBlockFeed: BDNFeedService{
-		ExpireDate: fmt.Sprintf("%s", time.Now().AddDate(0, 0, 1).Format("2006-01-02")),
-		Feed: FeedProperties{
-			AllowFiltering:  false,
-			AvailableFields: nil,
+		InternalTransactionStreaming: BDNFeedService{
+			ExpireDate: now.AddDate(0, 0, 1).Format("2006-01-02"),
+			Feed: FeedProperties{
+				AllowFiltering:  true,
+				AvailableFields: []string{"all"},
+				Plan:            SubscriptionPlanFeeds,
+				Limit:           20,
+			},
 		},
-	},
-	TransactionReceiptFeed: BDNFeedService{
-		ExpireDate: fmt.Sprintf("%s", time.Now().AddDate(0, 0, 1).Format("2006-01-02")),
-		Feed: FeedProperties{
-			AllowFiltering:  false,
-			AvailableFields: nil,
+		TransactionStateFeed: BDNFeedService{
+			ExpireDate: now.AddDate(0, 0, 1).Format("2006-01-02"),
+			Feed: FeedProperties{
+				AllowFiltering:  true,
+				AvailableFields: []string{"all"},
+			},
 		},
-	},
-	PrivateRelay: nil,
-	PrivateTransaction: BDNQuotaService{
-		MsgQuota: BDNService{
-			TimeInterval: TimeIntervalDaily,
-			ServiceType:  BDNServiceMsgQuota,
-			Limit:        1,
+		OnBlockFeed: BDNFeedService{
+			ExpireDate: now.AddDate(0, 0, 1).Format("2006-01-02"),
+			Feed: FeedProperties{
+				AllowFiltering:  false,
+				AvailableFields: nil,
+			},
 		},
-		ExpireDateTime: time.Now().Add(time.Hour),
-	},
-	TxTraceRateLimit: BDNQuotaService{
-		MsgQuota: BDNService{
-			TimeInterval: TimeIntervalDaily,
-			ServiceType:  BDNServiceMsgQuota,
-			Limit:        1,
+		TransactionReceiptFeed: BDNFeedService{
+			ExpireDate: now.AddDate(0, 0, 1).Format("2006-01-02"),
+			Feed: FeedProperties{
+				AllowFiltering:  false,
+				AvailableFields: nil,
+			},
 		},
-		ExpireDateTime: time.Now().Add(time.Hour),
-	},
-	UnpaidTransactionBurstLimit: BDNQuotaService{
-		MsgQuota: BDNService{
-			ServiceType:       BDNServiceMsgQuota,
-			Limit:             20,
-			BehaviorLimitOK:   BehaviorNoAction,
-			BehaviorLimitFail: BehaviorNoAction,
+		PrivateRelay: nil,
+		PrivateTransaction: BDNQuotaService{
+			MsgQuota: BDNService{
+				TimeInterval: TimeIntervalDaily,
+				ServiceType:  BDNServiceMsgQuota,
+				Limit:        1,
+			},
+			ExpireDateTime: now.Add(time.Hour),
 		},
-		ExpireDateTime: time.Now().Add(time.Hour),
-	},
-	PaidTransactionBurstLimit: BDNQuotaService{
-		MsgQuota: BDNService{
-			ServiceType:       BDNServiceMsgQuota,
-			Limit:             50,
-			BehaviorLimitOK:   BehaviorNoAction,
-			BehaviorLimitFail: BehaviorAlert,
+		TxTraceRateLimit: BDNQuotaService{
+			MsgQuota: BDNService{
+				TimeInterval: TimeIntervalDaily,
+				ServiceType:  BDNServiceMsgQuota,
+				Limit:        1,
+			},
+			ExpireDateTime: now.Add(time.Hour),
 		},
-		ExpireDateTime: time.Now().Add(time.Hour),
-	},
-	BoostMEVSearcher: BDNBasicService{
-		ExpireDate: bxgateway.ExpiredDate,
-	},
-	RelayLimit: BDNQuotaService{
-		MsgQuota: BDNService{
-			ServiceType: BDNServicePermit,
-			Limit:       2,
+		UnpaidTransactionBurstLimit: BDNQuotaService{
+			MsgQuota: BDNService{
+				ServiceType:       BDNServiceMsgQuota,
+				Limit:             20,
+				BehaviorLimitOK:   BehaviorNoAction,
+				BehaviorLimitFail: BehaviorNoAction,
+			},
+			ExpireDateTime: now.Add(time.Hour),
 		},
-		ExpireDateTime: time.Now().Add(time.Hour),
-	},
-	MinAllowedNodes: BDNQuotaService{
-		MsgQuota: BDNService{
-			ServiceType: BDNServicePermit,
-			Limit:       0,
+		PaidTransactionBurstLimit: BDNQuotaService{
+			MsgQuota: BDNService{
+				ServiceType:       BDNServiceMsgQuota,
+				Limit:             50,
+				BehaviorLimitOK:   BehaviorNoAction,
+				BehaviorLimitFail: BehaviorAlert,
+			},
+			ExpireDateTime: now.Add(time.Hour),
 		},
-		ExpireDateTime: time.Now().Add(time.Hour),
-	},
-	MaxAllowedNodes: BDNQuotaService{
-		MsgQuota: BDNService{
-			ServiceType: BDNServicePermit,
-			Limit:       2,
+		BoostMEVSearcher: BDNBasicService{
+			ExpireDate: bxgateway.ExpiredDate,
 		},
-		ExpireDateTime: time.Now().Add(time.Hour),
-	},
+		RelayLimit: BDNQuotaService{
+			MsgQuota: BDNService{
+				ServiceType: BDNServicePermit,
+				Limit:       2,
+			},
+			ExpireDateTime: now.Add(time.Hour),
+		},
+		MinAllowedNodes: BDNQuotaService{
+			MsgQuota: BDNService{
+				ServiceType: BDNServicePermit,
+				Limit:       0,
+			},
+			ExpireDateTime: now.Add(time.Hour),
+		},
+		MaxAllowedNodes: BDNQuotaService{
+			MsgQuota: BDNService{
+				ServiceType: BDNServicePermit,
+				Limit:       2,
+			},
+			ExpireDateTime: now.Add(time.Hour),
+		},
+		InboundNodeConnections: BDNQuotaService{
+			MsgQuota: BDNService{
+				ServiceType: BDNServiceMsgQuota,
+				Limit:       20,
+			},
+			ExpireDateTime: now.Add(time.Hour),
+		},
 
-	SolanaDexAPIRateLimit: BDNQuotaService{
-		MsgQuota: BDNService{
-			ServiceType: BDNServicePermit,
-			Limit:       100,
+		SolanaDexAPIRateLimit: BDNQuotaService{
+			MsgQuota: BDNService{
+				ServiceType: BDNServicePermit,
+				Limit:       100,
+			},
+			ExpireDateTime: now.Add(time.Hour),
 		},
-		ExpireDateTime: time.Now().Add(time.Hour),
-	},
-	SolanaDexAPIStreamLimit: BDNQuotaService{
-		MsgQuota: BDNService{
-			ServiceType: BDNServicePermit,
-			Limit:       50,
+		SolanaDexAPIStreamLimit: BDNQuotaService{
+			MsgQuota: BDNService{
+				ServiceType: BDNServicePermit,
+				Limit:       50,
+			},
+			ExpireDateTime: now.Add(time.Hour),
 		},
-		ExpireDateTime: time.Now().Add(time.Hour),
-	},
-	SecretHash: "",
+		SecretHash: "",
+	}
 }

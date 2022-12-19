@@ -16,6 +16,7 @@ type Relay struct {
 	networks      *sdnmessage.BlockchainNetworks
 	sendSyncReq   bool
 	syncDoneCount uint32
+	endpoint      types.NodeEndpoint
 }
 
 // NewOutboundRelay builds a new connection to a relay Node
@@ -28,7 +29,7 @@ func NewOutboundRelay(node connections.BxListener,
 			return connections.NewTLS(relayIP, int(relayPort), sslCerts)
 		},
 		sslCerts, relayIP, relayPort, nodeID, relayType, usePQ, networks, localGEO, privateNetwork, connections.LocalInitiatedPort, clock,
-		sameRegion, sendSyncReq)
+		sameRegion, sendSyncReq, false)
 }
 
 // NewInboundRelay builds a relay connection from a socket event initiated by a remote relay node
@@ -42,7 +43,7 @@ func NewInboundRelay(node connections.BxListener,
 			return socket, nil
 		},
 		sslCerts, relayIP, connections.RemoteInitiatedPort, nodeID, relayType, usePQ, networks, localGEO, privateNetwork, localPort, clock,
-		sameRegion, sendSyncReq)
+		sameRegion, sendSyncReq, true)
 }
 
 // NewRelay should only be called from test cases or NewOutboundRelay. It allows specifying a particular connect function for the SSL socket. However, in essentially all usages this should not be necessary as any node will initiate a connection to the relay, and as such should just use the default connect function to open a new socket.
@@ -50,17 +51,27 @@ func NewRelay(node connections.BxListener,
 	connect func() (connections.Socket, error), sslCerts *utils.SSLCerts, relayIP string, relayPort int64,
 	nodeID types.NodeID, relayType utils.NodeType, usePQ bool, networks *sdnmessage.BlockchainNetworks,
 	localGEO bool, privateNetwork bool, localPort int64, clock utils.Clock,
-	sameRegion bool, sendSyncReq bool) *Relay {
+	sameRegion bool, sendSyncReq bool, inbound bool) *Relay {
 	if networks == nil {
 		log.Panicf("TxStore sync: networks not provided. Please provide empty list of networks")
 	}
 	r := &Relay{
 		networks:    networks,
 		sendSyncReq: sendSyncReq,
+		endpoint: types.NodeEndpoint{
+			IP:      relayIP,
+			Port:    int(relayPort),
+			Inbound: inbound,
+		},
 	}
 	r.BxConn = NewBxConn(node, connect, r, sslCerts, relayIP, relayPort, nodeID, relayType,
 		usePQ, true, localGEO, privateNetwork, localPort, clock, sameRegion)
 	return r
+}
+
+// NodeEndpoint return the blockchain connection endpoint
+func (r *Relay) NodeEndpoint() types.NodeEndpoint {
+	return r.endpoint
 }
 
 // ProcessMessage handles messages received on the relay connection, delegating to the BxListener when appropriate
