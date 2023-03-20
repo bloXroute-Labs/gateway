@@ -2,8 +2,16 @@ package eth
 
 import (
 	"context"
+	b64 "encoding/base64"
 	"errors"
 	"fmt"
+	"math/big"
+	"math/rand"
+	"strconv"
+	"time"
+
+	"github.com/bloXroute-Labs/gateway/v2"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
@@ -12,10 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/p2p"
 	cmap "github.com/orcaman/concurrent-map"
-	"math/big"
-	"math/rand"
-	"strconv"
-	"time"
 )
 
 const (
@@ -29,6 +33,7 @@ const (
 	blockChannelBacklog             = 10
 	blockConfirmationChannelBacklog = 10
 	blockQueueMaxSize               = 50
+	delayLimit                      = 1 * time.Second
 )
 
 // special error constants during peer message processing
@@ -42,6 +47,7 @@ type Peer struct {
 	p        *p2p.Peer
 	rw       p2p.MsgReadWriter
 	version  uint
+	chainID  uint64
 	endpoint types.NodeEndpoint
 	clock    utils.Clock
 	ctx      context.Context
@@ -65,11 +71,11 @@ type Peer struct {
 }
 
 // NewPeer returns a wrapped Ethereum peer
-func NewPeer(ctx context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version uint) *Peer {
-	return newPeer(ctx, p, rw, version, utils.RealClock{})
+func NewPeer(ctx context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version uint, chainID uint64) *Peer {
+	return newPeer(ctx, p, rw, version, utils.RealClock{}, chainID)
 }
 
-func newPeer(parent context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version uint, clock utils.Clock) *Peer {
+func newPeer(parent context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version uint, clock utils.Clock, chainID uint64) *Peer {
 	ctx, cancel := context.WithCancel(parent)
 	peer := &Peer{
 		p:                    p,
@@ -78,6 +84,7 @@ func newPeer(parent context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version 
 		ctx:                  ctx,
 		cancel:               cancel,
 		clock:                clock,
+		chainID:              chainID,
 		newHeadCh:            make(chan blockRef, headChannelBacklog),
 		newBlockCh:           make(chan *eth.NewBlockPacket, blockChannelBacklog),
 		blockConfirmationCh:  make(chan common.Hash, blockConfirmationChannelBacklog),
@@ -86,7 +93,7 @@ func newPeer(parent context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version 
 		responseQueue66:      cmap.New(),
 		RequestConfirmations: true,
 	}
-	peer.endpoint = types.NodeEndpoint{IP: p.Node().IP().String(), Port: p.Node().TCP(), PublicKey: p.Info().Enode, Inbound: p.Inbound()}
+	peer.endpoint = types.NodeEndpoint{IP: p.Node().IP().String(), Port: p.Node().TCP(), PublicKey: p.Info().Enode, Dynamic: !p.Info().Network.Static, ID: p.ID().String()}
 	peerID := p.ID()
 	peer.log = log.WithFields(log.Fields{
 		"connType":   "ETH",
@@ -112,9 +119,9 @@ func (ep *Peer) IPEndpoint() types.NodeEndpoint {
 	return ep.endpoint
 }
 
-// Inbound returns true if the peer is inbound connection
-func (ep *Peer) Inbound() bool {
-	return ep.p.Inbound()
+// Dynamic returns true if the peer is dynamic connection
+func (ep *Peer) Dynamic() bool {
+	return !ep.p.Info().Network.Static
 }
 
 // Log returns the context logger for the peer connection
@@ -268,7 +275,7 @@ func (ep *Peer) sendTopBlock() {
 }
 
 // Handshake executes the Ethereum protocol Handshake. Unlike Geth, the gateway waits for the peer status message before sending its own, in order to replicate some peer status fields.
-func (ep *Peer) Handshake(version uint32, network uint64, td *big.Int, head common.Hash, genesis common.Hash) (*eth.StatusPacket, error) {
+func (ep *Peer) Handshake(version uint32, networkChain uint64, td *big.Int, head common.Hash, genesis common.Hash, executionLayerForks []string) (*eth.StatusPacket, error) {
 	peerStatus, err := ep.readStatus()
 	if err != nil {
 		return peerStatus, err
@@ -276,26 +283,61 @@ func (ep *Peer) Handshake(version uint32, network uint64, td *big.Int, head comm
 
 	ep.confirmedHead = blockRef{hash: head}
 
+	// for ethereum override the TD and the Head as get from the peer
+	// Nethermind checks reject connections which brings old value
+	switch networkChain {
+	case network.EthMainnetChainID:
+		td = peerStatus.TD
+		head = peerStatus.Head
+	}
 	// used same fork ID as received from peer; gateway is expected to usually be compatible with Ethereum peer
 	err = ep.send(eth.StatusMsg, &eth.StatusPacket{
 		ProtocolVersion: version,
-		NetworkID:       network,
+		NetworkID:       networkChain,
 		TD:              td,
 		Head:            head,
 		Genesis:         genesis,
 		ForkID:          peerStatus.ForkID,
 	})
 
-	if peerStatus.NetworkID != network {
-		return peerStatus, fmt.Errorf("network ID does not match: expected %v, but got %v", network, peerStatus.NetworkID)
+	if peerStatus.NetworkID != networkChain {
+		if !ep.Dynamic() {
+			ep.Log().Infof("network ID does not match: expected %v, but got %v", networkChain, peerStatus.NetworkID)
+		} else {
+			ep.Log().Tracef("network ID does not match: expected %v, but got %v", networkChain, peerStatus.NetworkID)
+		}
+		return peerStatus, fmt.Errorf("network ID does not match: expected %v, but got %v", networkChain, peerStatus.NetworkID)
 	}
 
 	if peerStatus.ProtocolVersion != version {
+		if !ep.Dynamic() {
+			ep.Log().Infof("protocol version does not match: expected %v, but got %v", version, peerStatus.ProtocolVersion)
+		} else {
+			ep.Log().Tracef("protocol version does not match: expected %v, but got %v", version, peerStatus.ProtocolVersion)
+		}
 		return peerStatus, fmt.Errorf("protocol version does not match: expected %v, but got %v", version, peerStatus.ProtocolVersion)
 	}
 
 	if peerStatus.Genesis != genesis {
+		if !ep.Dynamic() {
+			ep.Log().Infof("genesis block does not match: expected %v, but got %v", genesis, peerStatus.Genesis)
+		} else {
+			ep.Log().Tracef("genesis block does not match: expected %v, but got %v", genesis, peerStatus.Genesis)
+		}
 		return peerStatus, fmt.Errorf("genesis block does not match: expected %v, but got %v", genesis, peerStatus.Genesis)
+	}
+
+	if len(executionLayerForks) > 0 {
+		b64ForkID := b64.StdEncoding.EncodeToString(peerStatus.ForkID.Hash[:])
+
+		if !utils.Exists(b64ForkID, executionLayerForks) {
+			if !ep.Dynamic() {
+				ep.Log().Infof("fork ID does not match: expected %v, but got %v", executionLayerForks, b64ForkID)
+			} else {
+				ep.Log().Tracef("fork ID does not match: expected %v, but got %v", executionLayerForks, b64ForkID)
+			}
+			return peerStatus, fmt.Errorf("fork ID does not match: expected %v, but got %v", executionLayerForks, b64ForkID)
+		}
 	}
 
 	return peerStatus, nil
@@ -511,6 +553,25 @@ func (ep *Peer) RequestBlockHeaderRaw(origin eth.HashOrNumber, amount, skip uint
 }
 
 func (ep *Peer) sendNewBlock(packet *eth.NewBlockPacket) error {
+	// For BSC, the timestamp in block header is an expected time provided by the validator, but sometimes it arrives at BDN before the timestamp provided
+	if ep.chainID == bxgateway.BSCChainID {
+		// delay if the header timestamp is later than the system timestamp
+		blockHeaderTimestamp := int64(packet.Block.Time()) * time.Second.Nanoseconds()
+		currentTimestamp := ep.clock.Now().UnixNano()
+		delayNanoseconds := blockHeaderTimestamp - currentTimestamp
+		if delayNanoseconds > 0 {
+			if delayNanoseconds > delayLimit.Nanoseconds() {
+				ep.log.Warnf("received future block from BDN that is too far ahead by %v ms, block hash %v, block height %v, - not sending to peer", packet.Block.Hash().String(), packet.Block.Number().String(), time.Duration(delayNanoseconds).Milliseconds())
+				return nil
+			}
+			go ep.clock.AfterFunc(time.Duration(delayNanoseconds), func() {
+				_ = ep.sendNewBlock(packet)
+			})
+			ep.log.Tracef("received future block from blockchain peer, the block will be sent with %vms delay, block hash %v, block height %v", packet.Block.Hash().String(), packet.Block.Number().String(), time.Duration(delayNanoseconds).Milliseconds())
+			return nil
+		}
+	}
+
 	err := ep.send(eth.NewBlockMsg, packet)
 	if err != nil {
 		return err

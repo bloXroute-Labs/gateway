@@ -26,6 +26,8 @@ type NodeEvent struct {
 	EventType NodeEventType `json:"event_type"`
 	PeerIP    string        `json:"peer_ip"`
 	PeerPort  int           `json:"peer_port"`
+	Version   int           `json:"peer_version"`
+	Name      string        `json:"peer_name"`
 	Timestamp string        `json:"timestamp"`
 	EventID   string        `json:"event_id"`
 	Payload   string        `json:"payload"`
@@ -58,13 +60,15 @@ func NewNodeDisabledEvent(peerID types.NodeID, reason string) NodeEvent {
 }
 
 // NewBlockchainNodeConnEstablishedEvent returns an established NodeEvent for a peer.
-func NewBlockchainNodeConnEstablishedEvent(NodeID types.NodeID, peerIP string, peerPort int, timestamp string) NodeEvent {
+func NewBlockchainNodeConnEstablishedEvent(NodeID types.NodeID, peerIP string, peerPort int, timestamp string, version int, name string) NodeEvent {
 	return NodeEvent{
 		Timestamp: timestamp,
 		NodeID:    NodeID,
 		EventType: NeBlockchainNodeConnEstablished,
 		PeerIP:    peerIP,
 		PeerPort:  peerPort,
+		Version:   version,
+		Name:      name,
 	}
 }
 

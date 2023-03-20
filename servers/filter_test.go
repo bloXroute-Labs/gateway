@@ -72,20 +72,19 @@ var invalidPythonFilters = []string{
 }
 
 func TestFilter(t *testing.T) {
-	h := &handlerObj{}
 	s := &subscriptionOptions{}
 
 	for pythonFormat, expectedGoFormat := range pythonFiltersToGoFilters {
 		s.Filters = pythonFormat
-		goFormatResult, exp, err := s.parseFilter()
+		goFormatResult, exp, err := ParseFilter(s.Filters)
 		assert.Equal(t, strings.ToLower(expectedGoFormat), strings.ToLower(goFormatResult))
 		assert.Nil(t, err)
-		assert.Nil(t, h.evaluateFilters(exp))
+		assert.Nil(t, EvaluateFilters(exp))
 	}
 
 	for _, invalidFilters := range invalidPythonFilters {
 		s.Filters = invalidFilters
-		_, _, err := s.parseFilter()
+		_, _, err := ParseFilter(s.Filters)
 		assert.NotNil(t, err)
 	}
 }

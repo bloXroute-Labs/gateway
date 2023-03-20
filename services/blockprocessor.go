@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"sync"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
@@ -38,7 +37,6 @@ func NewBlockProcessor(txStore TxStore) BlockProcessor {
 	bp := &blockProcessor{
 		txStore:         txStore,
 		processedBlocks: NewHashHistory("processedBlocks", 30*time.Minute),
-		lock:            &sync.Mutex{},
 	}
 	return bp
 }
@@ -46,7 +44,6 @@ func NewBlockProcessor(txStore TxStore) BlockProcessor {
 type blockProcessor struct {
 	txStore         TxStore
 	processedBlocks HashHistory
-	lock            *sync.Mutex
 }
 
 type bxCompressedTransaction struct {
@@ -69,15 +66,12 @@ type bxBlockRLP struct {
 }
 
 func (bp *blockProcessor) BxBlockToBroadcast(block *types.BxBlock, networkNum types.NetworkNum, minTxAge time.Duration) (*bxmessage.Broadcast, types.ShortIDList, error) {
-	bp.lock.Lock()
-	defer bp.lock.Unlock()
-
 	switch block.Type {
 	case types.BxBlockTypeEth:
 		if !bp.ShouldProcess(block.Hash()) {
 			return nil, nil, ErrAlreadyProcessed
 		}
-	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix:
+	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella:
 		if !bp.ShouldProcess(block.BeaconHash()) {
 			return nil, nil, ErrAlreadyProcessed
 		}
@@ -89,7 +83,7 @@ func (bp *blockProcessor) BxBlockToBroadcast(block *types.BxBlock, networkNum ty
 	switch block.Type {
 	case types.BxBlockTypeEth:
 		broadcastMessage, usedShortIDs, err = bp.newRLPBlockBroadcast(block, networkNum, minTxAge)
-	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix:
+	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella:
 		broadcastMessage, usedShortIDs, err = bp.newSSZBlockBroadcast(block, networkNum, minTxAge)
 	case types.BxBlockTypeUnknown:
 		return nil, nil, ErrUnknownBlockType
@@ -99,11 +93,10 @@ func (bp *blockProcessor) BxBlockToBroadcast(block *types.BxBlock, networkNum ty
 		return nil, nil, err
 	}
 
-	bp.markProcessed(block.Hash())
-
-	// Do not send eth1 block if beacon has been already sent
 	switch block.Type {
-	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix:
+	case types.BxBlockTypeEth:
+		bp.markProcessed(block.Hash())
+	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella:
 		bp.markProcessed(block.BeaconHash())
 	}
 
@@ -112,15 +105,12 @@ func (bp *blockProcessor) BxBlockToBroadcast(block *types.BxBlock, networkNum ty
 
 // BxBlockFromBroadcast processes the encoded compressed block in a broadcast message, replacing all short IDs with their stored transaction contents
 func (bp *blockProcessor) BxBlockFromBroadcast(broadcast *bxmessage.Broadcast) (*types.BxBlock, types.ShortIDList, error) {
-	bp.lock.Lock()
-	defer bp.lock.Unlock()
-
 	switch broadcast.BlockType() {
 	case types.BxBlockTypeEth:
 		if !bp.ShouldProcess(broadcast.Hash()) {
 			return nil, nil, ErrAlreadyProcessed
 		}
-	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix:
+	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella:
 		if broadcast.BeaconHash().Empty() {
 			return nil, nil, ErrNotCompitableBeaconBlock
 		}
@@ -159,7 +149,7 @@ func (bp *blockProcessor) BxBlockFromBroadcast(broadcast *bxmessage.Broadcast) (
 		if err == nil {
 			bp.markProcessed(broadcast.Hash())
 		}
-	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix:
+	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella:
 		block, err = bp.newBxBlockFromSSZBroadcast(broadcast, bxTransactions)
 
 		if err == nil {
@@ -192,7 +182,7 @@ func (bp *blockProcessor) newBxBlockFromRLPBroadcast(broadcast *bxmessage.Broadc
 			if compressedTransactionCount >= len(bxTransactions) {
 				return nil, fmt.Errorf("could not decompress bad block: more empty transactions than short IDs provided")
 			}
-			txs = append(txs, types.NewRawBxBlockTransaction(bxTransactions[compressedTransactionCount].Content()))
+			txs = append(txs, types.NewBxBlockTransaction(bxTransactions[compressedTransactionCount].Hash(), bxTransactions[compressedTransactionCount].Content()))
 			txsBytes += uint64(len(bxTransactions[compressedTransactionCount].Content()))
 			compressedTransactionCount++
 		} else {
@@ -241,6 +231,10 @@ func calcBeaconTransactionLength(rawTx []byte) int {
 	// Which means that it would have 1-3 bytes overhead
 	// More info could be found in source of mentioned methods and in RLP docs:
 	// https://ethereum.org/en/developers/docs/data-structures-and-encoding/rlp/#definition
+
+	if len(rawTx) == 0 {
+		return 0
+	}
 
 	// Anyway beside said above SSZ encodes 4 bytes for length of transaction
 	txLen := len(rawTx) + 4

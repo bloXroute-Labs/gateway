@@ -12,6 +12,8 @@ import (
 	"path"
 	"syscall"
 
+	upscale_client "github.com/bloXroute-Labs/upscale-client"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
@@ -23,9 +25,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/version"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/p2p/enode"
-	"github.com/prysmaticlabs/prysm/v3/beacon-chain/sync/genesis"
 	"github.com/urfave/cli/v2"
 )
 
@@ -64,6 +63,7 @@ func main() {
 			utils.EthWSUriFlag,
 			utils.MultiNode,
 			utils.BeaconENRFlag,
+			utils.BeaconMultiaddrFlag,
 			utils.PrysmGRPCFlag,
 			utils.BlocksOnlyFlag,
 			utils.GensisFilePath,
@@ -84,8 +84,10 @@ func main() {
 			utils.SendBlockConfirmation,
 			utils.MegaBundleProcessing,
 			utils.TerminalTotalDifficulty,
-			utils.BeaconBlock,
-			utils.DisableInboundConnections,
+			utils.EnableDynamicPeers,
+			utils.ForwardTransactionEndpoint,
+			utils.ForwardTransactionMethod,
+			utils.PolygonMainnetHeimdallEndpoint,
 		},
 		Action: runGateway,
 	}
@@ -127,17 +129,23 @@ func runGateway(c *cli.Context) error {
 	}
 
 	var blockchainPeers []types.NodeEndpoint
-	var prysmEnode *enode.Node
+	var prysmEndpoint types.NodeEndpoint
 	var prysmAddr string
+	blockchainNetwork := c.String(utils.BlockchainNetworkFlag.Name)
 
 	for _, blockchainPeerInfo := range ethConfig.StaticPeers {
-		blockchainPeer := blockchainPeerInfo.Enode
-		enodePublicKey := fmt.Sprintf("%x", crypto.FromECDSAPub(blockchainPeer.Pubkey())[1:])
-		blockchainPeers = append(blockchainPeers, types.NodeEndpoint{IP: blockchainPeer.IP().String(), Port: blockchainPeer.TCP(), PublicKey: enodePublicKey, IsBeacon: blockchainPeerInfo.IsBeacon})
+		var endpoint types.NodeEndpoint
+		if blockchainPeerInfo.Enode != nil {
+			endpoint = utils.EnodeToNodeEndpoint(blockchainPeerInfo.Enode, blockchainNetwork)
+		} else if blockchainPeerInfo.Multiaddr != nil {
+			endpoint = utils.MultiaddrToNodeEndoint(*blockchainPeerInfo.Multiaddr, blockchainNetwork)
+			prysmEndpoint = endpoint
+		}
+
+		blockchainPeers = append(blockchainPeers, endpoint)
 
 		if blockchainPeerInfo.PrysmAddr != "" {
 			prysmAddr = blockchainPeerInfo.PrysmAddr
-			prysmEnode = blockchainPeerInfo.Enode
 		}
 	}
 
@@ -147,7 +155,7 @@ func runGateway(c *cli.Context) error {
 	}
 
 	startupBeaconNode := bxConfig.GatewayMode.IsBDN() && len(ethConfig.BeaconNodes()) > 0
-	startupBlockchainClient := startupBeaconNode || len(ethConfig.StaticEnodes()) > 0 // if beacon node running we need to receive txs also
+	startupBlockchainClient := startupBeaconNode || len(ethConfig.StaticEnodes()) > 0 || bxConfig.EnableDynamicPeers // if beacon node running we need to receive txs also
 	startupPrysmClient := bxConfig.GatewayMode.IsBDN() && prysmAddr != ""
 
 	var bridge blockchain.Bridge
@@ -168,7 +176,7 @@ func runGateway(c *cli.Context) error {
 		return fmt.Errorf("if websocket server management is enabled, a valid websocket address must be provided")
 	}
 
-	gateway, err := nodes.NewGateway(ctx, bxConfig, bridge, wsManager, blockchainPeers, ethConfig.StaticPeers, gatewayPublicKey, sdn, sslCerts, len(ethConfig.StaticEnodes()))
+	gateway, err := nodes.NewGateway(ctx, bxConfig, bridge, wsManager, blockchainPeers, ethConfig.StaticPeers, gatewayPublicKey, sdn, sslCerts, len(ethConfig.StaticEnodes()), c.String(utils.PolygonMainnetHeimdallEndpoint.Name))
 	if err != nil {
 		return err
 	}
@@ -189,12 +197,12 @@ func runGateway(c *cli.Context) error {
 		// TODO: use resolver to get public IP if externalIP flag is omitted
 		port, externalIP := c.Int(utils.PortFlag.Name), net.ParseIP(c.String(utils.ExternalIPFlag.Name))
 
-		maxInboundConn := int(sdn.AccountModel().InboundNodeConnections.MsgQuota.Limit)
-		if c.Bool(utils.DisableInboundConnections.Name) {
-			maxInboundConn = 0
+		dynamicPeers := int(sdn.AccountModel().InboundNodeConnections.MsgQuota.Limit)
+		if !bxConfig.EnableDynamicPeers {
+			dynamicPeers = 0
 		}
 
-		blockchainServer, err = eth.NewServerWithEthLogger(ctx, port, externalIP, ethConfig, ethChain, bridge, dataDir, wsManager, maxInboundConn)
+		blockchainServer, err = eth.NewServerWithEthLogger(ctx, port, externalIP, ethConfig, ethChain, bridge, dataDir, wsManager, dynamicPeers)
 		if err != nil {
 			return nil
 		}
@@ -206,8 +214,19 @@ func runGateway(c *cli.Context) error {
 		if err = blockchainServer.Start(); err != nil {
 			return nil
 		}
+		if dynamicPeers > 0 {
+			// we initialize upscale with the gw node id, because upscale accept only string with 64 chars we pad the node id with 0s in the start
+			// example: node id 12345e07-1234-1234-1234-464d308375df will be 000000000000000000000000000012345e07-1234-1234-1234-464d308375df
+			log.Infof("starting upscale to manage %v dynamic peers", dynamicPeers)
+			upscale_client.Init(fmt.Sprintf("%064s", string(sdn.NodeID())))
+		}
 	} else {
 		log.Infof("skipping starting blockchain client as no enodes have been provided")
+	}
+
+	var beaconChain *beacon.Chain
+	if startupBeaconNode || startupPrysmClient {
+		beaconChain = beacon.NewChain(ctx, ethConfig.GenesisTime, ethConfig.IgnoreSlotCount)
 	}
 
 	var beaconNode *beacon.Node
@@ -224,24 +243,20 @@ func runGateway(c *cli.Context) error {
 			}
 		}
 		log.Info("connecting to beacon node using ", genesisPath)
-		genesisInitializer, err := genesis.NewFileInitializer(localGenesisFile)
-		if err != nil {
-			return fmt.Errorf("could not load genesis file initializer: %v", err)
-		}
 
-		beaconNode, err = beacon.NewNode(ctx, c.String(utils.BlockchainNetworkFlag.Name), ethConfig, ethChain, genesisInitializer, bridge, dataDir, bxConfig.ExternalIP, c.Bool(utils.BeaconBlock.Name))
+		beaconNode, err := beacon.NewNode(ctx, c.String(utils.BlockchainNetworkFlag.Name), ethConfig, beaconChain, localGenesisFile, bridge)
 		if err != nil {
-			return nil
+			return err
 		}
 
 		if err = beaconNode.Start(); err != nil {
-			return nil
+			return err
 		}
 	}
 
 	var prysmClient *beacon.PrysmClient
 	if startupPrysmClient {
-		prysmClient = beacon.NewPrysmClient(ctx, ethConfig, ethChain, prysmAddr, bridge, prysmEnode, c.Bool(utils.BeaconBlock.Name))
+		prysmClient = beacon.NewPrysmClient(ctx, ethConfig, beaconChain, prysmAddr, bridge, prysmEndpoint)
 		prysmClient.Start()
 	}
 
@@ -265,6 +280,11 @@ func downloadGenesisFile(network, genesisFilePath string) (string, error) {
 		genesisFileURL = "https://github.com/eth-clients/eth2-mainnet/raw/master/genesis.ssz"
 	case bxgateway.Ropsten:
 		genesisFileURL = "https://github.com/eth-clients/merge-testnets/raw/main/ropsten-beacon-chain/genesis.ssz"
+	case bxgateway.Zhejiang:
+		genesisFileURL = "https://github.com/ethpandaops/withdrawals-testnet/raw/master/zhejiang-testnet/custom_config_data/genesis.ssz"
+	case bxgateway.Goerli:
+		genesisFileURL = "https://github.com/eth-clients/goerli/raw/main/prater/genesis.ssz"
+
 	default:
 		return "", fmt.Errorf("beacon node is supported on ethereum mainnet and ropsten")
 	}

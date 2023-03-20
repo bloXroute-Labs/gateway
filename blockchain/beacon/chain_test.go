@@ -287,7 +287,7 @@ func TestChain_cleanNoChainstate(t *testing.T) {
 	assert.Zero(t, c.heightToBlockHeaders.Count())
 }
 
-func newBeaconBlock(t *testing.T, slot int, prevBlock interfaces.SignedBeaconBlock) interfaces.SignedBeaconBlock {
+func newBeaconBlock(t *testing.T, slot int, prevBlock interfaces.ReadOnlySignedBeaconBlock) interfaces.ReadOnlySignedBeaconBlock {
 	// Blocks should not be the same
 	randaoReveal := make([]byte, 96)
 	rand.Read(randaoReveal)
@@ -327,34 +327,34 @@ func newBeaconBlock(t *testing.T, slot int, prevBlock interfaces.SignedBeaconBlo
 	return blk
 }
 
-func addBDNBlock(t *testing.T, c *Chain, block interfaces.SignedBeaconBlock) int {
+func addBDNBlock(t *testing.T, c *Chain, block interfaces.ReadOnlySignedBeaconBlock) int {
 	newHeads, err := c.AddBlock(block, BSBDN)
 	assert.NoError(t, err)
 
 	return newHeads
 }
 
-func addBlock(t *testing.T, c *Chain, block interfaces.SignedBeaconBlock) int {
+func addBlock(t *testing.T, c *Chain, block interfaces.ReadOnlySignedBeaconBlock) int {
 	newHeads, err := c.AddBlock(block, BSBlockchain)
 	assert.NoError(t, err)
 
 	return newHeads
 }
 
-func assertChainState(t *testing.T, c *Chain, block interfaces.SignedBeaconBlock, index int, length int) {
+func assertChainState(t *testing.T, c *Chain, block interfaces.ReadOnlySignedBeaconBlock, index int, length int) {
 	assert.Equal(t, length, len(c.chainState))
 	assert.Equal(t, uint64(block.Block().Slot()), c.chainState[index].height)
 	assert.Equal(t, blockHash(t, block), c.chainState[index].hash)
 }
 
-func blockHeader(t *testing.T, block interfaces.SignedBeaconBlock) *ethpb.SignedBeaconBlockHeader {
+func blockHeader(t *testing.T, block interfaces.ReadOnlySignedBeaconBlock) *ethpb.SignedBeaconBlockHeader {
 	header, err := block.Header()
 	assert.NoError(t, err)
 
 	return header
 }
 
-func blockHash(t *testing.T, block interfaces.SignedBeaconBlock) common.Hash {
+func blockHash(t *testing.T, block interfaces.ReadOnlySignedBeaconBlock) common.Hash {
 	hash, err := block.Block().HashTreeRoot()
 	assert.NoError(t, err)
 

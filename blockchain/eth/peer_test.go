@@ -2,10 +2,14 @@ package eth
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"math/big"
+	"math/rand"
 	"testing"
 	"time"
+
+	"github.com/bloXroute-Labs/gateway/v2"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
@@ -18,14 +22,33 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func testPeer(writeChannelSize int, peerCount int) (*Peer, *test.MsgReadWriter) {
+func testPeer(writeChannelSize int, peerCount int) (*Peer, *test.MsgReadWriter, *utils.MockClock) {
+	clock := &utils.MockClock{}
 	rw := test.NewMsgReadWriter(100, writeChannelSize)
-	peer := newPeer(context.Background(), p2p.NewPeerPipe(test.GenerateEnodeID(), fmt.Sprintf("test peer_%v", peerCount), []p2p.Cap{}, nil), rw, bxmessage.CurrentProtocol, &utils.MockClock{})
-	return peer, rw
+	peer := newPeer(context.Background(), p2p.NewPeerPipe(test.GenerateEnodeID(), fmt.Sprintf("test peer_%v", peerCount), []p2p.Cap{}, nil), rw, bxmessage.CurrentProtocol, clock, 1)
+	return peer, rw, clock
+}
+
+func genForkID() [4]byte {
+	forkID := make([]byte, 4)
+	rand.Read(forkID)
+
+	return *(*[4]byte)(forkID) // convert slice to array
 }
 
 func TestPeer_Handshake(t *testing.T) {
-	peer, rw := testPeer(-1, 1)
+	networkNum := 1
+
+	forkID1 := genForkID()
+	forkID2 := genForkID()
+	forkID3 := genForkID() // not in blockchain network
+
+	executionLayerForks := []string{
+		base64.StdEncoding.EncodeToString(forkID1[:]),
+		base64.StdEncoding.EncodeToString(forkID2[:]),
+	}
+
+	peer, rw, _ := testPeer(-1, 1)
 
 	peerStatus := eth.StatusPacket{
 		ProtocolVersion: 1,
@@ -33,12 +56,12 @@ func TestPeer_Handshake(t *testing.T) {
 		TD:              big.NewInt(10),
 		Head:            common.Hash{1, 2, 3},
 		Genesis:         common.Hash{2, 3, 4},
-		ForkID:          forkid.ID{},
+		ForkID:          forkid.ID{Hash: forkID1},
 	}
 
 	// matching parameters
 	rw.QueueIncomingMessage(eth.StatusMsg, peerStatus)
-	ps, err := peer.Handshake(1, 1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4})
+	ps, err := peer.Handshake(1, uint64(networkNum), new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
 	assert.Nil(t, err)
 	assert.Equal(t, peerStatus, *ps)
 
@@ -48,22 +71,34 @@ func TestPeer_Handshake(t *testing.T) {
 
 	// version mismatch
 	rw.QueueIncomingMessage(eth.StatusMsg, peerStatus)
-	_, err = peer.Handshake(0, 1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4})
+	_, err = peer.Handshake(0, uint64(networkNum), new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
 	assert.NotNil(t, err)
 
 	// network mismatch
 	rw.QueueIncomingMessage(eth.StatusMsg, peerStatus)
-	_, err = peer.Handshake(1, 0, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4})
+	_, err = peer.Handshake(1, 0, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
 	assert.NotNil(t, err)
 
 	// head mismatch is ok
 	rw.QueueIncomingMessage(eth.StatusMsg, peerStatus)
-	_, err = peer.Handshake(1, 1, new(big.Int), common.Hash{3, 4, 5}, common.Hash{2, 3, 4})
+	_, err = peer.Handshake(1, uint64(networkNum), new(big.Int), common.Hash{3, 4, 5}, common.Hash{2, 3, 4}, executionLayerForks)
 	assert.Nil(t, err)
 
 	// genesis mismatch
 	rw.QueueIncomingMessage(eth.StatusMsg, peerStatus)
-	_, err = peer.Handshake(1, 1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{3, 3, 4})
+	_, err = peer.Handshake(1, uint64(networkNum), new(big.Int), common.Hash{1, 2, 3}, common.Hash{3, 3, 4}, executionLayerForks)
+	assert.NotNil(t, err)
+
+	// forkID missmatch
+	rw.QueueIncomingMessage(eth.StatusMsg, eth.StatusPacket{
+		ProtocolVersion: 1,
+		NetworkID:       1,
+		TD:              big.NewInt(10),
+		Head:            common.Hash{1, 2, 3},
+		Genesis:         common.Hash{2, 3, 4},
+		ForkID:          forkid.ID{Hash: forkID3},
+	})
+	_, err = peer.Handshake(1, uint64(networkNum), new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
 	assert.NotNil(t, err)
 }
 
@@ -73,7 +108,7 @@ func TestPeer_SendNewBlock(t *testing.T) {
 		err error
 	)
 
-	peer, rw := testPeer(1, 1)
+	peer, rw, _ := testPeer(1, 1)
 	maxWriteTimeout := time.Millisecond // to allow for blockLoop goroutine to write to buffer
 	clock := peer.clock.(*utils.MockClock)
 	go peer.Start()
@@ -169,7 +204,7 @@ func TestPeer_SendNewBlock_HeadUpdates(t *testing.T) {
 		err error
 	)
 
-	peer, rw := testPeer(1, 1)
+	peer, rw, _ := testPeer(1, 1)
 	maxWriteTimeout := time.Millisecond // to allow for blockLoop goroutine to write to buffer
 	go peer.Start()
 
@@ -215,7 +250,7 @@ func TestPeer_RequestBlockHeaderNonBlocking(t *testing.T) {
 		err error
 	)
 
-	peer, rw := testPeer(-1, 1)
+	peer, rw, _ := testPeer(-1, 1)
 	peer.version = eth.ETH66
 
 	err = peer.RequestBlockHeader(common.Hash{})
@@ -238,4 +273,46 @@ func TestPeer_RequestBlockHeaderNonBlocking(t *testing.T) {
 	handled, err := peer.NotifyResponse66(requestID, nil)
 	assert.False(t, handled)
 	assert.Nil(t, err)
+}
+
+func TestPeer_BSC_SendFutureBlock_Pass(t *testing.T) {
+	peer, rw, _ := testPeer(1, 1)
+	peer.chainID = bxgateway.BSCChainID
+	maxWriteTimeout := time.Millisecond // to allow for blockLoop goroutine to write to buffer
+	mockClock := peer.clock.(*utils.MockClock)
+	go peer.Start()
+
+	block1a := bxmock.NewEthBlock(1, common.Hash{})
+	peer.confirmedHead = blockRef{0, block1a.ParentHash()}
+	// block 1a will be sent, within the range of limit
+	mockClock.SetTime(time.Unix(int64(block1a.Time()), 0))
+	peer.QueueNewBlock(block1a, big.NewInt(10))
+
+	// block 1a should be sent immediately
+	assert.True(t, rw.ExpectWrite(maxWriteTimeout))
+	assert.Equal(t, 1, len(rw.WriteMessages))
+}
+
+func TestPeer_BSC_SendFutureBlock_Delay(t *testing.T) {
+	peer, rw, _ := testPeer(1, 1)
+	peer.chainID = bxgateway.BSCChainID
+	maxWriteTimeout := time.Millisecond // to allow for blockLoop goroutine to write to buffer
+	mockClock := peer.clock.(*utils.MockClock)
+	go peer.Start()
+
+	block1a := bxmock.NewEthBlock(1, common.Hash{})
+	peer.confirmedHead = blockRef{0, block1a.ParentHash()}
+	// block is in the future, send after delay
+	mockClock.SetTime(time.Unix(int64(block1a.Time())-int64(1), 0))
+	peer.QueueNewBlock(block1a, big.NewInt(10))
+
+	// block should not be sent yet
+	assert.False(t, rw.ExpectWrite(maxWriteTimeout))
+	assert.Equal(t, 0, len(rw.WriteMessages))
+
+	mockClock.IncTime(time.Second)
+
+	// block 1a will be sent with delay
+	assert.True(t, rw.ExpectWrite(maxWriteTimeout))
+	assert.Equal(t, 1, len(rw.WriteMessages))
 }

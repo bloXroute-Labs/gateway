@@ -38,7 +38,8 @@ func CreateNewTransactionNotification(bxTx *BxTransaction) *NewTransactionNotifi
 	}
 }
 
-func (newTransactionNotification *NewTransactionNotification) makeBlockchainTransaction() error {
+// MakeBlockchainTransaction creates blockchain transaction
+func (newTransactionNotification *NewTransactionNotification) MakeBlockchainTransaction() error {
 	var err error
 	newTransactionNotification.lock.Lock()
 	defer newTransactionNotification.lock.Unlock()
@@ -48,7 +49,7 @@ func (newTransactionNotification *NewTransactionNotification) makeBlockchainTran
 		if err != nil {
 			newTransactionNotification.validationStatus = TxInvalid
 			err = fmt.Errorf("invalid tx with hash %v. error %v", newTransactionNotification.BxTransaction.Hash(), err)
-			log.Errorf("failed in makeBlockchainTransaction - %v", err)
+			log.Errorf("failed in MakeBlockchainTransaction - %v", err)
 			return err
 		}
 		newTransactionNotification.validationStatus = TxValid
@@ -61,7 +62,7 @@ func (newTransactionNotification *NewTransactionNotification) makeBlockchainTran
 
 //Filters - creates BlockchainTransaction if needs and returns a map of requested fields and their value for evaluation
 func (newTransactionNotification *NewTransactionNotification) Filters(filters []string) map[string]interface{} {
-	err := newTransactionNotification.makeBlockchainTransaction()
+	err := newTransactionNotification.MakeBlockchainTransaction()
 	if err != nil {
 		return nil
 	}
@@ -70,7 +71,7 @@ func (newTransactionNotification *NewTransactionNotification) Filters(filters []
 
 // Fields - creates BlockchainTransaction if needs and returns the value of requested fields of the transaction
 func (newTransactionNotification *NewTransactionNotification) Fields(fields []string) map[string]interface{} {
-	err := newTransactionNotification.makeBlockchainTransaction()
+	err := newTransactionNotification.MakeBlockchainTransaction()
 	if err != nil {
 		return nil
 	}

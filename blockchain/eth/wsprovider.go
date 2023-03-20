@@ -153,6 +153,11 @@ func (ws *WSProvider) CallRPC(method string, payload []interface{}, options bloc
 	return response, err
 }
 
+// SendTransaction sends signed transaction in payload to node via CallRPC
+func (ws *WSProvider) SendTransaction(rawTx string, options blockchain.RPCOptions) (interface{}, error) {
+	return ws.CallRPC("eth_sendRawTransaction", []interface{}{rawTx}, options)
+}
+
 // FetchTransactionReceipt fetches transaction receipt via CallRPC
 func (ws *WSProvider) FetchTransactionReceipt(payload []interface{}, options blockchain.RPCOptions) (interface{}, error) {
 	return ws.CallRPC("eth_getTransactionReceipt", payload, options)

@@ -190,7 +190,7 @@ func (m *Tx) Sender() types.Sender {
 
 // CompactClone returns a shallow clone of the current transaction, with the content omitted
 func (m *Tx) CompactClone() Tx {
-	tx := Tx{
+	return Tx{
 		BroadcastHeader: m.BroadcastHeader,
 		shortID:         m.shortID,
 		timestamp:       m.timestamp,
@@ -199,8 +199,6 @@ func (m *Tx) CompactClone() Tx {
 		content:         nil,
 		quota:           m.quota,
 	}
-	tx.ClearInternalAttributes()
-	return tx
 }
 
 // CleanClone returns a shallow clone of the current transaction, with the internal attributes removed

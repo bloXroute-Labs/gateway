@@ -17,11 +17,11 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/gorilla/websocket"
@@ -119,7 +119,7 @@ func TestClientHandler(t *testing.T) {
 	cfg := config.Bx{WebsocketPort: 28332, ManageWSServer: true, WebsocketTLSEnabled: false}
 
 	blockchainPeers, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
-	fm := NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 1, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil)
+	fm := NewFeedManager(context.Background(), g, feedChan, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 1, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil)
 	providers := fm.nodeWSManager.Providers()
 	p1 := providers[blockchainPeers[0].IPPort()]
 	assert.NotNil(t, p1)
@@ -141,7 +141,8 @@ func TestClientHandler(t *testing.T) {
 	cfgBSC := config.Bx{WebsocketPort: 28333, ManageWSServer: true, WebsocketTLSEnabled: false}
 	BscWsURLs := fmt.Sprintf("ws://%s/ws", urlBSC)
 	blockchainPeersBSC, blockchainPeersInfoBSC := test.GenerateBlockchainPeersInfo(1)
-	fmBSC := NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 56, eth.NewEthWSManager(blockchainPeersInfoBSC, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfgBSC, stats, nil)
+
+	fmBSC := NewFeedManager(context.Background(), g, feedChan, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 56, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfoBSC, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfgBSC, stats, nil)
 	p4 := providers[blockchainPeersBSC[0].IPPort()]
 	assert.NotNil(t, p4)
 	clientHandlerBSC := NewClientHandler(fmBSC, nil, NewHTTPServer(fmBSC, cfg.HTTPPort+1), log.WithFields(log.Fields{
@@ -195,6 +196,7 @@ func TestClientHandler(t *testing.T) {
 
 		t.Run(fmt.Sprintf("wsClient-%s", wsURL), func(t *testing.T) {
 			handlePingRequest(t, ws)
+			handleBlxrTxEnsureNodeValidation(t, fm, ws)
 			handleBlxrTxRequestLegacyTx(t, ws)
 			handleBlxrTxsRequestLegacyTx(t, ws)
 			handleBlxrTxRequestAccessListTx(t, ws)
@@ -209,7 +211,7 @@ func TestClientHandler(t *testing.T) {
 			testWSShutdown(t, fm, ws, blockchainPeers)
 		})
 		// restart bc last test shut down ws server
-		fm = NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 1, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil)
+		fm = NewFeedManager(context.Background(), g, feedChan, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 1, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil)
 		clientHandler = NewClientHandler(fm, nil, NewHTTPServer(fm, cfg.HTTPPort), log.WithFields(log.Fields{
 			"component": "gatewayClientHandler",
 		}))
@@ -423,7 +425,7 @@ func handleTxReceiptsNotification(t *testing.T, fm *FeedManager, ws *websocket.C
 	td := big.NewInt(10000)
 	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, td))
 	numTx := len(bxBlock.Txs)
-	feedNotification, _, _ := bridge.BxBlockToCanonicFormat(bxBlock, nil)
+	feedNotification, _ := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil)
 	feedNotification.SetNotificationType(types.TxReceiptsFeed)
 	sourceEndpoint := types.NodeEndpoint{IP: blockchainPeers[0].IP, Port: blockchainPeers[0].Port}
 	feedNotification.SetSource(&sourceEndpoint)
@@ -449,7 +451,6 @@ func handleTxReceiptsNotification(t *testing.T, fm *FeedManager, ws *websocket.C
 }
 
 func handleOnBlockNotification(t *testing.T, fm *FeedManager, ws *websocket.Conn, blockchainPeers []types.NodeEndpoint) {
-	bridge := blockchain.NewBxBridge(eth.Converter{}, false)
 	wsProvider, ok := fm.nodeWSManager.Provider(&blockchainPeers[0])
 	assert.True(t, ok)
 	assert.Equal(t, wsProvider.BlockchainPeerEndpoint(), blockchainPeers[0])
@@ -457,11 +458,9 @@ func handleOnBlockNotification(t *testing.T, fm *FeedManager, ws *websocket.Conn
 	unsubscribeFilter, subscriptionID := assertSubscribe(t, ws, fm, `{"id": "1", "method": "subscribe", "params": ["ethOnBlock", {"include": [], "call-params":  [{"method": "eth_blockNumber", "name": "height"}] }]}`)
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
-	td := big.NewInt(10000)
-	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, td))
-	feedNotification, _, _ := bridge.BxBlockToCanonicFormat(bxBlock, nil)
+	feedNotification, _ := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil)
 	feedNotification.SetNotificationType(types.OnBlockFeed)
-	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, "", false, false}
+	sourceEndpoint := types.NodeEndpoint{IP: blockchainPeers[0].IP, Port: blockchainPeers[0].Port, BlockchainNetwork: bxgateway.Mainnet}
 	feedNotification.SetSource(&sourceEndpoint)
 	assert.True(t, fm.nodeWSManager.Synced())
 
@@ -500,9 +499,9 @@ func handleTxReceiptsNotificationRequestedUnsynced(t *testing.T, fm *FeedManager
 	td := big.NewInt(10000)
 	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, td))
 	numTx := len(bxBlock.Txs)
-	feedNotification, _, _ := bridge.BxBlockToCanonicFormat(bxBlock, nil)
+	feedNotification, _ := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil)
 	feedNotification.SetNotificationType(types.TxReceiptsFeed)
-	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, "", false, false}
+	sourceEndpoint := types.NodeEndpoint{IP: blockchainPeers[0].IP, Port: blockchainPeers[0].Port, BlockchainNetwork: bxgateway.Mainnet}
 	feedNotification.SetSource(&sourceEndpoint)
 
 	fm.nodeWSManager.UpdateNodeSyncStatus(requestedUnsyncedWSProvider.BlockchainPeerEndpoint(), blockchain.Unsynced)
@@ -535,8 +534,6 @@ func handleOnBlockNotificationRequestedUnsynced(t *testing.T, fm *FeedManager, w
 	markAllPeersWithSyncStatus(fm, blockchainPeers, blockchain.Synced)
 	time.Sleep(time.Millisecond)
 
-	bridge := blockchain.NewBxBridge(eth.Converter{}, false)
-
 	requestedUnsyncedWSProvider, ok := fm.nodeWSManager.Provider(&blockchainPeers[0])
 	assert.True(t, ok)
 	assert.Equal(t, requestedUnsyncedWSProvider.BlockchainPeerEndpoint(), blockchainPeers[0])
@@ -547,11 +544,9 @@ func handleOnBlockNotificationRequestedUnsynced(t *testing.T, fm *FeedManager, w
 	unsubscribeFilter, subscriptionID := assertSubscribe(t, ws, fm, `{"id": "1", "method": "subscribe", "params": ["ethOnBlock", {"include": [], "call-params":  [{"method": "eth_blockNumber", "name": "height"}] }]}`)
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
-	td := big.NewInt(10000)
-	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, td))
-	feedNotification, _, _ := bridge.BxBlockToCanonicFormat(bxBlock, nil)
+	feedNotification, _ := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil)
 	feedNotification.SetNotificationType(types.OnBlockFeed)
-	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, "", false, false}
+	sourceEndpoint := types.NodeEndpoint{IP: blockchainPeers[0].IP, Port: blockchainPeers[0].Port, BlockchainNetwork: bxgateway.Mainnet}
 	feedNotification.SetSource(&sourceEndpoint)
 
 	fm.nodeWSManager.UpdateNodeSyncStatus(requestedUnsyncedWSProvider.BlockchainPeerEndpoint(), blockchain.Unsynced)
@@ -584,8 +579,6 @@ func handleTxReceiptsNotificationNoneSynced(t *testing.T, fm *FeedManager, ws *w
 	markAllPeersWithSyncStatus(fm, blockchainPeers, blockchain.Synced)
 	time.Sleep(time.Millisecond)
 
-	bridge := blockchain.NewBxBridge(eth.Converter{}, false)
-
 	ws0, ok := fm.nodeWSManager.Provider(&blockchainPeers[0])
 	assert.True(t, ok)
 	assert.Equal(t, ws0.BlockchainPeerEndpoint(), blockchainPeers[0])
@@ -603,11 +596,9 @@ func handleTxReceiptsNotificationNoneSynced(t *testing.T, fm *FeedManager, ws *w
 	assert.True(t, fm.SubscriptionExists(subscriptionID))
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
-	td := big.NewInt(10000)
-	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, td))
-	feedNotification, _, err := bridge.BxBlockToCanonicFormat(bxBlock, nil)
+	feedNotification, err := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil)
 	feedNotification.SetNotificationType(types.TxReceiptsFeed)
-	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, "", false, false}
+	sourceEndpoint := types.NodeEndpoint{IP: blockchainPeers[0].IP, Port: blockchainPeers[0].Port, BlockchainNetwork: bxgateway.Mainnet}
 	feedNotification.SetSource(&sourceEndpoint)
 
 	fm.nodeWSManager.UpdateNodeSyncStatus(blockchainPeers[0], blockchain.Unsynced)
@@ -625,8 +616,6 @@ func handleTxReceiptsNotificationNoneSynced(t *testing.T, fm *FeedManager, ws *w
 }
 
 func handleOnBlockNotificationNoneSynced(t *testing.T, fm *FeedManager, ws *websocket.Conn, blockchainPeers []types.NodeEndpoint) {
-	bridge := blockchain.NewBxBridge(eth.Converter{}, false)
-
 	ws0, ok := fm.nodeWSManager.Provider(&blockchainPeers[0])
 	assert.True(t, ok)
 	assert.Equal(t, ws0.BlockchainPeerEndpoint(), blockchainPeers[0])
@@ -644,11 +633,9 @@ func handleOnBlockNotificationNoneSynced(t *testing.T, fm *FeedManager, ws *webs
 	assert.True(t, fm.SubscriptionExists(subscriptionID))
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
-	td := big.NewInt(10000)
-	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, td))
-	feedNotification, _, err := bridge.BxBlockToCanonicFormat(bxBlock, nil)
+	feedNotification, err := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil)
 	feedNotification.SetNotificationType(types.OnBlockFeed)
-	sourceEndpoint := types.NodeEndpoint{blockchainPeers[0].IP, blockchainPeers[0].Port, "", false, false}
+	sourceEndpoint := types.NodeEndpoint{IP: blockchainPeers[0].IP, Port: blockchainPeers[0].Port, BlockchainNetwork: bxgateway.Mainnet}
 	feedNotification.SetSource(&sourceEndpoint)
 
 	fm.nodeWSManager.UpdateNodeSyncStatus(blockchainPeers[0], blockchain.Unsynced)
@@ -711,6 +698,25 @@ func handlePingRequest(t *testing.T, ws *websocket.Conn) {
 
 func handleError(t *testing.T, ws *websocket.Conn, closeError *websocket.CloseError) {
 	_ = writeMsgToWsAndReadResponse(t, ws, []byte(`{"id": "1", "method": "ping"}`), closeError)
+}
+
+func handleBlxrTxEnsureNodeValidation(t *testing.T, fm *FeedManager, ws *websocket.Conn) {
+	reqPayload := fmt.Sprintf(`{"id": "1", "method": "blxr_tx", "params": {"transaction": "%s", "node_validation": true}}`, fixtures.LegacyTransaction)
+	msg := writeMsgToWsAndReadResponse(t, ws, []byte(reqPayload), nil)
+	clientRes := getClientResponse(t, msg)
+	res := parseBlxrTxResult(t, clientRes.Result)
+	assert.Equal(t, fixtures.LegacyTransactionHash[2:], res.TxHash)
+	assert.Nil(t, clientRes.Error)
+
+	var txSent []string
+	for _, wsProvider := range fm.nodeWSManager.Providers() {
+		for _, tx := range wsProvider.(*eth.MockWSProvider).TxSent {
+			txSent = append(txSent, tx)
+		}
+		wsProvider.(*eth.MockWSProvider).TxSent = []string{}
+	}
+	assert.Equal(t, 1, len(txSent))
+	assert.Equal(t, "0x"+fixtures.LegacyTransaction, txSent[0])
 }
 
 func handleBlxrTxRequestLegacyTx(t *testing.T, ws *websocket.Conn) {
@@ -903,42 +909,4 @@ func assertSubscribe(t *testing.T, ws *websocket.Conn, fm *FeedManager, filter s
 		`{"id": 1, "method": "unsubscribe", "params": ["%v"]}`,
 		subscriptionID,
 	), subscriptionID
-}
-
-func TestFeedsLimit(t *testing.T) {
-	// set a shorted delay for tests
-	//ErrWSConnDelay = 10 * time.Millisecond
-	g := bxmock.MockBxListener{}
-	stats := statistics.NoStats{}
-	feedChan := make(chan types.Notification)
-
-	bloxrouteAccount, _ := getMockCustomerAccountModel("bloxroute Labs")
-	gwAccount, _ := getMockCustomerAccountModel("gw")
-
-	cfg := config.Bx{WebsocketPort: 28332, ManageWSServer: true, WebsocketTLSEnabled: false, NodeType: utils.InternalGateway}
-
-	_, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
-	fm := NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 1, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), bloxrouteAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil)
-	fm.accountModel.NewTransactionStreaming.Feed.Limit = 10
-
-	for i := 0; i < 10; i++ {
-		_, _, err := fm.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID("gw"), "", "", "", "")
-		assert.Nil(t, err)
-	}
-	_, _, err := fm.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID("gw"), "", "", "", "")
-	assert.NotNil(t, err)
-
-	// go it with external gw - should not block
-	cfg = config.Bx{WebsocketPort: 28332, ManageWSServer: true, WebsocketTLSEnabled: false}
-
-	_, blockchainPeersInfo = test.GenerateBlockchainPeersInfo(3)
-	fm = NewFeedManager(context.Background(), g, feedChan, types.NetworkNum(1), 1, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil)
-
-	for i := 0; i < 10; i++ {
-		_, _, err := fm.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID("gw"), "", "", "", "")
-		assert.Nil(t, err)
-	}
-	_, _, err = fm.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID("gw"), "", "", "", "")
-	assert.Nil(t, err)
-
 }

@@ -43,6 +43,8 @@ type RPCTxPayload struct {
 	BlockchainNetwork       string         `json:"blockchain_network"`
 	OriginalSenderAccountID string         `json:"original_sender_account_id"`
 	OriginalRPCMethod       RPCRequestType `json:"original_rpc_method"`
+	NodeValidation          bool           `json:"node_validation"`
+	NoBackrun               bool           `json:"no_backrun"`
 }
 
 // RPCBatchTxPayload is the payload of blxr_batch_tx request
@@ -61,6 +63,8 @@ type rpcTxJSON struct {
 	BlockchainNetwork       string         `json:"blockchain_network"`
 	OriginalSenderAccountID string         `json:"original_sender_account_id"`
 	OriginalRPCMethod       RPCRequestType `json:"original_rpc_method"`
+	NodeValidation          bool           `json:"node_validation"`
+	NoBackrun               bool           `json:"no_backrun"`
 }
 
 // UnmarshalJSON provides a compatibility layer for go-ethereum style RPC calls, which are [object], instead of just object.
@@ -89,5 +93,7 @@ func (p *RPCTxPayload) UnmarshalJSON(b []byte) error {
 	p.NextValidator = payload.NextValidator
 	p.Fallback = payload.Fallback
 	p.OriginalRPCMethod = payload.OriginalRPCMethod
+	p.NodeValidation = payload.NodeValidation
+	p.NoBackrun = payload.NoBackrun
 	return nil
 }

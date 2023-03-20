@@ -334,16 +334,6 @@ var (
 		Usage: "enabling mega-bundle processing",
 		Value: false,
 	}
-	ProxyIPFlag = &cli.StringFlag{
-		Name:  "proxy-ip",
-		Usage: "external ip address of the Python cloud-api",
-		Value: "172.17.0.1",
-	}
-	RPCProxyPortFlag = &cli.IntFlag{
-		Name:  "rpc-proxy-port",
-		Usage: "port of the Python cloud-api",
-		Value: 8888,
-	}
 	AuthHeaderFlag = &cli.StringFlag{
 		Name:  "auth-header",
 		Usage: "Authentication header for cloud services",
@@ -364,6 +354,10 @@ var (
 		Name:  "polygon-source-endpoint",
 		Usage: "websocket endpoint for Polygon mainnet go-gateway",
 	}
+	PolygonMainnetHeimdallEndpoint = &cli.StringFlag{
+		Name:  "polygon-heimdall-endpoint",
+		Usage: "tcp endpoint for Polygon mainnet heimdall server",
+	}
 	MEVRelayURL = &cli.StringFlag{
 		Name:  "mev-relay-url",
 		Usage: "mev relay connection for forwarding rpc requests",
@@ -378,15 +372,25 @@ var (
 		Usage:  "Overrides the terminal total difficulty settings of the blockchain network",
 		Hidden: true,
 	}
-	DisableInboundConnections = &cli.BoolFlag{
-		Name:  "disable-inbound-connections",
-		Usage: "enable this flag will disable inbound connections",
-		Value: true,
+	EnableDynamicPeers = &cli.BoolFlag{
+		Name:  "enable-dynamic-peers",
+		Usage: "enable dynamic peers for gw",
+		Value: false,
 	}
 	EnableBloomFilter = &cli.BoolFlag{
 		Name:   "enable-bloom-filter",
 		Usage:  "enables bloom filter for relayproxy to ignore already seen transactions",
 		Value:  false,
 		Hidden: true,
+	}
+	ForwardTransactionEndpoint = &cli.StringFlag{
+		Name:  "forward-transaction-endpoint",
+		Usage: "forward transaction to rpc endpoint",
+		Value: "",
+	}
+	ForwardTransactionMethod = &cli.StringFlag{
+		Name:  "forward-transaction-method",
+		Usage: "calling method of the forwarding transaction to rpc endpoint",
+		Value: "",
 	}
 )

@@ -170,7 +170,7 @@ func (h *Handler) NetworkConfig() *network.EthConfig {
 
 // RunPeer registers a peer within the peer set and starts handling all its messages
 func (h *Handler) RunPeer(ep *Peer, handler func(*Peer) error) error {
-	if !ep.p.Inbound() {
+	if !ep.Dynamic() {
 		ok := h.wsManager.SetBlockchainPeer(ep)
 		if !ok {
 			log.Warnf("unable to set blockchain peer for %v: no corresponding websockets provider found (ok if websockets URI was omitted)", ep.endpoint.IPPort())
@@ -183,7 +183,7 @@ func (h *Handler) RunPeer(ep *Peer, handler func(*Peer) error) error {
 		return err
 	}
 	defer func() {
-		if !ep.p.Inbound() {
+		if !ep.Dynamic() {
 			ok := h.wsManager.UnsetBlockchainPeer(ep.endpoint)
 			if !ok {
 				log.Warnf("unable to unset blockchain peer for %v: no corresponding websockets provider found (ok if websockets URI was omitted)", ep.endpoint.IPPort())
@@ -205,7 +205,25 @@ func (h *Handler) handleBDNBridge(ctx context.Context) {
 	for {
 		select {
 		case bdnTxs := <-h.bridge.ReceiveBDNTransactions():
-			h.processBDNTransactions(bdnTxs)
+			readMore := true
+			endpointToTxs := make(map[types.NodeEndpoint]*blockchain.Transactions)
+			endpointToTxs[bdnTxs.PeerEndpoint] = &bdnTxs
+			for readMore {
+				select {
+				case moreBdnTxs := <-h.bridge.ReceiveBDNTransactions():
+					if tx, ok := endpointToTxs[moreBdnTxs.PeerEndpoint]; !ok {
+						endpointToTxs[moreBdnTxs.PeerEndpoint] = &moreBdnTxs
+					} else {
+						tx.Transactions = append(tx.Transactions, moreBdnTxs.Transactions...)
+					}
+				default:
+					readMore = false
+				}
+			}
+
+			for _, sendingTxs := range endpointToTxs {
+				h.processBDNTransactions(*sendingTxs)
+			}
 		case request := <-h.bridge.ReceiveTransactionHashesRequest():
 			h.processBDNTransactionRequests(request)
 		case bdnBlock := <-h.bridge.ReceiveEthBlockFromBDN():
@@ -463,13 +481,26 @@ func (h *Handler) Handle(peer *Peer, packet eth.Packet) error {
 	switch p := packet.(type) {
 	case *eth.StatusPacket:
 		h.chain.InitializeDifficulty(p.Head, p.TD)
+		// send Empty NewPooledTransactionHashes based the protocol
+		var msg interface{}
+		switch peer.version {
+		case eth.ETH68:
+			msg = eth.NewPooledTransactionHashesPacket68{}
+		default:
+			msg = eth.NewPooledTransactionHashesPacket66{}
+		}
+		if err := peer.send(eth.NewPooledTransactionHashesMsg, &msg); err != nil {
+			peer.Log().Errorf("error sending empty NewPooledTransactionHashesMsg message after handshake %v", err)
+		}
 		return nil
 	case *eth.TransactionsPacket:
 		return h.processTransactions(peer, *p)
 	case *eth.PooledTransactionsPacket:
 		return h.processTransactions(peer, *p)
-	case *eth.NewPooledTransactionHashesPacket:
+	case *eth.NewPooledTransactionHashesPacket66:
 		return h.processTransactionHashes(peer, *p)
+	case *eth.NewPooledTransactionHashesPacket68:
+		return h.processTransactionHashes(peer, (*p).Hashes)
 	case *eth.NewBlockPacket:
 		return h.processBlock(peer, NewBlockInfo(p.Block, p.TD))
 	case *eth.NewBlockHashesPacket:
@@ -500,7 +531,7 @@ func (h *Handler) broadcastTransactions(p *datatype.ProcessingETHTransaction, so
 		if sourceNode.IPPort() == peer.IPEndpoint().IPPort() {
 			continue
 		}
-		txs := p.Transactions(connectionType, peer.Inbound())
+		txs := p.Transactions(connectionType, peer.Dynamic())
 		if err := peer.SendTransactions(txs); err != nil {
 			peer.Log().Errorf("could not send %v transactions: %v", len(txs), err)
 		}
@@ -718,12 +749,12 @@ func (h *Handler) sendConfirmedBlocksToBDN(count int, peerEndpoint types.NodeEnd
 
 		bdnBlock, err := h.bridge.BlockBlockchainToBDN(newHead)
 		if err != nil {
-			log.Errorf("could not convert block: %v", err)
+			log.Errorf("could not convert block %v: %v", newHead.Block.Hash(), err)
 			continue
 		}
 		err = h.bridge.SendBlockToBDN(bdnBlock, peerEndpoint)
 		if err != nil {
-			log.Errorf("could not send block to BDN: %v", err)
+			log.Errorf("could not send block %v to BDN: %v", newHead.Block.Hash(), err)
 			continue
 		}
 		h.chain.MarkSentToBDN(newHead.Block.Hash())

@@ -32,6 +32,7 @@ type MockWSProvider struct {
 	syncStatus         blockchain.NodeSyncStatus
 	NumReceiptsFetched int
 	NumRPCCalls        int
+	TxSent             []string
 }
 
 // NewMockWSProvider returns a MockWSProvider
@@ -72,6 +73,12 @@ func (m *MockWSProvider) Subscribe(responseChannel interface{}, feedName string)
 func (m *MockWSProvider) CallRPC(method string, payload []interface{}, options blockchain.RPCOptions) (interface{}, error) {
 	m.NumRPCCalls++
 	return "response", nil
+}
+
+// SendTransaction returns fake response with no error
+func (m *MockWSProvider) SendTransaction(rawTx string, options blockchain.RPCOptions) (interface{}, error) {
+	m.TxSent = append(m.TxSent, rawTx)
+	return nil, nil
 }
 
 // FetchTransactionReceipt returns a fake response with no error

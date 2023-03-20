@@ -9,6 +9,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/rpc"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/urfave/cli/v2"
+	"io"
 	"os"
 )
 
@@ -19,9 +20,14 @@ func main() {
 		Usage:                  "interact with bloxroute gateway",
 		Commands: []*cli.Command{
 			{
-				Name:   "newtxs",
-				Usage:  "provides a stream of new txs",
-				Flags:  []cli.Flag{},
+				Name:  "newtxs",
+				Usage: "provides a stream of new txs",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "filters",
+						Required: false,
+					},
+				},
 				Action: cmdNewTXs,
 			},
 			{
@@ -42,10 +48,30 @@ func main() {
 				Action: cmdBlxrTX,
 			},
 			{
-				Name:   "blxrtxs",
-				Usage:  "send multiple paid transaction",
-				Flags:  []cli.Flag{},
-				Action: cmdBlxrTXs,
+				Name:  "blxr-batch-tx",
+				Usage: "send multiple paid transactions",
+				Flags: []cli.Flag{
+					&cli.StringSliceFlag{
+						Name:     "transactions",
+						Required: true,
+					},
+					&cli.BoolFlag{
+						Name: "nonce-monitoring",
+					},
+					&cli.BoolFlag{
+						Name: "next-validator",
+					},
+					&cli.BoolFlag{
+						Name: "validators-only",
+					},
+					&cli.IntFlag{
+						Name: "fallback",
+					},
+					&cli.BoolFlag{
+						Name: "node-validation",
+					},
+				},
+				Action: cmdBlxrBatchTX,
 			},
 			{
 				Name:   "getinfo",
@@ -149,8 +175,32 @@ func cmdVersion(ctx *cli.Context) error {
 	return nil
 }
 
-func cmdNewTXs(*cli.Context) error {
-	fmt.Printf("left to do:")
+func cmdNewTXs(ctx *cli.Context) error {
+	err := rpc.GatewayConsoleCall(
+		config.NewGRPCFromCLI(ctx),
+		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
+			stream, err := client.NewTxs(callCtx, &pb.NewTxsRequest{Filters: ctx.String("filters")})
+			if err != nil {
+				return nil, err
+			}
+			for {
+				tx, err := stream.Recv()
+				if err == io.EOF {
+					log.Errorf("error EOF, %v", err)
+					break
+				}
+				if err != nil {
+					log.Errorf("error in recv, %v", err)
+				}
+				fmt.Println(tx)
+			}
+			return nil, nil
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("err subscribing to feed: %v", err)
+	}
+
 	return nil
 }
 
@@ -185,8 +235,24 @@ func cmdDisconnectInboundPeer(ctx *cli.Context) error {
 	return nil
 }
 
-func cmdBlxrTXs(*cli.Context) error {
-	fmt.Printf("left to do:")
+func cmdBlxrBatchTX(ctx *cli.Context) error {
+	err := rpc.GatewayConsoleCall(
+		config.NewGRPCFromCLI(ctx),
+		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
+			return client.BlxrBatchTX(callCtx, &pb.BlxrBatchTXRequest{
+				Transactions:    ctx.StringSlice("transactions"),
+				NonceMonitoring: ctx.Bool("nonce-monitoring"),
+				NextValidator:   ctx.Bool("next-validator"),
+				ValidatorsOnly:  ctx.Bool("validators-only"),
+				Fallback:        int32(ctx.Int("fallback")),
+				NodeValidation:  ctx.Bool("node-validation"),
+			})
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("err sending transaction: %v", err)
+	}
+
 	return nil
 }
 

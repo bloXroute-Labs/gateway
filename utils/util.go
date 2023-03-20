@@ -5,14 +5,15 @@ import (
 	"crypto/ecdsa"
 	cryptorand "crypto/rand"
 	"fmt"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/p2p/enode"
 	"net"
 	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
+
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/p2p/enode"
 )
 
 // Abs returns the absolute value of an integer

@@ -8,21 +8,23 @@ import (
 	"os"
 	"path"
 
+	"github.com/ethereum/go-ethereum/p2p/nat"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
-	"github.com/ethereum/go-ethereum/p2p/nat"
 )
 
 // Server wraps the Ethereum p2p server, for use with the BDN
 type Server struct {
-	p2pServer *p2p.Server
-	cancel    context.CancelFunc
+	p2pServer           *p2p.Server
+	cancel              context.CancelFunc
+	dynamicPeerDisabled bool
 }
 
 // NewServer return an Ethereum p2p server, configured with BDN friendly defaults
-func NewServer(parent context.Context, port int, externalIP net.IP, config *network.EthConfig, chain *Chain, bridge blockchain.Bridge, dataDir string, logger log.Logger, ws blockchain.WSManager, maxInboundConn int) (*Server, error) {
+func NewServer(parent context.Context, port int, externalIP net.IP, config *network.EthConfig, chain *Chain, bridge blockchain.Bridge, dataDir string, logger log.Logger, ws blockchain.WSManager, dynamicPeers int) (*Server, error) {
 	var privateKey *ecdsa.PrivateKey
 
 	if config.PrivateKey != nil {
@@ -50,27 +52,27 @@ func NewServer(parent context.Context, port int, externalIP net.IP, config *netw
 	backend := NewHandler(ctx, config, chain, bridge, ws)
 
 	var (
-		maxDialedConn = len(config.StaticPeers)
-		maxPeers      = maxDialedConn + maxInboundConn
-
-		dialRatio int
-		noDial    bool
+		discovery       = true
+		dialRatio       = 1
+		dynamicDisabled = false
 	)
 
-	if maxDialedConn > 0 {
-		dialRatio = maxPeers / maxDialedConn
-		noDial = false
-	} else {
-		noDial = true
+	// if no Dynamic peers we want to disable Dialing and Discovery
+	if dynamicPeers == 0 {
+		discovery = false
+		dynamicDisabled = true
+	}
+	if dynamicPeers >= len(config.StaticEnodes()) {
+		dialRatio = 2
 	}
 
 	server := p2p.Server{
 		Config: p2p.Config{
 			PrivateKey:       privateKey,
-			MaxPeers:         maxPeers,
-			MaxPendingPeers:  1,
+			MaxPeers:         dynamicPeers + len(config.StaticEnodes()),
+			MaxPendingPeers:  0,
 			DialRatio:        dialRatio,
-			NoDiscovery:      false,
+			NoDiscovery:      !discovery,
 			DiscoveryV5:      false,
 			Name:             config.ProgramName,
 			BootstrapNodesV5: nil,
@@ -81,31 +83,32 @@ func NewServer(parent context.Context, port int, externalIP net.IP, config *netw
 			Protocols:        MakeProtocols(ctx, backend),
 			NAT:              nat.ExtIP(externalIP),
 			Dialer:           nil,
-			NoDial:           noDial,
+			NoDial:           false,
 			EnableMsgEvents:  false,
 			Logger:           logger,
 		},
 		DiscV5: nil,
 	}
 
-	if maxInboundConn != 0 {
+	if discovery {
 		server.Config.BootstrapNodes = config.BootstrapNodes
 		server.Config.ListenAddr = fmt.Sprintf("0.0.0.0:%d", port)
 	}
 
 	s := &Server{
-		p2pServer: &server,
-		cancel:    cancel,
+		p2pServer:           &server,
+		cancel:              cancel,
+		dynamicPeerDisabled: dynamicDisabled,
 	}
 	return s, nil
 }
 
 // NewServerWithEthLogger returns the p2p server preconfigured with the default Ethereum logger
-func NewServerWithEthLogger(ctx context.Context, port int, externalIP net.IP, config *network.EthConfig, chain *Chain, bridge blockchain.Bridge, dataDir string, ws blockchain.WSManager, maxInboundConn int) (*Server, error) {
+func NewServerWithEthLogger(ctx context.Context, port int, externalIP net.IP, config *network.EthConfig, chain *Chain, bridge blockchain.Bridge, dataDir string, ws blockchain.WSManager, dynamicPeers int) (*Server, error) {
 	l := log.New()
 	l.SetHandler(log.StreamHandler(os.Stdout, log.TerminalFormat(true)))
 
-	return NewServer(ctx, port, externalIP, config, chain, bridge, dataDir, l, ws, maxInboundConn)
+	return NewServer(ctx, port, externalIP, config, chain, bridge, dataDir, l, ws, dynamicPeers)
 }
 
 // Start starts eth server
@@ -113,7 +116,6 @@ func (s *Server) Start() error {
 	if err := s.p2pServer.Start(); err != nil {
 		return err
 	}
-
 	return nil
 }
 
@@ -129,6 +131,11 @@ func (s *Server) AddEthLoggerFileHandler(path string) error {
 	if err != nil {
 		return err
 	}
-	s.p2pServer.Logger.SetHandler(log.LvlFilterHandler(log.LvlInfo, log.MultiHandler(fileHandler, s.p2pServer.Logger.GetHandler())))
+	if s.dynamicPeerDisabled {
+		s.p2pServer.Logger.SetHandler(log.LvlFilterHandler(log.LvlTrace, log.MultiHandler(fileHandler, s.p2pServer.Logger.GetHandler())))
+	} else {
+		s.p2pServer.Logger.SetHandler(log.LvlFilterHandler(log.LvlInfo, log.MultiHandler(fileHandler, s.p2pServer.Logger.GetHandler())))
+	}
+
 	return nil
 }

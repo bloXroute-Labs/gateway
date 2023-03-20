@@ -28,9 +28,8 @@ WORKDIR /app/bloxroute
 COPY go.mod .
 COPY go.sum .
 RUN go mod download
-COPY --chown=bloxroute:bloxroute Makefile .
-
 COPY --chown=bloxroute:bloxroute . .
+
 RUN make gateway
 RUN chown bloxroute:bloxroute ./bin/gateway
 RUN chown bloxroute:bloxroute ./bin/bxcli

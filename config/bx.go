@@ -9,7 +9,8 @@ import (
 )
 
 const (
-	defaultRPCTimeout = time.Second
+	// this effects the client and not the server for the grpc connection
+	defaultRPCTimeout = 24 * time.Hour
 )
 
 // Todo: separate GW and relay config
@@ -46,6 +47,9 @@ type Bx struct {
 
 	ProcessMegaBundle            bool
 	MevMinerSendBundleMethodName string
+	ForwardTransactionEndpoint   string
+	ForwardTransactionMethod     string
+	EnableDynamicPeers           bool
 
 	*GRPC
 	*Env
@@ -111,7 +115,10 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		MevMinerSendBundleMethodName: ctx.String(utils.MEVBundleMethodNameFlag.Name),
 		MEVMaxProfitBuilder:          ctx.Bool(utils.MEVMaxProfitBuilder.Name),
 
-		ProcessMegaBundle: ctx.Bool(utils.MegaBundleProcessing.Name),
+		ProcessMegaBundle:          ctx.Bool(utils.MegaBundleProcessing.Name),
+		ForwardTransactionEndpoint: ctx.String(utils.ForwardTransactionEndpoint.Name),
+		ForwardTransactionMethod:   ctx.String(utils.ForwardTransactionMethod.Name),
+		EnableDynamicPeers:         ctx.Bool(utils.EnableDynamicPeers.Name),
 
 		GRPC:       grpcConfig,
 		Env:        env,

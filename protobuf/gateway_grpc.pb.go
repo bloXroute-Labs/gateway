@@ -19,6 +19,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type GatewayClient interface {
 	BlxrTx(ctx context.Context, in *BlxrTxRequest, opts ...grpc.CallOption) (*BlxrTxReply, error)
+	BlxrBatchTX(ctx context.Context, in *BlxrBatchTXRequest, opts ...grpc.CallOption) (*BlxrBatchTXReply, error)
 	Peers(ctx context.Context, in *PeersRequest, opts ...grpc.CallOption) (*PeersReply, error)
 	TxStoreSummary(ctx context.Context, in *TxStoreRequest, opts ...grpc.CallOption) (*TxStoreReply, error)
 	GetTx(ctx context.Context, in *GetBxTransactionRequest, opts ...grpc.CallOption) (*GetBxTransactionResponse, error)
@@ -27,6 +28,7 @@ type GatewayClient interface {
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 	Subscriptions(ctx context.Context, in *SubscriptionsRequest, opts ...grpc.CallOption) (*SubscriptionsReply, error)
 	DisconnectInboundPeer(ctx context.Context, in *DisconnectInboundPeerRequest, opts ...grpc.CallOption) (*DisconnectInboundPeerReply, error)
+	NewTxs(ctx context.Context, in *NewTxsRequest, opts ...grpc.CallOption) (Gateway_NewTxsClient, error)
 }
 
 type gatewayClient struct {
@@ -40,6 +42,15 @@ func NewGatewayClient(cc grpc.ClientConnInterface) GatewayClient {
 func (c *gatewayClient) BlxrTx(ctx context.Context, in *BlxrTxRequest, opts ...grpc.CallOption) (*BlxrTxReply, error) {
 	out := new(BlxrTxReply)
 	err := c.cc.Invoke(ctx, "/gateway.Gateway/BlxrTx", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayClient) BlxrBatchTX(ctx context.Context, in *BlxrBatchTXRequest, opts ...grpc.CallOption) (*BlxrBatchTXReply, error) {
+	out := new(BlxrBatchTXReply)
+	err := c.cc.Invoke(ctx, "/gateway.Gateway/BlxrBatchTX", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -118,11 +129,44 @@ func (c *gatewayClient) DisconnectInboundPeer(ctx context.Context, in *Disconnec
 	return out, nil
 }
 
+func (c *gatewayClient) NewTxs(ctx context.Context, in *NewTxsRequest, opts ...grpc.CallOption) (Gateway_NewTxsClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Gateway_ServiceDesc.Streams[0], "/gateway.Gateway/NewTxs", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &gatewayNewTxsClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Gateway_NewTxsClient interface {
+	Recv() (*NewTxsReply, error)
+	grpc.ClientStream
+}
+
+type gatewayNewTxsClient struct {
+	grpc.ClientStream
+}
+
+func (x *gatewayNewTxsClient) Recv() (*NewTxsReply, error) {
+	m := new(NewTxsReply)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // GatewayServer is the server API for Gateway service.
 // All implementations must embed UnimplementedGatewayServer
 // for forward compatibility
 type GatewayServer interface {
 	BlxrTx(context.Context, *BlxrTxRequest) (*BlxrTxReply, error)
+	BlxrBatchTX(context.Context, *BlxrBatchTXRequest) (*BlxrBatchTXReply, error)
 	Peers(context.Context, *PeersRequest) (*PeersReply, error)
 	TxStoreSummary(context.Context, *TxStoreRequest) (*TxStoreReply, error)
 	GetTx(context.Context, *GetBxTransactionRequest) (*GetBxTransactionResponse, error)
@@ -131,6 +175,7 @@ type GatewayServer interface {
 	Status(context.Context, *StatusRequest) (*StatusResponse, error)
 	Subscriptions(context.Context, *SubscriptionsRequest) (*SubscriptionsReply, error)
 	DisconnectInboundPeer(context.Context, *DisconnectInboundPeerRequest) (*DisconnectInboundPeerReply, error)
+	NewTxs(*NewTxsRequest, Gateway_NewTxsServer) error
 	mustEmbedUnimplementedGatewayServer()
 }
 
@@ -140,6 +185,9 @@ type UnimplementedGatewayServer struct {
 
 func (UnimplementedGatewayServer) BlxrTx(context.Context, *BlxrTxRequest) (*BlxrTxReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method BlxrTx not implemented")
+}
+func (UnimplementedGatewayServer) BlxrBatchTX(context.Context, *BlxrBatchTXRequest) (*BlxrBatchTXReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BlxrBatchTX not implemented")
 }
 func (UnimplementedGatewayServer) Peers(context.Context, *PeersRequest) (*PeersReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Peers not implemented")
@@ -164,6 +212,9 @@ func (UnimplementedGatewayServer) Subscriptions(context.Context, *SubscriptionsR
 }
 func (UnimplementedGatewayServer) DisconnectInboundPeer(context.Context, *DisconnectInboundPeerRequest) (*DisconnectInboundPeerReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DisconnectInboundPeer not implemented")
+}
+func (UnimplementedGatewayServer) NewTxs(*NewTxsRequest, Gateway_NewTxsServer) error {
+	return status.Errorf(codes.Unimplemented, "method NewTxs not implemented")
 }
 func (UnimplementedGatewayServer) mustEmbedUnimplementedGatewayServer() {}
 
@@ -192,6 +243,24 @@ func _Gateway_BlxrTx_Handler(srv interface{}, ctx context.Context, dec func(inte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(GatewayServer).BlxrTx(ctx, req.(*BlxrTxRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Gateway_BlxrBatchTX_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BlxrBatchTXRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServer).BlxrBatchTX(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/gateway.Gateway/BlxrBatchTX",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServer).BlxrBatchTX(ctx, req.(*BlxrBatchTXRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -340,6 +409,27 @@ func _Gateway_DisconnectInboundPeer_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Gateway_NewTxs_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(NewTxsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(GatewayServer).NewTxs(m, &gatewayNewTxsServer{stream})
+}
+
+type Gateway_NewTxsServer interface {
+	Send(*NewTxsReply) error
+	grpc.ServerStream
+}
+
+type gatewayNewTxsServer struct {
+	grpc.ServerStream
+}
+
+func (x *gatewayNewTxsServer) Send(m *NewTxsReply) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 // Gateway_ServiceDesc is the grpc.ServiceDesc for Gateway service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -350,6 +440,10 @@ var Gateway_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BlxrTx",
 			Handler:    _Gateway_BlxrTx_Handler,
+		},
+		{
+			MethodName: "BlxrBatchTX",
+			Handler:    _Gateway_BlxrBatchTX_Handler,
 		},
 		{
 			MethodName: "Peers",
@@ -384,6 +478,12 @@ var Gateway_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Gateway_DisconnectInboundPeer_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "NewTxs",
+			Handler:       _Gateway_NewTxs_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "gateway.proto",
 }

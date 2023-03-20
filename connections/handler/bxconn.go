@@ -78,6 +78,7 @@ func NewBxConn(node connections.BxListener, connect func() (connections.Socket, 
 		sameRegion: sameRegion,
 	}
 	bc.stringRepresentation = fmt.Sprintf("%v/%v@<connecting...>", connectionType, bc.Conn)
+
 	return bc
 }
 
@@ -145,16 +146,19 @@ func (b *BxConn) Connect() error {
 	}
 
 	connInfo := b.Conn.Info()
+
 	b.peerID = connInfo.NodeID
 	b.accountID = connInfo.AccountID
 	b.connectedAt = b.clock.Now()
 	b.stringRepresentation = fmt.Sprintf("%v/%v@%v{%v}", b.connectionType, b.Conn, b.accountID, b.peerID)
+
 	b.log = log.WithFields(log.Fields{
 		"connType":   b.connectionType.String(),
 		"remoteAddr": fmt.Sprint(b.Conn),
 		"accountID":  b.accountID,
 		"peerID":     b.peerID,
 	})
+
 	return nil
 }
 
@@ -374,7 +378,7 @@ func (b *BxConn) readLoop() {
 		}
 
 		if isInitiator {
-			hello := bxmessage.Hello{NodeID: b.nodeID, Protocol: b.Protocol()}
+			hello := bxmessage.Hello{NodeID: b.nodeID, Protocol: bxmessage.CurrentProtocol}
 			hello.SetNetworkNum(b.networkNum)
 			nodeStatus := b.Node.NodeStatus()
 			hello.ClientVersion = nodeStatus.Version

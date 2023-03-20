@@ -15,13 +15,16 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/enode"
+	libp2pPeer "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multiaddr"
+	ecdsaprysm "github.com/prysmaticlabs/prysm/v3/crypto/ecdsa"
 	"github.com/urfave/cli/v2"
 )
 
 // PeerInfo contains the enode and websockets endpoint for an Ethereum peer
 type PeerInfo struct {
 	Enode     *enode.Node
-	IsBeacon  bool
+	Multiaddr *multiaddr.Multiaddr
 	EthWSURI  string
 	PrysmAddr string
 }
@@ -41,6 +44,7 @@ type EthConfig struct {
 	TTDOverrides            bool
 	Head                    common.Hash
 	Genesis                 common.Hash
+	ExecutionLayerForks     []string
 	BlockConfirmationsCount int
 	SendBlockConfirmation   bool
 
@@ -49,7 +53,7 @@ type EthConfig struct {
 }
 
 const privateKeyLen = 64
-const invalidMultiNodeErrMsg = "unable to parse --multi-node argument node number %d. Expected format: enode[+eth-ws-uri],enr[+prysm://prysm-host:prysm-port]"
+const invalidMultiNodeErrMsg = "unable to parse --multi-node argument node number %d. Expected format: enode[+eth-ws-uri],enr[+prysm://prysm-host:prysm-port],multiaddr[+prysm://prysm-host:prysm-port]"
 
 // NewPresetEthConfigFromCLI builds a new EthConfig from the command line context. Selects a specific network configuration based on the provided startup flag.
 func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, string, error) {
@@ -60,8 +64,8 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 
 	peers := make([]PeerInfo, 0)
 	if ctx.IsSet(utils.MultiNode.Name) {
-		if ctx.IsSet(utils.EnodesFlag.Name) || ctx.IsSet(utils.BeaconENRFlag.Name) || ctx.IsSet(utils.PrysmGRPCFlag.Name) || ctx.IsSet(utils.EthWSUriFlag.Name) {
-			return nil, "", errors.New("parameters --multi-node and (--enodes, --enr, --prysm-grpc-uri or --eth-ws-uri) should not be used simultaneously; if you would like to use multiple p2p or websockets connections, use --multi-node")
+		if ctx.IsSet(utils.EnodesFlag.Name) || ctx.IsSet(utils.BeaconENRFlag.Name) || ctx.IsSet(utils.BeaconMultiaddrFlag.Name) || ctx.IsSet(utils.PrysmGRPCFlag.Name) || ctx.IsSet(utils.EthWSUriFlag.Name) {
+			return nil, "", errors.New("parameters --multi-node and (--enodes, --enr, --multiaddr, --prysm-grpc-uri or --eth-ws-uri) should not be used simultaneously; if you would like to use multiple p2p or websockets connections, use --multi-node")
 		}
 		peers, err = ParseMultiNode(ctx.String(utils.MultiNode.Name))
 		if err != nil {
@@ -96,16 +100,26 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 			}
 			peers = append(peers, peer)
 		}
-		if ctx.IsSet(utils.BeaconENRFlag.Name) {
-			enodeString := ctx.String(utils.BeaconENRFlag.Name)
-			enode, err := enode.Parse(enode.ValidSchemes, enodeString)
-			if err != nil {
-				return nil, "", err
+		if ctx.IsSet(utils.BeaconENRFlag.Name) || ctx.IsSet(utils.BeaconMultiaddrFlag.Name) {
+			if ctx.IsSet(utils.BeaconENRFlag.Name) && ctx.IsSet(utils.BeaconMultiaddrFlag.Name) {
+				return nil, "", fmt.Errorf("parameters --enr and --multiaddr should not be used simultaneously; if you would like to use multiple p2p connections, use --multi-node")
 			}
 
-			peer := PeerInfo{
-				Enode:    enode,
-				IsBeacon: true,
+			peer := PeerInfo{}
+			if ctx.IsSet(utils.BeaconENRFlag.Name) {
+				multiaddr, err := multiaddrFromEnodeStr(ctx.String(utils.BeaconENRFlag.Name))
+				if err != nil {
+					return nil, "", fmt.Errorf("unable to parse --enr argument: %v", err)
+				}
+
+				peer.Multiaddr = &multiaddr
+			} else if ctx.IsSet(utils.BeaconMultiaddrFlag.Name) {
+				multiaddr, err := multiaddrFromStr(ctx.String(utils.BeaconMultiaddrFlag.Name))
+				if err != nil {
+					return nil, "", fmt.Errorf("unable to parse --multiaddr argument: %v", err)
+				}
+
+				peer.Multiaddr = &multiaddr
 			}
 
 			if ctx.IsSet(utils.PrysmGRPCFlag.Name) {
@@ -162,7 +176,7 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 
 	ln := enode.NewLocalNode(db, preset.PrivateKey)
 	ln.SetFallbackIP(net.IP{127, 0, 0, 1})
-	enode := ln.Node().URLv4()
+	node := ln.Node().URLv4()
 
 	if ctx.IsSet(utils.SendBlockConfirmation.Name) {
 		sendBCF := ctx.Bool(utils.SendBlockConfirmation.Name)
@@ -178,7 +192,7 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 		preset.TTDOverrides = true
 	}
 
-	return &preset, enode, nil
+	return &preset, node, nil
 }
 
 // ParseMultiNode parses a string into list of PeerInfo, according to expected format of multi-eth-ws-uri parameter
@@ -203,16 +217,37 @@ func ParseMultiNode(multiNodeStr string) ([]PeerInfo, error) {
 			connURIScheme := connURIParts[0]
 			switch connURIScheme {
 			case "enr":
-				peer.IsBeacon = true
-				fallthrough
-			case "enode":
-				enode, err := enode.Parse(enode.ValidSchemes, connURI)
-				if err != nil {
-					return nil, err
-				}
-				if peer.Enode != nil {
+				if peer.Enode != nil || peer.Multiaddr != nil {
 					return nil, fmt.Errorf(invalidMultiNodeErrMsg, i)
 				}
+
+				multiaddr, err := multiaddrFromEnodeStr(connURI)
+				if err != nil {
+					return nil, fmt.Errorf("invalid enr argument argument %d comma: %v", i, err)
+				}
+
+				peer.Multiaddr = &multiaddr
+			case "multiaddr":
+				if peer.Enode != nil || peer.Multiaddr != nil {
+					return nil, fmt.Errorf(invalidMultiNodeErrMsg, i)
+				}
+
+				multiaddr, err := multiaddrFromStr(connURIParts[1])
+				if err != nil {
+					return nil, fmt.Errorf("invalid multiaddr argument after %d comma: %v", i, err)
+				}
+
+				peer.Multiaddr = &multiaddr
+			case "enode":
+				if peer.Enode != nil || peer.Multiaddr != nil {
+					return nil, fmt.Errorf(invalidMultiNodeErrMsg, i)
+				}
+
+				enode, err := enode.Parse(enode.ValidSchemes, connURI)
+				if err != nil {
+					return nil, fmt.Errorf("invalid enode argument after %d comma: %v", i, err)
+				}
+
 				peer.Enode = enode
 			case "ws", "wss":
 				peer.EthWSURI = connURI
@@ -223,8 +258,8 @@ func ParseMultiNode(multiNodeStr string) ([]PeerInfo, error) {
 			}
 		}
 
-		if peer.Enode == nil {
-			return nil, fmt.Errorf("enode missed in --multi-node %d connection URI", i)
+		if peer.Enode == nil && peer.Multiaddr == nil {
+			return nil, fmt.Errorf("none of enode/enr/multiaddr were specified in --multi-node %d connection URI", i)
 		}
 
 		peers = append(peers, peer)
@@ -246,6 +281,95 @@ func validatePrysmGRPC(prysmGRPCUri string) error {
 	return nil
 }
 
+func parseEnodeMultiAddr(enodeStr string) (string, error) {
+	node, err := enode.Parse(enode.ValidSchemes, enodeStr)
+	if err != nil {
+		return "", fmt.Errorf("could not parse enode: %v", err)
+	}
+
+	pubkey := node.Pubkey()
+	assertedKey, err := ecdsaprysm.ConvertToInterfacePubkey(pubkey)
+	if err != nil {
+		return "", fmt.Errorf("could not get pubkey: %v", err)
+	}
+	id, err := libp2pPeer.IDFromPublicKey(assertedKey)
+	if err != nil {
+		return "", fmt.Errorf("could not get peer id: %v", err)
+	}
+
+	if node.TCP() == 0 {
+		return "", errors.New("TCP port should be set")
+	}
+
+	if node.IP().To4() == nil && node.IP().To16() == nil {
+		return "", fmt.Errorf("invalid ip address provided: %s", node.IP().String())
+	}
+
+	if node.IP().To4() != nil {
+		return fmt.Sprintf("/ip4/%s/tcp/%d/p2p/%s", node.IP().String(), node.TCP(), id.String()), nil
+	}
+
+	return fmt.Sprintf("/ip6/%s/tcp/%d/p2p/%s", node.IP().String(), node.TCP(), id.String()), nil
+}
+
+func multiaddrFromEnodeStr(enodeStr string) (multiaddr.Multiaddr, error) {
+	multiaddrStr, err := parseEnodeMultiAddr(enodeStr)
+	if err != nil {
+		return nil, err
+	}
+
+	return multiaddr.NewMultiaddr(multiaddrStr)
+}
+
+func multiaddrFromStr(multiAddr string) (multiaddr.Multiaddr, error) {
+	multiaddr, err := multiaddr.NewMultiaddr(multiAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := validateMultiaddr(multiaddr); err != nil {
+		return nil, err
+	}
+
+	return multiaddr, nil
+}
+
+func validateMultiaddr(multiAddr multiaddr.Multiaddr) error {
+	var ip, port, pubKey string
+	multiaddr.ForEach(multiAddr, func(c multiaddr.Component) bool {
+		switch c.Protocol().Code {
+		case multiaddr.P_IP6:
+			ip = c.Value()
+			return true
+		case multiaddr.P_IP4:
+			ip = c.Value()
+			return true
+		case multiaddr.P_TCP:
+			port = c.Value()
+			return true
+		case multiaddr.P_P2P:
+			pubKey = c.Value()
+			return true
+		}
+
+		return false
+	})
+
+	if ip == "" {
+		return errors.New("IP address is missing")
+	}
+
+	if port == "" {
+		return errors.New("TCP port is missing")
+	}
+
+	if pubKey == "" {
+		return errors.New("public key is missing")
+	}
+
+	return nil
+}
+
 // Update updates properties of the EthConfig pushed down from server configuration
 func (ec *EthConfig) Update(otherConfig EthConfig) {
 	ec.Network = otherConfig.Network
@@ -255,6 +379,7 @@ func (ec *EthConfig) Update(otherConfig EthConfig) {
 	}
 	ec.Head = otherConfig.Head
 	ec.Genesis = otherConfig.Genesis
+	ec.ExecutionLayerForks = otherConfig.ExecutionLayerForks
 	ec.BlockConfirmationsCount = otherConfig.BlockConfirmationsCount
 }
 
@@ -262,7 +387,7 @@ func (ec *EthConfig) Update(otherConfig EthConfig) {
 func (ec *EthConfig) StaticEnodes() []*enode.Node {
 	var enodesList []*enode.Node
 	for _, peerInfo := range ec.StaticPeers {
-		if !peerInfo.IsBeacon {
+		if peerInfo.Multiaddr == nil {
 			enodesList = append(enodesList, peerInfo.Enode)
 		}
 	}
@@ -270,11 +395,11 @@ func (ec *EthConfig) StaticEnodes() []*enode.Node {
 }
 
 // BeaconNodes makes a list of nodes for beacon
-func (ec *EthConfig) BeaconNodes() []string {
-	var beaconNodes []string
+func (ec *EthConfig) BeaconNodes() []*multiaddr.Multiaddr {
+	var beaconNodes []*multiaddr.Multiaddr
 	for _, peer := range ec.StaticPeers {
-		if peer.IsBeacon {
-			beaconNodes = append(beaconNodes, peer.Enode.String())
+		if peer.Multiaddr != nil {
+			beaconNodes = append(beaconNodes, peer.Multiaddr)
 		}
 	}
 

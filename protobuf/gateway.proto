@@ -1,12 +1,13 @@
 syntax = "proto3";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/bloXroute-Labs/gateway/gateway";
+option go_package = "github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/gateway";
 
 // The gateway service definition.
 package  gateway;
 service Gateway {
   rpc BlxrTx (BlxrTxRequest) returns (BlxrTxReply) {}
+  rpc BlxrBatchTX (BlxrBatchTXRequest) returns (BlxrBatchTXReply) {}
   rpc Peers (PeersRequest) returns (PeersReply) {}
   rpc TxStoreSummary(TxStoreRequest) returns (TxStoreReply) {}
   rpc GetTx(GetBxTransactionRequest) returns (GetBxTransactionResponse) {}
@@ -15,7 +16,35 @@ service Gateway {
   rpc Status (StatusRequest) returns (StatusResponse) {}
   rpc Subscriptions (SubscriptionsRequest) returns (SubscriptionsReply){}
   rpc DisconnectInboundPeer (DisconnectInboundPeerRequest) returns (DisconnectInboundPeerReply){}
+  rpc NewTxs (NewTxsRequest) returns (stream NewTxsReply){}
 
+}
+
+message NewTxsRequest{
+  string filters = 1;
+}
+
+message Tx{
+  string hash = 1;
+  string subscriptionID = 2;
+  string nonce = 3;
+  string gas_price = 4;
+  string gas = 5;
+  string to =6 ;
+  string value = 7;
+  string input = 8;
+  string v = 9;
+  string r = 10;
+  string s = 11;
+  string from = 12;
+  string type = 13;
+  string local_region = 14;
+  string time = 15;
+  string rawTx = 16;
+}
+
+message NewTxsReply{
+  repeated Tx tx = 1;
 }
 
 message DisconnectInboundPeerRequest {
@@ -96,6 +125,7 @@ message Peer {
   RateSnapshot paid_tx_burst_limit_excess = 21;
   RateSnapshot paid_tx_throughput = 22;
   RateSnapshot unpaid_tx_throughput = 23;
+  string trusted = 24;
 }
 
 message PeersReply {
@@ -143,12 +173,38 @@ message TxStoreReply {
 
 }
 
+message BlxrBatchTXRequest {
+  repeated string transactions = 1;
+  bool nonce_monitoring = 2;
+  bool next_validator = 3;
+  int32 fallback = 4;
+  bool validators_only = 5;
+  bool node_validation = 6;
+}
+
 message BlxrTxRequest {
   string transaction = 1;
+  bool nonce_monitoring = 2;
+  bool next_validator = 3;
 }
 
 message BlxrTxReply {
   string tx_hash = 1;
+}
+
+message TxIndex {
+  int32 idx = 1;
+  string tx_hash = 2;
+}
+
+message ErrorIndex {
+  int32 idx = 1;
+  string error = 2;
+}
+
+message BlxrBatchTXReply {
+  repeated TxIndex tx_hashes = 1;
+  repeated ErrorIndex tx_errors = 2;
 }
 
 message StatusRequest {}
@@ -181,8 +237,13 @@ message NodeConnStatus {
   string conn_status = 1;
   WsConnStatus ws_connection = 2;
   NodePerformance node_performance = 3;
+  // Inbound is not in use and kept for back compatibility
   bool Inbound = 4;
   bool IsConnected = 5;
+  bool Dynamic = 6;
+  int64 Version = 7;
+  string Name = 8;
+  string ConnectedAt = 9;
 }
 
 message BDNConnStatus {
@@ -215,4 +276,12 @@ message StatusResponse {
   map<string, NodeConnStatus> nodes = 3;
   map<string, BDNConnStatus> relays = 4;
   AccountInfo account_info = 1;
+}
+
+message TxResult {
+  string txHash = 1;
+  string txContents = 2;
+  bool localRegion = 3;
+  string time = 4;
+  string rawTx = 5;
 }

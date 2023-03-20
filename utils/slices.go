@@ -6,7 +6,7 @@ import (
 )
 
 // Exists - checks if a field exists in slice
-func Exists(field string, slice []string) bool {
+func Exists[K comparable](field K, slice []K) bool {
 	for _, valid := range slice {
 		if field == valid {
 			return true

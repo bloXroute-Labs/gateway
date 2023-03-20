@@ -44,7 +44,7 @@ type BlockAnnouncement struct {
 type ConnectionStatus struct {
 	PeerEndpoint types.NodeEndpoint
 	IsConnected  bool
-	IsInbound    bool
+	IsDynamic    bool
 }
 
 // Converter defines an interface for converting between blockchain and BDN transactions
@@ -53,7 +53,6 @@ type Converter interface {
 	TransactionBDNToBlockchain(*types.BxTransaction) (interface{}, error)
 	BlockBlockchainToBDN(interface{}) (*types.BxBlock, error)
 	BlockBDNtoBlockchain(block *types.BxBlock) (interface{}, error)
-	BxBlockToCanonicFormat(*types.BxBlock, []*types.FutureValidatorInfo) (types.BlockNotification, types.BlockNotification, error)
 }
 
 // constants for transaction channel buffer sizes
@@ -266,7 +265,7 @@ func (b BxBridge) SendBlockToNode(block *types.BxBlock) error {
 		default:
 			return ErrChannelFull
 		}
-	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix:
+	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella:
 		// No listener, `b.beaconBlock` is true if the gateway started with a beacon P2P node
 		if !b.beaconBlock {
 			return nil

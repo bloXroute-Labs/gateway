@@ -43,5 +43,6 @@ type WSProvider interface {
 	FetchTransaction(payload []interface{}, options RPCOptions) (interface{}, error)
 	FetchBlock(payload []interface{}, options RPCOptions) (interface{}, error)
 	FetchTransactionReceipt(payload []interface{}, options RPCOptions) (interface{}, error)
+	SendTransaction(rawTx string, options RPCOptions) (interface{}, error)
 	Log() *log.Entry
 }

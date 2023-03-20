@@ -1,8 +1,9 @@
 package bxgateway
 
 import (
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"time"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // MaxConnectionBacklog in addition to the socket write buffer and remote socket read buffer.
@@ -139,20 +140,29 @@ const BSCMainnet = "BSC-Mainnet"
 // Ropsten - for Ropsten blockchain network name
 const Ropsten = "Ropsten"
 
+// Zhejiang - for Zhejiang blockchain network name
+const Zhejiang = "Zhejiang"
+
+// Goerli - for Goerli blockchain network name
+const Goerli = "Goerli"
+
 // PolygonMainnet - for Polygon main net blockchain network name
 const PolygonMainnet = "Polygon-Mainnet"
 
-//MainnetNum - for Ethereum main net blockchain network number
-const MainnetNum = 5
+// MainnetNum - for Ethereum main net blockchain network number
+const MainnetNum types.NetworkNum = 5
 
-//BSCMainnetNum - for BSC main net blockchain network number
-const BSCMainnetNum = 10
+// BSCMainnetNum - for BSC main net blockchain network number
+const BSCMainnetNum types.NetworkNum = 10
+
+// BSCChainID - BSC chain ID
+const BSCChainID = 56
 
 // RopstenNum - for Ropsten blockchain network number
-const RopstenNum = 32
+const RopstenNum types.NetworkNum = 32
 
-//PolygonMainnetNum - for Polygon main net blockchain network number
-const PolygonMainnetNum = 36
+// PolygonMainnetNum - for Polygon main net blockchain network number
+const PolygonMainnetNum types.NetworkNum = 36
 
 // BlockchainNetworkToNetworkNum converts blockchain network to number
 var BlockchainNetworkToNetworkNum = map[string]types.NetworkNum{

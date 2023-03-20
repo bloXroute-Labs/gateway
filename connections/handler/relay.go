@@ -1,12 +1,18 @@
 package handler
 
 import (
+	"encoding/hex"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
+	upscale_client "github.com/bloXroute-Labs/upscale-client"
+	upscale_types "github.com/bloXroute-Labs/upscale-client/types"
+	"net"
+	"strconv"
+	"strings"
 	"sync/atomic"
 )
 
@@ -29,7 +35,7 @@ func NewOutboundRelay(node connections.BxListener,
 			return connections.NewTLS(relayIP, int(relayPort), sslCerts)
 		},
 		sslCerts, relayIP, relayPort, nodeID, relayType, usePQ, networks, localGEO, privateNetwork, connections.LocalInitiatedPort, clock,
-		sameRegion, sendSyncReq, false)
+		sameRegion, sendSyncReq)
 }
 
 // NewInboundRelay builds a relay connection from a socket event initiated by a remote relay node
@@ -43,7 +49,7 @@ func NewInboundRelay(node connections.BxListener,
 			return socket, nil
 		},
 		sslCerts, relayIP, connections.RemoteInitiatedPort, nodeID, relayType, usePQ, networks, localGEO, privateNetwork, localPort, clock,
-		sameRegion, sendSyncReq, true)
+		sameRegion, sendSyncReq)
 }
 
 // NewRelay should only be called from test cases or NewOutboundRelay. It allows specifying a particular connect function for the SSL socket. However, in essentially all usages this should not be necessary as any node will initiate a connection to the relay, and as such should just use the default connect function to open a new socket.
@@ -51,7 +57,7 @@ func NewRelay(node connections.BxListener,
 	connect func() (connections.Socket, error), sslCerts *utils.SSLCerts, relayIP string, relayPort int64,
 	nodeID types.NodeID, relayType utils.NodeType, usePQ bool, networks *sdnmessage.BlockchainNetworks,
 	localGEO bool, privateNetwork bool, localPort int64, clock utils.Clock,
-	sameRegion bool, sendSyncReq bool, inbound bool) *Relay {
+	sameRegion bool, sendSyncReq bool) *Relay {
 	if networks == nil {
 		log.Panicf("TxStore sync: networks not provided. Please provide empty list of networks")
 	}
@@ -59,9 +65,8 @@ func NewRelay(node connections.BxListener,
 		networks:    networks,
 		sendSyncReq: sendSyncReq,
 		endpoint: types.NodeEndpoint{
-			IP:      relayIP,
-			Port:    int(relayPort),
-			Inbound: inbound,
+			IP:   relayIP,
+			Port: int(relayPort),
 		},
 	}
 	r.BxConn = NewBxConn(node, connect, r, sslCerts, relayIP, relayPort, nodeID, relayType,
@@ -72,6 +77,24 @@ func NewRelay(node connections.BxListener,
 // NodeEndpoint return the blockchain connection endpoint
 func (r *Relay) NodeEndpoint() types.NodeEndpoint {
 	return r.endpoint
+}
+
+func (r *Relay) addBdnToUpscale() {
+	const NOTINUSE = 0
+	ipPort := net.JoinHostPort(r.Info().PeerIP, strconv.FormatInt(r.Info().PeerPort, 10))
+	addr, err := net.ResolveTCPAddr("tcp", ipPort)
+	if err != nil {
+		panic("relay ip port is invalid")
+	}
+
+	r.endpoint.ID = strings.Replace(string(r.peerID), "-", "", -1)
+	var relayID upscale_types.ID
+	idByte, err := hex.DecodeString(r.endpoint.ID)
+	if err != nil {
+		panic("failed to convert node id to byte")
+	}
+	copy(relayID[:], idByte)
+	upscale_client.PeerAdded(NOTINUSE, relayID, "", addr, "bdn", "")
 }
 
 // ProcessMessage handles messages received on the relay connection, delegating to the BxListener when appropriate
@@ -90,9 +113,13 @@ func (r *Relay) ProcessMessage(msg bxmessage.MessageBytes) {
 		_ = tx.Unpack(msg, r.Protocol())
 		_ = r.Node.HandleMsg(tx, r, connections.RunForeground)
 	case bxmessage.HelloType:
+		// if the running program is gw and the connected component is relay - we want to add the relay as an active peer to upscale
+		if r.Node.NodeStatus().Capabilities&types.CapabilityBDN != 0 &&
+			r.Info().IsRelay() {
+			r.addBdnToUpscale()
+		}
 		r.BxConn.ProcessMessage(msg)
 		r.syncDoneCount = 0
-
 		if !r.sendSyncReq {
 			break
 		}
