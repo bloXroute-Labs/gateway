@@ -74,6 +74,6 @@ func relayConn() (bxmock.MockTLS, *Relay) {
 			return tls, nil
 		},
 		&certs, ip, port, "", utils.RelayTransaction, true, &sdnmessage.BlockchainNetworks{}, true, false, 0, utils.RealClock{},
-		false, true, false)
+		false, true)
 	return tls, r
 }

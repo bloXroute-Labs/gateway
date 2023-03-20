@@ -17,26 +17,6 @@ func NewNoOpBridge(converter Converter) Bridge {
 	}
 }
 
-// TransactionBlockchainToBDN is a no-op
-func (n NoOpBxBridge) TransactionBlockchainToBDN(i interface{}) (*types.BxTransaction, error) {
-	return nil, nil
-}
-
-// TransactionBDNToBlockchain is a no-op
-func (n NoOpBxBridge) TransactionBDNToBlockchain(transaction *types.BxTransaction) (interface{}, error) {
-	return nil, nil
-}
-
-// BlockBlockchainToBDN is a no-op
-func (n NoOpBxBridge) BlockBlockchainToBDN(i interface{}) (*types.BxBlock, error) {
-	return nil, nil
-}
-
-// BlockBDNtoBlockchain is a no-op
-func (n NoOpBxBridge) BlockBDNtoBlockchain(block *types.BxBlock) (interface{}, error) {
-	return nil, nil
-}
-
 // ReceiveNetworkConfigUpdates is a no-op
 func (n NoOpBxBridge) ReceiveNetworkConfigUpdates() <-chan network.EthConfig {
 	return make(chan network.EthConfig)

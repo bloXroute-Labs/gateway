@@ -32,9 +32,10 @@ type BdnPerformanceStatsData struct {
 	NewTxReceivedFromBdn            uint32
 	TxSentToNode                    uint32
 	DuplicateTxFromNode             uint32
-	Inbound                         bool
+	Dynamic                         bool
 	IsConnected                     bool
 	IsBeacon                        bool
+	BlockchainNetwork               string
 }
 
 // BdnPerformanceStats - represent the "bdnstats" message
@@ -48,9 +49,9 @@ type BdnPerformanceStats struct {
 	burstLimitedTransactionsPaid   uint16
 	burstLimitedTransactionsUnpaid uint16
 
-	outboundConnections int64
-	inboundConnections  int64
-	lock                sync.Mutex
+	staticConnections  int64
+	dynamicConnections int64
+	lock               sync.Mutex
 }
 
 // NewBDNStats returns a new instance of BDNPerformanceStats
@@ -63,6 +64,7 @@ func NewBDNStats(blockchainPeers []types.NodeEndpoint) *BdnPerformanceStats {
 	for _, endpoint := range blockchainPeers {
 		newStatsData := BdnPerformanceStatsData{}
 		newStatsData.IsBeacon = endpoint.IsBeacon
+		newStatsData.BlockchainNetwork = endpoint.BlockchainNetwork
 		bdnStats.nodeStats[endpoint.IPPort()] = &newStatsData
 	}
 	return &bdnStats
@@ -70,7 +72,7 @@ func NewBDNStats(blockchainPeers []types.NodeEndpoint) *BdnPerformanceStats {
 
 // GetConnectionsCount return inbound/outbound connections
 func (bs *BdnPerformanceStats) GetConnectionsCount() (int64, int64) {
-	return bs.inboundConnections, bs.outboundConnections
+	return bs.dynamicConnections, bs.staticConnections
 }
 
 // IsGatewayAllow checks if gateway connected with too many peers
@@ -105,7 +107,7 @@ func (bs *BdnPerformanceStats) CloseInterval() *BdnPerformanceStats {
 
 	nodeStats := map[string]*BdnPerformanceStatsData{}
 	for endpoint, stat := range bs.nodeStats {
-		if !stat.Inbound {
+		if !stat.Dynamic {
 			newStatsData := BdnPerformanceStatsData{}
 			newStatsData.IsBeacon = stat.IsBeacon
 			newStatsData.IsConnected = stat.IsConnected
@@ -146,22 +148,25 @@ func (bs *BdnPerformanceStats) LogNewBlockFromNode(node types.NodeEndpoint) {
 	nodeStats := bs.getOrCreateNodeStats(node)
 	nodeStats.NewBlocksReceivedFromBlockchainNode++
 	for endpoint, stats := range bs.nodeStats {
-		if !stats.IsConnected {
+		if !stats.IsConnected || (stats.BlockchainNetwork == bxgateway.Mainnet && !stats.IsBeacon) {
 			continue
 		}
 		stats.NewBlocksSeen++
-		if endpoint == node.IPPort() {
-			continue
+		if endpoint == node.IPPort() || (!stats.IsBeacon && node.BlockchainNetwork == bxgateway.Mainnet) { // if the stats is the source blockchain then counter already updated.
+			continue // Or if the stats is for execution layer then no need to update block counter
 		}
 		stats.NewBlocksReceivedFromBdn++
 	}
 }
 
 // LogNewBlockFromBDN logs a new block from the BDN and new block seen in the stats for all nodes
-func (bs *BdnPerformanceStats) LogNewBlockFromBDN() {
+func (bs *BdnPerformanceStats) LogNewBlockFromBDN(blockchainNetwork string) {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
 	for _, stats := range bs.nodeStats {
+		if !stats.IsBeacon && blockchainNetwork == bxgateway.Mainnet { // no need to update execution layer block counter
+			continue
+		}
 		if stats.IsConnected {
 			stats.NewBlocksSeen++
 			stats.NewBlocksReceivedFromBdn++
@@ -173,6 +178,10 @@ func (bs *BdnPerformanceStats) LogNewBlockFromBDN() {
 func (bs *BdnPerformanceStats) LogNewBlockMessageFromNode(node types.NodeEndpoint) {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
+	if node.BlockchainNetwork == bxgateway.Mainnet && !node.IsBeacon { // no need to update execution layer block counter
+		return
+	}
+
 	nodeStats := bs.getOrCreateNodeStats(node)
 	nodeStats.NewBlockMessagesFromBlockchainNode++
 }
@@ -192,7 +201,9 @@ func (bs *BdnPerformanceStats) LogNewTxFromNode(node types.NodeEndpoint) {
 
 	bs.getOrCreateNodeStats(node)
 	for endpoint, stats := range bs.nodeStats {
-		if endpoint == node.IPPort() {
+		if (stats.IsBeacon && node.BlockchainNetwork == bxgateway.Mainnet) || !stats.IsConnected { // do not update tx counter for consensus layer
+			continue
+		} else if endpoint == node.IPPort() {
 			stats.IsConnected = true
 			stats.NewTxReceivedFromBlockchainNode++
 			continue
@@ -216,7 +227,7 @@ func (bs *BdnPerformanceStats) SetBlockchainConnectionStatus(status blockchain.C
 
 	// if node is connected and does not exist in the peers, need to add it, else return with an error
 	if status.IsConnected {
-		stats := &BdnPerformanceStatsData{Inbound: status.PeerEndpoint.Inbound, IsConnected: true}
+		stats := &BdnPerformanceStatsData{Dynamic: status.PeerEndpoint.Dynamic, IsConnected: true}
 		bs.nodeStats[nodeIPPort] = stats
 	}
 }
@@ -226,6 +237,9 @@ func (bs *BdnPerformanceStats) LogNewTxFromBDN() {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
 	for _, stats := range bs.nodeStats {
+		if (stats.IsBeacon && stats.BlockchainNetwork == bxgateway.Mainnet) || !stats.IsConnected {
+			continue
+		}
 		stats.NewTxReceivedFromBdn++
 	}
 }
@@ -235,18 +249,9 @@ func (bs *BdnPerformanceStats) LogTxSentToAllNodesExceptSourceNode(sourceNode ty
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
 	for endpoint, stats := range bs.nodeStats {
-		if endpoint == sourceNode.IPPort() {
+		if endpoint == sourceNode.IPPort() || !stats.IsConnected || (stats.IsBeacon && stats.BlockchainNetwork == bxgateway.Mainnet) {
 			continue
 		}
-		stats.TxSentToNode++
-	}
-}
-
-// LogTxSentToNodes logs a tx sent to all blockchain node
-func (bs *BdnPerformanceStats) LogTxSentToNodes() {
-	bs.lock.Lock()
-	defer bs.lock.Unlock()
-	for _, stats := range bs.nodeStats {
 		stats.TxSentToNode++
 	}
 }
@@ -310,9 +315,10 @@ func (bs *BdnPerformanceStats) getNodeStats(node types.NodeEndpoint) (*BdnPerfor
 func (bs *BdnPerformanceStats) getOrCreateNodeStats(node types.NodeEndpoint) *BdnPerformanceStatsData {
 	stats, ok := bs.nodeStats[node.IPPort()]
 	if !ok {
-		stats = &BdnPerformanceStatsData{IsBeacon: node.IsBeacon, Inbound: true, IsConnected: true}
-		if !node.Inbound {
-			log.Debugf("override the inbound for node %v", node.IPPort())
+		// right now we are not supporting beacon inbound connections, so for ETH inbound will be false and for BSC and Polygon it will be true
+		stats = &BdnPerformanceStatsData{IsBeacon: node.IsBeacon, Dynamic: true, IsConnected: true}
+		if !node.Dynamic {
+			log.Debugf("override the dynamic to true for node %v", node.IPPort())
 		}
 		bs.nodeStats[node.IPPort()] = stats
 	}
@@ -338,7 +344,7 @@ func (bs *BdnPerformanceStats) Pack(protocol Protocol) ([]byte, error) {
 	nodeStatsLen := len(bs.nodeStats)
 	if protocol < GatewayInboundConnections {
 		for _, nodeStats := range bs.nodeStats {
-			if nodeStats.Inbound {
+			if nodeStats.Dynamic {
 				nodeStatsLen--
 			}
 		}
@@ -354,13 +360,14 @@ func (bs *BdnPerformanceStats) Pack(protocol Protocol) ([]byte, error) {
 	binary.LittleEndian.PutUint16(buf[offset:], uint16(nodeStatsLen))
 	offset += types.UInt16Len
 	for endpoint, nodeStats := range bs.nodeStats {
-		if protocol < GatewayInboundConnections && nodeStats.Inbound {
+		if protocol < GatewayInboundConnections && nodeStats.Dynamic {
 			continue
 		}
 		if protocol < IsConnectedToGateway && !nodeStats.IsConnected {
 			continue
 		}
 		ipPort := strings.Split(endpoint, " ")
+		log.Tracef("sending bdnperformancestats with %v, %v, %v", endpoint, nodeStats.IsConnected, nodeStats.Dynamic)
 		port, err := strconv.Atoi(ipPort[1])
 		if err != nil {
 			return nil, err
@@ -409,7 +416,7 @@ func (bs *BdnPerformanceStats) Pack(protocol Protocol) ([]byte, error) {
 		switch {
 		case protocol < GatewayInboundConnections:
 		default:
-			if nodeStats.Inbound {
+			if nodeStats.Dynamic {
 				copy(buf[offset:], []uint8{1})
 			} else {
 				copy(buf[offset:], []uint8{0})
@@ -517,14 +524,14 @@ func (bs *BdnPerformanceStats) Unpack(buf []byte, protocol Protocol) error {
 		switch {
 		case protocol < GatewayInboundConnections:
 			if !singleNodeStats.IsBeacon && (protocol < IsConnectedToGateway || singleNodeStats.IsConnected) {
-				bs.outboundConnections++
+				bs.staticConnections++
 			}
 		default:
-			singleNodeStats.Inbound = int(buf[offset]) != 0
-			if singleNodeStats.Inbound {
-				bs.inboundConnections++
+			singleNodeStats.Dynamic = int(buf[offset]) != 0
+			if singleNodeStats.Dynamic && singleNodeStats.IsConnected {
+				bs.dynamicConnections++
 			} else if !singleNodeStats.IsBeacon && (protocol < IsConnectedToGateway || singleNodeStats.IsConnected) {
-				bs.outboundConnections++
+				bs.staticConnections++
 			}
 			offset++
 		}
@@ -551,7 +558,7 @@ func (bs *BdnPerformanceStats) Log() {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
 	for endpoint, nodeStats := range bs.NodeStats() {
-		log.Infof("%v [%v - %v]: Received %v blocks and %v transactions from the BDN. Received transactions from node: %v", endpoint, bs.StartTime().Format(bxgateway.TimeLayoutISO), bs.EndTime().Format(bxgateway.TimeLayoutISO), nodeStats.NewBlocksReceivedFromBdn, nodeStats.NewTxReceivedFromBdn, nodeStats.NewTxReceivedFromBlockchainNode)
+		log.Infof("%v [%v - %v]: Received %v blocks and %v transactions from the BDN. Received transactions from node: %v, is connected %v", endpoint, bs.StartTime().Format(bxgateway.TimeLayoutISO), bs.EndTime().Format(bxgateway.TimeLayoutISO), nodeStats.NewBlocksReceivedFromBdn, nodeStats.NewTxReceivedFromBdn, nodeStats.NewTxReceivedFromBlockchainNode, nodeStats.IsConnected)
 	}
 }
 

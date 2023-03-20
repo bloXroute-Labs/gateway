@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/connections/handler"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	pbbase "github.com/bloXroute-Labs/gateway/v2/protobuf"
+	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
@@ -25,24 +27,31 @@ const (
 	pingInterval = 15 * time.Second
 )
 
+// AccountsFetcher method for getting sdnmessage.Account.
+type AccountsFetcher interface {
+	GetAccount(accountID types.AccountID) *sdnmessage.Account
+}
+
 // Bx is a base struct for bloxroute nodes
 type Bx struct {
 	Abstract
 	BxConfig        *config.Bx
 	ConnectionsLock *sync.RWMutex
 	Connections     connections.ConnList
+	AccountsFetcher AccountsFetcher
 	dataDir         string
 	clock           utils.RealClock
 }
 
 // NewBx initializes a generic Bx node struct
-func NewBx(bxConfig *config.Bx, dataDir string) Bx {
+func NewBx(bxConfig *config.Bx, dataDir string, accountsFetcher AccountsFetcher) Bx {
 	return Bx{
 		BxConfig:        bxConfig,
 		Connections:     make(connections.ConnList, 0),
 		ConnectionsLock: &sync.RWMutex{},
 		dataDir:         dataDir,
 		clock:           utils.RealClock{},
+		AccountsFetcher: accountsFetcher,
 	}
 }
 
@@ -210,6 +219,15 @@ func (bn *Bx) Peers(_ context.Context, req *pbbase.PeersRequest) (*pbbase.PeersR
 			continue
 		}
 		connType := connInfo.ConnectionType.String()
+
+		var trusted string
+
+		if bn.AccountsFetcher != nil {
+			if accountModel := bn.AccountsFetcher.GetAccount(connInfo.AccountID); accountModel != nil {
+				trusted = strconv.FormatBool(accountModel.IsTrusted())
+			}
+		}
+
 		peer := &pbbase.Peer{
 			Ip:         connInfo.PeerIP,
 			NodeId:     string(connInfo.NodeID),
@@ -221,6 +239,7 @@ func (bn *Bx) Peers(_ context.Context, req *pbbase.PeersRequest) (*pbbase.PeersR
 			Port:       conn.Info().LocalPort,
 			Disabled:   conn.IsDisabled(),
 			Capability: uint32(conn.Info().Capabilities),
+			Trusted:    trusted,
 		}
 		if bxConn, ok := conn.(*handler.BxConn); ok {
 			peer.MinMsFromPeer, peer.MinMsToPeer, peer.SlowTrafficCount, peer.MinMsRoundTrip = bxConn.GetMinLatencies()

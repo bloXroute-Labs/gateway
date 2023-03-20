@@ -2,15 +2,158 @@ package types
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/prysmaticlabs/prysm/v3/consensus-types/interfaces"
 	ethpb "github.com/prysmaticlabs/prysm/v3/proto/prysm/v1alpha1"
+	"github.com/prysmaticlabs/prysm/v3/runtime/version"
 )
 
-// BellatrixBlockNotification represents bellatrix beacon block
+// NewBeaconBlockNotification creates beacon block notification
+func NewBeaconBlockNotification(block interfaces.ReadOnlySignedBeaconBlock) (BlockNotification, error) {
+	switch block.Version() {
+	case version.Bellatrix:
+		blk, err := block.PbBellatrixBlock()
+		if err != nil {
+			return nil, err
+		}
+
+		hash, err := blk.GetBlock().HashTreeRoot()
+		if err != nil {
+			return nil, err
+		}
+
+		return &BellatrixBlockNotification{
+			Hash:                       hex.EncodeToString(hash[:]),
+			SignedBeaconBlockBellatrix: blk,
+		}, nil
+	case version.Capella:
+		blk, err := block.PbCapellaBlock()
+		if err != nil {
+			return nil, err
+		}
+
+		hash, err := blk.GetBlock().HashTreeRoot()
+		if err != nil {
+			return nil, err
+		}
+
+		return &CapellaBlockNotification{
+			Hash:                     hex.EncodeToString(hash[:]),
+			SignedBeaconBlockCapella: blk,
+		}, nil
+	default:
+		return nil, fmt.Errorf("not supported %s", version.String(block.Version()))
+	}
+}
+
+// CapellaBlockNotification represents capella beacon block notification
+type CapellaBlockNotification struct {
+	*ethpb.SignedBeaconBlockCapella
+
+	Hash string `json:"hash"`
+
+	notificationType FeedType      `json:"-"`
+	source           *NodeEndpoint `json:"-"`
+}
+
+// WithFields returns notification with specified fields
+func (beaconBlockNotification *CapellaBlockNotification) WithFields(fields []string) Notification {
+	block := CapellaBlockNotification{}
+	for _, param := range fields {
+		switch param {
+		case "hash":
+			block.Hash = beaconBlockNotification.Hash
+		case "header":
+			if block.SignedBeaconBlockCapella == nil {
+				block.SignedBeaconBlockCapella = &ethpb.SignedBeaconBlockCapella{}
+			}
+
+			if block.Block == nil {
+				block.Block = &ethpb.BeaconBlockCapella{}
+			}
+
+			block.Block.Slot = beaconBlockNotification.GetBlock().GetSlot()
+			block.Block.ProposerIndex = beaconBlockNotification.GetBlock().GetProposerIndex()
+			block.Block.ParentRoot = beaconBlockNotification.GetBlock().GetParentRoot()
+			block.Block.StateRoot = beaconBlockNotification.GetBlock().GetStateRoot()
+		case "slot":
+			if block.SignedBeaconBlockCapella == nil {
+				block.SignedBeaconBlockCapella = &ethpb.SignedBeaconBlockCapella{}
+			}
+
+			if block.SignedBeaconBlockCapella.Block == nil {
+				block.Block = &ethpb.BeaconBlockCapella{}
+			}
+
+			block.Block.Slot = beaconBlockNotification.GetBlock().GetSlot()
+		case "body":
+			if block.SignedBeaconBlockCapella == nil {
+				block.SignedBeaconBlockCapella = &ethpb.SignedBeaconBlockCapella{}
+			}
+
+			if block.SignedBeaconBlockCapella.Block == nil {
+				block.Block = &ethpb.BeaconBlockCapella{}
+			}
+
+			block.Block.Body = beaconBlockNotification.GetBlock().GetBody()
+		}
+	}
+
+	return &block
+}
+
+// Filters converts filters as field value map
+func (beaconBlockNotification *CapellaBlockNotification) Filters(filters []string) map[string]interface{} {
+	return nil
+}
+
+// LocalRegion -
+func (beaconBlockNotification *CapellaBlockNotification) LocalRegion() bool {
+	return false
+}
+
+// GetHash returns block hash
+func (beaconBlockNotification *CapellaBlockNotification) GetHash() string {
+	return beaconBlockNotification.Hash
+}
+
+// SetNotificationType - set feed name
+func (beaconBlockNotification *CapellaBlockNotification) SetNotificationType(feedName FeedType) {
+	beaconBlockNotification.notificationType = feedName
+}
+
+// NotificationType - feed name
+func (beaconBlockNotification *CapellaBlockNotification) NotificationType() FeedType {
+	return beaconBlockNotification.notificationType
+}
+
+// SetSource - source blockchain node endpoint
+func (beaconBlockNotification *CapellaBlockNotification) SetSource(source *NodeEndpoint) {
+	beaconBlockNotification.source = source
+}
+
+// Source - source blockchain node endpoint
+func (beaconBlockNotification *CapellaBlockNotification) Source() *NodeEndpoint {
+	return beaconBlockNotification.source
+}
+
+// IsNil returns true if nil
+func (beaconBlockNotification *CapellaBlockNotification) IsNil() bool {
+	return beaconBlockNotification == nil
+}
+
+// Clone clones notification
+func (beaconBlockNotification *CapellaBlockNotification) Clone() BlockNotification {
+	n := *beaconBlockNotification
+	return &n
+}
+
+// BellatrixBlockNotification represents bellatrix beacon block notification
 type BellatrixBlockNotification struct {
 	*ethpb.SignedBeaconBlockBellatrix
 
@@ -20,7 +163,7 @@ type BellatrixBlockNotification struct {
 	source           *NodeEndpoint `json:"-"`
 }
 
-// WithFields -
+// WithFields returns notification with specified fields
 func (beaconBlockNotification *BellatrixBlockNotification) WithFields(fields []string) Notification {
 	block := BellatrixBlockNotification{}
 	for _, param := range fields {
@@ -66,7 +209,7 @@ func (beaconBlockNotification *BellatrixBlockNotification) WithFields(fields []s
 	return &block
 }
 
-// Filters -
+// Filters converts filters as field value map
 func (beaconBlockNotification *BellatrixBlockNotification) Filters(filters []string) map[string]interface{} {
 	return nil
 }
@@ -76,7 +219,7 @@ func (beaconBlockNotification *BellatrixBlockNotification) LocalRegion() bool {
 	return false
 }
 
-// GetHash -
+// GetHash returns block hash
 func (beaconBlockNotification *BellatrixBlockNotification) GetHash() string {
 	return beaconBlockNotification.Hash
 }
@@ -123,6 +266,46 @@ type EthBlockNotification struct {
 	source           *NodeEndpoint
 }
 
+// NewEthBlockNotification creates ETH block notification
+func NewEthBlockNotification(hash ethcommon.Hash, block *ethtypes.Block, info []*FutureValidatorInfo) (*EthBlockNotification, error) {
+	if hash == (ethcommon.Hash{}) {
+		return nil, errors.New("empty block hash")
+	}
+
+	ethTxs := make([]map[string]interface{}, 0)
+	for _, tx := range block.Transactions() {
+		var ethTx *EthTransaction
+		txHash, err := NewSHA256Hash(tx.Hash().Bytes())
+		if err != nil {
+			return nil, err
+		}
+
+		// send EmptySender to cause extraction of real sender
+		ethTx, err = NewEthTransaction(txHash, tx, EmptySender)
+		if err != nil {
+			return nil, err
+		}
+		fields := ethTx.Fields(AllFields)
+		// todo: calculate gasPrice for DynamicFeeTxType properly
+		if ethTx.Type() == ethtypes.DynamicFeeTxType {
+			fields["gasPrice"] = fields["maxFeePerGas"]
+		}
+		ethTxs = append(ethTxs, ethTx.Fields(AllFields))
+	}
+	ethUncles := make([]Header, 0, len(block.Uncles()))
+	for _, uncle := range block.Uncles() {
+		ethUncle := ConvertEthHeaderToBlockNotificationHeader(uncle)
+		ethUncles = append(ethUncles, *ethUncle)
+	}
+	return &EthBlockNotification{
+		BlockHash:     &hash,
+		Header:        ConvertEthHeaderToBlockNotificationHeader(block.Header()),
+		Transactions:  ethTxs,
+		Uncles:        ethUncles,
+		ValidatorInfo: info,
+	}, nil
+}
+
 // FutureValidatorInfo - represents information about the validator information of the second block after the current block
 type FutureValidatorInfo struct {
 	BlockHeight uint64 `json:"block_height"`
@@ -148,6 +331,7 @@ type Header struct {
 	MixHash          ethcommon.Hash     `json:"mixHash"`
 	Nonce            string             `json:"nonce"`
 	BaseFee          *int               `json:"baseFeePerGas,omitempty"`
+	WithdrawalsHash  *ethcommon.Hash    `json:"withdrawalsRoot,omitempty"`
 	hexNumber        uint64
 }
 
@@ -175,6 +359,7 @@ func ConvertEthHeaderToBlockNotificationHeader(ethHeader *ethtypes.Header) *Head
 		ExtraData:        hexutil.Encode(ethHeader.Extra),
 		MixHash:          ethHeader.MixDigest,
 		Nonce:            hexutil.EncodeUint64(ethHeader.Nonce.Uint64()),
+		WithdrawalsHash:  ethHeader.WithdrawalsHash,
 	}
 	if ethHeader.BaseFee != nil {
 		baseFee := int(ethHeader.BaseFee.Int64())
@@ -183,7 +368,7 @@ func ConvertEthHeaderToBlockNotificationHeader(ethHeader *ethtypes.Header) *Head
 	return &newHeader
 }
 
-// WithFields -
+// WithFields returns notification with specified fields
 func (ethBlockNotification *EthBlockNotification) WithFields(fields []string) Notification {
 	block := EthBlockNotification{}
 	for _, param := range fields {
@@ -203,7 +388,7 @@ func (ethBlockNotification *EthBlockNotification) WithFields(fields []string) No
 	return &block
 }
 
-// Filters -
+// Filters converts filters as field value map
 func (ethBlockNotification *EthBlockNotification) Filters(filters []string) map[string]interface{} {
 	return nil
 }
@@ -213,7 +398,7 @@ func (ethBlockNotification *EthBlockNotification) LocalRegion() bool {
 	return false
 }
 
-// GetHash -
+// GetHash returns block hash
 func (ethBlockNotification *EthBlockNotification) GetHash() string {
 	return ethBlockNotification.BlockHash.Hex()
 }

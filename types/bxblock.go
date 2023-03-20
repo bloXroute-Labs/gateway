@@ -20,6 +20,7 @@ const (
 	BxBlockTypeBeaconPhase0
 	BxBlockTypeBeaconAltair
 	BxBlockTypeBeaconBellatrix
+	BxBlockTypeBeaconCapella
 )
 
 // String implements Stringer interface
@@ -33,6 +34,8 @@ func (t BxBlockType) String() string {
 		return "altair"
 	case BxBlockTypeBeaconBellatrix:
 		return "bellatrix"
+	case BxBlockTypeBeaconCapella:
+		return "capella"
 	default:
 		return ""
 	}
@@ -113,16 +116,16 @@ func NewRawBxBlock(hash, beaconHash SHA256Hash, bType BxBlockType, header []byte
 // String implements Stringer interface
 func (b BxBlock) String() string {
 	if b.IsBeaconBlock() {
-		return fmt.Sprintf("hash: %s, beacon hash: %s, type: %s, height: %d", b.hash, b.beaconHash, b.Type, b.Number.Uint64())
+		return fmt.Sprintf("block beacon(hash: %s, beacon hash: %s, type: %s, number: %d, txs: %d)", b.hash, b.beaconHash, b.Type, b.Number.Uint64(), len(b.Txs))
 	}
 
-	return fmt.Sprintf("hash: %s, type: %s, height: %d", b.hash, b.Type, b.Number.Uint64())
+	return fmt.Sprintf("block(hash: %s, type: %s, number: %d, txs: %d)", b.hash, b.Type, b.Number.Uint64(), len(b.Txs))
 }
 
 // IsBeaconBlock returns true if block is beacon
 func (b *BxBlock) IsBeaconBlock() bool {
 	switch b.Type {
-	case BxBlockTypeBeaconPhase0, BxBlockTypeBeaconAltair, BxBlockTypeBeaconBellatrix:
+	case BxBlockTypeBeaconPhase0, BxBlockTypeBeaconAltair, BxBlockTypeBeaconBellatrix, BxBlockTypeBeaconCapella:
 		return true
 	default:
 		return false

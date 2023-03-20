@@ -14,6 +14,7 @@ const (
 	broadcastTypeBeaconPhase0    broadcastType = "bcn0"
 	broadcastTypeBeaconAltair    broadcastType = "bcna"
 	broadcastTypeBeaconBellatrix broadcastType = "bcnb"
+	broadcastTypeBeaconCapella   broadcastType = "bcnc"
 )
 
 // Broadcast - represent the "broadcast" message
@@ -34,6 +35,8 @@ func blockToBroadcastType(blockType types.BxBlockType) broadcastType {
 		return broadcastTypeBeaconAltair
 	case types.BxBlockTypeBeaconBellatrix:
 		return broadcastTypeBeaconBellatrix
+	case types.BxBlockTypeBeaconCapella:
+		return broadcastTypeBeaconCapella
 	case types.BxBlockTypeEth:
 		fallthrough
 	default:
@@ -61,16 +64,16 @@ func NewBlockBroadcast(hash, beaconHash types.SHA256Hash, bType types.BxBlockTyp
 // String implements Stringer interface
 func (b Broadcast) String() string {
 	if b.IsBeaconBlock() {
-		return fmt.Sprintf("broadcast beacon(hash: %s, beacon hash: %s, type: %s, number: %d, txs: %d)", b.hash, b.beaconHash, b.broadcastType, b.networkNumber, len(b.ShortIDs()))
+		return fmt.Sprintf("broadcast beacon(hash: %s, beacon hash: %s, type: %s, network: %d, short txs: %d)", b.hash, b.beaconHash, b.broadcastType, b.networkNumber, len(b.ShortIDs()))
 	}
 
-	return fmt.Sprintf("broadcast(hash: %s, type: %s, number: %d, txs: %d)", b.hash, b.broadcastType, b.networkNumber, len(b.ShortIDs()))
+	return fmt.Sprintf("broadcast(hash: %s, type: %s, network: %d, short txs: %d)", b.hash, b.broadcastType, b.networkNumber, len(b.ShortIDs()))
 }
 
 // IsBeaconBlock returns true if block is beacon
 func (b *Broadcast) IsBeaconBlock() bool {
 	switch broadcastType(b.broadcastType[:]) {
-	case broadcastTypeBeaconPhase0, broadcastTypeBeaconAltair, broadcastTypeBeaconBellatrix:
+	case broadcastTypeBeaconPhase0, broadcastTypeBeaconAltair, broadcastTypeBeaconBellatrix, broadcastTypeBeaconCapella:
 		return true
 	default:
 		return false
@@ -86,6 +89,8 @@ func (b Broadcast) BlockType() types.BxBlockType {
 		return types.BxBlockTypeBeaconPhase0
 	case broadcastTypeBeaconBellatrix:
 		return types.BxBlockTypeBeaconBellatrix
+	case broadcastTypeBeaconCapella:
+		return types.BxBlockTypeBeaconCapella
 	default:
 		return types.BxBlockTypeUnknown
 	}

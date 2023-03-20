@@ -2,6 +2,7 @@ package eth
 
 import (
 	"context"
+	"encoding/hex"
 	"math/big"
 	"testing"
 	"time"
@@ -25,6 +26,7 @@ import (
 )
 
 const expectTimeout = time.Millisecond
+const transactionBacklog = 500
 
 func setup() (blockchain.Bridge, *Handler, []types.NodeEndpoint) {
 	bridge := blockchain.NewBxBridge(Converter{}, false)
@@ -48,7 +50,7 @@ func setupEthMainnet() (blockchain.Bridge, *Handler, []types.NodeEndpoint) {
 
 func TestHandler_HandleStatus(t *testing.T) {
 	_, handler, _ := setup()
-	peer, _ := testPeer(1, 1)
+	peer, _, _ := testPeer(1, 1)
 	_ = handler.peers.register(peer)
 	head := common.Hash{1, 2, 3}
 	headDifficulty := big.NewInt(100)
@@ -76,10 +78,10 @@ func TestHandler_HandleStatus(t *testing.T) {
 	assert.Equal(t, new(big.Int).Add(headDifficulty, nextBlock.Difficulty()), nextBlockInfo.TotalDifficulty())
 }
 
-func TestHandler_HandleTransactions(t *testing.T) {
+func TestHandler_HandleTransactionsFromNode(t *testing.T) {
 	privateKey, _ := crypto.GenerateKey()
 	bridge, handler, _ := setup()
-	peer, _ := testPeer(-1, 1)
+	peer, _, _ := testPeer(-1, 1)
 	_ = handler.peers.register(peer)
 
 	txs := []*ethtypes.Transaction{
@@ -112,16 +114,65 @@ func TestHandler_HandleTransactions(t *testing.T) {
 	assert.Equal(t, bxTxs, bxTxs2)
 }
 
+func TestHandler_HandleTransactionsFromBDN(t *testing.T) {
+	var hash types.SHA256Hash
+	hashRes, _ := hex.DecodeString("da605de1ee226fd20ba7e82745c742af5255284f8362d66fd8bcf89a318ac5f1")
+	copy(hash[:], hashRes)
+	content, _ := hex.DecodeString("f8678201d785012a05f20082520894bbdef5f330f08afd93a7696f4ea79af4a41d0f8080808194a0d0f839e1efadc7f1f1cbba67a5dcee50e3c49d3b8b6bc5ebebcf4886d04260a7a07b4e4849bc016cbf17cd27e4fcbb301c5b25a14cc3c9d0b3c244567d7fbad6fc")
+
+	var flags types.TxFlags
+	flags |= types.TFPaidTx
+
+	bxTx := types.NewRawBxTransaction(hash, content)
+
+	bridge := blockchain.NewBxBridge(Converter{}, false)
+	txs := blockchain.Transactions{
+		Transactions: []*types.BxTransaction{bxTx},
+	}
+
+	err := bridge.SendTransactionsFromBDN(txs)
+	assert.Nil(t, err)
+
+	txHeard := <-bridge.ReceiveBDNTransactions()
+	assert.Equal(t, txs.Transactions, txHeard.Transactions)
+}
+
+func TestHandler_BDNTransactionChannelTest(t *testing.T) {
+	var hash types.SHA256Hash
+	hashRes, _ := hex.DecodeString("da605de1ee226fd20ba7e82745c742af5255284f8362d66fd8bcf89a318ac5f1")
+	copy(hash[:], hashRes)
+	content, _ := hex.DecodeString("f8678201d785012a05f20082520894bbdef5f330f08afd93a7696f4ea79af4a41d0f8080808194a0d0f839e1efadc7f1f1cbba67a5dcee50e3c49d3b8b6bc5ebebcf4886d04260a7a07b4e4849bc016cbf17cd27e4fcbb301c5b25a14cc3c9d0b3c244567d7fbad6fc")
+
+	var flags types.TxFlags
+	flags |= types.TFPaidTx
+
+	bxTx := types.NewRawBxTransaction(hash, content)
+
+	bridge, handler, _ := setup()
+	peer, _, _ := testPeer(-1, 1)
+	_ = handler.peers.register(peer)
+
+	txs := blockchain.Transactions{
+		Transactions: []*types.BxTransaction{bxTx},
+	}
+
+	// assume the transactionBacklog limit above normal capacity by certain amount, be able to handle this loading speed should indicate good rate of offloading channel.
+	for i := 0; i < transactionBacklog; i++ {
+		err := bridge.SendTransactionsFromBDN(txs)
+		assert.Nil(t, err)
+	}
+}
+
 func TestHandler_HandleTransactionHashes(t *testing.T) {
 	bridge, handler, _ := setup()
-	peer, _ := testPeer(-1, 1)
+	peer, _, _ := testPeer(-1, 1)
 	_ = handler.peers.register(peer)
 
 	txHashes := []types.SHA256Hash{
 		types.GenerateSHA256Hash(),
 		types.GenerateSHA256Hash(),
 	}
-	txHashesPacket := make(eth.NewPooledTransactionHashesPacket, 0)
+	txHashesPacket := make(eth.NewPooledTransactionHashesPacket66, 0)
 	for _, txHash := range txHashes {
 		txHashesPacket = append(txHashesPacket, common.BytesToHash(txHash[:]))
 	}
@@ -139,11 +190,11 @@ func TestHandler_HandleTransactionHashes(t *testing.T) {
 
 func TestHandler_HandleNewBlock_MultiNode_SlowNode(t *testing.T) {
 	bridge, handler, _ := setup()
-	peer, _ := testPeer(-1, 1)
+	peer, _, _ := testPeer(-1, 1)
 	_ = handler.peers.register(peer)
 	blockHeight := uint64(1)
 
-	peer2, _ := testPeer(1, 2)
+	peer2, _, _ := testPeer(1, 2)
 	_ = handler.peers.register(peer2)
 
 	td := big.NewInt(10000)
@@ -203,10 +254,10 @@ func TestHandler_HandleNewBlock_MultiNode_SlowNode(t *testing.T) {
 
 func TestHandler_HandleNewBlock_MultiNode_BroadcastAmongNodes(t *testing.T) {
 	bridge, handler, _ := setup()
-	peer, _ := testPeer(-1, 1)
+	peer, _, _ := testPeer(-1, 1)
 	_ = handler.peers.register(peer)
 
-	peer2, _ := testPeer(1, 2)
+	peer2, _, _ := testPeer(1, 2)
 	_ = handler.peers.register(peer2)
 
 	td := big.NewInt(10000)
@@ -224,11 +275,11 @@ func TestHandler_HandleNewBlock_MultiNode_BroadcastAmongNodes(t *testing.T) {
 
 func TestHandler_HandleNewBlock_MultiNode_Fork(t *testing.T) {
 	bridge, handler, _ := setup()
-	peer, _ := testPeer(-1, 1)
+	peer, _, _ := testPeer(-1, 1)
 	_ = handler.peers.register(peer)
 	blockHeight := uint64(1)
 
-	peer2, _ := testPeer(1, 2)
+	peer2, _, _ := testPeer(1, 2)
 	_ = handler.peers.register(peer2)
 
 	td := big.NewInt(10000)
@@ -281,7 +332,7 @@ func TestHandler_HandleNewBlock_MultiNode_Fork(t *testing.T) {
 
 func TestHandler_HandleNewBlock(t *testing.T) {
 	bridge, handler, _ := setup()
-	peer, _ := testPeer(-1, 1)
+	peer, _, _ := testPeer(-1, 1)
 	_ = handler.peers.register(peer)
 	blockHeight := uint64(1)
 
@@ -311,7 +362,7 @@ func TestHandler_HandleNewBlock(t *testing.T) {
 
 func TestHandler_HandleNewBlock_IgnoreAfterTheMerge(t *testing.T) {
 	bridge, handler, _ := setupEthMainnet()
-	peer, _ := testPeer(-1, 1)
+	peer, _, _ := testPeer(-1, 1)
 	_ = handler.peers.register(peer)
 	blockHeight := uint64(1)
 
@@ -327,7 +378,7 @@ func TestHandler_HandleNewBlock_IgnoreAfterTheMerge(t *testing.T) {
 
 func TestHandler_HandleNewBlock_TooOld(t *testing.T) {
 	bridge, handler, _ := setup()
-	peer, _ := testPeer(-1, 1)
+	peer, _, _ := testPeer(-1, 1)
 	_ = handler.peers.register(peer)
 	blockHeight := uint64(1)
 
@@ -356,7 +407,7 @@ func TestHandler_HandleNewBlock_TooOld(t *testing.T) {
 
 func TestHandler_HandleNewBlock_TooFarInFuture(t *testing.T) {
 	bridge, handler, _ := setup()
-	peer, _ := testPeer(-1, 1)
+	peer, _, _ := testPeer(-1, 1)
 	_ = handler.peers.register(peer)
 	blockHeight := uint64(maxFutureBlockNumber + 100)
 
@@ -378,7 +429,7 @@ func TestHandler_HandleNewBlock_TooFarInFuture(t *testing.T) {
 
 func TestHandler_HandleNewBlockHashes(t *testing.T) {
 	bridge, handler, _ := setup()
-	peer, _ := testPeer(2, 1)
+	peer, _, _ := testPeer(2, 1)
 	_ = handler.peers.register(peer)
 	peer.Start()
 	peerRW := peer.rw.(*test.MsgReadWriter)
@@ -457,7 +508,7 @@ func TestHandler_HandleNewBlockHashes(t *testing.T) {
 
 func TestHandler_HandleNewBlockHashes_HandlingError(t *testing.T) {
 	bridge, handler, _ := setup()
-	peer, _ := testPeer(2, 1)
+	peer, _, _ := testPeer(2, 1)
 	_ = handler.peers.register(peer)
 	peer.Start()
 	peerRW := peer.rw.(*test.MsgReadWriter)
@@ -494,7 +545,7 @@ func TestHandler_HandleNewBlockHashes_HandlingError(t *testing.T) {
 
 func TestHandler_HandleNewBlockHashes66(t *testing.T) {
 	bridge, handler, _ := setup()
-	peer, _ := testPeer(2, 1)
+	peer, _, _ := testPeer(2, 1)
 	_ = handler.peers.register(peer)
 	peer.version = eth.ETH66
 	peer.Start()
@@ -565,7 +616,7 @@ func TestHandler_HandleNewBlockHashes66(t *testing.T) {
 
 func TestHandler_processBDNBlock(t *testing.T) {
 	bridge, handler, _ := setup()
-	peer, _ := testPeer(2, 1)
+	peer, _, _ := testPeer(2, 1)
 	_ = handler.peers.register(peer)
 	peer.Start()
 	peerRW := peer.rw.(*test.MsgReadWriter)
@@ -609,13 +660,13 @@ func TestHandler_processBDNBlock(t *testing.T) {
 
 func TestHandler_processBDNBlock_MultiNode(t *testing.T) {
 	bridge, handler, _ := setup()
-	peer, _ := testPeer(1, 1)
+	peer, _, _ := testPeer(1, 1)
 	_ = handler.peers.register(peer)
 
 	// add extra peers
-	peer2, _ := testPeer(1, 2)
+	peer2, _, _ := testPeer(1, 2)
 	_ = handler.peers.register(peer2)
-	peer3, _ := testPeer(1, 3)
+	peer3, _, _ := testPeer(1, 3)
 	_ = handler.peers.register(peer3)
 
 	peer.Start()
@@ -674,7 +725,7 @@ func TestHandler_processBDNBlock_MultiNode(t *testing.T) {
 
 func TestHandler_processBDNBlockResolveDifficulty(t *testing.T) {
 	bridge, handler, _ := setup()
-	peer, _ := testPeer(1, 1)
+	peer, _, _ := testPeer(1, 1)
 	_ = handler.peers.register(peer)
 	peer.Start()
 	peerRW := peer.rw.(*test.MsgReadWriter)
@@ -702,7 +753,7 @@ func TestHandler_processBDNBlockResolveDifficulty(t *testing.T) {
 
 func TestHandler_processBDNBlockUnresolvableDifficulty(t *testing.T) {
 	bridge, handler, _ := setup()
-	peer, _ := testPeer(1, 1)
+	peer, _, _ := testPeer(1, 1)
 	_ = handler.peers.register(peer)
 	peer.Start()
 	peerRW := peer.rw.(*test.MsgReadWriter)
@@ -733,7 +784,7 @@ func TestHandler_BlockAtDepth(t *testing.T) {
 	c := newChain(context.Background(), 10, 5, 5, time.Hour, 1000)
 	blockConfirmationCounts := 4
 	_, handler, _ := setup()
-	peer, _ := testPeer(1, 1)
+	peer, _, _ := testPeer(1, 1)
 	_ = handler.peers.register(peer)
 	block1 := bxmock.NewEthBlock(1, common.Hash{})
 	block2 := bxmock.NewEthBlock(2, block1.Hash())
@@ -763,7 +814,7 @@ func TestHandler_BlockAtDepth(t *testing.T) {
 func TestHandler_blockForks(t *testing.T) {
 	var err error
 	bridge, handler, _ := setup()
-	peer, _ := testPeer(1, 1)
+	peer, _, _ := testPeer(1, 1)
 	_ = handler.peers.register(peer)
 	handler.config.SendBlockConfirmation = true
 	handler.config.BlockConfirmationsCount = 3
@@ -872,11 +923,11 @@ func TestHandler_blockForks(t *testing.T) {
 func TestHandler_ConfirmBlockFromWS(t *testing.T) {
 	bridge, handler, _ := setup()
 
-	peer1, _ := testPeer(1, 1)
+	peer1, _, _ := testPeer(1, 1)
 	_ = handler.peers.register(peer1)
-	peer2, _ := testPeer(1, 2)
+	peer2, _, _ := testPeer(1, 2)
 	_ = handler.peers.register(peer2)
-	peer3, _ := testPeer(1, 3)
+	peer3, _, _ := testPeer(1, 3)
 	_ = handler.peers.register(peer3)
 
 	peer1.Start()
@@ -948,7 +999,7 @@ func TestHandler_ConfirmBlockFromWS(t *testing.T) {
 func TestHandler_DisconnectInboundPeer(t *testing.T) {
 	bridge, handler, _ := setup()
 
-	peer1, _ := testPeer(1, 1)
+	peer1, _, _ := testPeer(1, 1)
 	_ = handler.peers.register(peer1)
 
 	peer1.Start()

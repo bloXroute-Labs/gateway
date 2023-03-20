@@ -85,6 +85,7 @@ func Init(logConfig *Config, version string) error {
 
 	// ignoring prysm logs
 	filterPrysmLogs := func(entry *logrus.Entry) bool {
+		// TODO: remove when p2p will be refactored
 		if _, ok := entry.Data["prefix"]; ok {
 			return true
 		}

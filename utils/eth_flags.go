@@ -14,6 +14,10 @@ var (
 		Name:  "enr",
 		Usage: "specify the beacon enr, you can extract it from your beacon node using 'http://<beacon-ip>:<beacon-http-port>/eth/v1/node/identity'",
 	}
+	BeaconMultiaddrFlag = &cli.StringFlag{
+		Name:  "multiaddr",
+		Usage: "specify the beacon multiaddr",
+	}
 	PrivateKeyFlag = &cli.StringFlag{
 		Name:     "private-key",
 		Usage:    "private key for encrypted communication with Ethereum node",
@@ -40,19 +44,14 @@ var (
 	}
 	MultiNode = &cli.StringFlag{
 		Name: "multi-node",
-		Usage: "comma separated list of nodes." +
-			"Each connection URI is divided by a plus sign, and it is permissible to omit websockets and beacon endpoint from any node. \n" +
-			"Syntax: [enode[+eth-ws-uri],enr[+prysm://prysm-host:prysm-port]]+ \n" +
-			"Example: enode://aaa...bbb@1.1.1.1:30303+ws://1.1.1.1:5456,enr://....+prysm://1.1.1.1:4000",
+		Usage: `comma separated list of nodes.
+	Each connection URI is divided by a plus sign, and it is permissible to omit websockets and beacon endpoint from any node.
+	Syntax: [enode[+eth-ws-uri],enr[+prysm://prysm-host:prysm-port],multiaddr[+prysm://prysm-host:prysm-port]]+
+	Example: enode://aaa...bbb@1.1.1.1:30303+ws://1.1.1.1:5456,enr://....+prysm://1.1.1.1:4000,multiaddr:/ip4/2.2.2.2/tcp/13000/p2p/...+prysm://2.2.2.2:4000`,
 	}
 	GensisFilePath = &cli.StringFlag{
 		Name:   "genesis-path",
 		Usage:  "overrides the genesis block from the internet",
-		Hidden: true,
-	}
-	BeaconBlock = &cli.BoolFlag{
-		Name:   "beacon-block",
-		Usage:  "if true will propagate beacon block",
 		Hidden: true,
 	}
 	EthPropagationBlockDelay = &cli.DurationFlag{

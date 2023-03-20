@@ -132,10 +132,9 @@ func (b *bloomFilter) storeOnDiskWorker() {
 	for {
 		select {
 		case <-alert:
-			log.Infof("Current counter %v", b.counter)
 			err := b.storeOnDisk()
 			if err != nil {
-				log.Errorf("bloom_filter: store on disk: %s", err)
+				log.Errorf("BloomFilter: store on disk: %s", err)
 			}
 
 		case <-done:
@@ -145,9 +144,6 @@ func (b *bloomFilter) storeOnDiskWorker() {
 }
 
 func (b *bloomFilter) maybeSwitchFilters() {
-	b.mx.Lock()
-	defer b.mx.Unlock()
-
 	// callers should check if size is bigger than capacity,
 	// but we need to double-check size while under the write-lock
 	// to avoid multiple goroutines performing filters switch
@@ -155,16 +151,32 @@ func (b *bloomFilter) maybeSwitchFilters() {
 		return
 	}
 
-	log.Info("Switched bloom filters")
+	startTime := time.Now()
+	b.mx.Lock()
+	previousCopyBits := make([]uint64, len(b.current.BitSet().Bytes()))
+	copy(b.current.BitSet().Bytes(), previousCopyBits)
+	previousCopyM := b.current.Cap()
+	previousCopyK := b.current.K()
 	b.previous = b.current
 	b.current = b.newEmptyBf()
 	b.counter = 0
+	b.mx.Unlock()
+	lockDuration := time.Now().Sub(startTime).Milliseconds()
+
+	previousCopy := bloom.FromWithM(previousCopyBits, previousCopyM, previousCopyK)
+	bloomPath := b.storePath()
+	bytes, _ := writeBloomToFile(previousCopy, path.Join(bloomPath, previousBloomFileName))
+	totalDuration := time.Now().Sub(startTime).Milliseconds()
+
+	log.Debugf("BloomFilter switched filters, %v bytes saved lock duration %v ms, total duration %v ms", bytes, lockDuration, totalDuration)
+
 }
 
 // newBfPair tries to read current and previous bloom filter from disk,
 // if there are no files it returns empty pair
 func (b *bloomFilter) newBfPair() (curr, prev *bloom.BloomFilter, counter uint32, err error) {
 	bloomPath := b.storePath()
+	var readBytes int64
 
 	// if bloom directory doesn't exist - create it
 	if _, err := os.Stat(bloomPath); os.IsNotExist(err) {
@@ -177,62 +189,68 @@ func (b *bloomFilter) newBfPair() (curr, prev *bloom.BloomFilter, counter uint32
 	previousBloomFilePath := path.Join(bloomPath, previousBloomFileName)
 	counterBloomFilePath := path.Join(bloomPath, counterBloomFileName)
 
-	curr, err = readBloomFromFile(currentBloomFilePath)
+	curr, readBytes, err = readBloomFromFile(currentBloomFilePath)
 	switch {
 	case os.IsNotExist(err):
 		curr = b.newEmptyBf()
-		log.Infof("bloom file %s does not exist", currentBloomFilePath)
+		log.Infof("BloomFilter bloom file %s does not exist", currentBloomFilePath)
 	case err != nil:
 		return nil, nil, 0, err
 	default:
-		log.Infof("read bloom filter from file %s", currentBloomFilePath)
+		log.Infof("BloomFilter read bloom filter from file %s, bytes %v", currentBloomFilePath, readBytes)
 	}
 
-	prev, err = readBloomFromFile(previousBloomFilePath)
+	prev, readBytes, err = readBloomFromFile(previousBloomFilePath)
 	switch {
 	case os.IsNotExist(err):
 		prev = b.newEmptyBf()
-		log.Infof("bloom file %s does not exist", previousBloomFilePath)
+		log.Infof("BloomFilter bloom file %s does not exist", previousBloomFilePath)
 	case err != nil:
 		return nil, nil, 0, err
 	default:
-		log.Infof("read bloom filter from file %s", previousBloomFilePath)
+		log.Infof("BloomFilter read bloom filter from file %s, bytes %v", previousBloomFilePath, readBytes)
 	}
 
 	counter, err = readCounterFromFile(counterBloomFilePath)
 	switch {
 	case os.IsNotExist(err):
 		counter = curr.ApproximatedSize()
-		log.Infof("counter file %s does not exist", counterBloomFilePath)
+		log.Infof("BloomFilter counter file %s does not exist", counterBloomFilePath)
 	case err != nil:
 		return nil, nil, 0, err
 	default:
-		log.Infof("read counter from file %s", counterBloomFilePath)
+		log.Infof("BloomFilter read counter from file %s", counterBloomFilePath)
 	}
 
 	return curr, prev, counter, nil
 }
 
 func (b *bloomFilter) storeOnDisk() error {
+	startTime := time.Now()
 	b.mx.RLock()
-	defer b.mx.RUnlock()
+	currentCopyBits := make([]uint64, len(b.current.BitSet().Bytes()))
+	copy(b.current.BitSet().Bytes(), currentCopyBits)
+	currentCopyM := b.current.Cap()
+	currentCopyK := b.current.K()
+	currentCounter := b.counter
+	b.mx.RUnlock()
+	lockDuration := time.Now().Sub(startTime).Milliseconds()
 
+	currentCopy := bloom.FromWithM(currentCopyBits, currentCopyM, currentCopyK)
 	bloomPath := b.storePath()
 
-	err := writeBloomToFile(b.current, path.Join(bloomPath, currentBloomFileName))
+	bytes, err := writeBloomToFile(currentCopy, path.Join(bloomPath, currentBloomFileName))
 	if err != nil {
 		return err
 	}
 
-	err = writeBloomToFile(b.previous, path.Join(bloomPath, previousBloomFileName))
+	err = writeCounterToFile(currentCounter, path.Join(bloomPath, counterBloomFileName))
 	if err != nil {
 		return err
 	}
+	totalDuration := time.Now().Sub(startTime).Milliseconds()
 
-	err = writeCounterToFile(b.counter, path.Join(bloomPath, counterBloomFileName))
-	if err != nil {
-		return err
-	}
+	log.Infof("BloomFilter store cache current counter %v, bytes %v, lock duration %v ms, total duration %v ms", b.counter, bytes, lockDuration, totalDuration)
 
 	return nil
 }
@@ -258,53 +276,54 @@ func readCounterFromFile(path string) (uint32, error) {
 	return uint32(counter), nil
 }
 
-func readBloomFromFile(path string) (*bloom.BloomFilter, error) {
+func readBloomFromFile(path string) (*bloom.BloomFilter, int64, error) {
+	var readBytes int64
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, readBytes, err
 	}
 
 	defer func() { _ = f.Close() }()
 
 	bf := bloom.New(0, 0)
 
-	_, err = bf.ReadFrom(f)
+	readBytes, err = bf.ReadFrom(f)
 	if err != nil {
-		return nil, fmt.Errorf("read bloom filter from file %s: %w", path, err)
+		return nil, readBytes, fmt.Errorf("read bloom filter from file %s: %w", path, err)
 	}
 
-	return bf, nil
+	return bf, readBytes, nil
 }
 
-func writeBloomToFile(bf *bloom.BloomFilter, path string) error {
+func writeBloomToFile(bf *bloom.BloomFilter, path string) (int64, error) {
+	var savedBytes int64
 	err := os.Remove(path)
 	if err != nil && !os.IsNotExist(err) {
-		return err
+		return savedBytes, err
 	}
 
 	f, err := os.Create(path)
 	if err != nil {
-		return fmt.Errorf("create file %s: %w", path, err)
+		return savedBytes, fmt.Errorf("create file %s: %w", path, err)
 	}
 
-	_, err = bf.WriteTo(f)
+	savedBytes, err = bf.WriteTo(f)
 	if err != nil {
-		return fmt.Errorf("write bloom filter into a file %s: %w", path, err)
+		return savedBytes, fmt.Errorf("write bloom filter into a file %s: %w", path, err)
 	}
 
 	err = f.Close()
 	if err != nil {
-		return fmt.Errorf("close bloom filter file %s: %w", path, err)
+		return savedBytes, fmt.Errorf("close bloom filter file %s: %w", path, err)
 	}
 
-	return nil
+	return savedBytes, nil
 }
 
 func writeCounterToFile(counter uint32, path string) error {
-	log.Infof("Storing %v as current counter", counter)
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
-		log.Errorf("failed to create counter file - %v", err)
+		log.Errorf("BloomFilter failed to create counter file - %v", err)
 		return nil
 	}
 	dataWriter := bufio.NewWriter(file)

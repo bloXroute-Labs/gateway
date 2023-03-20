@@ -17,7 +17,6 @@ import (
 	"github.com/prysmaticlabs/prysm/v3/consensus-types/blocks"
 	"github.com/prysmaticlabs/prysm/v3/consensus-types/interfaces"
 	types "github.com/prysmaticlabs/prysm/v3/consensus-types/primitives"
-	enginev1 "github.com/prysmaticlabs/prysm/v3/proto/engine/v1"
 	ethpb "github.com/prysmaticlabs/prysm/v3/proto/prysm/v1alpha1"
 	"github.com/prysmaticlabs/prysm/v3/runtime/version"
 )
@@ -144,7 +143,7 @@ func (c *Chain) cleanBlockStorage(ctx context.Context, cleanInterval time.Durati
 }
 
 // AddBlock adds the provided block from the source into storage, updating the chainstate if the block comes from a reliable source. AddBlock returns the number of new canonical hashes added to the head if a reorganization happened. TODO: consider computing difficulty in here?
-func (c *Chain) AddBlock(b interfaces.SignedBeaconBlock, source BlockSource) (int, error) {
+func (c *Chain) AddBlock(b interfaces.ReadOnlySignedBeaconBlock, source BlockSource) (int, error) {
 	c.chainLock.Lock()
 	defer c.chainLock.Unlock()
 
@@ -155,7 +154,9 @@ func (c *Chain) AddBlock(b interfaces.SignedBeaconBlock, source BlockSource) (in
 	}
 
 	blockHash := ethcommon.BytesToHash(h[:])
-	parentHash := ethcommon.BytesToHash(b.Block().ParentRoot())
+
+	parentRoot := b.Block().ParentRoot()
+	parentHash := ethcommon.BytesToHash(parentRoot[:])
 
 	// update metadata if block already stored, otherwise update all block info
 	if c.HasBlock(blockHash) {
@@ -197,11 +198,11 @@ func (c *Chain) ConfirmBlock(hash ethcommon.Hash) int {
 }
 
 // GetNewHeadsForBDN fetches the newest blocks on the chainstate that have not previously been sent to the BDN. In cases of error, as many entries are still returned along with the error. Entries are returned in descending order.
-func (c *Chain) GetNewHeadsForBDN(count int) ([]interfaces.SignedBeaconBlock, error) {
+func (c *Chain) GetNewHeadsForBDN(count int) ([]interfaces.ReadOnlySignedBeaconBlock, error) {
 	c.chainLock.RLock()
 	defer c.chainLock.RUnlock()
 
-	heads := make([]interfaces.SignedBeaconBlock, 0, count)
+	heads := make([]interfaces.ReadOnlySignedBeaconBlock, 0, count)
 
 	for i := 0; i < count; i++ {
 		if len(c.chainState) <= i {
@@ -243,7 +244,7 @@ func (c *Chain) GetNewHeadsForBDN(count int) ([]interfaces.SignedBeaconBlock, er
 }
 
 // ValidateBlock determines if block can potentially be added to the chain
-func (c *Chain) ValidateBlock(block interfaces.SignedBeaconBlock) error {
+func (c *Chain) ValidateBlock(block interfaces.ReadOnlySignedBeaconBlock) error {
 	hash, err := block.Block().HashTreeRoot()
 	if err != nil {
 		return fmt.Errorf("could not get block hash: %v", err)
@@ -334,8 +335,8 @@ func (c *Chain) MarkConfirmationSentToBDN(hash ethcommon.Hash) {
 }
 
 // GetBodies assembles and returns a set of block bodies
-func (c *Chain) GetBodies(hashes []ethcommon.Hash) ([]interfaces.BeaconBlockBody, error) {
-	bodies := make([]interfaces.BeaconBlockBody, 0, len(hashes))
+func (c *Chain) GetBodies(hashes []ethcommon.Hash) ([]interfaces.ReadOnlyBeaconBlockBody, error) {
+	bodies := make([]interfaces.ReadOnlyBeaconBlockBody, 0, len(hashes))
 	for _, hash := range hashes {
 		body, ok := c.getBlockBody(hash)
 		if !ok {
@@ -436,7 +437,7 @@ func (c *Chain) GetHeaders(start eth.HashOrNumber, count int, skip int, reverse 
 }
 
 // BlockAtDepth returns the blockRefChain with depth from the head of the chain
-func (c *Chain) BlockAtDepth(chainDepth int) (interfaces.SignedBeaconBlock, error) {
+func (c *Chain) BlockAtDepth(chainDepth int) (interfaces.ReadOnlySignedBeaconBlock, error) {
 	if len(c.chainState) <= chainDepth {
 		return nil, fmt.Errorf("not enough block in the chain state with length %v for depth lookup with depth of %v", len(c.chainState), chainDepth)
 	}
@@ -496,7 +497,7 @@ func (c *Chain) updateChainState(height uint64, hash ethcommon.Hash, parentHash 
 	for ; headHeight > chainHead.height; headHeight-- {
 		headHeader, ok := c.getBlockHeader(headHeight, headHash)
 		if !ok {
-			// TODO: log anything? chainstate can't be reconciled (maybe should just prune to head)
+			log.Debugf("cannot update chainstate, missing %d blocks", c.minValidChain-len(missingEntries))
 			return 0
 		}
 
@@ -579,7 +580,7 @@ func (c *Chain) getHeaderAtHeight(height uint64) (*ethBeaconHeader, error) {
 	return header, nil
 }
 
-func (c *Chain) storeBlock(hash ethcommon.Hash, block interfaces.SignedBeaconBlock, source BlockSource) error {
+func (c *Chain) storeBlock(hash ethcommon.Hash, block interfaces.ReadOnlySignedBeaconBlock, source BlockSource) error {
 	header, err := block.Header()
 	if err != nil {
 		return fmt.Errorf("could not get block header: %v", err)
@@ -672,17 +673,17 @@ func (c *Chain) storeEthHeaderAtHeight(height uint64, eh ethBeaconHeader) {
 	}
 }
 
-func (c *Chain) storeBlockBody(hash ethcommon.Hash, body interfaces.BeaconBlockBody) {
+func (c *Chain) storeBlockBody(hash ethcommon.Hash, body interfaces.ReadOnlyBeaconBlockBody) {
 	c.blockHashToBody.Set(hash.String(), body)
 }
 
-func (c *Chain) getBlockBody(hash ethcommon.Hash) (interfaces.BeaconBlockBody, bool) {
+func (c *Chain) getBlockBody(hash ethcommon.Hash) (interfaces.ReadOnlyBeaconBlockBody, bool) {
 	body, ok := c.blockHashToBody.Get(hash.String())
 	if !ok {
 		return nil, ok
 	}
 
-	return body.(interfaces.BeaconBlockBody), ok
+	return body.(interfaces.ReadOnlyBeaconBlockBody), ok
 }
 
 func (c *Chain) hasBody(hash ethcommon.Hash) bool {
@@ -774,7 +775,7 @@ func (c *Chain) clean(maxSize int) (lowestCleaned int, highestCleaned int, numCl
 	return
 }
 
-func newSignedBeaconBlock(ver int, header *ethpb.SignedBeaconBlockHeader, body interfaces.BeaconBlockBody) (interfaces.SignedBeaconBlock, error) {
+func newSignedBeaconBlock(ver int, header *ethpb.SignedBeaconBlockHeader, body interfaces.ReadOnlyBeaconBlockBody) (interfaces.ReadOnlySignedBeaconBlock, error) {
 	var err error
 
 	var sb interface{}
@@ -794,6 +795,11 @@ func newSignedBeaconBlock(ver int, header *ethpb.SignedBeaconBlockHeader, body i
 		if err != nil {
 			return nil, err
 		}
+	case version.Capella:
+		sb, err = newSignedBeaconBlockCapella(header, body)
+		if err != nil {
+			return nil, err
+		}
 	default:
 		return nil, fmt.Errorf("block version %v is not recognized", ver)
 	}
@@ -801,7 +807,10 @@ func newSignedBeaconBlock(ver int, header *ethpb.SignedBeaconBlockHeader, body i
 	return blocks.NewSignedBeaconBlock(sb)
 }
 
-func newSignedBeaconBlockPhase0(header *ethpb.SignedBeaconBlockHeader, body interfaces.BeaconBlockBody) (*ethpb.SignedBeaconBlock, error) {
+func newSignedBeaconBlockPhase0(header *ethpb.SignedBeaconBlockHeader, body interfaces.ReadOnlyBeaconBlockBody) (*ethpb.SignedBeaconBlock, error) {
+	randaoReveal := body.RandaoReveal()
+	graffiti := body.Graffiti()
+
 	return &ethpb.SignedBeaconBlock{
 		Block: &ethpb.BeaconBlock{
 			Slot:          header.GetHeader().GetSlot(),
@@ -809,9 +818,9 @@ func newSignedBeaconBlockPhase0(header *ethpb.SignedBeaconBlockHeader, body inte
 			ParentRoot:    header.GetHeader().GetParentRoot(),
 			StateRoot:     header.GetHeader().GetStateRoot(),
 			Body: &ethpb.BeaconBlockBody{
-				RandaoReveal:      body.RandaoReveal(),
+				RandaoReveal:      randaoReveal[:],
 				Eth1Data:          body.Eth1Data(),
-				Graffiti:          body.Graffiti(),
+				Graffiti:          graffiti[:],
 				ProposerSlashings: body.ProposerSlashings(),
 				AttesterSlashings: body.AttesterSlashings(),
 				Attestations:      body.Attestations(),
@@ -823,7 +832,7 @@ func newSignedBeaconBlockPhase0(header *ethpb.SignedBeaconBlockHeader, body inte
 	}, nil
 }
 
-func newSignedBeaconBlockAltair(header *ethpb.SignedBeaconBlockHeader, body interfaces.BeaconBlockBody) (*ethpb.SignedBeaconBlockAltair, error) {
+func newSignedBeaconBlockAltair(header *ethpb.SignedBeaconBlockHeader, body interfaces.ReadOnlyBeaconBlockBody) (*ethpb.SignedBeaconBlockAltair, error) {
 	hash, err := body.HashTreeRoot()
 	if err != nil {
 		return nil, errors.New("could not calculate hash")
@@ -834,6 +843,9 @@ func newSignedBeaconBlockAltair(header *ethpb.SignedBeaconBlockHeader, body inte
 		return nil, fmt.Errorf("could not get block %v sync aggregate: %v", hash, err)
 	}
 
+	randaoReveal := body.RandaoReveal()
+	graffiti := body.Graffiti()
+
 	return &ethpb.SignedBeaconBlockAltair{
 		Block: &ethpb.BeaconBlockAltair{
 			Slot:          header.GetHeader().GetSlot(),
@@ -841,9 +853,9 @@ func newSignedBeaconBlockAltair(header *ethpb.SignedBeaconBlockHeader, body inte
 			ParentRoot:    header.GetHeader().GetParentRoot(),
 			StateRoot:     header.GetHeader().GetStateRoot(),
 			Body: &ethpb.BeaconBlockBodyAltair{
-				RandaoReveal:      body.RandaoReveal(),
+				RandaoReveal:      randaoReveal[:],
 				Eth1Data:          body.Eth1Data(),
-				Graffiti:          body.Graffiti(),
+				Graffiti:          graffiti[:],
 				ProposerSlashings: body.ProposerSlashings(),
 				AttesterSlashings: body.AttesterSlashings(),
 				Attestations:      body.Attestations(),
@@ -856,7 +868,7 @@ func newSignedBeaconBlockAltair(header *ethpb.SignedBeaconBlockHeader, body inte
 	}, nil
 }
 
-func newSignedBeaconBlockBellatrix(header *ethpb.SignedBeaconBlockHeader, body interfaces.BeaconBlockBody) (*ethpb.SignedBeaconBlockBellatrix, error) {
+func newSignedBeaconBlockBellatrix(header *ethpb.SignedBeaconBlockHeader, body interfaces.ReadOnlyBeaconBlockBody) (*ethpb.SignedBeaconBlockBellatrix, error) {
 	hash, err := body.HashTreeRoot()
 	if err != nil {
 		return nil, errors.New("could not calculate hash")
@@ -872,10 +884,13 @@ func newSignedBeaconBlockBellatrix(header *ethpb.SignedBeaconBlockHeader, body i
 		return nil, fmt.Errorf("could not get block %v execution: %v", hash, err)
 	}
 
-	transactions, err := execution.Transactions()
+	bellatrixExecution, err := execution.PbBellatrix()
 	if err != nil {
-		return nil, fmt.Errorf("could not get block %v transactions: %v", hash, err)
+		return nil, fmt.Errorf("could not get block %v execution payload: %v", hash, err)
 	}
+
+	randaoReveal := body.RandaoReveal()
+	graffiti := body.Graffiti()
 
 	return &ethpb.SignedBeaconBlockBellatrix{
 		Block: &ethpb.BeaconBlockBellatrix{
@@ -884,31 +899,63 @@ func newSignedBeaconBlockBellatrix(header *ethpb.SignedBeaconBlockHeader, body i
 			ParentRoot:    header.GetHeader().GetParentRoot(),
 			StateRoot:     header.GetHeader().GetStateRoot(),
 			Body: &ethpb.BeaconBlockBodyBellatrix{
-				RandaoReveal:      body.RandaoReveal(),
+				RandaoReveal:      randaoReveal[:],
 				Eth1Data:          body.Eth1Data(),
-				Graffiti:          body.Graffiti(),
+				Graffiti:          graffiti[:],
 				ProposerSlashings: body.ProposerSlashings(),
 				AttesterSlashings: body.AttesterSlashings(),
 				Attestations:      body.Attestations(),
 				Deposits:          body.Deposits(),
 				VoluntaryExits:    body.VoluntaryExits(),
 				SyncAggregate:     syncAggregate,
-				ExecutionPayload: &enginev1.ExecutionPayload{
-					ParentHash:    execution.ParentHash(),
-					FeeRecipient:  execution.FeeRecipient(),
-					StateRoot:     execution.StateRoot(),
-					ReceiptsRoot:  execution.ReceiptsRoot(),
-					LogsBloom:     execution.LogsBloom(),
-					PrevRandao:    execution.PrevRandao(),
-					BlockNumber:   execution.BlockNumber(),
-					GasLimit:      execution.GasLimit(),
-					GasUsed:       execution.GasUsed(),
-					Timestamp:     execution.Timestamp(),
-					ExtraData:     execution.ExtraData(),
-					BaseFeePerGas: execution.BaseFeePerGas(),
-					BlockHash:     execution.BlockHash(),
-					Transactions:  transactions,
-				},
+				ExecutionPayload:  bellatrixExecution,
+			},
+		},
+		Signature: header.GetSignature(),
+	}, nil
+}
+
+func newSignedBeaconBlockCapella(header *ethpb.SignedBeaconBlockHeader, body interfaces.ReadOnlyBeaconBlockBody) (*ethpb.SignedBeaconBlockCapella, error) {
+	hash, err := body.HashTreeRoot()
+	if err != nil {
+		return nil, errors.New("could not calculate hash")
+	}
+
+	syncAggregate, err := body.SyncAggregate()
+	if err != nil {
+		return nil, fmt.Errorf("could not get block %v sync aggregate: %v", hash, err)
+	}
+
+	execution, err := body.Execution()
+	if err != nil {
+		return nil, fmt.Errorf("could not get block %v execution: %v", hash, err)
+	}
+
+	capellaExecution, err := execution.PbCapella()
+	if err != nil {
+		return nil, fmt.Errorf("could not get block %v capella execution: %v", hash, err)
+	}
+
+	randaoReveal := body.RandaoReveal()
+	graffiti := body.Graffiti()
+
+	return &ethpb.SignedBeaconBlockCapella{
+		Block: &ethpb.BeaconBlockCapella{
+			Slot:          header.GetHeader().GetSlot(),
+			ProposerIndex: header.GetHeader().GetProposerIndex(),
+			ParentRoot:    header.GetHeader().GetParentRoot(),
+			StateRoot:     header.GetHeader().GetStateRoot(),
+			Body: &ethpb.BeaconBlockBodyCapella{
+				RandaoReveal:      randaoReveal[:],
+				Eth1Data:          body.Eth1Data(),
+				Graffiti:          graffiti[:],
+				ProposerSlashings: body.ProposerSlashings(),
+				AttesterSlashings: body.AttesterSlashings(),
+				Attestations:      body.Attestations(),
+				Deposits:          body.Deposits(),
+				VoluntaryExits:    body.VoluntaryExits(),
+				SyncAggregate:     syncAggregate,
+				ExecutionPayload:  capellaExecution,
 			},
 		},
 		Signature: header.GetSignature(),

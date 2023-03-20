@@ -2,6 +2,7 @@ package bxmessage
 
 import (
 	"github.com/bloXroute-Labs/gateway/v2"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
@@ -23,6 +24,6 @@ func TestValidatorUpdatesPackUnpack(t *testing.T) {
 	err = update.Unpack(b, 0)
 	assert.Nil(t, err)
 
-	assert.Equal(t, bxgateway.BSCMainnetNum, int(update.networkNum))
+	assert.Equal(t, bxgateway.BSCMainnetNum, types.NetworkNum(update.networkNum))
 	assert.Equal(t, 3, int(update.onlineListLength))
 }

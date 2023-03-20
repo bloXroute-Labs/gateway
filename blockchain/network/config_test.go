@@ -27,15 +27,57 @@ func TestMultiEthWSURIParse(t *testing.T) {
 	}
 }
 
-func TestWrongMultiNode(t *testing.T) {
-	inputs := map[string]int{
-		"enode://313a737a7b3a85963798bbb3ff5cd0fb7cc7e14b53b655700ed4cdc5b83ec8742f7cb16307c4c7b22bf612fe7b696768308f949898f3861eaca7968ae65fcb1a@1.1.1.1:30303+enr:-MK4QCXhv2TKQ7gH5jLM556cG1zHbQz8PjJCwqyO23IpMUIKTK1bVYOc6GEflMu9zBbJgvg_bAbgc_RjB_jyxCgGTiWGAYGmDhATh2F0dG5ldHOIAAAAAAAAAACEZXRoMpA8-jusgAAAcf__________gmlkgnY0gmlwhCzItcmJc2VjcDI1NmsxoQLRFwJXriVehcQyPyjkRZ5ReEL2qqCyviRfkF8vi0ufe4hzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A+prysm://1.1.1.1:1000":                  0,
-		"enode://313a737a7b3a85963798bbb3ff5cd0fb7cc7e14b53b655700ed4cdc5b83ec8742f7cb16307c4c7b22bf612fe7b696768308f949898f3861eaca7968ae65fcb1a@1.1.1.1:30303+ws://1.1.1.1:1111,enr:-MK4QCXhv2TKQ7gH5jLM556cG1zHbQz8PjJCwqyO23IpMUIKTK1bVYOc6GEflMu9zBbJgvg_bAbgc_RjB_jyxCgGTiWGAYGmDhATh2F0dG5ldHOIAAAAAAAAAACEZXRoMpA8-jusgAAAcf__________gmlkgnY0gmlwhCzItcmJc2VjcDI1NmsxoQLRFwJXriVehcQyPyjkRZ5ReEL2qqCyviRfkF8vi0ufe4hzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A+grpc://1.1.1.1:1000": 1,
+func TestMultiNode(t *testing.T) {
+	var testCases = []struct {
+		Name          string
+		Multinode     string
+		ErrorContains string
+	}{
+		{
+			Name:      "valid enode",
+			Multinode: "enode://313a737a7b3a85963798bbb3ff5cd0fb7cc7e14b53b655700ed4cdc5b83ec8742f7cb16307c4c7b22bf612fe7b696768308f949898f3861eaca7968ae65fcb1a@1.1.1.1:30303",
+		},
+		{
+			Name:      "valid ENR",
+			Multinode: "enr:-MK4QCXhv2TKQ7gH5jLM556cG1zHbQz8PjJCwqyO23IpMUIKTK1bVYOc6GEflMu9zBbJgvg_bAbgc_RjB_jyxCgGTiWGAYGmDhATh2F0dG5ldHOIAAAAAAAAAACEZXRoMpA8-jusgAAAcf__________gmlkgnY0gmlwhCzItcmJc2VjcDI1NmsxoQLRFwJXriVehcQyPyjkRZ5ReEL2qqCyviRfkF8vi0ufe4hzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A+prysm://1.1.1.1:1000",
+		},
+		{
+			Name:      "valid multiaddr",
+			Multinode: "multiaddr:/ip4/44.200.181.201/tcp/13000/p2p/16Uiu2HAm9VsYAuES1krVUZFQG8JmokMhxeRzvN1wMhB9jWeUouT8+prysm://1.1.1.1:1000",
+		},
+		{
+			Name:          "reject multiaddr without TCP",
+			Multinode:     "multiaddr:/ip4/44.200.181.201/udp/13000/p2p/16Uiu2HAm9VsYAuES1krVUZFQG8JmokMhxeRzvN1wMhB9jWeUouT8",
+			ErrorContains: "invalid multiaddr argument after 0",
+		},
+		{
+			Name:          "reject mix enode and enr",
+			Multinode:     "enode://313a737a7b3a85963798bbb3ff5cd0fb7cc7e14b53b655700ed4cdc5b83ec8742f7cb16307c4c7b22bf612fe7b696768308f949898f3861eaca7968ae65fcb1a@1.1.1.1:30303+enr:-MK4QCXhv2TKQ7gH5jLM556cG1zHbQz8PjJCwqyO23IpMUIKTK1bVYOc6GEflMu9zBbJgvg_bAbgc_RjB_jyxCgGTiWGAYGmDhATh2F0dG5ldHOIAAAAAAAAAACEZXRoMpA8-jusgAAAcf__________gmlkgnY0gmlwhCzItcmJc2VjcDI1NmsxoQLRFwJXriVehcQyPyjkRZ5ReEL2qqCyviRfkF8vi0ufe4hzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A+prysm://1.1.1.1:1000",
+			ErrorContains: fmt.Sprintf(invalidMultiNodeErrMsg, 0),
+		},
+		{
+			Name:          "reject mix enr and multiaddr",
+			Multinode:     "multiaddr:/ip4/44.200.181.201/tcp/13000/p2p/16Uiu2HAm9VsYAuES1krVUZFQG8JmokMhxeRzvN1wMhB9jWeUouT8+enr:-MK4QCXhv2TKQ7gH5jLM556cG1zHbQz8PjJCwqyO23IpMUIKTK1bVYOc6GEflMu9zBbJgvg_bAbgc_RjB_jyxCgGTiWGAYGmDhATh2F0dG5ldHOIAAAAAAAAAACEZXRoMpA8-jusgAAAcf__________gmlkgnY0gmlwhCzItcmJc2VjcDI1NmsxoQLRFwJXriVehcQyPyjkRZ5ReEL2qqCyviRfkF8vi0ufe4hzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A+prysm://1.1.1.1:1000",
+			ErrorContains: fmt.Sprintf(invalidMultiNodeErrMsg, 0),
+		},
+		{
+			Name:          "reject unknown scheme",
+			Multinode:     "enode://313a737a7b3a85963798bbb3ff5cd0fb7cc7e14b53b655700ed4cdc5b83ec8742f7cb16307c4c7b22bf612fe7b696768308f949898f3861eaca7968ae65fcb1a@1.1.1.1:30303+ws://1.1.1.1:1111,enr:-MK4QCXhv2TKQ7gH5jLM556cG1zHbQz8PjJCwqyO23IpMUIKTK1bVYOc6GEflMu9zBbJgvg_bAbgc_RjB_jyxCgGTiWGAYGmDhATh2F0dG5ldHOIAAAAAAAAAACEZXRoMpA8-jusgAAAcf__________gmlkgnY0gmlwhCzItcmJc2VjcDI1NmsxoQLRFwJXriVehcQyPyjkRZ5ReEL2qqCyviRfkF8vi0ufe4hzeW5jbmV0cwCDdGNwgjLIg3VkcIIu4A+grpc://1.1.1.1:1000",
+			ErrorContains: fmt.Sprintf(invalidMultiNodeErrMsg, 1),
+		},
 	}
-	for input, wrongNode := range inputs {
-		peerInfo, err := ParseMultiNode(input)
-		assert.Nil(t, peerInfo)
-		assert.Equal(t, fmt.Sprintf(invalidMultiNodeErrMsg, wrongNode), err.Error())
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			peerInfo, err := ParseMultiNode(tc.Multinode)
+			if tc.ErrorContains != "" {
+				assert.Nil(t, peerInfo)
+				assert.ErrorContains(t, err, tc.ErrorContains)
+			} else {
+				assert.NotNil(t, peerInfo)
+				assert.NoError(t, err)
+			}
+		})
 	}
 }
 

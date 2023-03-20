@@ -54,6 +54,7 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 	ctl := gomock.NewController(t)
 	sdn := mock_connections.NewMockSDNHTTP(ctl)
 	sdn.EXPECT().FetchAllBlockchainNetworks().Return(nil).AnyTimes()
+	sdn.EXPECT().FetchCustomerAccountModel(gomock.Any()).Return(sdnmessage.Account{}, nil).AnyTimes()
 	sdn.EXPECT().MinTxAge().Return(time.Millisecond).AnyTimes()
 	sdn.EXPECT().NetworkNum().Return(networkNum).AnyTimes()
 	sdn.EXPECT().NodeModel().Return(&nm).AnyTimes()
@@ -87,13 +88,14 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 
 	bridge := blockchain.NewBxBridge(eth.Converter{}, true)
 	blockchainPeers, blockchainPeersInfo := ethtest.GenerateBlockchainPeersInfo(numPeers)
-	node, _ := NewGateway(context.Background(), bxConfig, bridge, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), blockchainPeers, blockchainPeersInfo, "", sdn, nil, 0)
+	node, _ := NewGateway(context.Background(), bxConfig, bridge, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), blockchainPeers, blockchainPeersInfo, "", sdn, nil, 0, "")
 
 	g := node.(*gateway)
 	g.setupTxStore()
 	g.txTrace = loggers.NewTxTrace(nil)
 	g.setSyncWithRelay()
-	g.feedManager = servers.NewFeedManager(g.context, g, g.feedChan, networkNum, types.NetworkID(chainID),
+	g.feedManager = servers.NewFeedManager(g.context, g, g.feedChan, services.NewNoOpSubscriptionServices(),
+		networkNum, types.NetworkID(chainID), g.sdn.NodeModel().NodeID,
 		g.wsManager, g.sdn.AccountModel(), nil,
 		"", "", *g.BxConfig, g.stats, nil)
 	return bridge, g
@@ -112,7 +114,7 @@ func addRelayConn(g *gateway) (bxmock.MockTLS, *handler.Relay) {
 			return &mockTLS, nil
 		},
 		&utils.SSLCerts{}, "1.1.1.1", 1800, "", utils.Relay, true, g.sdn.Networks(), true, true, connections.LocalInitiatedPort, utils.RealClock{},
-		false, true, false)
+		false, true)
 
 	// set connection as established and ready for broadcast
 	_ = relayConn.Connect()
@@ -192,7 +194,7 @@ func assertNoBlockSentToRelay(t *testing.T, relayTLS bxmock.MockTLS) {
 }
 
 func TestGateway_PushBlockchainConfig(t *testing.T) {
-	networkID := int64(1)
+	networkID := types.NetworkID(1)
 	td := "40000"
 	// ttd := "500000000000000"
 	hash := "0xd4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3"
@@ -269,7 +271,7 @@ func TestGateway_HandleTransactionFromInboundBlockchain(t *testing.T) {
 	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil)
 	txHash := ethTx.Hash().String()
 	txHash = txHash[2:]
-	g.blockchainPeers[0].Inbound = true
+	g.blockchainPeers[0].Dynamic = true
 	assert.Equal(t, false, g.pendingTxs.Exists(txHash))
 	processEthTxOnBridge(t, bridge, ethTx, g.blockchainPeers[0])
 	assertTransactionSentToRelay(t, ethTx, ethTxBytes, mockTLS, relayConn)
@@ -666,7 +668,7 @@ func TestGateway_HandleBlockFromBlockchain(t *testing.T) {
 	assert.NotNil(t, err, "unexpected bytes %v", string(msgBytes))
 	close(g.feedChan)
 	wg.Wait()
-	assert.Equal(t, int32(7), atomic.LoadInt32(&count))
+	assert.Equal(t, int32(4), atomic.LoadInt32(&count))
 }
 
 func TestGateway_HandleBlockFromInboundBlockchain(t *testing.T) {
@@ -692,7 +694,7 @@ func TestGateway_HandleBlockFromInboundBlockchain(t *testing.T) {
 		}
 	}()
 
-	blockchainIPEndpoint = types.NodeEndpoint{IP: "127.0.0.1", Port: 8001, Inbound: true}
+	blockchainIPEndpoint = types.NodeEndpoint{IP: "127.0.0.1", Port: 8001, Dynamic: true}
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
 	bxBlock, err := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
 	assert.Nil(t, err)
@@ -1106,7 +1108,8 @@ func TestGateway_Status(t *testing.T) {
 
 	g.timeStarted = time.Now()
 
-	endpoints, stats := createPeerData()
+	timeNodeConnected := time.Now().Format(time.RFC3339)
+	endpoints, stats := createPeerData(timeNodeConnected)
 	for _, endpoint := range endpoints {
 		g.bdnStats.NodeStats()[endpoint.IPPort()] = stats[endpoint.IPPort()]
 	}
@@ -1129,6 +1132,7 @@ func TestGateway_Status(t *testing.T) {
 		require.NotNil(t, expected)
 		require.NotNil(t, nodeInfo)
 		require.NotNil(t, nodeInfo.NodePerformance)
+		require.Equal(t, nodeInfo.ConnectedAt, timeNodeConnected)
 
 		actual := nodeInfo.NodePerformance
 
@@ -1141,7 +1145,7 @@ func TestGateway_Status(t *testing.T) {
 		require.Equal(t, expected.NewTxReceivedFromBdn, actual.NewTxReceivedFromBdn)
 		require.Equal(t, expected.TxSentToNode, actual.TxSentToNode)
 		require.Equal(t, expected.DuplicateTxFromNode, actual.DuplicateTxFromNode)
-		require.Equal(t, expected.Inbound, nodeInfo.Inbound)
+		require.Equal(t, expected.Dynamic, nodeInfo.Dynamic)
 		require.Equal(t, expected.IsConnected, nodeInfo.IsConnected)
 	}
 }
@@ -1166,25 +1170,28 @@ func TestGateway_ConnectionStatus(t *testing.T) {
 	require.True(t, g.bdnStats.NodeStats()["123.45.6.78 1234"].IsConnected)
 }
 
-func createPeerData() ([]*types.NodeEndpoint, map[string]*bxmessage.BdnPerformanceStatsData) {
+func createPeerData(timeNodeConnected string) ([]*types.NodeEndpoint, map[string]*bxmessage.BdnPerformanceStatsData) {
 	endpoints := []*types.NodeEndpoint{
 		{
-			IP:        "192.168.10.20",
-			Port:      30303,
-			PublicKey: "pubkey1",
-			Inbound:   true,
+			IP:          "192.168.10.20",
+			Port:        30303,
+			PublicKey:   "pubkey1",
+			Dynamic:     true,
+			ConnectedAt: timeNodeConnected,
 		},
 		{
-			IP:        "192.168.10.21",
-			Port:      30304,
-			PublicKey: "pubkey2",
-			Inbound:   false,
+			IP:          "192.168.10.21",
+			Port:        30304,
+			PublicKey:   "pubkey2",
+			Dynamic:     false,
+			ConnectedAt: timeNodeConnected,
 		},
 		{
-			IP:        "192.168.10.22",
-			Port:      30305,
-			PublicKey: "pubkey3",
-			Inbound:   true,
+			IP:          "192.168.10.22",
+			Port:        30305,
+			PublicKey:   "pubkey3",
+			Dynamic:     true,
+			ConnectedAt: timeNodeConnected,
 		},
 	}
 
@@ -1199,7 +1206,7 @@ func createPeerData() ([]*types.NodeEndpoint, map[string]*bxmessage.BdnPerforman
 			NewTxReceivedFromBdn:                    50,
 			TxSentToNode:                            100,
 			DuplicateTxFromNode:                     50,
-			Inbound:                                 true,
+			Dynamic:                                 true,
 		},
 		endpoints[1].IPPort(): {
 			NewBlocksReceivedFromBlockchainNode:     21,
@@ -1211,7 +1218,7 @@ func createPeerData() ([]*types.NodeEndpoint, map[string]*bxmessage.BdnPerforman
 			NewTxReceivedFromBdn:                    51,
 			TxSentToNode:                            101,
 			DuplicateTxFromNode:                     51,
-			Inbound:                                 false,
+			Dynamic:                                 false,
 		},
 		endpoints[2].IPPort(): {
 			NewBlocksReceivedFromBlockchainNode:     22,
@@ -1223,7 +1230,7 @@ func createPeerData() ([]*types.NodeEndpoint, map[string]*bxmessage.BdnPerforman
 			NewTxReceivedFromBdn:                    52,
 			TxSentToNode:                            102,
 			DuplicateTxFromNode:                     52,
-			Inbound:                                 true,
+			Dynamic:                                 true,
 		},
 	}
 

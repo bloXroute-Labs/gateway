@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -104,6 +105,44 @@ func (et EthTransaction) Hash() SHA256Hash {
 		}
 	}
 	return hash
+}
+
+// CreateFieldsGRPC creates fields for GRPC
+func (et *EthTransaction) CreateFieldsGRPC() *pb.Tx {
+	et.lock.Lock()
+	defer et.lock.Unlock()
+	tx := et.tx
+
+	var gasPrice string
+	if tx.Type() == ethtypes.DynamicFeeTxType {
+		gasPrice = ""
+	} else {
+		gasPrice = hexutil.EncodeBig(tx.GasPrice())
+	}
+
+	var to string
+	if tx.To() != nil {
+		to = addressAsString(tx.To())
+	} else {
+		to = "0x0"
+	}
+
+	v, r, s := tx.RawSignatureValues()
+
+	return &pb.Tx{
+		Hash:     strings.ToLower(tx.Hash().String()),
+		Nonce:    strings.ToLower(hexutil.EncodeUint64(tx.Nonce())),
+		GasPrice: gasPrice,
+		Gas:      hexutil.EncodeUint64(tx.Gas()),
+		To:       to,
+		Value:    hexutil.EncodeBig(tx.Value()),
+		Input:    strings.ToLower(hexutil.Encode(tx.Data())),
+		V:        bigintAsString(v),
+		R:        bigintAsString(r),
+		S:        bigintAsString(s),
+		From:     addressAsString(et.From),
+		Type:     hexutil.EncodeUint64(uint64(tx.Type())),
+	}
 }
 
 func (et *EthTransaction) createFields() {

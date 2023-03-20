@@ -86,7 +86,10 @@ const EmptyProtocol = 0
 const MinProtocol = 19
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
-const CurrentProtocol = NextValidatorMultipleProtocol
+const CurrentProtocol = ShanghaiProtocol
+
+// ShanghaiProtocol is the minimum protocol version that supports Capella blocks
+const ShanghaiProtocol = 36
 
 // NextValidatorMultipleProtocol is an enhancement to NextValidatorProtocol
 const NextValidatorMultipleProtocol = 35

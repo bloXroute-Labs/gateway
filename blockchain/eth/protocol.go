@@ -2,12 +2,14 @@ package eth
 
 import (
 	"context"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/enode"
-	"time"
 )
 
 const (
@@ -15,19 +17,27 @@ const (
 	ETH65 = 65
 )
 
-// SupportedProtocols is the list of all Ethereum devp2p protocols supported by this client
-var SupportedProtocols = []uint{
-	ETH65, eth.ETH66, eth.ETH67,
+// supportedProtocols is the map of networks to devp2p protocols supported by this client
+var supportedProtocols = map[uint64][]uint{
+	network.BSCMainnetChainID:     {ETH65, eth.ETH66},
+	network.PolygonMainnetChainID: {ETH65, eth.ETH66},
+	network.EthMainnetChainID:     {eth.ETH66, eth.ETH67, eth.ETH68},
+	network.GoerliChainID:         {eth.ETH66, eth.ETH67, eth.ETH68},
 }
 
-// ProtocolLengths is a mapping of each supported devp2p protocol to its message version length
-var ProtocolLengths = map[uint]uint64{ETH65: 17, eth.ETH66: 17, eth.ETH67: 17}
+// protocolLengths is a mapping of each supported devp2p protocol to its message version length
+var protocolLengths = map[uint]uint64{ETH65: 17, eth.ETH66: 17, eth.ETH67: 17, eth.ETH68: 17}
 
 // MakeProtocols generates the set of supported protocols structs for the p2p server
 func MakeProtocols(ctx context.Context, backend Backend) []p2p.Protocol {
-	protocols := make([]p2p.Protocol, 0, len(SupportedProtocols))
-	for _, version := range SupportedProtocols {
-		protocols = append(protocols, makeProtocol(ctx, backend, version, ProtocolLengths[version]))
+	netProtocols, ok := supportedProtocols[backend.NetworkConfig().Network]
+	if !ok {
+		return nil
+	}
+
+	protocols := make([]p2p.Protocol, 0, len(netProtocols))
+	for _, version := range netProtocols {
+		protocols = append(protocols, makeProtocol(ctx, backend, version, protocolLengths[version]))
 	}
 	return protocols
 }
@@ -38,16 +48,23 @@ func makeProtocol(ctx context.Context, backend Backend, version uint, versionLen
 		Version: version,
 		Length:  versionLength,
 		Run: func(p *p2p.Peer, rw p2p.MsgReadWriter) error {
-			ep := NewPeer(ctx, p, rw, version)
 			config := backend.NetworkConfig()
-			peerStatus, err := ep.Handshake(uint32(version), config.Network, config.TotalDifficulty, config.Head, config.Genesis)
+			ep := NewPeer(ctx, p, rw, version, config.Network)
+			peerStatus, err := ep.Handshake(uint32(version), config.Network, config.TotalDifficulty, config.Head, config.Genesis, config.ExecutionLayerForks)
 			if err != nil {
 				log.Debugf("Peer %v handshake failed with error - %v", ep.endpoint, err)
 				return err
 			}
 
 			log.Infof("Peer %v is starting", ep.endpoint)
-			err = backend.GetBridge().SendBlockchainConnectionStatus(blockchain.ConnectionStatus{PeerEndpoint: ep.endpoint, IsConnected: true, IsInbound: ep.Inbound()})
+			var peerVersion uint32
+			if peerStatus != nil {
+				peerVersion = peerStatus.ProtocolVersion
+			}
+			ep.endpoint.Version = int(peerVersion)
+			ep.endpoint.Name = p.Info().Name
+			ep.endpoint.ConnectedAt = time.Now().Format(time.RFC3339)
+			err = backend.GetBridge().SendBlockchainConnectionStatus(blockchain.ConnectionStatus{PeerEndpoint: ep.endpoint, IsConnected: true, IsDynamic: ep.Dynamic()})
 			if err != nil {
 				log.Errorf("Failed to send blockchain connect status for %v - %v", ep.endpoint, err)
 				return err
@@ -63,7 +80,7 @@ func makeProtocol(ctx context.Context, backend Backend, version uint, versionLen
 				}
 			})
 
-			err = backend.GetBridge().SendBlockchainConnectionStatus(blockchain.ConnectionStatus{PeerEndpoint: ep.endpoint, IsConnected: false, IsInbound: ep.Inbound()})
+			err = backend.GetBridge().SendBlockchainConnectionStatus(blockchain.ConnectionStatus{PeerEndpoint: ep.endpoint, IsConnected: false, IsDynamic: ep.Dynamic()})
 			if err != nil {
 				log.Errorf("Failed to send blockchain disconnect status for %v - %v, peer error - %v", ep.endpoint, err, peerErr)
 				return err
@@ -139,6 +156,21 @@ var eth67 = map[uint64]msgHandler{
 	eth.PooledTransactionsMsg:         handlePooledTransactions66,
 }
 
+var eth68 = map[uint64]msgHandler{
+	eth.NewBlockHashesMsg:             handleNewBlockHashes,
+	eth.NewBlockMsg:                   handleNewBlockMsg,
+	eth.TransactionsMsg:               handleTransactions,
+	eth.NewPooledTransactionHashesMsg: handleNewPooledTransactionHashes68,
+	eth.GetBlockHeadersMsg:            handleGetBlockHeaders66,
+	eth.BlockHeadersMsg:               handleBlockHeaders66,
+	eth.GetBlockBodiesMsg:             handleGetBlockBodies66,
+	eth.BlockBodiesMsg:                handleBlockBodies66,
+	eth.GetReceiptsMsg:                handleUnimplemented,
+	eth.ReceiptsMsg:                   handleUnimplemented,
+	eth.GetPooledTransactionsMsg:      handleUnimplemented,
+	eth.PooledTransactionsMsg:         handlePooledTransactions66,
+}
+
 func handleMessage(backend Backend, peer *Peer) error {
 	msg, err := peer.rw.ReadMsg()
 	if err != nil {
@@ -152,15 +184,19 @@ func handleMessage(backend Backend, peer *Peer) error {
 	}()
 
 	handlers := eth65
-	if peer.version >= eth.ETH67 {
-		handlers = eth67
-	} else if peer.version >= eth.ETH66 {
+	switch peer.version {
+	case eth.ETH66:
 		handlers = eth66
+	case eth.ETH67:
+		handlers = eth67
+	case eth.ETH68:
+		handlers = eth68
 	}
-	handler, ok := handlers[msg.Code]
 
+	handler, ok := handlers[msg.Code]
 	if ok {
 		return handler(backend, msg, peer)
 	}
+
 	return nil
 }

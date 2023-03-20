@@ -5,10 +5,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"time"
 )
 
 const (
@@ -21,7 +22,7 @@ const (
 	// PriorityQueueInterval represents the minimum amount of time that must be elapsed between non highest priority messages intended to sent along the connection
 	PriorityQueueInterval = 500 * time.Microsecond
 
-	readPacketSize = 4096
+	packetSize = 20 * 1024
 )
 
 // SSLConn represents the basic connection properties for connections opened between bloxroute nodes. SSLConn does not define any message handlers, and only implements the Conn interface.
@@ -63,7 +64,7 @@ func NewSSLConnection(connect func() (Socket, error), sslCerts *utils.SSLCerts, 
 		usePQ:           usePQ,
 		logMessages:     logMessages,
 		sendChannelSize: sendChannelSize,
-		packet:          make([]byte, readPacketSize),
+		packet:          make([]byte, packetSize),
 		log:             log.WithField("remoteAddr", fmt.Sprintf("%v:%v", ip, port)),
 		clock:           clock,
 	}
@@ -181,7 +182,7 @@ func (s *SSLConn) Connect() error {
 		return err
 	}
 	// allocate a buffered writer to combine outgoing messages
-	s.writer = bufio.NewWriter(s.Socket)
+	s.writer = bufio.NewWriterSize(s.Socket, packetSize)
 	s.connectedAt = s.clock.Now()
 
 	extensions, err := s.Properties()
@@ -201,13 +202,13 @@ func (s *SSLConn) Connect() error {
 
 // ReadMessages reads series of messages from the socket, placing each distinct message on the channel
 func (s *SSLConn) ReadMessages(callBack func(msg bxmessage.MessageBytes), readDeadline time.Duration, headerLen int, readPayloadLen func([]byte) int) (int, error) {
-
 	n, err := s.readWithDeadline(s.packet, readDeadline)
 	if err != nil {
 		s.Log().Debugf("connection closed while reading: %v", err)
 		_ = s.Close("connect closed by remote while reading")
 		return n, err
 	}
+
 	// TODO: why ReadMessages has to return every socket read?
 	s.buf.Write(s.packet[:n])
 	for {
@@ -233,6 +234,7 @@ func (s *SSLConn) ReadMessages(callBack func(msg bxmessage.MessageBytes), readDe
 		}
 		callBack(msg)
 	}
+
 	return n, nil
 }
 

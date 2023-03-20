@@ -302,7 +302,7 @@ func TestBdnPerformanceStats_Pack_GatewayInboundConnections(t *testing.T) {
 		NewTxReceivedFromBdn:                    50,
 		TxSentToNode:                            100,
 		DuplicateTxFromNode:                     50,
-		Inbound:                                 true,
+		Dynamic:                                 true,
 		IsConnected:                             true,
 	}
 	bdnStats.nodeStats[endpoint1.IPPort()] = &nodeStats1
@@ -316,7 +316,7 @@ func TestBdnPerformanceStats_Pack_GatewayInboundConnections(t *testing.T) {
 		NewTxReceivedFromBdn:                    50,
 		TxSentToNode:                            100,
 		DuplicateTxFromNode:                     50,
-		Inbound:                                 true,
+		Dynamic:                                 true,
 		IsConnected:                             true,
 	}
 	bdnStats.nodeStats[endpoint3.IPPort()] = &nodeStats3
@@ -330,7 +330,7 @@ func TestBdnPerformanceStats_Pack_GatewayInboundConnections(t *testing.T) {
 		NewTxReceivedFromBdn:                    51,
 		TxSentToNode:                            101,
 		DuplicateTxFromNode:                     51,
-		Inbound:                                 false,
+		Dynamic:                                 false,
 		IsConnected:                             true,
 	}
 	bdnStats.nodeStats[endpoint2.IPPort()] = &nodeStats2
@@ -344,7 +344,7 @@ func TestBdnPerformanceStats_Pack_GatewayInboundConnections(t *testing.T) {
 		NewTxReceivedFromBdn:                    51,
 		TxSentToNode:                            101,
 		DuplicateTxFromNode:                     51,
-		Inbound:                                 false,
+		Dynamic:                                 false,
 		IsConnected:                             true,
 	}
 	bdnStats.nodeStats[endpoint4.IPPort()] = &nodeStats4
@@ -361,9 +361,9 @@ func TestBdnPerformanceStats_Pack_GatewayInboundConnections(t *testing.T) {
 	assert.Equal(t, int64(2), inbound)
 	assert.Equal(t, int64(2), outbound)
 	assert.Equal(t, 4, len(bdnStatsFromBytes.nodeStats))
-	assert.Equal(t, int64(2), bdnStatsFromBytes.inboundConnections)
-	assert.True(t, bdnStatsFromBytes.nodeStats[endpoint1.IPPort()].Inbound)
-	assert.False(t, bdnStatsFromBytes.nodeStats[endpoint2.IPPort()].Inbound)
+	assert.Equal(t, int64(2), bdnStatsFromBytes.dynamicConnections)
+	assert.True(t, bdnStatsFromBytes.nodeStats[endpoint1.IPPort()].Dynamic)
+	assert.False(t, bdnStatsFromBytes.nodeStats[endpoint2.IPPort()].Dynamic)
 
 	// Inbound connections should be excluded, lower protocol version, in this case there are no inbound connection
 	delete(bdnStats.nodeStats, endpoint1.IPPort())
@@ -377,7 +377,7 @@ func TestBdnPerformanceStats_Pack_GatewayInboundConnections(t *testing.T) {
 	assert.Equal(t, int64(0), inbound)
 	assert.Equal(t, int64(2), outbound)
 	assert.Equal(t, 2, len(bdnStatsFromBytes.nodeStats))
-	assert.False(t, bdnStatsFromBytes.nodeStats[endpoint2.IPPort()].Inbound)
+	assert.False(t, bdnStatsFromBytes.nodeStats[endpoint2.IPPort()].Dynamic)
 }
 
 func TestBdnPerformanceStats_Pack_IsConnectedToGateway(t *testing.T) {
@@ -403,7 +403,7 @@ func TestBdnPerformanceStats_Pack_IsConnectedToGateway(t *testing.T) {
 		NewTxReceivedFromBdn:                    50,
 		TxSentToNode:                            100,
 		DuplicateTxFromNode:                     50,
-		Inbound:                                 false,
+		Dynamic:                                 false,
 		IsConnected:                             true,
 	}
 	bdnStats.nodeStats[endpoint1.IPPort()] = &nodeStats1
@@ -417,7 +417,7 @@ func TestBdnPerformanceStats_Pack_IsConnectedToGateway(t *testing.T) {
 		NewTxReceivedFromBdn:                    51,
 		TxSentToNode:                            101,
 		DuplicateTxFromNode:                     51,
-		Inbound:                                 false,
+		Dynamic:                                 false,
 		IsConnected:                             false,
 	}
 	bdnStats.nodeStats[endpoint2.IPPort()] = &nodeStats2
@@ -477,7 +477,7 @@ func TestBdnPerformanceStats_Pack_IsBeaconProtocol(t *testing.T) {
 		NewTxReceivedFromBdn:                    50,
 		TxSentToNode:                            100,
 		DuplicateTxFromNode:                     50,
-		Inbound:                                 false,
+		Dynamic:                                 false,
 		IsConnected:                             true,
 		IsBeacon:                                true,
 	}
@@ -492,7 +492,7 @@ func TestBdnPerformanceStats_Pack_IsBeaconProtocol(t *testing.T) {
 		NewTxReceivedFromBdn:                    51,
 		TxSentToNode:                            101,
 		DuplicateTxFromNode:                     51,
-		Inbound:                                 false,
+		Dynamic:                                 false,
 		IsConnected:                             true,
 		IsBeacon:                                false,
 	}

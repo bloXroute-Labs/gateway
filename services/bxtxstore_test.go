@@ -1,13 +1,14 @@
 package services
 
 import (
+	"strconv"
+	"testing"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/stretchr/testify/assert"
-	"strconv"
-	"testing"
-	"time"
 )
 
 const testNetworkNum types.NetworkNum = 5

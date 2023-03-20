@@ -497,7 +497,7 @@ func (c *Chain) updateChainState(height uint64, hash ethcommon.Hash, parentHash 
 	for ; headHeight > chainHead.height; headHeight-- {
 		headHeader, ok := c.getBlockHeader(headHeight, headHash)
 		if !ok {
-			// TODO: log anything? chainstate can't be reconciled (maybe should just prune to head)
+			log.Debugf("cannot update chainstate, missing %d blocks", c.minValidChain-len(missingEntries))
 			return 0
 		}
 

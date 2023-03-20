@@ -26,11 +26,16 @@ const WalletIDLen = 42
 
 // NodeEndpoint - represent the node endpoint struct sent in BdnPerformanceStats
 type NodeEndpoint struct {
-	IP        string
-	Port      int
-	PublicKey string
-	IsBeacon  bool
-	Inbound   bool
+	IP                string
+	Port              int
+	PublicKey         string
+	IsBeacon          bool
+	BlockchainNetwork string
+	Dynamic           bool
+	ID                string
+	Version           int
+	Name              string
+	ConnectedAt       string
 }
 
 // String returns string representation of NodeEndpoint
@@ -43,9 +48,9 @@ func (e NodeEndpoint) IPPort() string {
 	return fmt.Sprintf("%v %v", e.IP, e.Port)
 }
 
-// IsInbound return true if endpoint is inbound
-func (e NodeEndpoint) IsInbound() bool {
-	return e.Inbound
+// IsDynamic return true if endpoint is inbound
+func (e NodeEndpoint) IsDynamic() bool {
+	return e.Dynamic
 }
 
 // ShortID represents the compressed transaction ID
