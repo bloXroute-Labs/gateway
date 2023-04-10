@@ -1,5 +1,5 @@
 ARG GO_VERSION=alpine
-ARG BASE=golang:1.18-alpine
+ARG BASE=golang:1.19-alpine
 
 FROM ${BASE} as builder
 

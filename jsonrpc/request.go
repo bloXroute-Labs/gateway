@@ -45,6 +45,7 @@ type RPCTxPayload struct {
 	OriginalRPCMethod       RPCRequestType `json:"original_rpc_method"`
 	NodeValidation          bool           `json:"node_validation"`
 	NoBackrun               bool           `json:"no_backrun"`
+	FrontRunningProtection  bool           `json:"front_running_protection"`
 }
 
 // RPCBatchTxPayload is the payload of blxr_batch_tx request
@@ -65,6 +66,7 @@ type rpcTxJSON struct {
 	OriginalRPCMethod       RPCRequestType `json:"original_rpc_method"`
 	NodeValidation          bool           `json:"node_validation"`
 	NoBackrun               bool           `json:"no_backrun"`
+	FrontRunningProtection  bool           `json:"front_running_protection"`
 }
 
 // UnmarshalJSON provides a compatibility layer for go-ethereum style RPC calls, which are [object], instead of just object.
@@ -95,5 +97,6 @@ func (p *RPCTxPayload) UnmarshalJSON(b []byte) error {
 	p.OriginalRPCMethod = payload.OriginalRPCMethod
 	p.NodeValidation = payload.NodeValidation
 	p.NoBackrun = payload.NoBackrun
+	p.FrontRunningProtection = payload.FrontRunningProtection
 	return nil
 }

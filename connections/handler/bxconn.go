@@ -105,27 +105,41 @@ func (b *BxConn) Send(msg bxmessage.Message) error {
 	return nil
 }
 
-// Info returns connection metadata
-func (b *BxConn) Info() connections.Info {
-	meta := b.Conn.Info()
-	return connections.Info{
-		NodeID:          b.peerID,
-		AccountID:       b.accountID,
-		PeerIP:          meta.PeerIP,
-		PeerPort:        meta.PeerPort,
-		LocalPort:       b.localPort,
-		ConnectionState: "todo",
-		ConnectionType:  b.connectionType,
-		FromMe:          meta.FromMe,
-		NetworkNum:      b.networkNum,
-		LocalGEO:        b.localGEO,
-		PrivateNetwork:  b.privateNetwork,
-		Capabilities:    b.capabilities,
-		Version:         b.clientVersion,
-		SameRegion:      b.sameRegion,
-		ConnectedAt:     b.connectedAt,
-	}
-}
+// GetNodeID return node ID
+func (b *BxConn) GetNodeID() types.NodeID { return b.peerID }
+
+// GetLocalPort return local port
+func (b *BxConn) GetLocalPort() int64 { return b.localPort }
+
+// GetVersion return version
+func (b *BxConn) GetVersion() string { return b.clientVersion }
+
+// GetCapabilities return capabilities
+func (b *BxConn) GetCapabilities() types.CapabilityFlags { return b.capabilities }
+
+// GetConnectionType returns type of the connection
+func (b *BxConn) GetConnectionType() utils.NodeType { return b.connectionType }
+
+// GetConnectionState returns state of the connection
+func (b *BxConn) GetConnectionState() string { return "todo" }
+
+// GetConnectedAt gets ttime of connection
+func (b *BxConn) GetConnectedAt() time.Time { return b.connectedAt }
+
+// GetNetworkNum returns network number
+func (b *BxConn) GetNetworkNum() types.NetworkNum { return b.networkNum }
+
+// IsLocalGEO indicates if the peer is form the same GEO as we (China vs non-China)
+func (b *BxConn) IsLocalGEO() bool { return b.localGEO }
+
+// IsSameRegion indicates if the peer is from the same region as we (us-east1, eu-west1, ...)
+func (b *BxConn) IsSameRegion() bool { return b.sameRegion }
+
+// IsPrivateNetwork indicates of the peer connection is over a private network (CEN)
+func (b *BxConn) IsPrivateNetwork() bool { return b.privateNetwork }
+
+// GetAccountID return account ID
+func (b *BxConn) GetAccountID() types.AccountID { return b.accountID }
 
 // IsOpen returns when the connection is ready for broadcasting
 func (b *BxConn) IsOpen() bool {
@@ -145,10 +159,8 @@ func (b *BxConn) Connect() error {
 		return err
 	}
 
-	connInfo := b.Conn.Info()
-
-	b.peerID = connInfo.NodeID
-	b.accountID = connInfo.AccountID
+	b.peerID = b.Conn.GetNodeID()
+	b.accountID = b.Conn.GetAccountID()
 	b.connectedAt = b.clock.Now()
 	b.stringRepresentation = fmt.Sprintf("%v/%v@%v{%v}", b.connectionType, b.Conn, b.accountID, b.peerID)
 
@@ -207,7 +219,7 @@ func (b *BxConn) ProcessMessage(msg bxmessage.MessageBytes) {
 
 		ack := bxmessage.Ack{}
 		_ = b.Send(&ack)
-		if !b.Info().FromMe {
+		if !b.IsInitiator() {
 			hello := bxmessage.Hello{NodeID: b.nodeID, Protocol: b.Protocol()}
 			hello.SetNetworkNum(b.networkNum)
 			_ = b.Send(&hello)
@@ -217,7 +229,7 @@ func (b *BxConn) ProcessMessage(msg bxmessage.MessageBytes) {
 	case bxmessage.AckType:
 		b.lock.Lock()
 		// avoid racing with Close
-		if !b.Info().FromMe {
+		if !b.IsInitiator() {
 			b.setConnectionEstablished()
 		}
 		b.lock.Unlock()
@@ -359,7 +371,7 @@ func (b *BxConn) handleNonces(nodeNonce, peerNonce uint64) {
 // readLoop connects and reads messages from the socket.
 // If we are the initiator of the connection we auto-recover on disconnect.
 func (b *BxConn) readLoop() {
-	isInitiator := b.Info().FromMe
+	isInitiator := b.IsInitiator()
 	for {
 		err := b.Connect()
 		if err != nil {

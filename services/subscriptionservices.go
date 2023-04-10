@@ -2,6 +2,7 @@ package services
 
 import (
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	baseutils "github.com/bloXroute-Labs/gateway/v2/utils"
 	uuid "github.com/satori/go.uuid"
 )
 
@@ -38,7 +39,7 @@ func (n NoOpSubscriptionServices) SendSubscriptionResetNotification([]sdnmessage
 	return
 }
 
-// GenerateSubscriptionID generates random subscription ID
+// GenerateSubscriptionID generate uuid
 func (n NoOpSubscriptionServices) GenerateSubscriptionID() uuid.UUID {
-	return uuid.NewV4()
+	return baseutils.GenerateUUID()
 }

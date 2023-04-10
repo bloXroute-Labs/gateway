@@ -20,7 +20,7 @@ type BlockchainAttributes struct {
 	BootstrapNodes          []string        `json:"bootstrap_nodes"`
 	ExecutionLayerForks     []string        `json:"execution_layer_forks,omitempty"`
 
-	// ETHShanghaiMergeTimeRFC3339 specifies Ethereum Shanghai merge time, after this time
+	// ETHShanghaiMergeTimeUnix specifies Ethereum Shanghai merge time, after this time
 	// relay will ignore beacon blocks from gateways if their protocol version is low
 	// and won't propagate beacon blocks to such gateways but will still propagate transactions
 	ETHShanghaiMergeTimeUnix int64 `json:"eth_shanghai_merge_time_unix"`

@@ -4,7 +4,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	uuid "github.com/satori/go.uuid"
 	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
@@ -146,13 +145,13 @@ func TestFirewall_ConnectionAllowed(t *testing.T) {
 }
 
 func generateRandAccountID() types.AccountID {
-	id := uuid.NewV1()
+	id := utils.GenerateUUID()
 	accountID := types.AccountID(id.String())
 	return accountID
 }
 
 func generateRandNodeID() types.NodeID {
-	id := uuid.NewV1()
+	id := utils.GenerateUUID()
 	nodeID := types.NodeID(id.String())
 	return nodeID
 }

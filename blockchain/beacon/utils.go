@@ -5,42 +5,70 @@ import (
 	"fmt"
 	"time"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	bxTypes "github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/prysmaticlabs/prysm/v3/beacon-chain/core/signing"
-	p2ptypes "github.com/prysmaticlabs/prysm/v3/beacon-chain/p2p/types"
-	"github.com/prysmaticlabs/prysm/v3/config/params"
-	"github.com/prysmaticlabs/prysm/v3/consensus-types/interfaces"
-	types "github.com/prysmaticlabs/prysm/v3/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v3/encoding/bytesutil"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
+	"github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/prysmaticlabs/prysm/v4/beacon-chain/core/signing"
+	p2ptypes "github.com/prysmaticlabs/prysm/v4/beacon-chain/p2p/types"
+	"github.com/prysmaticlabs/prysm/v4/config/params"
+	"github.com/prysmaticlabs/prysm/v4/consensus-types/interfaces"
+	prysmTypes "github.com/prysmaticlabs/prysm/v4/consensus-types/primitives"
+	"github.com/prysmaticlabs/prysm/v4/encoding/bytesutil"
+	"github.com/prysmaticlabs/prysm/v4/time/slots"
 )
 
-// special error constant types
-var (
-	ErrInvalidRequest        = errors.New("invalid request")
-	ErrBodyNotFound          = errors.New("block body not stored")
-	ErrAlreadySeen           = errors.New("already seen")
-	ErrAncientHeaders        = errors.New("headers requested are ancient")
-	ErrFutureHeaders         = errors.New("headers requested are in the future")
-	ErrQueryAmountIsNotValid = errors.New("query amount is not valid")
-)
+const confirmationDelay = 4 * time.Second
 
-func logBlockConverterFailure(err error, bdnBlock *bxTypes.BxBlock) {
-	var blockHex string
-	if log.IsLevelEnabled(log.TraceLevel) {
-		b, err := rlp.EncodeToBytes(bdnBlock)
-		if err != nil {
-			blockHex = fmt.Sprintf("bad block from BDN could not be encoded to RLP bytes: %v", err)
-		} else {
-			blockHex = hexutil.Encode(b)
-		}
+func sendBlockToBDN(clock utils.Clock, log *logger.Entry, block interfaces.ReadOnlySignedBeaconBlock, bridge blockchain.Bridge, endpoint types.NodeEndpoint) error {
+	bdnBeaconBlock, err := bridge.BlockBlockchainToBDN(block)
+	if err != nil {
+		return fmt.Errorf("could not convert beacon block: %v", err)
 	}
-	log.Errorf("could not convert block (hash: %v) from BDN to beacon block: %v. contents: %v", bdnBlock.Hash(), err, blockHex)
+
+	if err := bridge.SendBlockToBDN(bdnBeaconBlock, endpoint); err != nil {
+		return fmt.Errorf("could not send block to gateway: %v", err)
+	}
+
+	ethBlock, err := eth.BeaconBlockToEthBlock(block)
+	if err != nil {
+		return fmt.Errorf("could not convert block to eth block: %v", err)
+	}
+
+	bdnEthBlock, err := bridge.BlockBlockchainToBDN(ethBlock)
+	if err != nil {
+		return fmt.Errorf("could not convert eth block: %v", err)
+	}
+
+	if err := bridge.SendBlockToBDN(bdnEthBlock, endpoint); err != nil {
+		return fmt.Errorf("could not send block %v to gateway: %v", ethBlock.Hash(), err)
+	}
+
+	clock.AfterFunc(confirmationDelay, func() {
+		if err := bridge.SendConfirmedBlockToGateway(bdnBeaconBlock, endpoint); err != nil {
+			log.Errorf("could not send beacon block confirmation to gateway: %v", err)
+		}
+
+		if err := bridge.SendConfirmedBlockToGateway(bdnEthBlock, endpoint); err != nil {
+			log.Errorf("could not send eth block confirmation %v to gateway: %v", ethBlock, err)
+		}
+	})
+
+	return nil
 }
-func currentSlot(genesisTime uint64) types.Slot {
-	return types.Slot(uint64(time.Now().Unix()-int64(genesisTime)) / params.BeaconConfig().SecondsPerSlot)
+
+func currentSlot(genesisTime uint64) prysmTypes.Slot {
+	return prysmTypes.Slot(uint64(time.Now().Unix()-int64(genesisTime)) / params.BeaconConfig().SecondsPerSlot)
+}
+
+func epochStartTime(genesisTime uint64, epoch prysmTypes.Epoch) (time.Time, error) {
+	slot, err := slots.EpochStart(epoch)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	return slots.ToTime(genesisTime, slot)
 }
 
 func extractBlockDataType(digest []byte, vRoot []byte) (interfaces.ReadOnlySignedBeaconBlock, error) {

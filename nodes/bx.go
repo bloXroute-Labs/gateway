@@ -57,12 +57,12 @@ func NewBx(bxConfig *config.Bx, dataDir string, accountsFetcher AccountsFetcher)
 
 // OnConnEstablished - a callback function. Called when new connection is established
 func (bn *Bx) OnConnEstablished(conn connections.Conn) error {
-	connInfo := conn.Info()
 	conn.Log().Infof("connection established, gateway: %v, bdn: %v protocol version %v, network %v, on local port %v",
-		connInfo.IsGateway(), connInfo.IsBDN(), conn.Protocol(), connInfo.NetworkNum, conn.Info().LocalPort)
+		connections.IsGateway(conn.GetConnectionType()), connections.IsBDN(conn.GetCapabilities()), conn.Protocol(),
+		conn.GetNetworkNum(), conn.GetLocalPort())
 	bn.ConnectionsLock.Lock()
-	defer bn.ConnectionsLock.Unlock()
 	bn.Connections = append(bn.Connections, conn)
+	bn.ConnectionsLock.Unlock()
 	return nil
 
 }
@@ -78,7 +78,7 @@ func (bn *Bx) OnConnClosed(conn connections.Conn) error {
 	defer bn.ConnectionsLock.Unlock()
 	for idx, connection := range bn.Connections {
 		if connection.ID() == conn.ID() {
-			if conn.Info().ConnectionType&utils.RelayTransaction != 0 {
+			if conn.GetConnectionType()&utils.RelayTransaction != 0 {
 				bn.TxStore.Clear()
 			}
 			bn.Connections = append(bn.Connections[:idx], bn.Connections[idx+1:]...)
@@ -129,7 +129,7 @@ func (bn *Bx) HandleMsg(msg bxmessage.Message, source connections.Conn) error {
 		syncTxs := &bxmessage.SyncTxsMessage{}
 		syncTxs.SetNetworkNum(syncReq.GetNetworkNum())
 		priority := bxmessage.OnPongPriority
-		if source.Info().ConnectionType&utils.RelayProxy != 0 || source.Protocol() >= bxmessage.MinFastSyncProtocol {
+		if source.GetConnectionType()&utils.RelayProxy != 0 || source.Protocol() >= bxmessage.MinFastSyncProtocol {
 			priority = bxmessage.NormalPriority
 		}
 
@@ -191,13 +191,13 @@ func (bn *Bx) HandleMsg(msg bxmessage.Message, source connections.Conn) error {
 // DisconnectConn - disconnect a specific connection
 func (bn *Bx) DisconnectConn(id types.NodeID) {
 	bn.ConnectionsLock.Lock()
-	defer bn.ConnectionsLock.Unlock()
 	for _, conn := range bn.Connections {
-		if id == conn.Info().NodeID {
+		if id == conn.GetNodeID() {
 			// closing in a new go routine in order to avoid deadlock while Close method acquiring ConnectionsLock
 			go conn.Close("disconnect requested by bxapi")
 		}
 	}
+	bn.ConnectionsLock.Unlock()
 }
 
 // Peers provides a list of current peers for the requested type
@@ -214,31 +214,32 @@ func (bn *Bx) Peers(_ context.Context, req *pbbase.PeersRequest) (*pbbase.PeersR
 	defer bn.ConnectionsLock.RUnlock()
 
 	for _, conn := range bn.Connections {
-		connInfo := conn.Info()
-		if connInfo.ConnectionType&nodeType == 0 {
+		connectionType := conn.GetConnectionType()
+		if connectionType&nodeType == 0 {
 			continue
 		}
-		connType := connInfo.ConnectionType.String()
+		connType := connectionType.String()
 
 		var trusted string
 
+		accountID := conn.GetAccountID()
 		if bn.AccountsFetcher != nil {
-			if accountModel := bn.AccountsFetcher.GetAccount(connInfo.AccountID); accountModel != nil {
+			if accountModel := bn.AccountsFetcher.GetAccount(accountID); accountModel != nil {
 				trusted = strconv.FormatBool(accountModel.IsTrusted())
 			}
 		}
 
 		peer := &pbbase.Peer{
-			Ip:         connInfo.PeerIP,
-			NodeId:     string(connInfo.NodeID),
+			Ip:         conn.GetPeerIP(),
+			NodeId:     string(conn.GetNodeID()),
 			Type:       connType,
-			State:      connInfo.ConnectionState,
-			Network:    uint32(connInfo.NetworkNum),
-			Initiator:  connInfo.FromMe,
-			AccountId:  string(connInfo.AccountID),
-			Port:       conn.Info().LocalPort,
+			State:      conn.GetConnectionState(),
+			Network:    uint32(conn.GetNetworkNum()),
+			Initiator:  conn.IsInitiator(),
+			AccountId:  string(accountID),
+			Port:       conn.GetLocalPort(),
 			Disabled:   conn.IsDisabled(),
-			Capability: uint32(conn.Info().Capabilities),
+			Capability: uint32(conn.GetCapabilities()),
 			Trusted:    trusted,
 		}
 		if bxConn, ok := conn.(*handler.BxConn); ok {
@@ -258,10 +259,10 @@ func (bn *Bx) PingLoop() {
 	for {
 		select {
 		case <-pingTicker.Alert():
-			bn.ConnectionsLock.RLock()
 			count := 0
+			bn.ConnectionsLock.RLock()
 			for _, conn := range bn.Connections {
-				if conn.Info().ConnectionType&to != 0 {
+				if conn.GetConnectionType()&to != 0 {
 					err := conn.Send(ping)
 					if err != nil {
 						conn.Log().Errorf("error sending ping message: %v", err)

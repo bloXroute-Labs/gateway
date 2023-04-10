@@ -88,7 +88,7 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 
 	bridge := blockchain.NewBxBridge(eth.Converter{}, true)
 	blockchainPeers, blockchainPeersInfo := ethtest.GenerateBlockchainPeersInfo(numPeers)
-	node, _ := NewGateway(context.Background(), bxConfig, bridge, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), blockchainPeers, blockchainPeersInfo, "", sdn, nil, 0, "")
+	node, _ := NewGateway(context.Background(), bxConfig, bridge, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), blockchainPeers, blockchainPeersInfo, "", sdn, nil, 0, "", 0, 0)
 
 	g := node.(*gateway)
 	g.setupTxStore()
@@ -97,7 +97,7 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 	g.feedManager = servers.NewFeedManager(g.context, g, g.feedChan, services.NewNoOpSubscriptionServices(),
 		networkNum, types.NetworkID(chainID), g.sdn.NodeModel().NodeID,
 		g.wsManager, g.sdn.AccountModel(), nil,
-		"", "", *g.BxConfig, g.stats, nil)
+		"", "", *g.BxConfig, g.stats, nil, nil)
 	return bridge, g
 }
 
@@ -539,7 +539,7 @@ func TestGateway_HandleTransactionFromRelay(t *testing.T) {
 
 	bdnTxs := <-bridge.ReceiveBDNTransactions()
 	assert.Equal(t, 1, len(bdnTxs.Transactions))
-	assert.Equal(t, types.NodeEndpoint{IP: relayConn1.Info().PeerIP, Port: int(relayConn1.Info().PeerPort)}, bdnTxs.PeerEndpoint)
+	assert.Equal(t, types.NodeEndpoint{IP: relayConn1.GetPeerIP(), Port: int(relayConn1.GetPeerPort())}, bdnTxs.PeerEndpoint)
 
 	bdnTx := bdnTxs.Transactions[0]
 	assert.Equal(t, deliveredEthTx.Hash().Bytes(), bdnTx.Hash().Bytes())
@@ -579,7 +579,7 @@ func TestGateway_ReprocessTransactionFromRelay(t *testing.T) {
 
 	bdnTxs := <-bridge.ReceiveBDNTransactions()
 	assert.Equal(t, 1, len(bdnTxs.Transactions))
-	assert.Equal(t, types.NodeEndpoint{IP: relayConn1.Info().PeerIP, Port: int(relayConn1.Info().PeerPort)}, bdnTxs.PeerEndpoint)
+	assert.Equal(t, types.NodeEndpoint{IP: relayConn1.GetPeerIP(), Port: int(relayConn1.GetPeerPort())}, bdnTxs.PeerEndpoint)
 
 	bdnTx := bdnTxs.Transactions[0]
 	assert.Equal(t, ethTx.Hash().Bytes(), bdnTx.Hash().Bytes())

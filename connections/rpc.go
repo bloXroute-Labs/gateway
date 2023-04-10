@@ -13,6 +13,8 @@ var rpcTLSConn = TLS{}
 
 // RPCConn is a placeholder struct to represent connection requests from RPC transaction requests
 type RPCConn struct {
+	ConnDetails
+
 	AccountID      types.AccountID
 	RemoteAddress  string
 	networkNum     types.NetworkNum
@@ -40,13 +42,19 @@ func (r RPCConn) ID() Socket {
 	return rpcTLSConn
 }
 
-// Info returns connection metadata
-func (r RPCConn) Info() Info {
-	return Info{
-		AccountID:      r.AccountID,
-		ConnectionType: r.connectionType,
-		NetworkNum:     r.networkNum,
-	}
+// GetConnectionType returns type of the connection
+func (r RPCConn) GetConnectionType() utils.NodeType {
+	return r.connectionType
+}
+
+// GetNetworkNum gets the message network number
+func (r RPCConn) GetNetworkNum() types.NetworkNum {
+	return r.networkNum
+}
+
+// GetAccountID return account ID
+func (r RPCConn) GetAccountID() types.AccountID {
+	return r.AccountID
 }
 
 // IsOpen is never true, since the RPCConn is not writable

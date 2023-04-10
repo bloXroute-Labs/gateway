@@ -101,6 +101,11 @@ type Bridge interface {
 	SendBlockchainConnectionStatus(ConnectionStatus) error
 	ReceiveBlockchainConnectionStatus() <-chan ConnectionStatus
 
+	SendNodeConnectionCheckRequest() error
+	ReceiveNodeConnectionCheckRequest() <-chan struct{}
+	SendNodeConnectionCheckResponse(types.NodeEndpoint) error
+	ReceiveNodeConnectionCheckResponse() <-chan types.NodeEndpoint
+
 	SendDisconnectEvent(endpoint types.NodeEndpoint) error
 	ReceiveDisconnectEvent() <-chan types.NodeEndpoint
 }
@@ -135,33 +140,37 @@ type BxBridge struct {
 
 	noActiveBlockchainPeers chan NoActiveBlockchainPeersAlert
 
-	blockchainStatusRequest    chan struct{}
-	blockchainStatusResponse   chan []*types.NodeEndpoint
-	blockchainConnectionStatus chan ConnectionStatus
-	disconnectEvent            chan types.NodeEndpoint
-	validatorInfo              chan *ValidatorListInfo
+	blockchainStatusRequest     chan struct{}
+	blockchainStatusResponse    chan []*types.NodeEndpoint
+	nodeConnectionCheckRequest  chan struct{}
+	nodeConnectionCheckResponse chan types.NodeEndpoint
+	blockchainConnectionStatus  chan ConnectionStatus
+	disconnectEvent             chan types.NodeEndpoint
+	validatorInfo               chan *ValidatorListInfo
 }
 
 // NewBxBridge returns a BxBridge instance
 func NewBxBridge(converter Converter, beaconBlock bool) Bridge {
 	return &BxBridge{
-		config:                     make(chan network.EthConfig, 1),
-		transactionsFromNode:       make(chan Transactions, transactionBacklog),
-		transactionsFromBDN:        make(chan Transactions, transactionBacklog),
-		transactionHashesFromNode:  make(chan TransactionAnnouncement, transactionHashesBacklog),
-		transactionHashesRequests:  make(chan TransactionAnnouncement, transactionHashesBacklog),
-		beaconBlock:                beaconBlock,
-		blocksFromNode:             make(chan BlockFromNode, blockBacklog),
-		ethBlocksFromBDN:           make(chan *types.BxBlock, blockBacklog),
-		beaconBlocksFromBDN:        make(chan *types.BxBlock, blockBacklog),
-		confirmedBlockFromNode:     make(chan BlockFromNode, blockBacklog),
-		noActiveBlockchainPeers:    make(chan NoActiveBlockchainPeersAlert),
-		blockchainStatusRequest:    make(chan struct{}, statusBacklog),
-		blockchainStatusResponse:   make(chan []*types.NodeEndpoint, statusBacklog),
-		blockchainConnectionStatus: make(chan ConnectionStatus, transactionBacklog),
-		disconnectEvent:            make(chan types.NodeEndpoint, statusBacklog),
-		Converter:                  converter,
-		validatorInfo:              make(chan *ValidatorListInfo, 1),
+		config:                      make(chan network.EthConfig, 1),
+		transactionsFromNode:        make(chan Transactions, transactionBacklog),
+		transactionsFromBDN:         make(chan Transactions, transactionBacklog),
+		transactionHashesFromNode:   make(chan TransactionAnnouncement, transactionHashesBacklog),
+		transactionHashesRequests:   make(chan TransactionAnnouncement, transactionHashesBacklog),
+		beaconBlock:                 beaconBlock,
+		blocksFromNode:              make(chan BlockFromNode, blockBacklog),
+		ethBlocksFromBDN:            make(chan *types.BxBlock, blockBacklog),
+		beaconBlocksFromBDN:         make(chan *types.BxBlock, blockBacklog),
+		confirmedBlockFromNode:      make(chan BlockFromNode, blockBacklog),
+		noActiveBlockchainPeers:     make(chan NoActiveBlockchainPeersAlert),
+		blockchainStatusRequest:     make(chan struct{}, statusBacklog),
+		blockchainStatusResponse:    make(chan []*types.NodeEndpoint, statusBacklog),
+		nodeConnectionCheckRequest:  make(chan struct{}, statusBacklog),
+		nodeConnectionCheckResponse: make(chan types.NodeEndpoint, statusBacklog),
+		blockchainConnectionStatus:  make(chan ConnectionStatus, transactionBacklog),
+		disconnectEvent:             make(chan types.NodeEndpoint, statusBacklog),
+		Converter:                   converter,
+		validatorInfo:               make(chan *ValidatorListInfo, 1),
 	}
 }
 
@@ -346,6 +355,36 @@ func (b BxBridge) SendBlockchainStatusResponse(endpoints []*types.NodeEndpoint) 
 // ReceiveBlockchainStatusResponse handles blockchain connection status response from backend
 func (b BxBridge) ReceiveBlockchainStatusResponse() <-chan []*types.NodeEndpoint {
 	return b.blockchainStatusResponse
+}
+
+// SendNodeConnectionCheckRequest sends a request for node connection check request
+func (b BxBridge) SendNodeConnectionCheckRequest() error {
+	select {
+	case b.nodeConnectionCheckRequest <- struct{}{}:
+		return nil
+	default:
+		return ErrChannelFull
+	}
+}
+
+// ReceiveNodeConnectionCheckRequest handles node connection check request from backend
+func (b BxBridge) ReceiveNodeConnectionCheckRequest() <-chan struct{} {
+	return b.nodeConnectionCheckRequest
+}
+
+// SendNodeConnectionCheckResponse sends a response for node connection check request
+func (b BxBridge) SendNodeConnectionCheckResponse(endpoints types.NodeEndpoint) error {
+	select {
+	case b.nodeConnectionCheckResponse <- endpoints:
+		return nil
+	default:
+		return ErrChannelFull
+	}
+}
+
+// ReceiveNodeConnectionCheckResponse handles node connection check response from backend
+func (b BxBridge) ReceiveNodeConnectionCheckResponse() <-chan types.NodeEndpoint {
+	return b.nodeConnectionCheckResponse
 }
 
 // SendValidatorListInfo sends a validator info to gateway

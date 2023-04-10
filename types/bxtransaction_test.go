@@ -7,12 +7,12 @@ import (
 	"time"
 )
 
-//example of real tx
-//{"jsonrpc":"2.0","id":null,"method":"subscribe","params":{"subscription":"65770230-8550-46cd-8059-4f6e13484c83",
-//"result":{"txContents":{"from":"0x832f166799a407275500430b61b622f0058f15d6","gas":"0x13880","gasPrice":"0x1bf08eb000",
-//"hash":"0xed2b4580a766bc9d81c73c35a8496f0461e9c261621cb9f4565ae52ade56056d","input":"0x","nonce":"0x1b7f8",
-//"value":"0x50b32f902486000","v":"0x1c","r":"0xaa803263146bda76a58ebf9f54be589280e920616bc57e7bd68248821f46fd0c",
-//"s":"0x40266f84a2ecd4719057b0633cc80e3e0b3666f6f6ec1890a920239634ec6531","to":"0xb877c7e556d50b0027053336b90f36becf67b3dd"}}}}
+// example of real tx
+// {"jsonrpc":"2.0","id":null,"method":"subscribe","params":{"subscription":"65770230-8550-46cd-8059-4f6e13484c83",
+// "result":{"txContents":{"from":"0x832f166799a407275500430b61b622f0058f15d6","gas":"0x13880","gasPrice":"0x1bf08eb000",
+// "hash":"0xed2b4580a766bc9d81c73c35a8496f0461e9c261621cb9f4565ae52ade56056d","input":"0x","nonce":"0x1b7f8",
+// "value":"0x50b32f902486000","v":"0x1c","r":"0xaa803263146bda76a58ebf9f54be589280e920616bc57e7bd68248821f46fd0c",
+// "s":"0x40266f84a2ecd4719057b0633cc80e3e0b3666f6f6ec1890a920239634ec6531","to":"0xb877c7e556d50b0027053336b90f36becf67b3dd"}}}}
 var testNetworkNum = NetworkNum(5)
 
 func TestValidContentParsing(t *testing.T) {

@@ -100,5 +100,5 @@ func TestGatewayGRPCServerPeers(t *testing.T) {
 	assert.Equal(t, 1, len(peers.GetPeers()))
 
 	peer := peers.GetPeers()[0]
-	assert.Equal(t, conn.Info().PeerIP, peer.Ip)
+	assert.Equal(t, conn.GetPeerIP(), peer.Ip)
 }

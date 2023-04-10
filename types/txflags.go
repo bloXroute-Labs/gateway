@@ -18,6 +18,7 @@ const (
 	TFReusedNonce
 	TFNextValidator
 	TFNextValidatorRebroadcast
+	TFFrontRunningProtection
 
 	TFStatusTrack = TFStatusMonitoring | TFPaidTx
 	TFNonceTrack  = TFNonceMonitoring | TFStatusTrack
@@ -53,12 +54,17 @@ func (f TxFlags) IsDeliverToNode() bool {
 	return f&TFDeliverToNode != 0
 }
 
-//IsNextValidator return true if transaction marked for next validator
+// IsNextValidator return true if transaction marked for next validator
 func (f TxFlags) IsNextValidator() bool {
 	return f&TFNextValidator != 0
 }
 
-//IsNextValidatorRebroadcast return true if transaction is fallback tx of next validator tx
+// IsNextValidatorRebroadcast return true if transaction is fallback tx of next validator tx
 func (f TxFlags) IsNextValidatorRebroadcast() bool {
 	return f&TFNextValidatorRebroadcast != 0
+}
+
+// IsFrontRunningProtection return true if transaction is enabled with front runnig protection
+func (f TxFlags) IsFrontRunningProtection() bool {
+	return f&TFFrontRunningProtection != 0
 }

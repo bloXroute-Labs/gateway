@@ -327,15 +327,15 @@ func TestChain_InitializeStatus(t *testing.T) {
 
 	// initialize difficulty creates entries, but doesn't modify any other state
 	c.InitializeDifficulty(initialHash1, initialDifficulty)
-	assert.Equal(t, 1, c.heightToBlockHeaders.Count())
+	assert.Equal(t, 1, c.heightToBlockHeaders.Size())
 	assert.Equal(t, 0, len(c.chainState))
 
 	addBlock(c, bxmock.NewEthBlock(100, common.Hash{}))
-	assert.Equal(t, 2, c.heightToBlockHeaders.Count())
+	assert.Equal(t, 2, c.heightToBlockHeaders.Size())
 	assert.Equal(t, 1, len(c.chainState))
 
 	c.InitializeDifficulty(initialHash2, initialDifficulty)
-	assert.Equal(t, 2, c.heightToBlockHeaders.Count())
+	assert.Equal(t, 2, c.heightToBlockHeaders.Size())
 	assert.Equal(t, 1, len(c.chainState))
 
 	_, ok = c.getBlockDifficulty(initialHash1)
@@ -345,7 +345,7 @@ func TestChain_InitializeStatus(t *testing.T) {
 
 	// after any cleanup call, initialized entries status will be ejected
 	c.clean(1)
-	assert.Equal(t, 1, c.heightToBlockHeaders.Count())
+	assert.Equal(t, 1, c.heightToBlockHeaders.Size())
 	assert.Equal(t, 1, len(c.chainState))
 
 	_, ok = c.getBlockDifficulty(initialHash1)
@@ -411,27 +411,28 @@ func TestChain_clean(t *testing.T) {
 		block6.Hash(): {},
 	}
 
-	assert.Equal(t, 6, c.heightToBlockHeaders.Count())
+	assert.Equal(t, 6, c.heightToBlockHeaders.Size())
 
 	// Clean can block last block adding
 	// So better to use (blockCount + 1) * cleanInterval
 	time.Sleep(7 * cleanInterval)
 
-	assert.Equal(t, 4, c.heightToBlockHeaders.Count())
+	assert.Equal(t, 4, c.heightToBlockHeaders.Size())
 
-	for elem := range c.heightToBlockHeaders.IterBuffered() {
-		headers := elem.Val.([]ethHeader)
+	c.heightToBlockHeaders.Range(func(key uint64, headers []ethHeader) bool {
 		for _, header := range headers {
 			if _, ok := expectedHashes[header.Hash()]; !ok {
 				assert.Fail(t, "unexpected block", "height: %v", header.Number.Int64())
 			}
 			delete(expectedHashes, header.Hash())
 		}
-		c.heightToBlockHeaders.Remove(elem.Key)
-	}
+		c.heightToBlockHeaders.Delete(key)
+
+		return true
+	})
 
 	assert.Empty(t, expectedHashes)
-	assert.Zero(t, c.heightToBlockHeaders.Count())
+	assert.Zero(t, c.heightToBlockHeaders.Size())
 }
 
 func TestChain_cleanNoChainstate(t *testing.T) {
@@ -455,27 +456,28 @@ func TestChain_cleanNoChainstate(t *testing.T) {
 		block4.Hash(): {},
 	}
 
-	assert.Equal(t, 4, c.heightToBlockHeaders.Count())
+	assert.Equal(t, 4, c.heightToBlockHeaders.Size())
 
 	// Clean can block last block adding
 	// So better to use (blockCount + 1) * cleanInterval
 	time.Sleep(5 * cleanInterval)
 
-	assert.Equal(t, 3, c.heightToBlockHeaders.Count())
+	assert.Equal(t, 3, c.heightToBlockHeaders.Size())
 
-	for elem := range c.heightToBlockHeaders.IterBuffered() {
-		headers := elem.Val.([]ethHeader)
+	c.heightToBlockHeaders.Range(func(key uint64, headers []ethHeader) bool {
 		for _, header := range headers {
 			if _, ok := expectedHashes[header.Hash()]; !ok {
 				assert.Fail(t, "unexpected block", "height: %v", header.Number.Int64())
 			}
 			delete(expectedHashes, header.Hash())
 		}
-		c.heightToBlockHeaders.Remove(elem.Key)
-	}
+		c.heightToBlockHeaders.Delete(key)
+
+		return true
+	})
 
 	assert.Empty(t, expectedHashes)
-	assert.Zero(t, c.heightToBlockHeaders.Count())
+	assert.Zero(t, c.heightToBlockHeaders.Size())
 }
 
 func addBDNBlock(c *Chain, block *ethtypes.Block) int {

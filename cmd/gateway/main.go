@@ -88,6 +88,8 @@ func main() {
 			utils.ForwardTransactionEndpoint,
 			utils.ForwardTransactionMethod,
 			utils.PolygonMainnetHeimdallEndpoint,
+			utils.BSCTransactionHoldDuration,
+			utils.BSCTransactionPassedDueDuration,
 		},
 		Action: runGateway,
 	}
@@ -176,7 +178,7 @@ func runGateway(c *cli.Context) error {
 		return fmt.Errorf("if websocket server management is enabled, a valid websocket address must be provided")
 	}
 
-	gateway, err := nodes.NewGateway(ctx, bxConfig, bridge, wsManager, blockchainPeers, ethConfig.StaticPeers, gatewayPublicKey, sdn, sslCerts, len(ethConfig.StaticEnodes()), c.String(utils.PolygonMainnetHeimdallEndpoint.Name))
+	gateway, err := nodes.NewGateway(ctx, bxConfig, bridge, wsManager, blockchainPeers, ethConfig.StaticPeers, gatewayPublicKey, sdn, sslCerts, len(ethConfig.StaticEnodes()), c.String(utils.PolygonMainnetHeimdallEndpoint.Name), c.Int(utils.BSCTransactionHoldDuration.Name), c.Int(utils.BSCTransactionPassedDueDuration.Name))
 	if err != nil {
 		return err
 	}
@@ -224,11 +226,6 @@ func runGateway(c *cli.Context) error {
 		log.Infof("skipping starting blockchain client as no enodes have been provided")
 	}
 
-	var beaconChain *beacon.Chain
-	if startupBeaconNode || startupPrysmClient {
-		beaconChain = beacon.NewChain(ctx, ethConfig.GenesisTime, ethConfig.IgnoreSlotCount)
-	}
-
 	var beaconNode *beacon.Node
 	if startupBeaconNode {
 		var genesisPath string
@@ -244,7 +241,7 @@ func runGateway(c *cli.Context) error {
 		}
 		log.Info("connecting to beacon node using ", genesisPath)
 
-		beaconNode, err := beacon.NewNode(ctx, c.String(utils.BlockchainNetworkFlag.Name), ethConfig, beaconChain, localGenesisFile, bridge)
+		beaconNode, err := beacon.NewNode(ctx, c.String(utils.BlockchainNetworkFlag.Name), ethConfig, localGenesisFile, bridge)
 		if err != nil {
 			return err
 		}
@@ -256,7 +253,7 @@ func runGateway(c *cli.Context) error {
 
 	var prysmClient *beacon.PrysmClient
 	if startupPrysmClient {
-		prysmClient = beacon.NewPrysmClient(ctx, ethConfig, beaconChain, prysmAddr, bridge, prysmEndpoint)
+		prysmClient = beacon.NewPrysmClient(ctx, ethConfig, prysmAddr, bridge, prysmEndpoint)
 		prysmClient.Start()
 	}
 
@@ -281,7 +278,7 @@ func downloadGenesisFile(network, genesisFilePath string) (string, error) {
 	case bxgateway.Ropsten:
 		genesisFileURL = "https://github.com/eth-clients/merge-testnets/raw/main/ropsten-beacon-chain/genesis.ssz"
 	case bxgateway.Zhejiang:
-		genesisFileURL = "https://github.com/ethpandaops/withdrawals-testnet/raw/master/zhejiang-testnet/custom_config_data/genesis.ssz"
+		genesisFileURL = "https://github.com/ethpandaops/withdrawals-testnet/raw/master/withdrawal-mainnet-shadowfork-3/custom_config_data/genesis.ssz"
 	case bxgateway.Goerli:
 		genesisFileURL = "https://github.com/eth-clients/goerli/raw/main/prater/genesis.ssz"
 

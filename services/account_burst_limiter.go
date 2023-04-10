@@ -1,11 +1,12 @@
 package services
 
 import (
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	cmap "github.com/orcaman/concurrent-map"
-	"time"
+	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 )
 
 // AccountBurstLimiter represents a service for managing burst limiters for accounts
@@ -21,14 +22,14 @@ type AccountBurstLimiter interface {
 // NewAccountBurstLimiter returns a service for managing burst limiters for accounts with leaky bucket burst limiters
 func NewAccountBurstLimiter(clock utils.Clock) AccountBurstLimiter {
 	return &leakyBucketAccountBurstLimiter{
-		accountToLimiter: cmap.New(),
+		accountToLimiter: syncmap.NewTypedMapOf[types.AccountID, accountLimiter](syncmap.AccountIDHasher),
 		clock:            clock,
 		totalExcess:      NewRateSnapshot(clock),
 	}
 }
 
 type leakyBucketAccountBurstLimiter struct {
-	accountToLimiter cmap.ConcurrentMap
+	accountToLimiter *syncmap.SyncMap[types.AccountID, accountLimiter]
 	clock            utils.Clock
 	totalExcess      RateSnapshot
 }
@@ -76,7 +77,7 @@ func (l *leakyBucketAccountBurstLimiter) Register(account *sdnmessage.Account) {
 	paidBurstLimit := account.PaidTransactionBurstLimit.MsgQuota.Limit
 	paidBehavior := account.PaidTransactionBurstLimit.MsgQuota.BehaviorLimitFail
 
-	l.accountToLimiter.Set(string(account.AccountID), accountLimiter{
+	l.accountToLimiter.Store(account.AccountID, accountLimiter{
 		unpaidBurstLimiter: utils.NewLeakyBucketRateLimiter(l.clock, uint64(unpaidBurstLimit), 5*time.Second),
 		unpaidBehavior:     unpaidBehavior,
 		paidBurstLimiter:   utils.NewLeakyBucketRateLimiter(l.clock, uint64(paidBurstLimit), 5*time.Second),
@@ -137,11 +138,11 @@ func (l *leakyBucketAccountBurstLimiter) limitBehavior(id types.AccountID, paid 
 }
 
 func (l *leakyBucketAccountBurstLimiter) accountLimiter(id types.AccountID) (accountLimiter, bool) {
-	rawAccountLimiter, ok := l.accountToLimiter.Get(string(id))
+	rawAccountLimiter, ok := l.accountToLimiter.Load(id)
 	if !ok {
 		return accountLimiter{}, false
 	}
-	return rawAccountLimiter.(accountLimiter), true
+	return rawAccountLimiter, true
 }
 
 func (al *accountLimiter) count(paid bool) {

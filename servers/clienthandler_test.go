@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"math/big"
 	"net/http"
 	"testing"
@@ -74,6 +75,16 @@ func getMockCustomerAccountModel(accountID types.AccountID) (sdnmessage.Account,
 	return accountIDToAccountModel[accountID], err
 }
 
+func getMockQuotaUsage(accountID string) (*connections.QuotaResponseBody, error) {
+	res := connections.QuotaResponseBody{
+		AccountID:   accountID,
+		QuotaFilled: 1,
+		QuotaLimit:  2,
+	}
+
+	return &res, nil
+}
+
 func reset(fm *FeedManager, wsURL string, blockchainPeers []types.NodeEndpoint) *websocket.Conn {
 	fm.CloseAllClientConnections()
 	markAllPeersWithSyncStatus(fm, blockchainPeers, blockchain.Synced)
@@ -119,7 +130,7 @@ func TestClientHandler(t *testing.T) {
 	cfg := config.Bx{WebsocketPort: 28332, ManageWSServer: true, WebsocketTLSEnabled: false}
 
 	blockchainPeers, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
-	fm := NewFeedManager(context.Background(), g, feedChan, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 1, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil)
+	fm := NewFeedManager(context.Background(), g, feedChan, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 1, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil, nil)
 	providers := fm.nodeWSManager.Providers()
 	p1 := providers[blockchainPeers[0].IPPort()]
 	assert.NotNil(t, p1)
@@ -131,7 +142,7 @@ func TestClientHandler(t *testing.T) {
 	var group errgroup.Group
 	clientHandler := NewClientHandler(fm, nil, NewHTTPServer(fm, cfg.HTTPPort), log.WithFields(log.Fields{
 		"component": "gatewayClientHandler",
-	}))
+	}), nil)
 	go clientHandler.ManageWSServer(cfg.ManageWSServer)
 	go clientHandler.ManageHTTPServer(context.Background())
 	group.Go(fm.Start)
@@ -142,12 +153,12 @@ func TestClientHandler(t *testing.T) {
 	BscWsURLs := fmt.Sprintf("ws://%s/ws", urlBSC)
 	blockchainPeersBSC, blockchainPeersInfoBSC := test.GenerateBlockchainPeersInfo(1)
 
-	fmBSC := NewFeedManager(context.Background(), g, feedChan, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 56, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfoBSC, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfgBSC, stats, nil)
+	fmBSC := NewFeedManager(context.Background(), g, feedChan, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 56, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfoBSC, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfgBSC, stats, nil, nil)
 	p4 := providers[blockchainPeersBSC[0].IPPort()]
 	assert.NotNil(t, p4)
 	clientHandlerBSC := NewClientHandler(fmBSC, nil, NewHTTPServer(fmBSC, cfg.HTTPPort+1), log.WithFields(log.Fields{
 		"component": "gatewayClientHandlerBSC",
-	}))
+	}), getMockQuotaUsage)
 	go clientHandlerBSC.ManageWSServer(false)
 	go clientHandlerBSC.ManageHTTPServer(context.Background())
 	group.Go(fmBSC.Start)
@@ -211,10 +222,10 @@ func TestClientHandler(t *testing.T) {
 			testWSShutdown(t, fm, ws, blockchainPeers)
 		})
 		// restart bc last test shut down ws server
-		fm = NewFeedManager(context.Background(), g, feedChan, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 1, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil)
+		fm = NewFeedManager(context.Background(), g, feedChan, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 1, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil, nil)
 		clientHandler = NewClientHandler(fm, nil, NewHTTPServer(fm, cfg.HTTPPort), log.WithFields(log.Fields{
 			"component": "gatewayClientHandler",
-		}))
+		}), getMockQuotaUsage)
 		go clientHandler.ManageWSServer(cfg.ManageWSServer)
 		go clientHandler.ManageHTTPServer(context.Background())
 		group.Go(fm.Start)
@@ -696,6 +707,15 @@ func handlePingRequest(t *testing.T, ws *websocket.Conn) {
 	assert.True(t, timeServerReceivesRequest.After(timeClientSendsRequest))
 }
 
+func handleQuotaUsageRequest(t *testing.T, ws *websocket.Conn) {
+	msg := writeMsgToWsAndReadResponse(t, ws, []byte(`{"id": "1", "method": "quota_usage"}`), nil)
+	clientRes := getClientResponse(t, msg)
+	res := parseQuotaUsage(t, clientRes.Result)
+	assert.Nil(t, "gw", res.AccountID)
+	assert.Nil(t, 1, res.QuotaFilled)
+	assert.Nil(t, 2, res.QuotaLimit)
+}
+
 func handleError(t *testing.T, ws *websocket.Conn, closeError *websocket.CloseError) {
 	_ = writeMsgToWsAndReadResponse(t, ws, []byte(`{"id": "1", "method": "ping"}`), closeError)
 }
@@ -866,6 +886,19 @@ func getClientResponse(t *testing.T, msg []byte) (cr clientResponse) {
 
 func parsePingResult(t *testing.T, rpcResponse interface{}) (pr rpcPingResponse) {
 	res := rpcPingResponse{}
+	b, err := json.Marshal(rpcResponse)
+	assert.Nil(t, err)
+	err = json.Unmarshal(b, &res)
+	assert.Nil(t, err)
+	return res
+}
+
+func parseQuotaUsage(t *testing.T, rpcResponse interface{}) (qr connections.QuotaResponseBody) {
+	res := connections.QuotaResponseBody{
+		AccountID:   "account-id",
+		QuotaFilled: 1,
+		QuotaLimit:  2,
+	}
 	b, err := json.Marshal(rpcResponse)
 	assert.Nil(t, err)
 	err = json.Unmarshal(b, &res)

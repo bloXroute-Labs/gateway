@@ -100,6 +100,15 @@ func TestPeer_Handshake(t *testing.T) {
 	})
 	_, err = peer.Handshake(1, uint64(networkNum), new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
 	assert.NotNil(t, err)
+
+	go rw.QueueIncomingMessageWithDelay(eth.StatusMsg, peerStatus, time.Second)
+	ps, err = peer.Handshake(1, uint64(networkNum), new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
+	assert.NoError(t, err)
+	assert.Equal(t, peerStatus, *ps)
+
+	go rw.QueueIncomingMessageWithDelay(eth.StatusMsg, peerStatus, time.Second*7)
+	_, err = peer.Handshake(1, uint64(networkNum), new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
+	assert.Error(t, err)
 }
 
 func TestPeer_SendNewBlock(t *testing.T) {

@@ -60,7 +60,7 @@ func (newTransactionNotification *NewTransactionNotification) MakeBlockchainTran
 	return nil
 }
 
-//Filters - creates BlockchainTransaction if needs and returns a map of requested fields and their value for evaluation
+// Filters - creates BlockchainTransaction if needs and returns a map of requested fields and their value for evaluation
 func (newTransactionNotification *NewTransactionNotification) Filters(filters []string) map[string]interface{} {
 	err := newTransactionNotification.MakeBlockchainTransaction()
 	if err != nil {

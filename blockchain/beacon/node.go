@@ -14,6 +14,7 @@ import (
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	bxTypes "github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/libp2p/go-libp2p"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -27,17 +28,19 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
 	"github.com/pkg/errors"
 	fastssz "github.com/prysmaticlabs/fastssz"
-	"github.com/prysmaticlabs/prysm/v3/beacon-chain/core/blocks"
-	"github.com/prysmaticlabs/prysm/v3/beacon-chain/p2p"
-	"github.com/prysmaticlabs/prysm/v3/beacon-chain/p2p/encoder"
-	"github.com/prysmaticlabs/prysm/v3/beacon-chain/p2p/types"
-	"github.com/prysmaticlabs/prysm/v3/beacon-chain/state"
-	state_native "github.com/prysmaticlabs/prysm/v3/beacon-chain/state/state-native"
-	"github.com/prysmaticlabs/prysm/v3/config/params"
-	"github.com/prysmaticlabs/prysm/v3/consensus-types/interfaces"
-	ecdsaprysm "github.com/prysmaticlabs/prysm/v3/crypto/ecdsa"
-	"github.com/prysmaticlabs/prysm/v3/network/forks"
-	ethpb "github.com/prysmaticlabs/prysm/v3/proto/prysm/v1alpha1"
+	"github.com/prysmaticlabs/prysm/v4/beacon-chain/core/blocks"
+	"github.com/prysmaticlabs/prysm/v4/beacon-chain/p2p"
+	"github.com/prysmaticlabs/prysm/v4/beacon-chain/p2p/encoder"
+	"github.com/prysmaticlabs/prysm/v4/beacon-chain/p2p/types"
+	"github.com/prysmaticlabs/prysm/v4/beacon-chain/state"
+	state_native "github.com/prysmaticlabs/prysm/v4/beacon-chain/state/state-native"
+	"github.com/prysmaticlabs/prysm/v4/config/params"
+	"github.com/prysmaticlabs/prysm/v4/consensus-types/interfaces"
+	prysmTypes "github.com/prysmaticlabs/prysm/v4/consensus-types/primitives"
+	ecdsaprysm "github.com/prysmaticlabs/prysm/v4/crypto/ecdsa"
+	"github.com/prysmaticlabs/prysm/v4/network/forks"
+	ethpb "github.com/prysmaticlabs/prysm/v4/proto/prysm/v1alpha1"
+	"github.com/prysmaticlabs/prysm/v4/time/slots"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -83,48 +86,28 @@ const (
 var networkInitMapping = map[string]func(){
 	// Mainnet is default and has required values
 	"Mainnet": func() {},
-	"Prater": func() {
+	"Goerli": func() {
 		params.UsePraterNetworkConfig()
 		params.SetActive(params.PraterConfig())
+		types.InitializeDataMaps()
 	},
 	"Zhejiang": func() {
 		cfg := params.MainnetConfig().Copy()
-		cfg.MinGenesisTime = 1675263480
-		cfg.GenesisDelay = 120
+		cfg.MinGenesisTime = 1680523200
+		cfg.GenesisDelay = 60
 		cfg.ConfigName = "Zhejiang"
-		cfg.GenesisForkVersion = []byte{0x00, 0x00, 0x00, 0x69}
-		cfg.SecondsPerETH1Block = 14
-		cfg.DepositChainID = 1337803
-		cfg.DepositNetworkID = 1337803
+		cfg.GenesisForkVersion = []byte{0x10, 0x00, 0x00, 0x48}
+		cfg.SecondsPerETH1Block = 12
+		cfg.DepositChainID = 1
+		cfg.DepositNetworkID = 1
 		cfg.AltairForkEpoch = 0
-		cfg.AltairForkVersion = []byte{0x0, 0x0, 0x00, 0x70}
+		cfg.AltairForkVersion = []byte{0x20, 0x00, 0x00, 0x48}
 		cfg.BellatrixForkEpoch = 0
-		cfg.BellatrixForkVersion = []byte{0x0, 0x0, 0x00, 0x71}
-		cfg.CapellaForkEpoch = 1350
-		cfg.CapellaForkVersion = []byte{0x0, 0x0, 0x00, 0x72}
+		cfg.BellatrixForkVersion = []byte{0x30, 0x00, 0x00, 0x48}
+		cfg.CapellaForkEpoch = 675
+		cfg.CapellaForkVersion = []byte{0x40, 0x00, 0x00, 0x48}
 		cfg.TerminalTotalDifficulty = "0"
-		cfg.DepositContractAddress = "0x4242424242424242424242424242424242424242"
-		cfg.InitializeForkSchedule()
-		params.SetActive(cfg)
-		types.InitializeDataMaps()
-	},
-	"Goerli": func() {
-		cfg := params.MainnetConfig().Copy()
-		cfg.MinGenesisTime = 1614588812
-		cfg.GenesisDelay = 1919188
-		cfg.ConfigName = "Goerli"
-		cfg.GenesisForkVersion = []byte{0x00, 0x00, 0x10, 0x20}
-		cfg.SecondsPerETH1Block = 14
-		cfg.DepositChainID = 5
-		cfg.DepositNetworkID = 5
-		cfg.AltairForkEpoch = 0
-		cfg.AltairForkVersion = []byte{0x0, 0x0, 0x10, 0x20}
-		cfg.BellatrixForkEpoch = 112260
-		cfg.BellatrixForkVersion = []byte{0x02, 0x0, 0x10, 0x20}
-		cfg.CapellaForkEpoch = 162304
-		cfg.CapellaForkVersion = []byte{0x03, 0x0, 0x10, 0x20}
-		cfg.TerminalTotalDifficulty = "10790000"
-		cfg.DepositContractAddress = "0xff50ed3d0ec03aC01D4C79aAd74928BFF48a7b2b"
+		cfg.DepositContractAddress = "0x6f22fFbC56eFF051aECF839396DD1eD9aD6BBA9D"
 		cfg.InitializeForkSchedule()
 		params.SetActive(cfg)
 		types.InitializeDataMaps()
@@ -143,6 +126,20 @@ func initNetwork(networkName string) error {
 	return nil
 }
 
+type topicSubscription struct {
+	ctx          context.Context
+	cancel       context.CancelFunc
+	topic        *pubsub.Topic
+	subscription *pubsub.Subscription
+}
+
+func (ts *topicSubscription) close() error {
+	ts.subscription.Cancel() // cancel subscription
+	err := ts.topic.Close()  // close topic
+	ts.cancel()              // close subscription listener
+	return err
+}
+
 // Node is beacon node
 type Node struct {
 	ctx   context.Context
@@ -155,11 +152,10 @@ type Node struct {
 	host         host.Host
 	pubSub       *pubsub.PubSub
 
-	bridge         blockchain.Bridge
-	blockProcessor *blockProcessor
+	bridge blockchain.Bridge
 
 	peers    peers
-	topicMap sync.Map
+	topicMap *syncmap.SyncMap[string, *topicSubscription]
 
 	encoding encoder.NetworkEncoding
 
@@ -171,11 +167,11 @@ type Node struct {
 }
 
 // NewNode creates beacon node
-func NewNode(parent context.Context, networkName string, config *network.EthConfig, chain *Chain, genesisFilePath string, bridge blockchain.Bridge) (*Node, error) {
-	return newNode(parent, networkName, config, chain, genesisFilePath, bridge, &utils.RealClock{})
+func NewNode(parent context.Context, networkName string, config *network.EthConfig, genesisFilePath string, bridge blockchain.Bridge) (*Node, error) {
+	return newNode(parent, networkName, config, genesisFilePath, bridge, &utils.RealClock{})
 }
 
-func newNode(parent context.Context, networkName string, config *network.EthConfig, chain *Chain, genesisFilePath string, bridge blockchain.Bridge, clock utils.Clock) (*Node, error) {
+func newNode(parent context.Context, networkName string, config *network.EthConfig, genesisFilePath string, bridge blockchain.Bridge, clock utils.Clock) (*Node, error) {
 	logCtx := log.WithField("connType", "beacon")
 
 	if err := initNetwork(networkName); err != nil {
@@ -228,6 +224,7 @@ func newNode(parent context.Context, networkName string, config *network.EthConf
 		host:         host,
 		bridge:       bridge,
 		peers:        newPeers(),
+		topicMap:     syncmap.NewStringMapOf[*topicSubscription](),
 		encoding:     encoder.SszNetworkEncoder{},
 		cancel:       cancel,
 		log:          logCtx,
@@ -236,8 +233,6 @@ func newNode(parent context.Context, networkName string, config *network.EthConf
 	if err := n.addPeers(); err != nil {
 		return nil, fmt.Errorf("could not add peers %v", err)
 	}
-
-	n.blockProcessor = newBlockProcessor(ctx, config, chain, bridge, n.BroadcastBlock, n.log)
 
 	psOpts := n.pubsubOptions()
 	n.pubSub, err = pubsub.NewGossipSub(ctx, host, psOpts...)
@@ -292,14 +287,68 @@ func newNode(parent context.Context, networkName string, config *network.EthConf
 		},
 	})
 
+	// todo: do we need to unsubscribe from these as well?
 	n.subscribeRPC(p2p.RPCStatusTopicV1, n.statusRPCHandler)
 	n.subscribeRPC(p2p.RPCGoodByeTopicV1, n.goodbyeRPCHandler)
 	n.subscribeRPC(p2p.RPCPingTopicV1, n.pingRPCHandler)
 
-	// TODO: check if Altair update
 	n.subscribeRPC(p2p.RPCMetaDataTopicV2, n.metadataRPCHandler)
 
 	return n, nil
+}
+
+func (n *Node) scheduleCapellaForkUpdate() error {
+	// TODO: do for all forks
+
+	currentSlot := slots.CurrentSlot(n.genesisState.GenesisTime())
+	currentEpoch := slots.ToEpoch(currentSlot)
+
+	// Check if we haven't passed capella udpate yet
+	if currentEpoch >= params.BeaconConfig().CapellaForkEpoch {
+		return nil
+	}
+
+	capellaTime, err := epochStartTime(n.genesisState.GenesisTime(), params.BeaconConfig().CapellaForkEpoch)
+	if err != nil {
+		return fmt.Errorf("could not get capella time: %v", err)
+	}
+
+	timeInEpoch := time.Second * time.Duration(params.BeaconConfig().SecondsPerSlot*uint64(params.BeaconConfig().SlotsPerEpoch))
+
+	// Subscribe to Capella topics before update and unsubscribe Bellatrix topics after.
+	// So we maintain two sets of subscriptions during the merge.
+	epochBeforeCapellaTime := capellaTime.Add(-timeInEpoch) // 1 full epoch before Capella merge
+	epochAfterCapellaTime := capellaTime.Add(timeInEpoch)   // 1 full epoch after Capella merge
+
+	currentForkDigest, err := n.currentForkDigest()
+	if err != nil {
+		return fmt.Errorf("could not get current fork digest: %v", err)
+	}
+
+	capellaForkDigest, err := forks.ForkDigestFromEpoch(params.BeaconConfig().CapellaForkEpoch, n.genesisState.GenesisValidatorsRoot())
+	if err != nil {
+		return fmt.Errorf("could not get capella fork digest: %v", err)
+	}
+
+	if n.clock.Now().After(epochBeforeCapellaTime) {
+		// Gateway started in the middle between epochs during the update
+		if err := n.subscribeAll(capellaForkDigest); err != nil {
+			n.log.Errorf("could not subscribe after shanghai update: %v", err)
+		}
+	} else {
+		// Gateway started before the update
+		n.clock.AfterFunc(n.clock.Now().Sub(epochBeforeCapellaTime), func() {
+			if err := n.subscribeAll(capellaForkDigest); err != nil {
+				n.log.Errorf("could not subscribe after shanghai update: %v", err)
+			}
+		})
+	}
+
+	n.clock.AfterFunc(epochAfterCapellaTime.Sub(n.clock.Now()), func() {
+		n.unsubscribeAll(currentForkDigest)
+	})
+
+	return nil
 }
 
 // Start starts beacon node
@@ -310,30 +359,16 @@ func (n *Node) Start() error {
 	go n.handleBDNBridge()
 	go n.sendStatusRequests()
 
-	if err := n.subscribe(p2p.BlockSubnetTopicFormat, n.blockSubscriber); err != nil {
-		return err
+	if err := n.scheduleCapellaForkUpdate(); err != nil {
+		return fmt.Errorf("could not schedule capella fork update: %v", err)
 	}
 
-	// Required to be on top gossip score rating and not be disconnected by prysm
-	dontCare := func(msg *pubsub.Message) {}
-
-	if err := n.subscribe(p2p.AggregateAndProofSubnetTopicFormat, dontCare); err != nil {
-		return err
+	currentForkDigest, err := n.currentForkDigest()
+	if err != nil {
+		return fmt.Errorf("could not get current fork digest: %v", err)
 	}
 
-	if err := n.subscribe(p2p.ProposerSlashingSubnetTopicFormat, dontCare); err != nil {
-		return err
-	}
-
-	if err := n.subscribe(p2p.AttesterSlashingSubnetTopicFormat, dontCare); err != nil {
-		return err
-	}
-
-	if err := n.subscribe(p2p.SyncContributionAndProofSubnetTopicFormat, dontCare); err != nil {
-		return err
-	}
-
-	return nil
+	return n.subscribeAll(currentForkDigest)
 }
 
 func (n *Node) sendStatusRequests() {
@@ -452,11 +487,17 @@ func (n *Node) CanSubscribe(topic string) bool {
 		n.log.Errorf("Could not determine Bellatrix fork digest: %v", err)
 		return false
 	}
+	capellaForkDigest, err := forks.ForkDigestFromEpoch(params.BeaconConfig().CapellaForkEpoch, n.genesisState.GenesisValidatorsRoot())
+	if err != nil {
+		n.log.Errorf("Could not determine Capella fork digest: %v", err)
+		return false
+	}
 
 	switch parts[2] {
 	case fmt.Sprintf("%x", phase0ForkDigest):
 	case fmt.Sprintf("%x", altairForkDigest):
 	case fmt.Sprintf("%x", bellatrixForkDigest):
+	case fmt.Sprintf("%x", capellaForkDigest):
 	default:
 		return false
 	}
@@ -464,28 +505,79 @@ func (n *Node) CanSubscribe(topic string) bool {
 	return parts[4] == encoder.ProtocolSuffixSSZSnappy
 }
 
-func (n *Node) subscribe(topic string, handler func(msg *pubsub.Message)) error {
-	digest, err := n.currentForkDigest()
-	if err != nil {
+func (n *Node) unsubscribeAll(digest [4]byte) {
+	n.topicMap.Range(func(k string, sub *topicSubscription) bool {
+		// Skip if the topic does not contain the digest
+		if !strings.Contains(k, fmt.Sprintf("%x", digest)) {
+			return true
+		}
+
+		if err := sub.close(); err != nil {
+			n.log.Warnf("could not close subscription, topic: %v: %v", k, err)
+		} else {
+			n.log.Infof("closed subscription, topic: %v", k)
+		}
+
+		return true
+	})
+
+	n.topicMap.Clear()
+}
+
+func (n *Node) subscribeAll(digest [4]byte) error {
+	// Required to be on top gossip score rating and not be disconnected by prysm
+	dontCare := func(msg *pubsub.Message) {}
+
+	if err := n.subscribe(digest, p2p.BlockSubnetTopicFormat, n.blockSubscriber); err != nil {
 		return err
 	}
 
-	pbTopic, err := n.pubSub.Join(fmt.Sprintf(topic+n.encoding.ProtocolSuffix(), digest))
-	if err != nil {
+	if err := n.subscribe(digest, p2p.AggregateAndProofSubnetTopicFormat, dontCare); err != nil {
 		return err
 	}
 
-	n.topicMap.Store(topic, pbTopic)
+	if err := n.subscribe(digest, p2p.ProposerSlashingSubnetTopicFormat, dontCare); err != nil {
+		return err
+	}
+
+	if err := n.subscribe(digest, p2p.AttesterSlashingSubnetTopicFormat, dontCare); err != nil {
+		return err
+	}
+
+	if err := n.subscribe(digest, p2p.SyncContributionAndProofSubnetTopicFormat, dontCare); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (n *Node) subscribe(digest [4]byte, topic string, handler func(msg *pubsub.Message)) error {
+	topicWithDigest := fmt.Sprintf(topic+n.encoding.ProtocolSuffix(), digest)
+	pbTopic, err := n.pubSub.Join(topicWithDigest)
+	if err != nil {
+		return err
+	}
 
 	sub, err := pbTopic.Subscribe()
 	if err != nil {
 		return err
 	}
 
+	ctx, cancel := context.WithCancel(n.ctx)
+	n.topicMap.Store(topicWithDigest, &topicSubscription{
+		ctx:          ctx,
+		cancel:       cancel,
+		topic:        pbTopic,
+		subscription: sub,
+	})
+
 	go func() {
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case <-n.ctx.Done():
+				return
 			default:
 				msg, err := sub.Next(n.ctx)
 				if err != nil {
@@ -549,24 +641,17 @@ func (n *Node) blockSubscriber(msg *pubsub.Message) {
 	}
 	blockHashHex := ethcommon.BytesToHash(blockHash[:]).String()
 
-	execution, err := blk.Block().Body().Execution()
-	if err != nil {
-		logCtx.Errorf("could not get block[slot=%d,hash=%s] execution: %v", blk.Block().Slot(), blockHashHex, err)
+	if blk.Block().Slot() <= currentSlot(n.genesisState.GenesisTime())-prysmTypes.Slot(n.config.IgnoreSlotCount) {
+		logCtx.Errorf("block[slot=%d,hash=%s] is too old to process", blk.Block().Slot(), blockHashHex)
 		return
 	}
 
-	// If it pre-merge state execution is empty
-	if execution.BlockNumber() == 0 {
-		logCtx.Tracef("skip eth1 block[slot=%d,hash=%s] for pre-merge", blk.Block().Slot(), blockHashHex)
-		return
-	}
-
-	if err := n.blockProcessor.ProcessBlockchainBlock(logCtx, *endpoint, blk); err != nil {
+	if err := sendBlockToBDN(n.clock, n.log, blk, n.bridge, *endpoint); err != nil {
 		logCtx.Errorf("could not process block[slot=%d,hash=%s]: %v", blk.Block().Slot(), blockHashHex, err)
 		return
 	}
 
-	logCtx.Debugf("eth2 p2p block[slot=%d,hash=%s] sent to BDN", blk.Block().Slot(), blockHashHex)
+	logCtx.Tracef("received beacon block[slot=%d,hash=%s]", blk.Block().Slot(), blockHashHex)
 }
 
 func (n *Node) loadNodeEndpointFromPeerID(peerID libp2pPeer.ID) (*bxTypes.NodeEndpoint, error) {
@@ -580,14 +665,18 @@ func (n *Node) loadNodeEndpointFromPeerID(peerID libp2pPeer.ID) (*bxTypes.NodeEn
 }
 
 func (n *Node) broadcast(topic string, msg proto.Message) error {
-	t, ok := n.topicMap.Load(topic)
+	digest, err := n.currentForkDigest()
+	if err != nil {
+		return fmt.Errorf("could not get current fork digest: %v", err)
+	}
+
+	topicWithDigest := fmt.Sprintf(topic+n.encoding.ProtocolSuffix(), digest)
+	pbTopic, ok := n.topicMap.Load(topicWithDigest)
 	if !ok {
 		return errors.New("not started")
 	}
 
-	pbTopic := t.(*pubsub.Topic)
-
-	if len(pbTopic.ListPeers()) == 0 {
+	if len(pbTopic.topic.ListPeers()) == 0 {
 		n.log.Warnf("no peers to broadcast")
 		return nil
 	}
@@ -602,14 +691,23 @@ func (n *Node) broadcast(topic string, msg proto.Message) error {
 		return fmt.Errorf("could not encode gossip: %v", err)
 	}
 
-	return pbTopic.Publish(n.ctx, buf.Bytes())
+	return pbTopic.topic.Publish(n.ctx, buf.Bytes())
 }
 
 func (n *Node) handleBDNBridge() {
 	for {
 		select {
 		case bdnBlock := <-n.bridge.ReceiveBeaconBlockFromBDN():
-			n.blockProcessor.ProcessBDNBlock(bdnBlock)
+			beaconBlock, err := n.bridge.BlockBDNtoBlockchain(bdnBlock)
+			if err != nil {
+				n.log.Errorf("could not convert BDN block to beacon block: %v", err)
+				continue
+			}
+
+			if err := n.BroadcastBlock(beaconBlock.(interfaces.ReadOnlySignedBeaconBlock)); err != nil {
+				n.log.Errorf("could not broadcast block: %v", err)
+				continue
+			}
 		case <-n.ctx.Done():
 			return
 		}

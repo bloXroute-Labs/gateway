@@ -9,7 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/prysmaticlabs/prysm/v3/consensus-types/interfaces"
+	"github.com/prysmaticlabs/prysm/v4/consensus-types/interfaces"
 	"github.com/stretchr/testify/assert"
 )
 

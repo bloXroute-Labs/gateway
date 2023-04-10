@@ -8,11 +8,12 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/prysmaticlabs/prysm/v3/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v3/consensus-types/interfaces"
-	ethpb "github.com/prysmaticlabs/prysm/v3/proto/prysm/v1alpha1"
-	prysm "github.com/prysmaticlabs/prysm/v3/proto/prysm/v1alpha1"
+	"github.com/prysmaticlabs/prysm/v4/consensus-types/blocks"
+	"github.com/prysmaticlabs/prysm/v4/consensus-types/interfaces"
+	prysmTypes "github.com/prysmaticlabs/prysm/v4/consensus-types/primitives"
+	ethpb "github.com/prysmaticlabs/prysm/v4/proto/prysm/v1alpha1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -21,29 +22,35 @@ const prysmClientTimeout = 10 * time.Second
 
 // PrysmClient is gRPC Prysm client
 type PrysmClient struct {
-	ctx            context.Context
-	addr           string
-	bridge         blockchain.Bridge
-	endpoint       types.NodeEndpoint
-	blockProcessor *blockProcessor
-	beaconBlock    bool
-	log            *log.Entry
+	ctx         context.Context
+	clock       utils.Clock
+	config      *network.EthConfig
+	addr        string
+	bridge      blockchain.Bridge
+	endpoint    types.NodeEndpoint
+	beaconBlock bool
+	log         *log.Entry
 }
 
 // NewPrysmClient creates new Prysm gRPC client
-func NewPrysmClient(ctx context.Context, config *network.EthConfig, chain *Chain, addr string, bridge blockchain.Bridge, endpoint types.NodeEndpoint) *PrysmClient {
+func NewPrysmClient(ctx context.Context, config *network.EthConfig, addr string, bridge blockchain.Bridge, endpoint types.NodeEndpoint) *PrysmClient {
+	return newPrysmClient(ctx, config, addr, bridge, endpoint, utils.RealClock{})
+}
+
+func newPrysmClient(ctx context.Context, config *network.EthConfig, addr string, bridge blockchain.Bridge, endpoint types.NodeEndpoint, clock utils.Clock) *PrysmClient {
 	log := log.WithFields(log.Fields{
 		"connType":   "prysm",
 		"remoteAddr": addr,
 	})
 
 	return &PrysmClient{
-		ctx:            ctx,
-		addr:           addr,
-		bridge:         bridge,
-		endpoint:       endpoint,
-		blockProcessor: newBlockProcessor(ctx, config, chain, bridge, nil, log),
-		log:            log,
+		ctx:      ctx,
+		clock:    clock,
+		config:   config,
+		addr:     addr,
+		bridge:   bridge,
+		endpoint: endpoint,
+		log:      log,
 	}
 }
 
@@ -64,9 +71,9 @@ func (c *PrysmClient) run() {
 			}
 			defer conn.Close()
 
-			client := prysm.NewBeaconNodeValidatorClient(conn)
+			client := ethpb.NewBeaconNodeValidatorClient(conn)
 
-			stream, err := client.StreamBlocksAltair(context.TODO(), &prysm.StreamBlocksRequest{VerifiedOnly: false})
+			stream, err := client.StreamBlocksAltair(c.ctx, &ethpb.StreamBlocksRequest{VerifiedOnly: false})
 			if err != nil {
 				c.log.Errorf("could not subscribe to Prysm: %v, retrying.", err)
 				return
@@ -103,24 +110,17 @@ func (c *PrysmClient) run() {
 				}
 				blockHashHex := ethcommon.BytesToHash(blockHash[:]).String()
 
-				execution, err := blk.Block().Body().Execution()
-				if err != nil {
-					c.log.Errorf("could not get block[slot=%d,hash=%s] execution: %v", blk.Block().Slot(), blockHashHex, err)
-					continue
+				if blk.Block().Slot() <= currentSlot(c.config.GenesisTime)-prysmTypes.Slot(c.config.IgnoreSlotCount) {
+					c.log.Errorf("block[slot=%d,hash=%s] is too old to process", blk.Block().Slot(), blockHashHex)
+					return
 				}
 
-				// If it pre-merge state execution is empty
-				if !c.beaconBlock && execution.BlockNumber() == 0 {
-					c.log.Tracef("skip eth1 block[slot=%d,hash=%s] for pre-merge", blk.Block().Slot(), blockHashHex)
-					continue
-				}
-
-				if err := c.blockProcessor.ProcessBlockchainBlock(c.log, c.endpoint, blk); err != nil {
+				if err := sendBlockToBDN(c.clock, c.log, blk, c.bridge, c.endpoint); err != nil {
 					c.log.Errorf("could not proccess beacon block[slot=%d,hash=%s] to eth: %v", blk.Block().Slot(), blockHashHex, err)
 					continue
 				}
 
-				c.log.Debugf("eth2 block[slot=%d,hash=%s] sent to BDN", blk.Block().Slot(), blockHashHex)
+				c.log.Tracef("received beacon block[slot=%d,hash=%s]", blk.Block().Slot(), blockHashHex)
 			}
 		}()
 

@@ -4,8 +4,14 @@
 *.dll
 *.so
 *.dylib
-.idea
+.idea/
 bin/
+datadir/
+ssl/
+logs/
+
+# helper file for docker build process
+.gittag
 
 # Test binary, built with `go test -c`
 *.test

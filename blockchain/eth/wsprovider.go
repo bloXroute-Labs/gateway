@@ -163,12 +163,12 @@ func (ws *WSProvider) FetchTransactionReceipt(payload []interface{}, options blo
 	return ws.CallRPC("eth_getTransactionReceipt", payload, options)
 }
 
-//FetchTransaction check status of a transaction via CallRPC
+// FetchTransaction check status of a transaction via CallRPC
 func (ws *WSProvider) FetchTransaction(payload []interface{}, options blockchain.RPCOptions) (interface{}, error) {
 	return ws.CallRPC("eth_getTransactionByHash", payload, options)
 }
 
-//FetchBlock query a block given height via CallRPC
+// FetchBlock query a block given height via CallRPC
 func (ws *WSProvider) FetchBlock(payload []interface{}, options blockchain.RPCOptions) (interface{}, error) {
 	return ws.CallRPC("eth_getBlockByNumber", payload, options)
 }

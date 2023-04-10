@@ -19,6 +19,7 @@ import (
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/polygon/bor/valset"
+	"github.com/bloXroute-Labs/gateway/v2/utils/ptr"
 )
 
 const (
@@ -75,8 +76,7 @@ type HeimdallSpanner struct {
 
 	mx *sync.RWMutex
 
-	booting *atomic.Bool
-	started *atomic.Bool
+	state *atomic.Pointer[runState]
 
 	httpClient *http.Client
 
@@ -95,8 +95,7 @@ func NewHeimdallSpanner(ctx context.Context, endpoint string) *HeimdallSpanner {
 
 		mx: new(sync.RWMutex),
 
-		booting: new(atomic.Bool),
-		started: new(atomic.Bool),
+		state: atomic.NewPointer(ptr.New(stateIdle)),
 
 		httpClient: new(http.Client),
 
@@ -136,18 +135,19 @@ func (h *HeimdallSpanner) bootstrap() error {
 
 // Run bootstrap initial state and start goroutine for processing of changes.
 func (h *HeimdallSpanner) Run() error {
-	if h.started.Load() || h.booting.Load() {
+	if *h.state.Load() != stateIdle {
 		return nil
 	}
 
-	h.booting.Store(true)
-	defer h.booting.Store(false)
+	h.state.Store(ptr.New(stateBooting))
 
 	if err := h.bootstrap(); err != nil {
+		h.state.Store(ptr.New(stateIdle))
+
 		return errors.WithMessage(err, "failed to bootstrap spanner")
 	}
 
-	h.started.Store(true)
+	h.state.Store(ptr.New(stateRunning))
 
 	go func() {
 		backOff := backoff.WithContext(Retry(), h.ctx)
@@ -155,7 +155,7 @@ func (h *HeimdallSpanner) Run() error {
 		for {
 			select {
 			case <-h.ctx.Done():
-				h.started.Store(false)
+				h.state.Store(ptr.New(stateIdle))
 
 				return
 			case spanInfo := <-h.spanUpdateCh:

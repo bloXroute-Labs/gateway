@@ -81,7 +81,7 @@ func (r *Relay) NodeEndpoint() types.NodeEndpoint {
 
 func (r *Relay) addBdnToUpscale() {
 	const NOTINUSE = 0
-	ipPort := net.JoinHostPort(r.Info().PeerIP, strconv.FormatInt(r.Info().PeerPort, 10))
+	ipPort := net.JoinHostPort(r.GetPeerIP(), strconv.FormatInt(r.GetPeerPort(), 10))
 	addr, err := net.ResolveTCPAddr("tcp", ipPort)
 	if err != nil {
 		panic("relay ip port is invalid")
@@ -115,7 +115,7 @@ func (r *Relay) ProcessMessage(msg bxmessage.MessageBytes) {
 	case bxmessage.HelloType:
 		// if the running program is gw and the connected component is relay - we want to add the relay as an active peer to upscale
 		if r.Node.NodeStatus().Capabilities&types.CapabilityBDN != 0 &&
-			r.Info().IsRelay() {
+			connections.IsRelay(r.GetConnectionType()) {
 			r.addBdnToUpscale()
 		}
 		r.BxConn.ProcessMessage(msg)

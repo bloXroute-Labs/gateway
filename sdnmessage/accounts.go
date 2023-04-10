@@ -250,6 +250,8 @@ type Account struct {
 
 	SolanaDexAPIRateLimit   BDNQuotaService `json:"solana_dex_api_rate_limit"`
 	SolanaDexAPIStreamLimit BDNQuotaService `json:"solana_dex_api_stream_limit"`
+
+	TwammStreaming BDNFeedService `json:"twamm_streaming"`
 }
 
 // Validate verifies the response that the response from bxapi is well understood
@@ -450,6 +452,13 @@ func GetDefaultEliteAccount(now time.Time) Account {
 				Limit:       50,
 			},
 			ExpireDateTime: now.Add(time.Hour),
+		},
+		TwammStreaming: BDNFeedService{
+			ExpireDate: now.AddDate(0, 0, 1).Format("2006-01-02"),
+			Feed: FeedProperties{
+				AllowFiltering:  true,
+				AvailableFields: []string{"all"},
+			},
 		},
 		SecretHash: "",
 	}

@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/config"
@@ -18,8 +20,13 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
+	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 	uuid "github.com/satori/go.uuid"
 	"github.com/sourcegraph/jsonrpc2"
+)
+
+const (
+	pendingNextValidatorListInitCapacity = 100
 )
 
 // ClientSubscription contains client subscription feed and websocket connection
@@ -47,24 +54,35 @@ type ClientSubscriptionHandlingInfo struct {
 	PermissionRespChan chan *sdnmessage.SubscriptionPermissionMessage
 }
 
+// PendingNextValidatorTxInfo holds info needed to reevaluate next validator tx when next block published
+type PendingNextValidatorTxInfo struct {
+	Tx            *bxmessage.Tx
+	Fallback      uint16
+	TimeOfRequest time.Time
+	Source        connections.Conn
+}
+
 // FeedManager - feed manager fields
 type FeedManager struct {
-	feedChan                chan types.Notification
-	idToClientSubscription  map[uuid.UUID]ClientSubscription
-	subscriptionServices    services.SubscriptionServices
-	lock                    sync.RWMutex
-	node                    connections.BxListener
-	networkNum              types.NetworkNum
-	chainID                 types.NetworkID
-	nodeID                  types.NodeID
-	nodeWSManager           blockchain.WSManager
-	accountModel            sdnmessage.Account
-	getCustomerAccountModel func(types.AccountID) (sdnmessage.Account, error)
-	certFile                string
-	keyFile                 string
-	cfg                     config.Bx
-	log                     *log.Entry
-	nextValidatorMap        *orderedmap.OrderedMap
+	feedChan                            chan types.Notification
+	idToClientSubscription              map[uuid.UUID]ClientSubscription
+	subscriptionServices                services.SubscriptionServices
+	lock                                sync.RWMutex
+	node                                connections.BxListener
+	networkNum                          types.NetworkNum
+	chainID                             types.NetworkID
+	nodeID                              types.NodeID
+	nodeWSManager                       blockchain.WSManager
+	accountModel                        sdnmessage.Account
+	getCustomerAccountModel             func(types.AccountID) (sdnmessage.Account, error)
+	certFile                            string
+	keyFile                             string
+	cfg                                 config.Bx
+	log                                 *log.Entry
+	nextValidatorMap                    *orderedmap.OrderedMap
+	validatorStatusMap                  *syncmap.SyncMap[string, bool]
+	pendingBSCNextValidatorTxHashToInfo map[string]PendingNextValidatorTxInfo
+	pendingBSCNextValidatorTxsMapLock   sync.Mutex
 
 	context context.Context
 	cancel  context.CancelFunc
@@ -77,31 +95,34 @@ func NewFeedManager(parent context.Context, node connections.BxListener, feedCha
 	networkNum types.NetworkNum, networkID types.NetworkID, nodeID types.NodeID,
 	wsManager blockchain.WSManager,
 	accountModel sdnmessage.Account, getCustomerAccountModel func(types.AccountID) (sdnmessage.Account, error),
-	certFile string, keyFile string, cfg config.Bx, stats statistics.Stats, nextValidatorMap *orderedmap.OrderedMap) *FeedManager {
+	certFile string, keyFile string, cfg config.Bx, stats statistics.Stats,
+	nextValidatorMap *orderedmap.OrderedMap, validatorStatusMap *syncmap.SyncMap[string, bool]) *FeedManager {
 	ctx, cancel := context.WithCancel(parent)
 	logger := log.WithFields(log.Fields{
 		"component": "feedManager",
 	})
 
 	newServer := &FeedManager{
-		feedChan:                feedChan,
-		idToClientSubscription:  make(map[uuid.UUID]ClientSubscription),
-		subscriptionServices:    subscriptionServices,
-		node:                    node,
-		networkNum:              networkNum,
-		chainID:                 networkID,
-		nodeID:                  nodeID,
-		nodeWSManager:           wsManager,
-		accountModel:            accountModel,
-		getCustomerAccountModel: getCustomerAccountModel,
-		nextValidatorMap:        nextValidatorMap,
-		certFile:                certFile,
-		keyFile:                 keyFile,
-		cfg:                     cfg,
-		context:                 ctx,
-		cancel:                  cancel,
-		stats:                   stats,
-		log:                     logger,
+		feedChan:                            feedChan,
+		idToClientSubscription:              make(map[uuid.UUID]ClientSubscription),
+		subscriptionServices:                subscriptionServices,
+		node:                                node,
+		networkNum:                          networkNum,
+		chainID:                             networkID,
+		nodeID:                              nodeID,
+		nodeWSManager:                       wsManager,
+		accountModel:                        accountModel,
+		getCustomerAccountModel:             getCustomerAccountModel,
+		nextValidatorMap:                    nextValidatorMap,
+		validatorStatusMap:                  validatorStatusMap,
+		certFile:                            certFile,
+		keyFile:                             keyFile,
+		cfg:                                 cfg,
+		context:                             ctx,
+		cancel:                              cancel,
+		stats:                               stats,
+		log:                                 logger,
+		pendingBSCNextValidatorTxHashToInfo: make(map[string]PendingNextValidatorTxInfo),
 	}
 	return newServer
 }
@@ -379,4 +400,19 @@ func (f *FeedManager) GetAllSubscriptions() []sdnmessage.SubscriptionModel {
 		i++
 	}
 	return subscriptionModels
+}
+
+// GetPendingNextValidatorTxs returns map of pending next validator transactions
+func (f *FeedManager) GetPendingNextValidatorTxs() map[string]PendingNextValidatorTxInfo {
+	return f.pendingBSCNextValidatorTxHashToInfo
+}
+
+// LockPendingNextValidatorTxs activates mutex lock for pendingBSCNextValidatorTxHashToInfo map
+func (f *FeedManager) LockPendingNextValidatorTxs() {
+	f.pendingBSCNextValidatorTxsMapLock.Lock()
+}
+
+// UnlockPendingNextValidatorTxs activates mutex lock for pendingBSCNextValidatorTxHashToInfo map
+func (f *FeedManager) UnlockPendingNextValidatorTxs() {
+	f.pendingBSCNextValidatorTxsMapLock.Unlock()
 }

@@ -1,4 +1,4 @@
-FROM golang:1.18.9
+FROM golang:1.19
 ENV PROTOC_VERSION=3.19.3
 
 RUN apt-get update && apt-get install unzip

@@ -2,16 +2,17 @@ package services
 
 import (
 	"fmt"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/ethereum/go-ethereum/common"
-	cmap "github.com/orcaman/concurrent-map"
 	"math/big"
 	"strconv"
 	"strings"
 	"time"
+
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 // TODO : move ethtxstore and related tests outside of bxgateway package
@@ -65,7 +66,7 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 
 	if validate && !t.HasContent(hash) {
 		// If validate is true we got the tx from gw or cloud-api (with content).
-		// If we don't know this hash or we don't have its content we we should validate
+		// If we don't know this hash, or we don't have its content we should validate
 		// it and extract the sender (so we pass EmptySender)
 		transaction.SetContent(content)
 		blockchainTx, err = transaction.BlockchainTransaction(types.EmptySender)
@@ -83,6 +84,8 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 			return result
 		}
 		copy(sender[:], ethTx.From.Bytes())
+	} else {
+		log.Tracef("adding transaction %v with sender %v", hash, sender)
 	}
 
 	result = t.BxTxStore.Add(hash, content, shortID, network, false, transaction.Flags(), timestamp, networkChainID, sender)
@@ -138,7 +141,7 @@ type trackedTx struct {
 
 type nonceTracker struct {
 	clock            utils.Clock
-	addressNonceToTx cmap.ConcurrentMap
+	addressNonceToTx *syncmap.SyncMap[string, trackedTx]
 	cleanInterval    time.Duration
 	networkConfig    sdnmessage.BlockchainNetworks
 	quit             chan bool
@@ -156,7 +159,7 @@ func newNonceTracker(clock utils.Clock, networkConfig sdnmessage.BlockchainNetwo
 	nt := nonceTracker{
 		clock:            clock,
 		networkConfig:    networkConfig,
-		addressNonceToTx: cmap.New(),
+		addressNonceToTx: syncmap.NewStringMapOf[trackedTx](),
 		cleanInterval:    cleanInterval,
 		quit:             make(chan bool),
 	}
@@ -166,11 +169,11 @@ func newNonceTracker(clock utils.Clock, networkConfig sdnmessage.BlockchainNetwo
 
 func (nt *nonceTracker) getTransaction(from *common.Address, nonce uint64) (*trackedTx, bool) {
 	k := fromNonceKey(from, nonce)
-	utx, ok := nt.addressNonceToTx.Get(k)
+	utx, ok := nt.addressNonceToTx.Load(k)
 	if !ok {
 		return nil, ok
 	}
-	tx := utx.(trackedTx)
+	tx := utx
 	return &tx, ok
 }
 
@@ -192,7 +195,7 @@ func (nt *nonceTracker) setTransaction(tx *types.EthTransaction, network types.N
 		gasFeeCap:  intGasFeeCap,
 		gasTipCap:  intGasTipCap,
 	}
-	nt.addressNonceToTx.Set(fromNonceKey(tx.From, tx.Nonce), tracked)
+	nt.addressNonceToTx.Store(fromNonceKey(tx.From, tx.Nonce), tracked)
 }
 
 // isReuseNonceActive returns whether reuse nonce tracking is active
@@ -232,14 +235,16 @@ func (nt *nonceTracker) cleanLoop() {
 
 func (nt *nonceTracker) clean() {
 	currentTime := nt.clock.Now()
-	sizeBefore := nt.addressNonceToTx.Count()
+	sizeBefore := nt.addressNonceToTx.Size()
 	removed := 0
-	for item := range nt.addressNonceToTx.IterBuffered() {
-		tracked := item.Val.(trackedTx)
+
+	nt.addressNonceToTx.Range(func(key string, tracked trackedTx) bool {
 		if currentTime.After(tracked.expireTime) {
-			nt.addressNonceToTx.Remove(item.Key)
+			nt.addressNonceToTx.Delete(key)
 			removed++
 		}
-	}
+		return true
+	})
+
 	log.Tracef("nonceTracker Cleanup done. Size at start %v, cleaned %v", sizeBefore, removed)
 }

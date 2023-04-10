@@ -12,7 +12,6 @@ const (
 	OnBlockFeed           FeedType = "ethOnBlock"
 	TxReceiptsFeed        FeedType = "txReceipts"
 	TransactionStatusFeed FeedType = "transactionStatus"
-	CloudAPIFeed          FeedType = "cloudAPIFeed"
 )
 
 // Beacon blocks

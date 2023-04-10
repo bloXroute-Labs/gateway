@@ -66,6 +66,7 @@ type SDNHTTP interface {
 	MinTxAge() time.Duration
 	SendNodeEvent(event sdnmessage.NodeEvent, id types.NodeID)
 	Get(endpoint string, requestBody []byte) ([]byte, error)
+	GetQuotaUsage(accountID string) (*QuotaResponseBody, error)
 }
 
 // realSDNHTTP is a connection to the bloxroute API
@@ -101,6 +102,17 @@ type RelayInstruction struct {
 
 // ConnInstructionType specifies connection or disconnection
 type ConnInstructionType int
+
+type quotaRequestBody struct {
+	AccountID string `json:"account_id"`
+}
+
+// QuotaResponseBody quota usage response body
+type QuotaResponseBody struct {
+	AccountID   string `json:"account_id"`
+	QuotaFilled int    `json:"quota_filled"`
+	QuotaLimit  int    `json:"quota_limit"`
+}
 
 const (
 	// Connect is the instruction to connect to a relay
@@ -427,6 +439,29 @@ func (s *realSDNHTTP) close(resp *http.Response) {
 	if err != nil {
 		log.Error(fmt.Errorf("unable to close response body %v error %v", resp.Body, err))
 	}
+}
+
+func (s *realSDNHTTP) GetQuotaUsage(accountID string) (*QuotaResponseBody, error) {
+	reqBody := quotaRequestBody{
+		AccountID: accountID,
+	}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		log.Errorf("unable to marshal SDN request: %v", err)
+		return nil, err
+	}
+
+	resp, err := s.Get("/accounts/quota-status", body)
+	if err != nil {
+		return nil, err
+	}
+
+	quotaResp := QuotaResponseBody{}
+	if err = json.Unmarshal(resp, &quotaResp); err != nil {
+		return nil, err
+	}
+
+	return &quotaResp, nil
 }
 
 func (s *realSDNHTTP) getAccountModelWithEndpoint(accountID types.AccountID, endpoint string) (sdnmessage.Account, error) {

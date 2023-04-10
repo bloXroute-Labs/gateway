@@ -232,6 +232,8 @@ func (h *Handler) handleBDNBridge(ctx context.Context) {
 			h.config.Update(config)
 		case <-h.bridge.ReceiveBlockchainStatusRequest():
 			h.processBlockchainStatusRequest()
+		case <-h.bridge.ReceiveNodeConnectionCheckRequest():
+			h.processNodeConnectionCheckRequest()
 		case endpoint := <-h.bridge.ReceiveDisconnectEvent():
 			h.processDisconnectEvent(endpoint)
 		case <-ctx.Done():
@@ -325,6 +327,19 @@ func (h *Handler) processBlockchainStatusRequest() {
 	}
 
 	err := h.bridge.SendBlockchainStatusResponse(nodes)
+	if err != nil {
+		log.Errorf("send blockchain status response: %v", err)
+	}
+}
+
+func (h *Handler) processNodeConnectionCheckRequest() {
+	var endpoint types.NodeEndpoint
+	for _, peer := range h.peers.getAll() {
+		endpoint = peer.IPEndpoint()
+		break
+	}
+
+	err := h.bridge.SendNodeConnectionCheckResponse(endpoint)
 	if err != nil {
 		log.Errorf("send blockchain status response: %v", err)
 	}

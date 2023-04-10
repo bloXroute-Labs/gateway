@@ -3,17 +3,17 @@ package beacon
 import (
 	"bytes"
 	"fmt"
+	"github.com/prysmaticlabs/go-bitfield"
 
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	ssz "github.com/prysmaticlabs/fastssz"
-	"github.com/prysmaticlabs/go-bitfield"
-	"github.com/prysmaticlabs/prysm/v3/beacon-chain/p2p"
-	prysmTypes "github.com/prysmaticlabs/prysm/v3/beacon-chain/p2p/types"
-	types "github.com/prysmaticlabs/prysm/v3/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v3/consensus-types/wrapper"
-	ethpb "github.com/prysmaticlabs/prysm/v3/proto/prysm/v1alpha1"
+	"github.com/prysmaticlabs/prysm/v4/beacon-chain/p2p"
+	prysmTypes "github.com/prysmaticlabs/prysm/v4/beacon-chain/p2p/types"
+	types "github.com/prysmaticlabs/prysm/v4/consensus-types/primitives"
+	"github.com/prysmaticlabs/prysm/v4/consensus-types/wrapper"
+	ethpb "github.com/prysmaticlabs/prysm/v4/proto/prysm/v1alpha1"
 )
 
 func (n *Node) subscribeRPC(topic string, handler libp2pNetwork.StreamHandler) {
