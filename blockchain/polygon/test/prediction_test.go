@@ -135,7 +135,7 @@ func TestFutureValidatorPredictionLive(t *testing.T) {
 
 	blocksCh := make(chan uint64, blocksChBufferSize)
 
-	blockMap := syncmap.New[uint64, *types.EthBlockNotification]()
+	blockMap := syncmap.NewIntegerMapOf[uint64, *types.EthBlockNotification]()
 
 	wg.Add(1)
 	go func() {
@@ -177,7 +177,7 @@ func TestFutureValidatorPredictionLive(t *testing.T) {
 		}
 	}()
 
-	headersMap := syncmap.New[uint64, *ethtypes.Header]()
+	headersMap := syncmap.NewIntegerMapOf[uint64, *ethtypes.Header]()
 
 	wg.Add(1)
 	go func() {
@@ -210,7 +210,7 @@ func TestFutureValidatorPredictionLive(t *testing.T) {
 		testCtx, testCancel := context.WithCancel(ctx)
 		defer testCancel()
 
-		for blockMap.Len() <= int(bor.SprintSize) {
+		for blockMap.Size() <= int(bor.SprintSize) {
 			time.Sleep(retryDuration)
 		}
 
@@ -233,7 +233,7 @@ func TestFutureValidatorPredictionLive(t *testing.T) {
 				if func() bool {
 					args := testNotificationArgs{}
 
-					if args.notification, exist = blockMap.Get(blockNum); !exist {
+					if args.notification, exist = blockMap.Load(blockNum); !exist {
 						if _, opened = <-blocksCh; !opened {
 							testCancel()
 						}
@@ -241,15 +241,15 @@ func TestFutureValidatorPredictionLive(t *testing.T) {
 						return true
 					}
 
-					if args.header, exist = headersMap.Get(blockNum); !exist {
+					if args.header, exist = headersMap.Load(blockNum); !exist {
 						return true
 					}
 
-					if args.validatorInfo[0], exist = headersMap.Get(args.notification.ValidatorInfo[0].BlockHeight); !exist {
+					if args.validatorInfo[0], exist = headersMap.Load(args.notification.ValidatorInfo[0].BlockHeight); !exist {
 						return true
 					}
 
-					if args.validatorInfo[1], exist = headersMap.Get(args.notification.ValidatorInfo[1].BlockHeight); !exist {
+					if args.validatorInfo[1], exist = headersMap.Load(args.notification.ValidatorInfo[1].BlockHeight); !exist {
 						return true
 					}
 
@@ -329,7 +329,7 @@ func processNotification(t *testing.T, wg *sync.WaitGroup, data []byte, blocksCh
 
 	blockNumber := blockNumberBigInt.Uint64()
 
-	blockMap.Set(blockNumber, notification.Params.Result)
+	blockMap.Store(blockNumber, notification.Params.Result)
 
 	blocksCh <- blockNumber
 	blocksCh <- notification.Params.Result.ValidatorInfo[0].BlockHeight
@@ -339,7 +339,7 @@ func processNotification(t *testing.T, wg *sync.WaitGroup, data []byte, blocksCh
 }
 
 func processBlock(t *testing.T, blockNumber uint64, headersMap *syncmap.SyncMap[uint64, *ethtypes.Header], conn *websocket.Conn) bool {
-	if _, exists := headersMap.Get(blockNumber); exists {
+	if _, exists := headersMap.Load(blockNumber); exists {
 		return true
 	}
 
@@ -371,7 +371,7 @@ func processBlock(t *testing.T, blockNumber uint64, headersMap *syncmap.SyncMap[
 		counter++
 	}
 
-	headersMap.Set(blockNumber, resp.Result)
+	headersMap.Store(blockNumber, resp.Result)
 
 	t.Logf("block (%d) fetched", blockNumber)
 

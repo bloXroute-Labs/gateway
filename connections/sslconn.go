@@ -9,6 +9,7 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
@@ -27,6 +28,7 @@ const (
 
 // SSLConn represents the basic connection properties for connections opened between bloxroute nodes. SSLConn does not define any message handlers, and only implements the Conn interface.
 type SSLConn struct {
+	ConnDetails
 	Socket
 	writer *bufio.Writer
 
@@ -129,21 +131,26 @@ func (s *SSLConn) ID() Socket {
 	return s.Socket
 }
 
-// Info returns connection details, include details parsed from certificates
-func (s *SSLConn) Info() Info {
-	return Info{
-		NodeID:          s.extensions.NodeID,
-		AccountID:       s.extensions.AccountID,
-		PeerIP:          s.ip,
-		PeerPort:        s.port,
-		LocalPort:       LocalInitiatedPort,
-		ConnectionType:  s.extensions.NodeType,
-		ConnectionState: "",
-		NetworkNum:      0,
-		FromMe:          s.isInitiator(),
-		ConnectedAt:     s.connectedAt,
-	}
-}
+// GetConnectionType returns type of the connection
+func (s SSLConn) GetConnectionType() utils.NodeType { return s.extensions.NodeType }
+
+// GetNodeID return node ID
+func (s SSLConn) GetNodeID() types.NodeID { return s.extensions.NodeID }
+
+// GetPeerIP return peer IP
+func (s SSLConn) GetPeerIP() string { return s.ip }
+
+// GetPeerPort return peer port
+func (s SSLConn) GetPeerPort() int64 { return s.port }
+
+// GetLocalPort return local port
+func (s SSLConn) GetLocalPort() int64 { return LocalInitiatedPort }
+
+// GetConnectedAt gets ttime of connection
+func (s SSLConn) GetConnectedAt() time.Time { return s.connectedAt }
+
+// GetAccountID return account ID
+func (s SSLConn) GetAccountID() types.AccountID { return s.extensions.AccountID }
 
 // IsOpen indicates whether the socket connection is open
 func (s SSLConn) IsOpen() bool {
@@ -317,8 +324,8 @@ func (s SSLConn) String() string {
 	return s.Socket.RemoteAddr().String()
 }
 
-// isInitiator returns whether this node initiated the connection
-func (s *SSLConn) isInitiator() bool {
+// IsInitiator returns whether this node initiated the connection
+func (s *SSLConn) IsInitiator() bool {
 	return s.port != RemoteInitiatedPort
 }
 

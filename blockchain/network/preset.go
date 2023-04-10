@@ -21,10 +21,10 @@ const ZhejiangChainID = 1337803
 // GoerliChainID ethereum Goerli chain ID
 const GoerliChainID = 5
 
-//BSCMainnetChainID BSC mainnet chain ID
+// BSCMainnetChainID BSC mainnet chain ID
 const BSCMainnetChainID = 56
 
-//PolygonMainnetChainID Polygon mainnet chain ID
+// PolygonMainnetChainID Polygon mainnet chain ID
 const PolygonMainnetChainID = 137
 
 var networkMapping = map[string]EthConfig{
@@ -71,7 +71,7 @@ func newGoerliConfig() EthConfig {
 }
 
 func newZhejiangEthereumConfig() EthConfig {
-	td, ok := new(big.Int).SetString("0400000000", 16)
+	td, ok := new(big.Int).SetString("0400000000", 16) // todo: ?
 	if !ok {
 		panic("could not load Ethereum Mainnet configuration")
 	}
@@ -79,26 +79,22 @@ func newZhejiangEthereumConfig() EthConfig {
 	var err error
 	var bootNodes []*enode.Node
 
-	bootNodes, err = bootstrapNodes(enode.ValidSchemes, []string{
-		"enode://691c66d0ce351633b2ef8b4e4ef7db9966915ca0937415bd2b408df22923f274873b4d4438929e029a13a680140223dcf701cabe22df7d8870044321022dfefa@64.225.78.1:30303",
-		"enode://89347b9461727ee1849256d78e84d5c86cc3b4c6c5347650093982b726d71f3d08027e280b399b7b6604ceeda863283dcfe1a01e93728b4883114e9f8c7cc8ef@146.190.238.212:30303",
-		"enode://c2892072efe247f21ed7ebea6637ade38512a0ae7c5cffa1bf0786d5e3be1e7f40ff71252a21b36aa9de54e49edbcfc6962a98032adadfa29c8524262e484ad3@165.232.84.160:30303",
-		"enode://71e862580d3177a99e9837bd9e9c13c83bde63d3dba1d5cea18e89eb2a17786bbd47a8e7ae690e4d29763b55c205af13965efcaf6105d58e118a5a8ed2b0f6d0@68.183.13.170:30303",
-		"enode://2f6cf7f774e4507e7c1b70815f9c0ccd6515ee1170c991ce3137002c6ba9c671af38920f5b8ab8a215b62b3b50388030548f1d826cb6c2b30c0f59472804a045@161.35.147.98:30303",
+	bootNodes, err = bootstrapNodes(enode.ValidSchemes, []string{ // todo: ?
+		"enode://f20741af2743d83e03d30c49801b19b0103db81667cd8482a428cb1807a790f78a6ed2045ac45694e84803c94b6e8e63a4fc151f7c676cace3d38fcd94e52c57@167.99.209.68:30303",
 	})
 	if err != nil {
 		panic("could not set Ethereum Mainnet bootstrapNodes")
 	}
 
-	ttd, _ := big.NewInt(0).SetString("0", 0)
+	ttd, _ := big.NewInt(0).SetString("0", 0) // not changed
 
 	return EthConfig{
 		Network:                 ZhejiangChainID,
 		TotalDifficulty:         td,
 		TerminalTotalDifficulty: ttd,
-		GenesisTime:             1675263600,
-		Head:                    common.HexToHash("0x40891180a021e1f86644f42721a9badb5bc8fc04036ca847c0d6fe1c440d4261"),
-		Genesis:                 common.HexToHash("0x40891180a021e1f86644f42721a9badb5bc8fc04036ca847c0d6fe1c440d4261"),
+		GenesisTime:             1680523260, // cfg.MinGenesisTime = 1680523200 + cfg.GenesisDelay = 60
+		Head:                    common.HexToHash("0xd4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3"),
+		Genesis:                 common.HexToHash("0xd4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3"),
 		IgnoreBlockTimeout:      150 * time.Second,
 		IgnoreSlotCount:         10,
 		BootstrapNodes:          bootNodes,
@@ -159,7 +155,7 @@ func newBSCMainnetConfig() EthConfig {
 		"enode://28b1d16562dac280dacaaf45d54516b85bc6c994252a9825c5cc4e080d3e53446d05f63ba495ea7d44d6c316b54cd92b245c5c328c37da24605c4a93a0d099c4@34.246.65.14:30311",
 		"enode://5a7b996048d1b0a07683a949662c87c09b55247ce774aeee10bb886892e586e3c604564393292e38ef43c023ee9981e1f8b335766ec4f0f256e57f8640b079d5@35.73.137.11:30311",
 	})
-	//bootNodes, err = bootstrapNodes(enode.ValidSchemes, []string{
+	// bootNodes, err = bootstrapNodes(enode.ValidSchemes, []string{
 	//	"enode://45146a7cb02cd127d21cf3c37f533623c5caf4dea31aecc619d5e47ccc38f8377f08be8ce60f9c3429efaa50825c435498880a46b4634ccdc3ed8eb72ba054ae@3.209.235.131:30311",
 	//	"enode://eaa9a4d781fc7f1666bb15b8cb5fd6128ce9b92ab3824294e1fde8074a646d1d94e9f8558f6111a714ff28aed0f06dfb3958212b21ac943904747719c758b4d1@100.25.250.190:30311",
 	//	"enode://5a7b996048d1b0a07683a949662c87c09b55247ce774aeee10bb886892e586e3c604564393292e38ef43c023ee9981e1f8b335766ec4f0f256e57f8640b079d5@13.114.81.214:30311",
@@ -174,7 +170,7 @@ func newBSCMainnetConfig() EthConfig {
 	//	"enode://3a1efd25c06f925e05eed5418534e033ee285abbdc898e64c6747e327abbf9369db846ad0532ce94149e9e3d35c1f9a6d700e99c9cfbc02de099988a4ab1049e@3.215.208.84:30311",
 	//	"enode://2149f76dabe7c1711e3180b0b8358c55ec3b37b0b0e3e00b4dc1fe994c74d4ee7012ffc9eec768f601e0809e99b8d1650dbf0d91ffb62f6b2e809fbd3411ae2f@46.137.9.186:30311",
 	//	"enode://1841077024720c251f58e6eeb10c2a3846db3610b2f4e8210e7035d0623f4ab6caef94c3bf215cb548e7c7e41d2755da33b63685de425e07aeb5cef017ea8cb5@52.51.36.24:30311",
-	//})
+	// })
 	if err != nil {
 		panic("could not set Ethereum Mainnet bootstrapNodes")
 	}

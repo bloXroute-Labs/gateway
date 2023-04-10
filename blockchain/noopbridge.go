@@ -126,6 +126,22 @@ func (n NoOpBxBridge) ReceiveBlockchainStatusResponse() <-chan []*types.NodeEndp
 	return make(chan []*types.NodeEndpoint)
 }
 
+// SendNodeConnectionCheckRequest is a no-op
+func (n NoOpBxBridge) SendNodeConnectionCheckRequest() error { return nil }
+
+// ReceiveNodeConnectionCheckRequest is a no-op
+func (n NoOpBxBridge) ReceiveNodeConnectionCheckRequest() <-chan struct{} {
+	return make(chan struct{})
+}
+
+// SendNodeConnectionCheckResponse is a no-op
+func (n NoOpBxBridge) SendNodeConnectionCheckResponse(types.NodeEndpoint) error { return nil }
+
+// ReceiveNodeConnectionCheckResponse is a no-op
+func (n NoOpBxBridge) ReceiveNodeConnectionCheckResponse() <-chan types.NodeEndpoint {
+	return make(chan types.NodeEndpoint)
+}
+
 // SendValidatorListInfo is a no-op
 func (n *NoOpBxBridge) SendValidatorListInfo(info *ValidatorListInfo) error {
 	return nil

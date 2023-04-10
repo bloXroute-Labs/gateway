@@ -1,6 +1,6 @@
 MODULE   = $(shell env GO111MODULE=on $(GO) list -m)
 DATE    ?= $(shell date +%FT%T%z)
-VERSION ?= $(shell git describe --tags --always --dirty --match=v2* 2> /dev/null || \
+VERSION ?= $(shell git describe --tags --always --dirty --match='v2*' 2> /dev/null || \
             cat .gittag || \
 			sed '5!d' $(CURDIR)/version/version.go | grep -o '".*"' | sed 's/"//g' 2> /dev/null || echo v2.1.1.2)
 PKGS     = $(or $(PKG),$(shell env GO111MODULE=on $(GO) list ./...))
@@ -79,7 +79,7 @@ test-coverage: fmt lint test-coverage-tools ; $(info $(M) running coverage tests
 	$Q $(GO) tool cover -html=$(COVERAGE_PROFILE) -o $(COVERAGE_HTML)
 	$Q $(GOCOV) convert $(COVERAGE_PROFILE) | $(GOCOVXML) > $(COVERAGE_XML)
 
-GOLANGCI_VERSION=v1.49.0
+GOLANGCI_VERSION=v1.52.2
 GOLANGCI_REV=8cdecc968bf7b87ce85e09e42cabb3e3540e9344
 
 .PHONY: lint

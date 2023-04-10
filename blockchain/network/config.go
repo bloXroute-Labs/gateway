@@ -4,6 +4,8 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"fmt"
+	"github.com/multiformats/go-multiaddr"
+	"github.com/urfave/cli/v2"
 	"math/big"
 	"net"
 	"os"
@@ -16,9 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	libp2pPeer "github.com/libp2p/go-libp2p/core/peer"
-	"github.com/multiformats/go-multiaddr"
-	ecdsaprysm "github.com/prysmaticlabs/prysm/v3/crypto/ecdsa"
-	"github.com/urfave/cli/v2"
+	ecdsaprysm "github.com/prysmaticlabs/prysm/v4/crypto/ecdsa"
 )
 
 // PeerInfo contains the enode and websockets endpoint for an Ethereum peer

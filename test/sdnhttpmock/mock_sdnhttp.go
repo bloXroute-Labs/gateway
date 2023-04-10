@@ -46,6 +46,15 @@ func (m *MockSDNHTTP) AccountModel() sdnmessage.Account {
 	return ret0
 }
 
+func (m *MockSDNHTTP) GetQuotaUsage(accountID string) (*connections.QuotaResponseBody, error) {
+	res := connections.QuotaResponseBody{
+		AccountID:   accountID,
+		QuotaFilled: 1,
+		QuotaLimit:  2,
+	}
+	return &res, nil
+}
+
 // AccountModel indicates an expected call of AccountModel.
 func (mr *MockSDNHTTPMockRecorder) AccountModel() *gomock.Call {
 	mr.mock.ctrl.T.Helper()

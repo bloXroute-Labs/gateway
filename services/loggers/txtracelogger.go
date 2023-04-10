@@ -32,10 +32,10 @@ func NewTxTrace(txTraceLogger *log.Logger) TxTrace {
 
 func (tt txTrace) Log(hash types.SHA256Hash, source connections.Conn) {
 	var sourceName string
-	if source.Info().ConnectionType == utils.Blockchain {
+	if source.GetConnectionType() == utils.Blockchain {
 		sourceName = "Blockchain"
 	} else {
 		sourceName = "BDN"
 	}
-	tt.logger.Tracef("%v - %v %v", hash, sourceName, source.Info().PeerIP)
+	tt.logger.Tracef("%v - %v %v", hash, sourceName, source.GetPeerIP())
 }

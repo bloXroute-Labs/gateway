@@ -393,4 +393,16 @@ var (
 		Usage: "calling method of the forwarding transaction to rpc endpoint",
 		Value: "",
 	}
+	BSCTransactionHoldDuration = &cli.IntFlag{
+		Name: "bsc-transaction-hold-duration",
+		Usage: "number of millisecond before next block, marking the starting window time for processing front-running protection transaction on " +
+			"validator gateway",
+		Value: 500,
+	}
+	BSCTransactionPassedDueDuration = &cli.IntFlag{
+		Name: "bsc-transaction-slot-end-duration",
+		Usage: "number of millisecond before next block, marking the ending window time for processing front-running protection transaction on " +
+			"validator gateway",
+		Value: 200,
+	}
 )

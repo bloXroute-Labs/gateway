@@ -6,16 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"strconv"
 	"sync"
 	"time"
 
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
-	cmap "github.com/orcaman/concurrent-map"
 )
 
 const (
@@ -39,10 +38,10 @@ type Chain struct {
 	// if a missing block too old discard to add it
 	ignoreBlockTimeout time.Duration
 
-	heightToBlockHeaders  cmap.ConcurrentMap
-	blockHashMetadata     cmap.ConcurrentMap
-	blockHashToBody       cmap.ConcurrentMap
-	blockHashToDifficulty cmap.ConcurrentMap
+	heightToBlockHeaders  *syncmap.SyncMap[uint64, []ethHeader]
+	blockHashMetadata     *syncmap.SyncMap[ethcommon.Hash, blockMetadata]
+	blockHashToBody       *syncmap.SyncMap[ethcommon.Hash, *ethtypes.Body]
+	blockHashToDifficulty *syncmap.SyncMap[ethcommon.Hash, *big.Int]
 
 	chainState blockRefChain
 
@@ -111,10 +110,10 @@ func newChain(ctx context.Context, ignoreBlockTimeout time.Duration, maxReorg, m
 	c := &Chain{
 		chainLock:             sync.RWMutex{},
 		headerLock:            sync.RWMutex{},
-		heightToBlockHeaders:  cmap.New(),
-		blockHashMetadata:     cmap.New(),
-		blockHashToBody:       cmap.New(),
-		blockHashToDifficulty: cmap.New(),
+		heightToBlockHeaders:  syncmap.NewIntegerMapOf[uint64, []ethHeader](),
+		blockHashMetadata:     syncmap.NewTypedMapOf[ethcommon.Hash, blockMetadata](syncmap.EthCommonHasher),
+		blockHashToBody:       syncmap.NewTypedMapOf[ethcommon.Hash, *ethtypes.Body](syncmap.EthCommonHasher),
+		blockHashToDifficulty: syncmap.NewTypedMapOf[ethcommon.Hash, *big.Int](syncmap.EthCommonHasher),
 		chainState:            make([]blockRef, 0),
 		maxReorg:              maxReorg,
 		minValidChain:         minValidChain,
@@ -173,7 +172,7 @@ func (c *Chain) ConfirmBlock(hash ethcommon.Hash) int {
 	}
 
 	bm.confirmed = true
-	c.blockHashMetadata.Set(hash.String(), bm)
+	c.blockHashMetadata.Store(hash, bm)
 
 	header, ok := c.getBlockHeader(bm.height, hash)
 	if !ok {
@@ -297,7 +296,7 @@ func (c *Chain) MarkSentToBDN(hash ethcommon.Hash) {
 	}
 
 	bm.sentToBDN = true
-	c.blockHashMetadata.Set(hash.String(), bm)
+	c.blockHashMetadata.Store(hash, bm)
 }
 
 // MarkConfirmationSentToBDN marks a block confirmation as having been sent to the BDN, so it does not need to be sent again in the future
@@ -311,7 +310,7 @@ func (c *Chain) MarkConfirmationSentToBDN(hash ethcommon.Hash) {
 	}
 
 	bm.cnfMsgSent = true
-	c.blockHashMetadata.Set(hash.String(), bm)
+	c.blockHashMetadata.Store(hash, bm)
 }
 
 // InitializeDifficulty stores an initial difficulty if needed to start calculating total difficulties. Only 1 difficulty is stored, since these difficulties are never GC'ed.
@@ -607,39 +606,38 @@ func (c *Chain) storeBlockHeader(header *ethtypes.Header, source BlockSource) {
 }
 
 func (c *Chain) getBlockMetadata(hash ethcommon.Hash) (blockMetadata, bool) {
-	bm, ok := c.blockHashMetadata.Get(hash.String())
+	bm, ok := c.blockHashMetadata.Load(hash)
 	if !ok {
 		return blockMetadata{}, ok
 	}
-	return bm.(blockMetadata), ok
+	return bm, ok
 }
 
 func (c *Chain) storeBlockMetadata(hash ethcommon.Hash, height uint64, confirmed bool, cnfMsgSent bool) {
-	set := c.blockHashMetadata.SetIfAbsent(hash.String(), blockMetadata{height, false, confirmed, cnfMsgSent})
-	if !set {
+	_, exists := c.blockHashMetadata.LoadOrStore(hash, blockMetadata{height, false, confirmed, cnfMsgSent})
+	if exists {
 		bm, _ := c.getBlockMetadata(hash)
 		bm.confirmed = bm.confirmed || confirmed
 		bm.cnfMsgSent = bm.cnfMsgSent || cnfMsgSent
-		c.blockHashMetadata.Set(hash.String(), bm)
+		c.blockHashMetadata.Store(hash, bm)
 	}
 }
 
 func (c *Chain) removeBlockMetadata(hash ethcommon.Hash) {
-	c.blockHashMetadata.Remove(hash.String())
+	c.blockHashMetadata.Delete(hash)
 }
 
 func (c *Chain) hasHeader(hash ethcommon.Hash) bool {
 	// always corresponds to a header stored at c.heightToBlockHeaders
-	return c.blockHashMetadata.Has(hash.String())
+	return c.blockHashMetadata.Has(hash)
 }
 
 func (c *Chain) getHeadersAtHeight(height uint64) ([]*ethtypes.Header, bool) {
-	rawHeaders, ok := c.heightToBlockHeaders.Get(strconv.FormatUint(height, 10))
+	ethHeaders, ok := c.heightToBlockHeaders.Load(height)
 	if !ok {
 		return nil, ok
 	}
 
-	ethHeaders := rawHeaders.([]ethHeader)
 	headers := make([]*ethtypes.Header, 0, len(ethHeaders))
 
 	for _, eh := range ethHeaders {
@@ -662,53 +660,50 @@ func (c *Chain) storeEthHeaderAtHeight(height uint64, eh ethHeader) {
 	c.headerLock.RLock()
 	defer c.headerLock.RUnlock()
 
-	heightStr := strconv.FormatUint(height, 10)
-
-	ok := c.heightToBlockHeaders.SetIfAbsent(heightStr, []ethHeader{eh})
-	if !ok {
-		rawHeaders, _ := c.heightToBlockHeaders.Get(heightStr)
-		ethHeaders := rawHeaders.([]ethHeader)
+	_, exists := c.heightToBlockHeaders.LoadOrStore(height, []ethHeader{eh})
+	if exists {
+		ethHeaders, _ := c.heightToBlockHeaders.Load(height)
 		ethHeaders = append(ethHeaders, eh)
-		c.heightToBlockHeaders.Set(heightStr, ethHeaders)
+		c.heightToBlockHeaders.Store(height, ethHeaders)
 	}
 }
 
 func (c *Chain) storeBlockDifficulty(hash ethcommon.Hash, difficulty *big.Int) {
 	if difficulty != nil {
-		c.blockHashToDifficulty.Set(hash.String(), difficulty)
+		c.blockHashToDifficulty.Store(hash, difficulty)
 	}
 }
 
 func (c *Chain) getBlockDifficulty(hash ethcommon.Hash) (*big.Int, bool) {
-	difficulty, ok := c.blockHashToDifficulty.Get(hash.String())
+	difficulty, ok := c.blockHashToDifficulty.Load(hash)
 	if !ok {
 		return nil, ok
 	}
-	return difficulty.(*big.Int), ok
+	return difficulty, ok
 }
 
 func (c *Chain) removeBlockDifficulty(hash ethcommon.Hash) {
-	c.blockHashToDifficulty.Remove(hash.String())
+	c.blockHashToDifficulty.Delete(hash)
 }
 
 func (c *Chain) storeBlockBody(hash ethcommon.Hash, body *ethtypes.Body) {
-	c.blockHashToBody.Set(hash.String(), body)
+	c.blockHashToBody.Store(hash, body)
 }
 
 func (c *Chain) getBlockBody(hash ethcommon.Hash) (*ethtypes.Body, bool) {
-	body, ok := c.blockHashToBody.Get(hash.String())
+	body, ok := c.blockHashToBody.Load(hash)
 	if !ok {
 		return nil, ok
 	}
-	return body.(*ethtypes.Body), ok
+	return body, ok
 }
 
 func (c *Chain) hasBody(hash ethcommon.Hash) bool {
-	return c.blockHashToBody.Has(hash.String())
+	return c.blockHashToBody.Has(hash)
 }
 
 func (c *Chain) removeBlockBody(hash ethcommon.Hash) {
-	c.blockHashToBody.Remove(hash.String())
+	c.blockHashToBody.Delete(hash)
 }
 
 // removes all info corresponding to a given block in storage
@@ -728,21 +723,16 @@ func (c *Chain) clean(maxSize int) (lowestCleaned int, highestCleaned int, numCl
 	// Find largest height from headers if chainState is empty
 	// This may happened if no connection to node was established but we receiving blocks from BDN
 	if len(c.chainState) == 0 {
-		var maxHeight int
-		for elem := range c.heightToBlockHeaders.IterBuffered() {
-			heightStr := elem.Key
-			height, err := strconv.Atoi(heightStr)
-			if err != nil {
-				log.Errorf("failed to convert height %v from string to integer: %v", heightStr, err)
-				continue
-			}
+		var maxHeight uint64
 
+		c.heightToBlockHeaders.Range(func(height uint64, value []ethHeader) bool {
 			if height > maxHeight {
 				maxHeight = height
 			}
-		}
+			return true
+		})
 
-		lowestCleaned = maxHeight
+		lowestCleaned = int(maxHeight)
 	} else {
 		lowestCleaned = int(c.chainState[0].height)
 	}
@@ -752,33 +742,32 @@ func (c *Chain) clean(maxSize int) (lowestCleaned int, highestCleaned int, numCl
 
 	// minimum height to not be cleaned
 	minHeight := lowestCleaned - maxSize + 1
-	numHeadersStored := c.heightToBlockHeaders.Count()
+	numHeadersStored := c.heightToBlockHeaders.Size()
 
 	if numHeadersStored >= maxSize {
-		for elem := range c.heightToBlockHeaders.IterBuffered() {
-			heightStr := elem.Key
-			height, err := strconv.Atoi(heightStr)
-			if err != nil {
-				log.Errorf("failed to convert height %v from string to integer: %v", heightStr, err)
-				continue
-			}
-			if height < minHeight {
-				headers := elem.Val.([]ethHeader)
-				c.heightToBlockHeaders.Remove(heightStr)
+
+		c.heightToBlockHeaders.Range(func(height uint64, headers []ethHeader) bool {
+
+			intHeight := int(height)
+
+			if intHeight < minHeight {
+				c.heightToBlockHeaders.Delete(height)
 				for _, header := range headers {
 					hash := header.hash
 					c.pruneHash(hash)
 
 					numCleaned++
-					if height < lowestCleaned {
-						lowestCleaned = height
+					if intHeight < lowestCleaned {
+						lowestCleaned = intHeight
 					}
-					if height > highestCleaned {
-						highestCleaned = height
+					if intHeight > highestCleaned {
+						highestCleaned = intHeight
 					}
 				}
 			}
-		}
+
+			return true
+		})
 
 		chainStatePruned := 0
 		if len(c.chainState) > maxSize {

@@ -59,6 +59,22 @@ func (t *MsgReadWriter) QueueIncomingMessage(code uint64, payload interface{}) {
 	t.ReadMessages <- msg
 }
 
+// QueueIncomingMessageWithDelay simulates the peer sending a message to be read with delay
+func (t *MsgReadWriter) QueueIncomingMessageWithDelay(code uint64, payload any, delay time.Duration) {
+	time.Sleep(delay)
+	size, reader, err := rlp.EncodeToReader(payload)
+	if err != nil {
+		panic(err)
+	}
+	msg := p2p.Msg{
+		Code:       code,
+		Size:       uint32(size),
+		Payload:    reader,
+		ReceivedAt: time.Time{},
+	}
+	t.ReadMessages <- msg
+}
+
 // ExpectWrite waits for up to the provided duration for writes to the channel. This method is useful if the message writing happens on a goroutine.
 func (t *MsgReadWriter) ExpectWrite(d time.Duration) bool {
 	if !t.writeToChannel {

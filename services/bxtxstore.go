@@ -3,23 +3,24 @@ package services
 import (
 	"encoding/hex"
 	"fmt"
+	"runtime/debug"
+	"sort"
+	"sync"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	pbbase "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/orcaman/concurrent-map"
-	"runtime/debug"
-	"sort"
-	"sync"
-	"time"
+	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 )
 
 // BxTxStore represents the storage of transaction info for a given node
 type BxTxStore struct {
 	clock         utils.Clock
-	hashToContent cmap.ConcurrentMap
-	shortIDToHash cmap.ConcurrentMap
+	hashToContent *syncmap.SyncMap[string, *types.BxTransaction]
+	shortIDToHash *syncmap.SyncMap[types.ShortID, types.SHA256Hash]
 
 	seenTxs            HashHistory
 	timeToAvoidReEntry time.Duration
@@ -46,8 +47,8 @@ func newBxTxStore(clock utils.Clock, cleanupFreq time.Duration, maxTxAge time.Du
 	timeToAvoidReEntry time.Duration, bloom BloomFilter) BxTxStore {
 	return BxTxStore{
 		clock:                  clock,
-		hashToContent:          cmap.New(),
-		shortIDToHash:          cmap.New(),
+		hashToContent:          syncmap.NewStringMapOf[*types.BxTransaction](),
+		shortIDToHash:          syncmap.NewIntegerMapOf[types.ShortID, types.SHA256Hash](),
 		seenTxs:                seenTxs,
 		timeToAvoidReEntry:     timeToAvoidReEntry,
 		cleanupFreq:            cleanupFreq,
@@ -81,15 +82,15 @@ func (t *BxTxStore) Clear() {
 
 // Count indicates the number of stored transaction in BxTxStore
 func (t *BxTxStore) Count() int {
-	return t.hashToContent.Count()
+	return t.hashToContent.Size()
 }
 
 // remove deletes a single transaction, including its shortIDs
 func (t *BxTxStore) remove(hash string, reEntryProtection ReEntryProtectionFlags, reason string) {
-	if tx, ok := t.hashToContent.Pop(hash); ok {
-		bxTransaction := tx.(*types.BxTransaction)
+	if tx, ok := t.hashToContent.LoadAndDelete(hash); ok {
+		bxTransaction := tx
 		for _, shortID := range bxTransaction.ShortIDs() {
-			t.shortIDToHash.Remove(fmt.Sprint(shortID))
+			t.shortIDToHash.Delete(shortID)
 		}
 		// if asked, add the hash to the history map so we remember this transaction for some time
 		// and prevent if from being added back to the TxStore
@@ -114,9 +115,8 @@ func (t *BxTxStore) RemoveShortIDs(shortIDs *types.ShortIDList, reEntryProtectio
 	// note - it is OK for hashesToRemove to hold the same hash multiple times.
 	hashesToRemove := make(types.SHA256HashList, 0)
 	for _, shortID := range *shortIDs {
-		strShortID := fmt.Sprint(shortID)
-		if hash, ok := t.shortIDToHash.Get(strShortID); ok {
-			hashesToRemove = append(hashesToRemove, hash.(types.SHA256Hash))
+		if hash, ok := t.shortIDToHash.Load(shortID); ok {
+			hashesToRemove = append(hashesToRemove, hash)
 		}
 	}
 	t.RemoveHashes(&hashesToRemove, reEntryProtection, reason)
@@ -124,10 +124,9 @@ func (t *BxTxStore) RemoveShortIDs(shortIDs *types.ShortIDList, reEntryProtectio
 
 // GetTxByShortID lookup a transaction by its shortID. return error if not found
 func (t *BxTxStore) GetTxByShortID(shortID types.ShortID) (*types.BxTransaction, error) {
-	if h, ok := t.shortIDToHash.Get(fmt.Sprint(shortID)); ok {
-		hash := h.(types.SHA256Hash)
-		if tx, exists := t.hashToContent.Get(string(hash[:])); exists {
-			return tx.(*types.BxTransaction), nil
+	if hash, ok := t.shortIDToHash.Load(shortID); ok {
+		if tx, exists := t.hashToContent.Load(string(hash[:])); exists {
+			return tx, nil
 		}
 		return nil, fmt.Errorf("transaction content for shortID %v and hash %v does not exist", shortID, hash)
 	}
@@ -145,12 +144,14 @@ func (t *BxTxStore) RemoveHashes(hashes *types.SHA256HashList, reEntryProtection
 func (t *BxTxStore) Iter() (iter <-chan *types.BxTransaction) {
 	newChan := make(chan *types.BxTransaction)
 	go func() {
-		for elem := range t.hashToContent.IterBuffered() {
-			tx := elem.Val.(*types.BxTransaction)
-			if t.clock.Now().Sub(tx.AddTime()) < t.maxTxAge {
-				newChan <- tx
+
+		t.hashToContent.Range(func(key string, bxTransaction *types.BxTransaction) bool {
+			if t.clock.Now().Sub(bxTransaction.AddTime()) < t.maxTxAge {
+				newChan <- bxTransaction
 			}
-		}
+			return true
+		})
+
 		close(newChan)
 	}()
 	return newChan
@@ -180,23 +181,26 @@ func (t *BxTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID 
 			t.seenTxs.Remove(hashStr)
 		} else {
 			result.Transaction = types.NewBxTransaction(hash, networkNum, flags, timestamp)
-			result.DebugData = fmt.Sprintf("Transaction already seen and deleted from store")
+			result.DebugData = "Transaction already seen and deleted from store"
 			result.AlreadySeen = true
 			return result
 		}
 	}
 
 	bxTransaction := types.NewBxTransaction(hash, networkNum, flags, timestamp)
-	if result.NewTx = t.hashToContent.SetIfAbsent(hashStr, bxTransaction); !result.NewTx {
-		tx, exists := t.hashToContent.Get(hashStr)
+
+	_, exists := t.hashToContent.LoadOrStore(hashStr, bxTransaction)
+
+	if result.NewTx = !exists; !result.NewTx {
+		tx, exists := t.hashToContent.Load(hashStr)
 		if !exists {
 			log.Warnf("couldn't Get an existing transaction %v, network %v, flags %v, shortID %v, content %v",
 				hash, networkNum, flags, shortID, hex.EncodeToString(content[:]))
 			result.Transaction = bxTransaction
-			result.DebugData = fmt.Sprintf("Transaction deleted by other GO routine")
+			result.DebugData = "Transaction deleted by other GO routine"
 			return result
 		}
-		bxTransaction = tx.(*types.BxTransaction)
+		bxTransaction = tx
 	}
 
 	// make sure we are the only process that makes changes to the transaction
@@ -236,7 +240,7 @@ func (t *BxTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID 
 	bxTransaction.Unlock()
 
 	if result.NewSID {
-		t.shortIDToHash.Set(fmt.Sprint(shortID), bxTransaction.Hash())
+		t.shortIDToHash.Store(shortID, bxTransaction.Hash())
 	}
 
 	return result
@@ -255,8 +259,7 @@ func (t *BxTxStore) clean() (cleaned int, cleanedShortIDs types.ShortIDsByNetwor
 	var networks = make(map[types.NetworkNum]*networkData)
 	cleanedShortIDs = make(types.ShortIDsByNetwork)
 
-	for item := range t.hashToContent.IterBuffered() {
-		bxTransaction := item.Val.(*types.BxTransaction)
+	t.hashToContent.Range(func(key string, bxTransaction *types.BxTransaction) bool {
 		netData, netDataExists := networks[bxTransaction.NetworkNum()]
 		if !netDataExists {
 			netData = &networkData{}
@@ -264,7 +267,9 @@ func (t *BxTxStore) clean() (cleaned int, cleanedShortIDs types.ShortIDsByNetwor
 		}
 		txAge := int(currTime.Sub(bxTransaction.AddTime()) / time.Second)
 		networks[bxTransaction.NetworkNum()].ages = append(networks[bxTransaction.NetworkNum()].ages, txAge)
-	}
+
+		return true
+	})
 
 	for net, netData := range networks {
 		// if we are below the number of allowed Txs, no need to do anything
@@ -283,8 +288,8 @@ func (t *BxTxStore) clean() (cleaned int, cleanedShortIDs types.ShortIDsByNetwor
 			net, len(netData.ages), len(netData.ages)-bxgateway.TxStoreMaxSize, networks[net].maxAge)
 	}
 
-	for item := range t.hashToContent.IterBuffered() {
-		bxTransaction := item.Val.(*types.BxTransaction)
+	t.hashToContent.Range(func(key string, bxTransaction *types.BxTransaction) bool {
+
 		networkNum := bxTransaction.NetworkNum()
 		netData, netDataExists := networks[networkNum]
 		removeReason := ""
@@ -304,10 +309,12 @@ func (t *BxTxStore) clean() (cleaned int, cleanedShortIDs types.ShortIDsByNetwor
 			// remove the transaction by hash from both maps
 			// no need to add the hash to the history as it is deleted after long time
 			// dec-5-2021: add to hash history to prevent a lot of reentry (BSC, Polygon)
-			t.remove(item.Key, FullReEntryProtection, removeReason)
+			t.remove(key, FullReEntryProtection, removeReason)
 			cleanedShortIDs[networkNum] = append(cleanedShortIDs[networkNum], bxTransaction.ShortIDs()...)
 		}
-	}
+
+		return true
+	})
 
 	for net, netData := range networks {
 		log.Debugf("TxStore network %v #txs before cleanup %v cleaned %v missing SID entries and %v aged entries",
@@ -350,11 +357,11 @@ func (t *BxTxStore) Get(hash types.SHA256Hash) (*types.BxTransaction, bool) {
 	if t.refreshSeenTx(hash) {
 		return nil, false
 	}
-	tx, ok := t.hashToContent.Get(string(hash[:]))
+	tx, ok := t.hashToContent.Load(string(hash[:]))
 	if !ok {
 		return nil, ok
 	}
-	return tx.(*types.BxTransaction), ok
+	return tx, ok
 }
 
 // Known returns whether if a tx hash is in seenTx
@@ -375,15 +382,12 @@ func (t *BxTxStore) HasContent(hash types.SHA256Hash) bool {
 func (t *BxTxStore) Summarize() *pbbase.TxStoreReply {
 	networks := make(map[types.NetworkNum]*pbbase.TxStoreNetworkData)
 	res := pbbase.TxStoreReply{
-		TxCount:      uint64(t.hashToContent.Count()),
-		ShortIdCount: uint64(t.shortIDToHash.Count()),
+		TxCount:      uint64(t.hashToContent.Size()),
+		ShortIdCount: uint64(t.shortIDToHash.Size()),
 	}
 
-	for item := range t.hashToContent.IterBuffered() {
-		bxTransaction, ok := item.Val.(*types.BxTransaction)
-		if !ok {
-			continue
-		}
+	t.hashToContent.Range(func(key string, bxTransaction *types.BxTransaction) bool {
+
 		networkData, exists := networks[bxTransaction.NetworkNum()]
 		if !exists {
 			networkData = &pbbase.TxStoreNetworkData{}
@@ -393,7 +397,8 @@ func (t *BxTxStore) Summarize() *pbbase.TxStoreReply {
 			networkData.ShortIdCount += uint64(len(bxTransaction.ShortIDs()))
 			networks[bxTransaction.NetworkNum()] = networkData
 
-			continue
+			// continue iteration
+			return true
 		}
 		oldestTx := networkData.OldestTx
 		oldestTxTS := oldestTx.AddTime
@@ -402,7 +407,10 @@ func (t *BxTxStore) Summarize() *pbbase.TxStoreReply {
 		}
 		networkData.TxCount++
 		networkData.ShortIdCount += uint64(len(bxTransaction.ShortIDs()))
-	}
+
+		return true
+	})
+
 	for _, netData := range networks {
 		res.NetworkData = append(res.NetworkData, netData)
 	}

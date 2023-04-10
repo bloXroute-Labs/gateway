@@ -14,6 +14,7 @@ import (
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/enode"
+	uuid "github.com/satori/go.uuid"
 )
 
 // Abs returns the absolute value of an integer
@@ -127,4 +128,10 @@ func getTypeString(t reflect.Type) string {
 		return t.Name()
 	}
 	return t.String()
+}
+
+// GenerateUUID generates random subscription ID
+func GenerateUUID() uuid.UUID {
+	newUUID, _ := uuid.NewV4()
+	return newUUID
 }

@@ -11,6 +11,8 @@ import (
 
 // Blockchain is a placeholder struct to represent a connection for blockchain nodes
 type Blockchain struct {
+	ConnDetails
+
 	endpoint types.NodeEndpoint
 	log      *log.Entry
 }
@@ -33,16 +35,14 @@ func (b Blockchain) NodeEndpoint() types.NodeEndpoint {
 	return b.endpoint
 }
 
-// Info returns connection metadata
-func (b Blockchain) Info() Info {
-	return Info{
-		ConnectionType: utils.Blockchain,
-		NetworkNum:     types.AllNetworkNum,
-		PeerIP:         b.endpoint.IP,
-		PeerPort:       int64(b.endpoint.Port),
-		PeerEnode:      b.endpoint.PublicKey,
-	}
-}
+// GetPeerIP return peer IP
+func (b Blockchain) GetPeerIP() string { return b.endpoint.IP }
+
+// GetPeerPort return peer port
+func (b Blockchain) GetPeerPort() int64 { return int64(b.endpoint.Port) }
+
+// GetPeerEnode return peer enode
+func (b Blockchain) GetPeerEnode() string { return b.endpoint.PublicKey }
 
 // ID returns placeholder
 func (b Blockchain) ID() Socket {

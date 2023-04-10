@@ -7,10 +7,14 @@ import (
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/rpc"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/urfave/cli/v2"
 	"io"
 	"os"
+	"time"
 )
 
 func main() {
@@ -236,16 +240,42 @@ func cmdDisconnectInboundPeer(ctx *cli.Context) error {
 }
 
 func cmdBlxrBatchTX(ctx *cli.Context) error {
+	transactions := ctx.StringSlice("transactions")
+	var txsAndSenders []*pb.TxAndSender
+	for _, transaction := range transactions {
+		var ethTx ethtypes.Transaction
+		txBytes, err := types.DecodeHex(transaction)
+		if err != nil {
+			fmt.Printf("Error - failed to decode transaction %v: %v. continue..", transaction, err)
+			continue
+		}
+		err = ethTx.UnmarshalBinary(txBytes)
+		if err != nil {
+			e := rlp.DecodeBytes(txBytes, &ethTx)
+			if e != nil {
+				fmt.Printf("Error - failed to decode transaction bytes %v: %v. continue..", transaction, err)
+				continue
+			}
+		}
+
+		ethSender, err := ethtypes.Sender(ethtypes.NewLondonSigner(ethTx.ChainId()), &ethTx)
+		if err != nil {
+			fmt.Printf("Error - failed to get sender from the transaction %v: %v. continue..", transaction, err)
+		}
+		txsAndSenders = append(txsAndSenders, &pb.TxAndSender{Transaction: transaction, Sender: ethSender.Bytes()})
+
+	}
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
 			return client.BlxrBatchTX(callCtx, &pb.BlxrBatchTXRequest{
-				Transactions:    ctx.StringSlice("transactions"),
-				NonceMonitoring: ctx.Bool("nonce-monitoring"),
-				NextValidator:   ctx.Bool("next-validator"),
-				ValidatorsOnly:  ctx.Bool("validators-only"),
-				Fallback:        int32(ctx.Int("fallback")),
-				NodeValidation:  ctx.Bool("node-validation"),
+				TransactionsAndSenders: txsAndSenders,
+				NonceMonitoring:        ctx.Bool("nonce-monitoring"),
+				NextValidator:          ctx.Bool("next-validator"),
+				ValidatorsOnly:         ctx.Bool("validators-only"),
+				Fallback:               int32(ctx.Int("fallback")),
+				NodeValidation:         ctx.Bool("node-validation"),
+				SendingTime:            time.Now().UnixNano(),
 			})
 		},
 	)

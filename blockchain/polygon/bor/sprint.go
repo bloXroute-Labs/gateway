@@ -15,6 +15,7 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils/ptr"
 )
 
 // SprintSize represent size of sprint for polygon bor module
@@ -31,8 +32,7 @@ type SprintManager struct {
 
 	mx *sync.RWMutex
 
-	booting *atomic.Bool
-	started *atomic.Bool
+	state *atomic.Pointer[runState]
 
 	// pointer to the interface to make it managed externally
 	wsManager *blockchain.WSManager
@@ -53,8 +53,7 @@ func NewSprintManager(ctx context.Context, wsManager *blockchain.WSManager, span
 
 		mx: new(sync.RWMutex),
 
-		booting: new(atomic.Bool),
-		started: new(atomic.Bool),
+		state: atomic.NewPointer(ptr.New(stateIdle)),
 
 		sprintMap: make(map[uint64]string),
 
@@ -154,14 +153,15 @@ func (m *SprintManager) getLatestSnapshot() (*Snapshot, error) {
 
 // Run bootstrap initial state and start goroutine for processing of changes.
 func (m *SprintManager) Run() error {
-	if m.started.Load() || m.booting.Load() {
+	if *m.state.Load() != stateIdle {
 		return nil
 	}
 
-	m.booting.Store(true)
-	defer m.booting.Store(false)
+	m.state.Store(ptr.New(stateBooting))
 
 	if err := m.bootstrap(); err != nil {
+		m.state.Store(ptr.New(stateIdle))
+
 		return errors.WithMessage(err, "failed to bootstrap sprint manager")
 	}
 
@@ -171,13 +171,13 @@ func (m *SprintManager) Run() error {
 	case <-m.spanner.GetSpanNotificationCh():
 	}
 
-	m.started.Store(true)
+	m.state.Store(ptr.New(stateRunning))
 
 	go func() {
 		for {
 			select {
 			case <-m.ctx.Done():
-				m.started.Store(false)
+				m.state.Store(ptr.New(stateIdle))
 
 				return
 			case <-m.spanner.GetSpanNotificationCh():
@@ -196,7 +196,7 @@ func (m *SprintManager) Run() error {
 }
 
 // IsRunning returns current state of SprintManager.
-func (m *SprintManager) IsRunning() bool { return m.started.Load() }
+func (m *SprintManager) IsRunning() bool { return *m.state.Load() == stateRunning }
 
 // FutureValidators returns next n+2 producers of block.
 func (m *SprintManager) FutureValidators(header *ethtypes.Header) [2]*types.FutureValidatorInfo {

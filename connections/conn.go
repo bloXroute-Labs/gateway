@@ -19,8 +19,9 @@ type EndpointConn interface {
 
 // Conn defines a network interface that sends and receives messages
 type Conn interface {
+	ConnectionDetails
+
 	ID() Socket
-	Info() Info
 	IsOpen() bool
 	IsDisabled() bool
 

@@ -92,7 +92,7 @@ func (m *MockWSProvider) FetchTransaction(payload []interface{}, options blockch
 	return nil, nil
 }
 
-//FetchBlock query a block given height via CallRPC
+// FetchBlock query a block given height via CallRPC
 func (m *MockWSProvider) FetchBlock(_ []interface{}, _ blockchain.RPCOptions) (interface{}, error) {
 	return nil, nil
 }

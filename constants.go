@@ -16,6 +16,9 @@ const AllInterfaces = "0.0.0.0"
 // MicroSecTimeFormat - use for representing tx "time" in feed
 const MicroSecTimeFormat = "2006-01-02 15:04:05.000000"
 
+// MillisecondsToNanosecondsMultiplier used to convert milliseconds to nanoseconds
+const MillisecondsToNanosecondsMultiplier = 1000000
+
 // SlowPingPong - ping/pong delay above it is considered a problem
 const SlowPingPong = int64(100000) // 100 ms
 
@@ -113,7 +116,6 @@ const (
 	GatewayTimeout = 504
 )
 
-//
 const (
 	// BloxrouteBuilderName - set bloxroute mev builder name
 	BloxrouteBuilderName = "bloxroute"
@@ -158,11 +160,14 @@ const BSCMainnetNum types.NetworkNum = 10
 // BSCChainID - BSC chain ID
 const BSCChainID = 56
 
+// PolygonMainnetNum - for Polygon main net blockchain network number
+const PolygonMainnetNum types.NetworkNum = 36
+
 // RopstenNum - for Ropsten blockchain network number
 const RopstenNum types.NetworkNum = 32
 
-// PolygonMainnetNum - for Polygon main net blockchain network number
-const PolygonMainnetNum types.NetworkNum = 36
+// GoerliNum - for Goerli blockchain network number
+const GoerliNum types.NetworkNum = 45
 
 // BlockchainNetworkToNetworkNum converts blockchain network to number
 var BlockchainNetworkToNetworkNum = map[string]types.NetworkNum{
@@ -170,4 +175,12 @@ var BlockchainNetworkToNetworkNum = map[string]types.NetworkNum{
 	BSCMainnet:     BSCMainnetNum,
 	PolygonMainnet: PolygonMainnetNum,
 	Ropsten:        RopstenNum,
+	Goerli:         GoerliNum,
+}
+
+// NetworkToBlockDuration defines block interval for each network
+var NetworkToBlockDuration = map[string]time.Duration{
+	Mainnet:        12 * time.Second,
+	BSCMainnet:     3 * time.Second,
+	PolygonMainnet: 2 * time.Second,
 }

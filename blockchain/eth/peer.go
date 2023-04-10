@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
-	"strconv"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2"
@@ -15,11 +14,11 @@ import (
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/p2p"
-	cmap "github.com/orcaman/concurrent-map"
 )
 
 const (
@@ -58,7 +57,7 @@ type Peer struct {
 	checkpointPassed bool
 
 	responseQueue   chan chan eth.Packet // chan is used as a concurrency safe queue
-	responseQueue66 cmap.ConcurrentMap
+	responseQueue66 *syncmap.SyncMap[uint64, chan eth.Packet]
 
 	newHeadCh           chan blockRef
 	newBlockCh          chan *eth.NewBlockPacket
@@ -90,7 +89,7 @@ func newPeer(parent context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version 
 		blockConfirmationCh:  make(chan common.Hash, blockConfirmationChannelBacklog),
 		queuedBlocks:         make([]*eth.NewBlockPacket, 0),
 		responseQueue:        make(chan chan eth.Packet, responseQueueSize),
-		responseQueue66:      cmap.New(),
+		responseQueue66:      syncmap.NewIntegerMapOf[uint64, chan eth.Packet](),
 		RequestConfirmations: true,
 	}
 	peer.endpoint = types.NodeEndpoint{IP: p.Node().IP().String(), Port: p.Node().TCP(), PublicKey: p.Info().Enode, Dynamic: !p.Info().Network.Static, ID: p.ID().String()}
@@ -345,12 +344,29 @@ func (ep *Peer) Handshake(version uint32, networkChain uint64, td *big.Int, head
 
 func (ep *Peer) readStatus() (*eth.StatusPacket, error) {
 	var status eth.StatusPacket
-
-	msg, err := ep.rw.ReadMsg()
-	if err != nil {
-		return nil, err
+	type messageChanResponse struct {
+		msg p2p.Msg
+		err error
 	}
+	messageChan := make(chan messageChanResponse, 1)
 
+	go func() {
+		msg, err := ep.rw.ReadMsg()
+		messageChan <- messageChanResponse{msg, err}
+	}()
+
+	timeout := time.NewTicker(time.Second * 6)
+	var msg p2p.Msg
+	select {
+	case message := <-messageChan:
+		if message.err != nil {
+			return nil, message.err
+		}
+		msg = message.msg
+	case <-timeout.C:
+		timeout.Stop()
+		return nil, errors.New("failed to get message from peer, deadline exceeded")
+	}
 	defer func() {
 		_ = msg.Discard()
 	}()
@@ -363,7 +379,7 @@ func (ep *Peer) readStatus() (*eth.StatusPacket, error) {
 		return &status, fmt.Errorf("message is too big: %v > %v", msg.Size, maxMessageSize)
 	}
 
-	if err = msg.Decode(&status); err != nil {
+	if err := msg.Decode(&status); err != nil {
 		return &status, fmt.Errorf("could not decode status message: %v", err)
 	}
 
@@ -381,12 +397,11 @@ func (ep *Peer) NotifyResponse(packet eth.Packet) bool {
 
 // NotifyResponse66 informs any listeners dependent on a request/response call to this ETH66 peer, indicating if any channels were waiting for the message
 func (ep *Peer) NotifyResponse66(requestID uint64, packet eth.Packet) (bool, error) {
-	rawResponseCh, ok := ep.responseQueue66.Pop(convertRequestIDKey(requestID))
+	responseCh, ok := ep.responseQueue66.LoadAndDelete(requestID)
 	if !ok {
 		return false, ErrUnknownRequestID
 	}
 
-	responseCh := rawResponseCh.(chan eth.Packet)
 	if responseCh != nil {
 		responseCh <- packet
 	}
@@ -620,7 +635,7 @@ func (ep *Peer) registerForResponse(responseCh chan eth.Packet) {
 }
 
 func (ep *Peer) registerForResponse66(requestID uint64, responseCh chan eth.Packet) {
-	ep.responseQueue66.Set(convertRequestIDKey(requestID), responseCh)
+	ep.responseQueue66.Store(requestID, responseCh)
 }
 
 func (ep *Peer) send(msgCode uint64, data interface{}) error {
@@ -628,8 +643,4 @@ func (ep *Peer) send(msgCode uint64, data interface{}) error {
 		return nil
 	}
 	return p2p.Send(ep.rw, msgCode, data)
-}
-
-func convertRequestIDKey(requestID uint64) string {
-	return strconv.FormatUint(requestID, 10)
 }

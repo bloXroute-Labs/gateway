@@ -63,12 +63,12 @@ func (NoStats) AddTxsByShortIDsEvent(name string, source connections.Conn, txInf
 	startTime time.Time, priority bxmessage.SendPriority, debugData interface{}) {
 }
 
-//LogSubscribeStats does nothing
+// LogSubscribeStats does nothing
 func (NoStats) LogSubscribeStats(subscriptionID *uuid.UUID, accountID types.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
 	ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string, feedProject string) {
 }
 
-//LogUnsubscribeStats does nothing
+// LogUnsubscribeStats does nothing
 func (NoStats) LogUnsubscribeStats(subscriptionID *uuid.UUID, feedName types.FeedType, networkNum types.NetworkNum, accountID types.AccountID, tierName sdnmessage.AccountTier) {
 }
 
@@ -92,7 +92,8 @@ func (s FluentdStats) AddTxsByShortIDsEvent(name string, source connections.Conn
 	now := time.Now()
 
 	logic := EventLogicNone
-	notFromBDN := source.Info().IsGateway() || source.Info().IsCloudAPI()
+	connectionType := source.GetConnectionType()
+	notFromBDN := connections.IsGateway(connectionType) || connections.IsCloudAPI(connectionType)
 	switch {
 	// if from external source
 	case name == "TxProcessedByRelayProxyFromPeer" && notFromBDN:
@@ -113,7 +114,7 @@ func (s FluentdStats) AddTxsByShortIDsEvent(name string, source connections.Conn
 			StartDateTime:    startTime.Format(DateFormat),
 			SentGatewayPeers: sentGatewayPeers,
 			ExtraData: txExtraData{
-				MoreInfo:             fmt.Sprintf("source: %v - %v, priority %v, sent: %v (%v), duration: %v, debug data: %v", source, source.Info().ConnectionType.FormatShortNodeType(), priority, sentPeers, sentGatewayPeers, now.Sub(startTime), debugData),
+				MoreInfo:             fmt.Sprintf("source: %v - %v, priority %v, sent: %v (%v), duration: %v, debug data: %v", source, connectionType.FormatShortNodeType(), priority, sentPeers, sentGatewayPeers, now.Sub(startTime), debugData),
 				ShortID:              shortID,
 				NetworkNum:           txInfo.NetworkNum(),
 				SourceID:             sourceID,
@@ -140,12 +141,12 @@ func (s FluentdStats) AddBlockEvent(name string, source connections.Conn, blockH
 			NodeID:           s.NodeID,
 			EventName:        name,
 			NetworkNum:       networkNum,
-			SourceID:         source.Info().NodeID,
+			SourceID:         source.GetNodeID(),
 			StartDateTime:    startTime.Format(DateFormat),
 			EndDateTime:      now.Format(DateFormat),
 			SentGatewayPeers: sentGatewayPeers,
 			ExtraData: blockExtraData{
-				MoreInfo: fmt.Sprintf("source: %v - %v, sent: %v", source, source.Info().ConnectionType.FormatShortNodeType(), sentPeers),
+				MoreInfo: fmt.Sprintf("source: %v - %v, sent: %v", source, source.GetConnectionType().FormatShortNodeType(), sentPeers),
 			},
 			BeaconBlockHash: beaconBlockHash.String(),
 		},
@@ -166,12 +167,12 @@ func (s FluentdStats) AddGatewayBlockEvent(name string, source connections.Conn,
 			NodeID:           s.NodeID,
 			EventName:        name,
 			NetworkNum:       networkNum,
-			SourceID:         source.Info().NodeID,
+			SourceID:         source.GetNodeID(),
 			StartDateTime:    startTime.Format(DateFormat),
 			EndDateTime:      now.Format(DateFormat),
 			SentGatewayPeers: sentGatewayPeers,
 			ExtraData: blockExtraData{
-				MoreInfo: fmt.Sprintf("source: %v - %v, sent: %v", source, source.Info().ConnectionType.FormatShortNodeType(), sentPeers),
+				MoreInfo: fmt.Sprintf("source: %v - %v, sent: %v", source, source.GetConnectionType().FormatShortNodeType(), sentPeers),
 			},
 			OriginalSize:      originalSize,
 			CompressSize:      compressSize,

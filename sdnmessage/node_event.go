@@ -17,6 +17,8 @@ const (
 	NePeerConnDisabled              NodeEventType = "PEER_CONN_DISABLED"
 	NeBlockchainNodeConnEstablished NodeEventType = "BLOCKCHAIN_NODE_CONN_ESTABLISHED"
 	NeBlockchainNodeConnError       NodeEventType = "BLOCKCHAIN_NODE_CONN_ERR"
+	NeAddAccessibleGateway          NodeEventType = "ADD_ACCESSIBLE_GATEWAY"
+	NeRemoveAccessibleGateway       NodeEventType = "REMOVE_ACCESSIBLE_GATEWAY"
 )
 
 // NodeEvent represents a node event and its context being reported to the SDN
@@ -80,5 +82,25 @@ func NewBlockchainNodeConnError(NodeID types.NodeID, peerIP string, peerPort int
 		EventType: NeBlockchainNodeConnError,
 		PeerIP:    peerIP,
 		PeerPort:  peerPort,
+	}
+}
+
+// NewAddAccessibleGatewayEvent returns add accessible gateway event
+func NewAddAccessibleGatewayEvent(nodeID types.NodeID, reason string, timestamp string) NodeEvent {
+	return NodeEvent{
+		Timestamp: timestamp,
+		NodeID:    nodeID,
+		EventType: NeAddAccessibleGateway,
+		Payload:   reason,
+	}
+}
+
+// NewRemoveAccessibleGatewayEvent returns remove accessible gateway event
+func NewRemoveAccessibleGatewayEvent(nodeID types.NodeID, reason string, timestamp string) NodeEvent {
+	return NodeEvent{
+		Timestamp: timestamp,
+		NodeID:    nodeID,
+		EventType: NeRemoveAccessibleGateway,
+		Payload:   reason,
 	}
 }

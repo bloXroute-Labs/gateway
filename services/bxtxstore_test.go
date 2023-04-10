@@ -186,14 +186,14 @@ func TestBxTxStore_clean256K(t *testing.T) {
 		clock.IncTime(time.Second)
 	}
 	assert.Equal(t, count+otherNetworkTxs, store.Count())
-	assert.Equal(t, count+otherNetworkTxs, store.hashToContent.Count())
-	assert.Equal(t, count+otherNetworkTxs, store.shortIDToHash.Count())
+	assert.Equal(t, count+otherNetworkTxs, store.hashToContent.Size())
+	assert.Equal(t, count+otherNetworkTxs, store.shortIDToHash.Size())
 
 	cleaned, cleanedShortIDs := store.clean()
 	assert.Equal(t, bxgateway.TxStoreMaxSize*0.9+otherNetworkTxs, store.Count())
 	assert.Equal(t, bxgateway.TxStoreMaxSize*0.1+extra, len(cleanedShortIDs[testNetworkNum]))
-	assert.Equal(t, bxgateway.TxStoreMaxSize*0.9+otherNetworkTxs, store.hashToContent.Count())
-	assert.Equal(t, bxgateway.TxStoreMaxSize*0.9+otherNetworkTxs, store.shortIDToHash.Count())
+	assert.Equal(t, bxgateway.TxStoreMaxSize*0.9+otherNetworkTxs, store.hashToContent.Size())
+	assert.Equal(t, bxgateway.TxStoreMaxSize*0.9+otherNetworkTxs, store.shortIDToHash.Size())
 	assert.Equal(t, bxgateway.TxStoreMaxSize*0.1+extra, store.seenTxs.Count())
 
 	assert.Equal(t, bxgateway.TxStoreMaxSize*0.1+extra, cleaned)
@@ -329,7 +329,7 @@ func TestBxTxStore_ResetSeenTxTime(t *testing.T) {
 	store := newBxTxStore(&clock, 30*time.Second, 30*time.Second, 10*time.Second, NewEmptyShortIDAssigner(), newHashHistory("seenTxs", &clock, 60*time.Minute), cleanedShortIDsChan, 30*time.Second, NoOpBloomFilter{})
 
 	// Case 1:
-	// Base case, add hash1 to TxStore and wait for TxStore to clean up, so hash1 is stored in SeenTx
+	// ConnDetails case, add hash1 to TxStore and wait for TxStore to clean up, so hash1 is stored in SeenTx
 	// without calling Add() or Get() to reset the hash1 in seenTx, hash1 will expire after cleanupFreq which is 30 seconds
 
 	hash1 := types.SHA256Hash{1}

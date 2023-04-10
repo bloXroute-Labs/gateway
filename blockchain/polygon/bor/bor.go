@@ -18,6 +18,14 @@ import (
 
 const extraSeal = 65 // Fixed number of extra-data suffix bytes reserved for signer seal
 
+type runState uint8
+
+const (
+	stateIdle = runState(iota)
+	stateBooting
+	stateRunning
+)
+
 // errMissingSignature is returned if a block's extra-data section doesn't seem
 // to contain a 65 byte secp256k1 signature.
 var errMissingSignature = errors.New("extra-data 65 byte signature suffix missing")

@@ -6,7 +6,7 @@ import (
 
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/libp2p/go-libp2p/core/network"
-	"github.com/prysmaticlabs/prysm/v3/config/params"
+	"github.com/prysmaticlabs/prysm/v4/config/params"
 )
 
 var defaultReadDuration = params.BeaconNetworkConfig().TtfbTimeout
