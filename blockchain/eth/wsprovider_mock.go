@@ -107,7 +107,7 @@ func (m *MockWSProvider) Close() {
 }
 
 // Addr noop
-func (m *MockWSProvider) Addr() string { return "" }
+func (m *MockWSProvider) Addr() string { return m.ethWSURI }
 
 // IsOpen noop
 func (m *MockWSProvider) IsOpen() bool { return true }

@@ -21,6 +21,9 @@ type RPCOptions struct {
 	RetryInterval time.Duration
 }
 
+// DefaultRPCOptions - provides default options for CallRPC
+var DefaultRPCOptions = RPCOptions{RetryAttempts: 5, RetryInterval: 10 * time.Millisecond}
+
 // Subscription represents a client RPC subscription
 type Subscription struct {
 	Sub interface{}

@@ -387,9 +387,9 @@ func (g *gateway) Run() error {
 		sslCert.PrivateCertFile(), sslCert.PrivateKeyFile(), *g.BxConfig, g.stats, g.nextValidatorMap, g.validatorStatusMap,
 	)
 	if g.BxConfig.WebsocketEnabled || g.BxConfig.WebsocketTLSEnabled {
-		clientHandler := servers.NewClientHandler(g.feedManager, nil, servers.NewHTTPServer(g.feedManager, g.BxConfig.HTTPPort), log.WithFields(log.Fields{
+		clientHandler := servers.NewClientHandler(g.feedManager, nil, servers.NewHTTPServer(g.feedManager, g.BxConfig.HTTPPort), g.BxConfig.EnableBlockchainRPC, g.sdn.GetQuotaUsage, log.WithFields(log.Fields{
 			"component": "gatewayClientHandler",
-		}), g.sdn.GetQuotaUsage)
+		}))
 		go clientHandler.ManageWSServer(g.BxConfig.ManageWSServer)
 		go clientHandler.ManageHTTPServer(g.context)
 		g.feedManager.Start()

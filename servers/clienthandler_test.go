@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
+	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	"math/big"
 	"net/http"
 	"testing"
@@ -140,9 +141,9 @@ func TestClientHandler(t *testing.T) {
 	assert.NotNil(t, p3)
 
 	var group errgroup.Group
-	clientHandler := NewClientHandler(fm, nil, NewHTTPServer(fm, cfg.HTTPPort), log.WithFields(log.Fields{
+	clientHandler := NewClientHandler(fm, nil, NewHTTPServer(fm, cfg.HTTPPort), true, nil, log.WithFields(log.Fields{
 		"component": "gatewayClientHandler",
-	}), nil)
+	}))
 	go clientHandler.ManageWSServer(cfg.ManageWSServer)
 	go clientHandler.ManageHTTPServer(context.Background())
 	group.Go(fm.Start)
@@ -156,9 +157,9 @@ func TestClientHandler(t *testing.T) {
 	fmBSC := NewFeedManager(context.Background(), g, feedChan, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 56, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfoBSC, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfgBSC, stats, nil, nil)
 	p4 := providers[blockchainPeersBSC[0].IPPort()]
 	assert.NotNil(t, p4)
-	clientHandlerBSC := NewClientHandler(fmBSC, nil, NewHTTPServer(fmBSC, cfg.HTTPPort+1), log.WithFields(log.Fields{
+	clientHandlerBSC := NewClientHandler(fmBSC, nil, NewHTTPServer(fmBSC, cfg.HTTPPort+1), false, getMockQuotaUsage, log.WithFields(log.Fields{
 		"component": "gatewayClientHandlerBSC",
-	}), getMockQuotaUsage)
+	}))
 	go clientHandlerBSC.ManageWSServer(false)
 	go clientHandlerBSC.ManageHTTPServer(context.Background())
 	group.Go(fmBSC.Start)
@@ -185,13 +186,13 @@ func TestClientHandler(t *testing.T) {
 		dummyAuthHeader = "Yjo3ODkxMDEx" // b:7891011
 		headers.Set("Authorization", dummyAuthHeader)
 		ws, _, err = dialer.Dial(wsURL, headers)
-		handleError(t, ws, &websocket.CloseError{Code: 1008, Text: "account must be enterprise / enterprise elite / ultra"})
+		handleError(t, ws, nil)
 
 		// fail for secret hash
 		dummyAuthHeader = "Yzo3ODkxMDEx" //c:7891011
 		headers.Set("Authorization", dummyAuthHeader)
 		ws, _, err = dialer.Dial(wsURL, headers)
-		handleError(t, ws, &websocket.CloseError{Code: 1008, Text: "wrong value in the authorization header"})
+		handleError(t, ws, nil)
 
 		// pass for timeout - account should set to elite
 		dummyAuthHeader = "ZDo3ODkxMDEx" // d:7891011
@@ -216,6 +217,8 @@ func TestClientHandler(t *testing.T) {
 			handleBlxrTxRequestWithNextValidator(t, ws)
 			handleBlxrTxRequestRLPTx(t, ws)
 			handleBlxrTxWithWrongChainID(t, ws)
+			handleNonBloxrouteRPCMethods(t, fm, ws, blockchainPeers)
+			handleNonBloxrouteSendTxMethod(t, fm, ws, blockchainPeers)
 			handleSubscribe(t, fm, ws)
 			handleTxReceiptsSubscribe(t, fm, ws)
 			handleInvalidSubscribe(t, ws)
@@ -223,9 +226,9 @@ func TestClientHandler(t *testing.T) {
 		})
 		// restart bc last test shut down ws server
 		fm = NewFeedManager(context.Background(), g, feedChan, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 1, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil, nil)
-		clientHandler = NewClientHandler(fm, nil, NewHTTPServer(fm, cfg.HTTPPort), log.WithFields(log.Fields{
+		clientHandler = NewClientHandler(fm, nil, NewHTTPServer(fm, cfg.HTTPPort), true, getMockQuotaUsage, log.WithFields(log.Fields{
 			"component": "gatewayClientHandler",
-		}), getMockQuotaUsage)
+		}))
 		go clientHandler.ManageWSServer(cfg.ManageWSServer)
 		go clientHandler.ManageHTTPServer(context.Background())
 		group.Go(fm.Start)
@@ -238,6 +241,7 @@ func TestClientHandler(t *testing.T) {
 
 	t.Run(fmt.Sprintf("wsClient-%s", urlBSC), func(t *testing.T) {
 		handleBscBlxrTxRequestWithNextValidator(t, wsBSC)
+		handleNonBloxrouteRPCMethodsDisabled(t, fm, wsBSC, blockchainPeers)
 	})
 
 	// check disconnected subscription
@@ -459,6 +463,63 @@ func handleTxReceiptsNotification(t *testing.T, fm *FeedManager, ws *websocket.C
 	time.Sleep(time.Millisecond)
 	assert.False(t, fm.SubscriptionExists(subscriptionID))
 	handlePingRequest(t, ws)
+}
+
+func handleNonBloxrouteRPCMethodsDisabled(t *testing.T, fm *FeedManager, ws *websocket.Conn, blockchainPeers []types.NodeEndpoint) {
+	clearWSProviderStats(fm, blockchainPeers)
+	assert.True(t, fm.nodeWSManager.Synced())
+	ws1, _ := fm.nodeWSManager.Provider(&blockchainPeers[0])
+	ws2, _ := fm.nodeWSManager.Provider(&blockchainPeers[1])
+	ws3, _ := fm.nodeWSManager.Provider(&blockchainPeers[2])
+	assert.Equal(t, blockchain.Synced, ws1.SyncStatus())
+	ws2.UpdateSyncStatus(blockchain.Unsynced)
+	ws3.UpdateSyncStatus(blockchain.Unsynced)
+
+	request := `{"jsonrpc": "2.0", "id": "1", "method": "eth_getBalance", "params": ["0xAABCf4f110F06aFd82A7696f4fb79AE4a41D0f81", "latest"]}`
+	response := writeMsgToWsAndReadResponse(t, ws, []byte(request), nil)
+	clientRes := getClientResponse(t, response)
+	assert.Equal(t, 0, ws1.(*eth.MockWSProvider).NumRPCCalls)
+	assert.NotNil(t, clientRes.Error)
+	assert.Equal(t, clientRes.Error.(map[string]interface{})["data"], "got unsupported method name: eth_getBalance")
+	assert.Equal(t, clientRes.Error.(map[string]interface{})["code"], float64(jsonrpc.MethodNotFound))
+	assert.Equal(t, clientRes.Error.(map[string]interface{})["message"], "Invalid method")
+	markAllPeersWithSyncStatus(fm, blockchainPeers, blockchain.Synced)
+}
+
+func handleNonBloxrouteRPCMethods(t *testing.T, fm *FeedManager, ws *websocket.Conn, blockchainPeers []types.NodeEndpoint) {
+	clearWSProviderStats(fm, blockchainPeers)
+	assert.True(t, fm.nodeWSManager.Synced())
+	ws1, _ := fm.nodeWSManager.Provider(&blockchainPeers[0])
+	ws2, _ := fm.nodeWSManager.Provider(&blockchainPeers[1])
+	ws3, _ := fm.nodeWSManager.Provider(&blockchainPeers[2])
+	assert.Equal(t, blockchain.Synced, ws1.SyncStatus())
+	ws2.UpdateSyncStatus(blockchain.Unsynced)
+	ws3.UpdateSyncStatus(blockchain.Unsynced)
+
+	request := `{"jsonrpc": "2.0", "id": "1", "method": "eth_getBalance", "params": ["0xAABCf4f110F06aFd82A7696f4fb79AE4a41D0f81", "latest"]}`
+	response := writeMsgToWsAndReadResponse(t, ws, []byte(request), nil)
+	clientRes := getClientResponse(t, response)
+	assert.Equal(t, 1, ws1.(*eth.MockWSProvider).NumRPCCalls)
+	assert.Equal(t, "response", clientRes.Result)
+	markAllPeersWithSyncStatus(fm, blockchainPeers, blockchain.Synced)
+}
+
+func handleNonBloxrouteSendTxMethod(t *testing.T, fm *FeedManager, ws *websocket.Conn, blockchainPeers []types.NodeEndpoint) {
+	assert.True(t, fm.nodeWSManager.Synced())
+	ws1, _ := fm.nodeWSManager.Provider(&blockchainPeers[0])
+	ws2, _ := fm.nodeWSManager.Provider(&blockchainPeers[1])
+	ws3, _ := fm.nodeWSManager.Provider(&blockchainPeers[2])
+	assert.Equal(t, blockchain.Synced, ws1.SyncStatus())
+	ws2.UpdateSyncStatus(blockchain.Unsynced)
+	ws3.UpdateSyncStatus(blockchain.Unsynced)
+
+	request := fmt.Sprintf(`{"jsonrpc": "2.0", "id": "1", "method": "eth_sendRawTransaction", "params": ["0x%v"]}`, fixtures.DynamicFeeTransaction)
+	response := writeMsgToWsAndReadResponse(t, ws, []byte(request), nil)
+	clientRes := getClientResponse(t, response)
+	res := parseBlxrTxResult(t, clientRes.Result)
+	assert.Equal(t, fixtures.DynamicFeeTransactionHash[2:], res.TxHash)
+	assert.Nil(t, clientRes.Error)
+	markAllPeersWithSyncStatus(fm, blockchainPeers, blockchain.Synced)
 }
 
 func handleOnBlockNotification(t *testing.T, fm *FeedManager, ws *websocket.Conn, blockchainPeers []types.NodeEndpoint) {

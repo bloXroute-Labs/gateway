@@ -1,6 +1,6 @@
 MODULE   = $(shell env GO111MODULE=on $(GO) list -m)
 DATE    ?= $(shell date +%FT%T%z)
-VERSION ?= $(shell git describe --tags --always --dirty --match='v2*' 2> /dev/null || \
+VERSION ?= $(shell git describe --tags --always --dirty --match=v2* 2> /dev/null || \
             cat .gittag || \
 			sed '5!d' $(CURDIR)/version/version.go | grep -o '".*"' | sed 's/"//g' 2> /dev/null || echo v2.1.1.2)
 PKGS     = $(or $(PKG),$(shell env GO111MODULE=on $(GO) list ./...))

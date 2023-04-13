@@ -84,8 +84,6 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 			return result
 		}
 		copy(sender[:], ethTx.From.Bytes())
-	} else {
-		log.Tracef("adding transaction %v with sender %v", hash, sender)
 	}
 
 	result = t.BxTxStore.Add(hash, content, shortID, network, false, transaction.Flags(), timestamp, networkChainID, sender)

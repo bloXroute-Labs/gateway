@@ -24,6 +24,12 @@ func EthCommonHasher(seed maphash.Seed, key ethcommon.Hash) uint64 {
 	return writeStringHash(seed, key.String())
 }
 
+// NodeIDHasher hasher function for types.NodeID key type.
+// converts types.NodeID to string and returns Sum64 uint64
+func NodeIDHasher(seed maphash.Seed, key types.NodeID) uint64 {
+	return writeStringHash(seed, string(key))
+}
+
 // writeStringHash writes string hash and returns sum64
 func writeStringHash(seed maphash.Seed, key string) uint64 {
 	var h maphash.Hash
