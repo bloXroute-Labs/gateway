@@ -50,6 +50,7 @@ type Bx struct {
 	ForwardTransactionEndpoint   string
 	ForwardTransactionMethod     string
 	EnableDynamicPeers           bool
+	EnableBlockchainRPC          bool
 
 	*GRPC
 	*Env
@@ -119,6 +120,7 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		ForwardTransactionEndpoint: ctx.String(utils.ForwardTransactionEndpoint.Name),
 		ForwardTransactionMethod:   ctx.String(utils.ForwardTransactionMethod.Name),
 		EnableDynamicPeers:         ctx.Bool(utils.EnableDynamicPeers.Name),
+		EnableBlockchainRPC:        ctx.Bool(utils.EnableBlockchainRPCMethodSupport.Name),
 
 		GRPC:       grpcConfig,
 		Env:        env,

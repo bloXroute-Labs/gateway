@@ -275,13 +275,13 @@ type AccountInfo struct {
 	BlockchainNetwork  string          `json:"blockchain_network"`
 	TierName           AccountTier     `json:"tier_name"`
 	Miner              bool            `json:"is_miner"`
-	Trusted            bool            `json:"trusted"`
+	Untrusted          bool            `json:"untrusted"`
 	MEVBuilder         string          `json:"mev_builder"`
 	MEVMiner           string          `json:"mev_miner"`
 }
 
 // IsTrusted indicates whether the account is trusted
-func (a *Account) IsTrusted() bool { return a.Trusted || a.Miner }
+func (a *Account) IsTrusted() bool { return !a.Untrusted || a.Miner }
 
 // GetDefaultEliteAccount get a default elite account by current time
 func GetDefaultEliteAccount(now time.Time) Account {

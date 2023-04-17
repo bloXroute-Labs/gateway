@@ -138,6 +138,11 @@ var (
 		Usage: "true to disable the pprof http server (for relays, where profiling is enabled by default)",
 		Value: false,
 	}
+	EnableUnpaidTxsRateLimit = &cli.BoolFlag{
+		Name:  "enable-unpaid-txs-rate-limit",
+		Usage: "true to enable the rate limit for unpaid transactions",
+		Value: false,
+	}
 	DataDirFlag = &cli.StringFlag{
 		Name:  "data-dir",
 		Usage: "directory for storing various persistent files (e.g. private SSL certs)",
@@ -285,6 +290,11 @@ var (
 		Usage: "for gateways only, sets max number of backup tx trace log files retained (0 enables unlimited backups)",
 		Value: 3,
 	}
+	TxCheckerPoolCapacity = &cli.IntFlag{
+		Name:  "tx-checker-pool-capacity",
+		Usage: "for relays only, sets max number of workers that check transaction if it is valid (0 disable checks)",
+		Value: 2,
+	}
 	NodeTypeFlag = &cli.StringFlag{
 		Name:  "node-type",
 		Usage: "set node type",
@@ -404,5 +414,10 @@ var (
 		Usage: "number of millisecond before next block, marking the ending window time for processing front-running protection transaction on " +
 			"validator gateway",
 		Value: 200,
+	}
+	EnableBlockchainRPCMethodSupport = &cli.BoolFlag{
+		Name:  "enable-blockchain-rpc",
+		Usage: "forwards blockchain RPC methods to the node and returns node response",
+		Value: false,
 	}
 )

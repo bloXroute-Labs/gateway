@@ -40,11 +40,12 @@ import (
 
 // ClientHandler is a struct for gateway client handler object
 type ClientHandler struct {
-	feedManager     *FeedManager
-	websocketServer *http.Server
-	httpServer      *HTTPServer
-	log             *log.Entry
-	getQuotaUsage   func(accountID string) (*connections.QuotaResponseBody, error)
+	feedManager         *FeedManager
+	websocketServer     *http.Server
+	httpServer          *HTTPServer
+	getQuotaUsage       func(accountID string) (*connections.QuotaResponseBody, error)
+	enableBlockchainRPC bool
+	log                 *log.Entry
 }
 
 // MultiTransactions - response for MultiTransactions subscription
@@ -84,12 +85,13 @@ type BlockResponse struct {
 }
 
 type handlerObj struct {
-	FeedManager       *FeedManager
-	ClientReq         *clientReq
-	remoteAddress     string
-	connectionAccount sdnmessage.Account
-	log               *log.Entry
-	getQuotaUsage     func(accountID string) (*connections.QuotaResponseBody, error)
+	FeedManager         *FeedManager
+	ClientReq           *clientReq
+	remoteAddress       string
+	connectionAccount   sdnmessage.Account
+	getQuotaUsage       func(accountID string) (*connections.QuotaResponseBody, error)
+	enableBlockchainRPC bool
+	log                 *log.Entry
 }
 
 type clientReq struct {
@@ -136,13 +138,14 @@ func newCall(name string) *RPCCall {
 }
 
 // NewClientHandler is a constructor for ClientHandler
-func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, httpServer *HTTPServer, log *log.Entry, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error)) ClientHandler {
+func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, httpServer *HTTPServer, enableBlockchainRPC bool, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), log *log.Entry) ClientHandler {
 	return ClientHandler{
-		feedManager:     feedManager,
-		websocketServer: websocketServer,
-		httpServer:      httpServer,
-		log:             log,
-		getQuotaUsage:   getQuotaUsage,
+		feedManager:         feedManager,
+		websocketServer:     websocketServer,
+		httpServer:          httpServer,
+		getQuotaUsage:       getQuotaUsage,
+		enableBlockchainRPC: enableBlockchainRPC,
+		log:                 log,
 	}
 }
 
@@ -232,50 +235,60 @@ var operands = []string{"and", "or"}
 var availableFeeds = []types.FeedType{types.NewTxsFeed, types.NewBlocksFeed, types.BDNBlocksFeed, types.PendingTxsFeed, types.OnBlockFeed, types.TxReceiptsFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed}
 
 // NewWSServer creates and returns a new websocket server managed by FeedManager
-func NewWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error)) *http.Server {
+func NewWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool) *http.Server {
 	handler := http.NewServeMux()
 	wsHandler := func(responseWriter http.ResponseWriter, request *http.Request) {
-		connectionAccountID, connectionSecretHash, err := getAccountIDSecretHashFromReq(request, feedManager.cfg.WebsocketTLSEnabled)
-		if err != nil {
-			log.Errorf("RemoteAddr: %v RequestURI: %v - %v.", request.RemoteAddr, request.RequestURI, err.Error())
-			errorWithDelay(responseWriter, request, "failed parsing the authorization header")
-			return
-		}
-		connectionAccountModel := sdnmessage.Account{}
+		// if enable client handler - skip authorization
 		serverAccountID := feedManager.accountModel.AccountID
-		// if gateway received request from a customer with a different account id, it should verify it with the SDN.
-		//if the gateway does not have permission to verify account id (which mostly happen with external gateways),
-		//SDN will return StatusUnauthorized and fail this connection. if SDN return any other error -
-		//assuming the issue is with the SDN and set default enterprise account for the customer. in order to send request to the gateway,
-		//customer must be enterprise / elite account
-		if connectionAccountID != serverAccountID {
-			connectionAccountModel, err = feedManager.getCustomerAccountModel(connectionAccountID)
+		connectionAccountModel := sdnmessage.Account{}
+		var err error
+		if !enableBlockchainRPC {
+			connectionAccountID, connectionSecretHash, err := getAccountIDSecretHashFromReq(request, feedManager.cfg.WebsocketTLSEnabled)
 			if err != nil {
-				if strings.Contains(strconv.FormatInt(http.StatusUnauthorized, 10), err.Error()) {
-					log.Errorf("Account %v is not authorized to get other account %v information", serverAccountID, connectionAccountID)
-					errorWithDelay(responseWriter, request, "account is not authorized to get other accounts information")
+				log.Errorf("RemoteAddr: %v RequestURI: %v - %v.", request.RemoteAddr, request.RequestURI, err.Error())
+				errorWithDelay(responseWriter, request, "failed parsing the authorization header")
+				return
+			}
+			// if gateway received request from a customer with a different account id, it should verify it with the SDN.
+			//if the gateway does not have permission to verify account id (which mostly happen with external gateways),
+			//SDN will return StatusUnauthorized and fail this connection. if SDN return any other error -
+			//assuming the issue is with the SDN and set default enterprise account for the customer. in order to send request to the gateway,
+			//customer must be enterprise / elite account
+			if connectionAccountID != serverAccountID {
+				connectionAccountModel, err = feedManager.getCustomerAccountModel(connectionAccountID)
+				if err != nil {
+					if strings.Contains(strconv.FormatInt(http.StatusUnauthorized, 10), err.Error()) {
+						log.Errorf("Account %v is not authorized to get other account %v information", serverAccountID, connectionAccountID)
+						errorWithDelay(responseWriter, request, "account is not authorized to get other accounts information")
+						return
+					}
+					log.Errorf("Failed to get customer account model, account id: %v, remote addr: %v, connectionSecretHash: %v, error: %v",
+						connectionAccountID, request.RemoteAddr, connectionSecretHash, err)
+					connectionAccountModel = sdnmessage.GetDefaultEliteAccount(time.Now().UTC())
+					connectionAccountModel.AccountID = connectionAccountID
+					connectionAccountModel.SecretHash = connectionSecretHash
+				}
+				if !connectionAccountModel.TierName.IsEnterprise() {
+					log.Warnf("Customer account %v must be enterprise / enterprise elite / ultra but it is %v", connectionAccountID, connectionAccountModel.TierName)
+					errorWithDelay(responseWriter, request, "account must be enterprise / enterprise elite / ultra")
 					return
 				}
-				log.Errorf("Failed to get customer account model, account id: %v, remote addr: %v, connectionSecretHash: %v, error: %v",
-					connectionAccountID, request.RemoteAddr, connectionSecretHash, err)
-				connectionAccountModel = sdnmessage.GetDefaultEliteAccount(time.Now().UTC())
-				connectionAccountModel.AccountID = connectionAccountID
-				connectionAccountModel.SecretHash = connectionSecretHash
+			} else {
+				connectionAccountModel = feedManager.accountModel
 			}
-			if !connectionAccountModel.TierName.IsEnterprise() {
-				log.Warnf("Customer account %v must be enterprise / enterprise elite / ultra but it is %v", connectionAccountID, connectionAccountModel.TierName)
-				errorWithDelay(responseWriter, request, "account must be enterprise / enterprise elite / ultra")
+			if connectionAccountModel.SecretHash != connectionSecretHash && connectionSecretHash != "" {
+				log.Errorf("Account %v sent a different secret hash than set in the account model, remoteAddress: %v", connectionAccountID, request.RemoteAddr)
+				errorWithDelay(responseWriter, request, "wrong value in the authorization header")
 				return
 			}
 		} else {
-			connectionAccountModel = feedManager.accountModel
+			connectionAccountModel, err = feedManager.getCustomerAccountModel(serverAccountID)
+			if err != nil {
+				log.Errorf("Failed to get customer account model, account id: %v, remote addr: %v, error: %v",
+					serverAccountID, request.RemoteAddr, err)
+			}
 		}
-		if connectionAccountModel.SecretHash != connectionSecretHash && connectionSecretHash != "" {
-			log.Errorf("Account %v sent a different secret hash than set in the account model, remoteAddress: %v", connectionAccountID, request.RemoteAddr)
-			errorWithDelay(responseWriter, request, "wrong value in the authorization header")
-			return
-		}
-		handleWSClientConnection(feedManager, responseWriter, request, connectionAccountModel, getQuotaUsage)
+		handleWSClientConnection(feedManager, responseWriter, request, connectionAccountModel, getQuotaUsage, enableBlockchainRPC)
 	}
 
 	handler.HandleFunc("/ws", wsHandler)
@@ -302,7 +315,7 @@ func errorWithDelay(w http.ResponseWriter, r *http.Request, msg string) {
 }
 
 // handleWsClientConnection - when new http connection is made we get here upgrade to ws, and start handling
-func handleWSClientConnection(feedManager *FeedManager, w http.ResponseWriter, r *http.Request, accountModel sdnmessage.Account, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error)) {
+func handleWSClientConnection(feedManager *FeedManager, w http.ResponseWriter, r *http.Request, accountModel sdnmessage.Account, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool) {
 	log.Debugf("New web-socket connection from %v", r.RemoteAddr)
 	connection, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -318,11 +331,12 @@ func handleWSClientConnection(feedManager *FeedManager, w http.ResponseWriter, r
 	})
 
 	handler := &handlerObj{
-		FeedManager:       feedManager,
-		remoteAddress:     r.RemoteAddr,
-		connectionAccount: accountModel,
-		log:               logger,
-		getQuotaUsage:     getQuotaUsage,
+		FeedManager:         feedManager,
+		remoteAddress:       r.RemoteAddr,
+		connectionAccount:   accountModel,
+		getQuotaUsage:       getQuotaUsage,
+		enableBlockchainRPC: enableBlockchainRPC,
+		log:                 logger,
 	}
 
 	asynHhandler := jsonrpc2.AsyncHandler(handler)
@@ -362,7 +376,7 @@ func getAccountIDSecretHashFromReq(request *http.Request, websocketTLSEnabled bo
 }
 
 func (ch *ClientHandler) runWSServer() {
-	ch.websocketServer = NewWSServer(ch.feedManager, ch.getQuotaUsage)
+	ch.websocketServer = NewWSServer(ch.feedManager, ch.getQuotaUsage, ch.enableBlockchainRPC)
 	ch.log.Infof("starting websockets RPC server at: %v", ch.websocketServer.Addr)
 	var err error
 	if ch.feedManager.cfg.WebsocketTLSEnabled {
@@ -420,13 +434,13 @@ func (ch *ClientHandler) ManageHTTPServer(ctx context.Context) {
 }
 
 // SendErrorMsg formats and sends an RPC error message back to the client
-func SendErrorMsg(ctx context.Context, code jsonrpc.RPCErrorCode, data string, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
+func SendErrorMsg(ctx context.Context, code jsonrpc.RPCErrorCode, data string, conn *jsonrpc2.Conn, reqID jsonrpc2.ID) {
 	rpcError := &jsonrpc2.Error{
 		Code:    int64(code),
 		Message: jsonrpc.ErrorMsg[code],
 	}
 	rpcError.SetError(data)
-	err := conn.ReplyWithError(ctx, req.ID, rpcError)
+	err := conn.ReplyWithError(ctx, reqID, rpcError)
 	if err != nil {
 		// TODO: move this to caller and add identifying information
 		log.Errorf("could not respond to client with error message: %v", err)
@@ -518,7 +532,7 @@ func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan *chan *type
 			multiTxsResponse := MultiTransactions{Subscription: subscriptionID.String()}
 			if !ok {
 				if h.FeedManager.SubscriptionExists(*subscriptionID) {
-					SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req)
+					SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
 				}
 				return errors.New("error when reading new notification")
 			}
@@ -543,7 +557,7 @@ func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan *chan *type
 				case notification, ok := <-(*feedChan):
 					if !ok {
 						if h.FeedManager.SubscriptionExists(*subscriptionID) {
-							SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req)
+							SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
 						}
 						return errors.New("error when reading new notification")
 					}
@@ -589,7 +603,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 	case jsonrpc.RPCSubscribe:
 		request, err := h.createClientReq(req)
 		if err != nil {
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
+			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
 			return
 		}
 		feedName := request.feed
@@ -608,7 +622,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 				fallthrough
 			default:
 				errMsg := fmt.Sprintf("%v feed requires a websockets endpoint to be specifed via either --eth-ws-uri or --multi-node startup parameter", feedName)
-				SendErrorMsg(ctx, jsonrpc.InvalidParams, errMsg, conn, req)
+				SendErrorMsg(ctx, jsonrpc.InvalidParams, errMsg, conn, req.ID)
 				return
 			}
 		}
@@ -619,7 +633,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		sub, errSubscribe := h.FeedManager.Subscribe(request.feed, conn, h.connectionAccount.TierName, h.connectionAccount.AccountID, h.remoteAddress, filters, strings.Join(request.includes, ","), "")
 
 		if errSubscribe != nil {
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, errSubscribe.Error(), conn, req)
+			SendErrorMsg(ctx, jsonrpc.InvalidParams, errSubscribe.Error(), conn, req.ID)
 			return
 		}
 		subscriptionID := sub.SubscriptionID
@@ -627,7 +641,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		defer h.FeedManager.Unsubscribe(*subscriptionID, false, "")
 		if err = reply(ctx, conn, req.ID, subscriptionID); err != nil {
 			h.log.Errorf("error reply to %v with subscriptionID: %v : %v ", h.remoteAddress, subscriptionID, err)
-			SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req)
+			SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
 			return
 		}
 		h.FeedManager.stats.LogSubscribeStats(subscriptionID,
@@ -642,7 +656,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 
 		if request.MultiTxs {
 			if feedName != types.NewTxsFeed && feedName != types.PendingTxsFeed {
-				SendErrorMsg(ctx, jsonrpc.InvalidParams, "multi tx support only in new txs or pending txs", conn, req)
+				SendErrorMsg(ctx, jsonrpc.InvalidParams, "multi tx support only in new txs or pending txs", conn, req.ID)
 				log.Debugf("multi tx support only in new txs or pending txs, subscription id %v, account id %v, remote addr %v", subscriptionID.String(), h.connectionAccount.AccountID, h.remoteAddress)
 				return
 			}
@@ -658,12 +672,12 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 			case <-conn.DisconnectNotify():
 				return
 			case errMsg := <-sub.ErrMsgChan:
-				SendErrorMsg(ctx, jsonrpc.InvalidParams, errMsg, conn, req)
+				SendErrorMsg(ctx, jsonrpc.InvalidParams, errMsg, conn, req.ID)
 				return
 			case notification, ok := <-(*sub.FeedChan):
 				if !ok {
 					if h.FeedManager.SubscriptionExists(*subscriptionID) {
-						SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req)
+						SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
 					}
 					return
 				}
@@ -762,13 +776,13 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		var params []string
 		if req.Params == nil {
 			err := fmt.Errorf("params is missing in the request")
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
+			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
 			return
 		}
 		_ = json.Unmarshal(*req.Params, &params)
 		if len(params) != 1 {
 			err := fmt.Errorf("params %v with incorrect length", params)
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
+			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
 			return
 		}
 		uid, _ := uuid.FromString(params[0])
@@ -776,13 +790,13 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 			h.log.Infof("subscription id %v was not found", uid)
 			if err := reply(ctx, conn, req.ID, "false"); err != nil {
 				h.log.Errorf("error reply to %v on unsubscription on subscriptionID: %v : %v ", h.remoteAddress, uid, err)
-				SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req)
+				SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
 				return
 			}
 		}
 		if err := reply(ctx, conn, req.ID, "true"); err != nil {
 			h.log.Errorf("error reply to %v on unsubscription on subscriptionID: %v : %v ", h.remoteAddress, uid, err)
-			SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req)
+			SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
 			return
 		}
 	case jsonrpc.RPCTx:
@@ -792,7 +806,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 				h.log.Infof("received a tx from user account %v, remoteAddr %v, %v", h.connectionAccount.AccountID, h.remoteAddress, err)
 			} else {
 				h.log.Errorf("%v. account auth: %v, node account: %v ", err, h.connectionAccount.AccountID, h.FeedManager.accountModel.AccountID)
-				SendErrorMsg(ctx, jsonrpc.InvalidRequest, err.Error(), conn, req)
+				SendErrorMsg(ctx, jsonrpc.InvalidRequest, err.Error(), conn, req.ID)
 			}
 			return
 		}
@@ -800,14 +814,14 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		err := json.Unmarshal(*req.Params, &params)
 		if err != nil {
 			h.log.Errorf("unmarshal req.Params error - %v", err.Error())
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
+			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
 			return
 		}
 
 		// if user tried to send transaction directly to the internal gateway, return error
 		if h.FeedManager.accountModel.AccountID == types.BloxrouteAccountID && types.AccountID(params.OriginalSenderAccountID) == types.EmptyAccountID {
 			h.log.Errorf("cannot send transaction to internal gateway directly")
-			SendErrorMsg(ctx, jsonrpc.InvalidRequest, "failed to send transaction", conn, req)
+			SendErrorMsg(ctx, jsonrpc.InvalidRequest, "failed to send transaction", conn, req.ID)
 			return
 		}
 
@@ -819,7 +833,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 			ws = connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.FeedManager.networkNum, utils.Websocket)
 		}
 
-		txHash, ok := h.handleSingleTransaction(ctx, conn, req, params.Transaction, ws, params.ValidatorsOnly, true, params.NextValidator, params.Fallback, h.FeedManager.nextValidatorMap, h.FeedManager.validatorStatusMap, params.NodeValidation, params.FrontRunningProtection)
+		txHash, ok := h.handleSingleTransaction(ctx, conn, req.ID, params.Transaction, ws, params.ValidatorsOnly, true, params.NextValidator, params.Fallback, h.FeedManager.nextValidatorMap, h.FeedManager.validatorStatusMap, params.NodeValidation, params.FrontRunningProtection)
 		if !ok {
 			return
 		}
@@ -844,7 +858,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		err := json.Unmarshal(*req.Params, &params)
 		if err != nil {
 			h.log.Errorf("unmarshal req.Params error - %v", err.Error())
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
+			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
 			return
 		}
 
@@ -857,7 +871,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		}
 
 		for _, transaction := range params.Transactions {
-			txHash, ok := h.handleSingleTransaction(ctx, conn, req, transaction, ws, params.ValidatorsOnly, false, false, 0, nil, nil, false, false)
+			txHash, ok := h.handleSingleTransaction(ctx, conn, req.ID, transaction, ws, params.ValidatorsOnly, false, false, 0, nil, nil, false, false)
 			if !ok {
 				continue
 			}
@@ -866,7 +880,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 
 		if len(txHashes) == 0 {
 			err = fmt.Errorf("all transactions are invalid")
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
+			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
 			return
 		}
 
@@ -890,7 +904,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		if h.FeedManager.accountModel.AccountID != h.connectionAccount.AccountID {
 			err := fmt.Errorf("blxr_mev_searcher is not allowed when account authentication is different from the node account")
 			h.log.Errorf("%v. account auth: %v, node account: %v ", err, h.connectionAccount.AccountID, h.FeedManager.accountModel.AccountID)
-			SendErrorMsg(ctx, jsonrpc.AccountIDError, err.Error(), conn, req)
+			SendErrorMsg(ctx, jsonrpc.AccountIDError, err.Error(), conn, req.ID)
 			return
 		}
 		params := struct {
@@ -905,14 +919,14 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		if req.Params == nil {
 			err := errors.New("failed to unmarshal req.Params for mevSearcher, params not found")
 			h.log.Error(err)
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
+			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
 			return
 		}
 
 		err := json.Unmarshal(*req.Params, &params)
 		if err != nil {
 			h.log.Errorf("failed to unmarshal req.Params for mevSearcher, error: %v", err.Error())
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
+			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
 			return
 		}
 
@@ -920,19 +934,19 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		err = json.Unmarshal(params.Payload, &sendBundleArgs)
 		if err != nil {
 			h.log.Errorf("failed to unmarshal req.Params for mevSearcher, error: %v", err.Error())
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
+			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
 			return
 		}
 
 		if len(sendBundleArgs) != 1 {
 			h.log.Errorf("received invalid number of mevSearcher payload, must be 1 element")
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
+			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
 			return
 		}
 
 		if err := sendBundleArgs[0].validate(); err != nil {
 			h.log.Errorf("mevSearcher payload validation failed: %v", err)
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
+			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
 			return
 
 		}
@@ -953,7 +967,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		)
 		if err != nil {
 			h.log.Errorf("failed to create new mevSearcher: %v", err)
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
+			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
 			return
 		}
 
@@ -964,7 +978,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		err = h.FeedManager.node.HandleMsg(&mevSearcher, ws, connections.RunForeground)
 		if err != nil {
 			h.log.Errorf("failed to process mevSearcher message: %v", err)
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
+			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
 			return
 		}
 
@@ -976,16 +990,89 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		quotaRes, err := h.getQuotaUsage(accountID)
 		if err != nil {
 			sendErr := fmt.Errorf("failed to fetch quota usage: %v", err)
-			SendErrorMsg(ctx, jsonrpc.MethodNotFound, sendErr.Error(), conn, req)
+			SendErrorMsg(ctx, jsonrpc.MethodNotFound, sendErr.Error(), conn, req.ID)
 		}
 		if err = reply(ctx, conn, req.ID, quotaRes); err != nil {
 			h.log.Errorf("%v reply error - %v", jsonrpc.RPCQuotaUsage, err)
 		}
 
 	default:
-		err := fmt.Errorf("got unsupported method name: %v", req.Method)
-		SendErrorMsg(ctx, jsonrpc.MethodNotFound, err.Error(), conn, req)
-		return
+		if !h.enableBlockchainRPC {
+			err := fmt.Errorf("got unsupported method name: %v", req.Method)
+			SendErrorMsg(ctx, jsonrpc.MethodNotFound, err.Error(), conn, req.ID)
+			return
+		}
+		ws, synced := h.FeedManager.nodeWSManager.SyncedProvider()
+		if !synced {
+			err := fmt.Errorf("unable to forward non-bloxroute RPC request %v to node: no synced ws provider available", req.Method)
+			SendErrorMsg(ctx, jsonrpc.MethodNotFound, err.Error(), conn, req.ID)
+			return
+		}
+
+		var rpcParams []interface{}
+		err := json.Unmarshal(*req.Params, &rpcParams)
+		if err != nil {
+			err = fmt.Errorf("unable to forward RPC request %v to node, failed to unmarshal params %v: %v", req.Method, req.Params, err)
+			SendErrorMsg(ctx, jsonrpc.InvalidRequest, err.Error(), conn, req.ID)
+			return
+		}
+
+		switch req.Method {
+		case "eth_sendRawTransaction":
+			if len(rpcParams) != 1 {
+				err = fmt.Errorf("unable to process eth_sendRawTransaction RPC request: expected 1 param, given %v", len(rpcParams))
+				SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
+				return
+			}
+			rawTxParam := rpcParams[0]
+			var rawTxStr string
+			switch rawTxParam.(type) {
+			case string:
+				rawTxStr = rawTxParam.(string)
+				if rawTxStr[0:2] == "0x" {
+					rawTxStr = rawTxStr[2:]
+				} else {
+					err = fmt.Errorf("unable to process eth_sendRawTransaction RPC request: expected raw transaction string to begin with '0x'")
+					SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
+					return
+				}
+
+			default:
+				err = fmt.Errorf("unable to process eth_sendRawTransaction RPC request: param must be a raw transaction string")
+				SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
+				return
+			}
+			reqWS := connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.FeedManager.networkNum, utils.Websocket)
+			txHash, ok := h.handleSingleTransaction(ctx, conn, req.ID, rawTxStr, reqWS, false, true, false, 0, nil, nil, false, false)
+			if !ok {
+				err = fmt.Errorf("unable to process eth_sendRawTransaction RPC request")
+				SendErrorMsg(ctx, jsonrpc.InvalidRequest, err.Error(), conn, req.ID)
+				return
+			}
+			response := rpcTxResponse{
+				TxHash: txHash,
+			}
+			if err = reply(ctx, conn, req.ID, response); err != nil {
+				h.log.Errorf("%v reply error - %v", req.Method, err)
+				return
+			}
+		default:
+			response, nodeErr := ws.CallRPC(req.Method, rpcParams, blockchain.DefaultRPCOptions)
+			if nodeErr != nil {
+				replyErr := reply(ctx, conn, req.ID, nodeErr)
+				if replyErr != nil {
+					h.log.Errorf("%v reply error - %v", req.Method, replyErr)
+					return
+				}
+				return
+			}
+
+			err = reply(ctx, conn, req.ID, response)
+			if err != nil {
+				h.log.Errorf("%v reply error - %v", req.Method, err)
+				return
+			}
+		}
 	}
 }
 
@@ -1340,18 +1427,18 @@ func EvaluateFilters(expr conditions.Expr) error {
 	return err
 }
 
-func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request, transaction string, ws connections.Conn, validatorsOnly bool, sendError bool, nextValidator bool, fallback uint16, nextValidatorMap *orderedmap.OrderedMap, validatorStatusMap *syncmap.SyncMap[string, bool], nodeValidationRequested bool, frontRunningProtection bool) (string, bool) {
+func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2.Conn, reqID jsonrpc2.ID, transaction string, ws connections.Conn, validatorsOnly bool, sendError bool, nextValidator bool, fallback uint16, nextValidatorMap *orderedmap.OrderedMap, validatorStatusMap *syncmap.SyncMap[string, bool], nodeValidationRequested bool, frontRunningProtection bool) (string, bool) {
 	h.FeedManager.LockPendingNextValidatorTxs()
 
 	txContent, err := types.DecodeHex(transaction)
 	if err != nil {
-		SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
+		SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, reqID)
 		return "", false
 	}
 	tx, pendingReevaluation, err := ValidateTxFromExternalSource(transaction, txContent, validatorsOnly, h.FeedManager.chainID, nextValidator, fallback, nextValidatorMap, validatorStatusMap, h.FeedManager.networkNum, ws.GetAccountID(), nodeValidationRequested, h.FeedManager.nodeWSManager, ws, h.FeedManager.pendingBSCNextValidatorTxHashToInfo, frontRunningProtection)
 	h.FeedManager.UnlockPendingNextValidatorTxs()
 	if err != nil && sendError {
-		SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req)
+		SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, reqID)
 		return "", false
 	}
 

@@ -90,6 +90,7 @@ func main() {
 			utils.PolygonMainnetHeimdallEndpoint,
 			utils.BSCTransactionHoldDuration,
 			utils.BSCTransactionPassedDueDuration,
+			utils.EnableBlockchainRPCMethodSupport,
 		},
 		Action: runGateway,
 	}

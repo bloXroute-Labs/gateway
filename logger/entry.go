@@ -2,11 +2,20 @@ package logger
 
 import (
 	"github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus/hooks/test"
 )
 
 // Entry type
 type Entry struct {
 	e *logrus.Entry
+}
+
+// TestEntry - Not being used currently
+func TestEntry() *Entry {
+	logger, _ := test.NewNullLogger()
+	return &Entry{
+		e: logrus.NewEntry(logger),
+	}
 }
 
 // WithField adds a single field to the Entry.
