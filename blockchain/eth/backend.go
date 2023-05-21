@@ -40,24 +40,26 @@ type Backend interface {
 
 // Handler is the Ethereum backend implementation. It passes transactions and blocks to the BDN bridge and tracks received blocks and transactions from peers.
 type Handler struct {
-	chain     *Chain
-	bridge    blockchain.Bridge
-	peers     *peerSet
-	cancel    context.CancelFunc
-	config    *network.EthConfig
-	wsManager blockchain.WSManager
+	chain            *Chain
+	bridge           blockchain.Bridge
+	peers            *peerSet
+	cancel           context.CancelFunc
+	config           *network.EthConfig
+	wsManager        blockchain.WSManager
+	recommendedPeers map[string]struct{}
 }
 
 // NewHandler returns a new Handler and starts its processing go routines
-func NewHandler(parent context.Context, config *network.EthConfig, chain *Chain, bridge blockchain.Bridge, wsManager blockchain.WSManager) *Handler {
+func NewHandler(parent context.Context, config *network.EthConfig, chain *Chain, bridge blockchain.Bridge, wsManager blockchain.WSManager, recommendedPeers map[string]struct{}) *Handler {
 	ctx, cancel := context.WithCancel(parent)
 	h := &Handler{
-		config:    config,
-		chain:     chain,
-		bridge:    bridge,
-		peers:     newPeerSet(),
-		cancel:    cancel,
-		wsManager: wsManager,
+		config:           config,
+		chain:            chain,
+		bridge:           bridge,
+		peers:            newPeerSet(),
+		cancel:           cancel,
+		wsManager:        wsManager,
+		recommendedPeers: recommendedPeers,
 	}
 	go h.checkInitialBlockchainLiveliness(100 * time.Second)
 	go h.handleBDNBridge(ctx)
@@ -170,7 +172,8 @@ func (h *Handler) NetworkConfig() *network.EthConfig {
 
 // RunPeer registers a peer within the peer set and starts handling all its messages
 func (h *Handler) RunPeer(ep *Peer, handler func(*Peer) error) error {
-	if !ep.Dynamic() {
+	_, isRecommended := h.recommendedPeers[fmt.Sprintf("%s:%d", ep.endpoint.IP, ep.endpoint.Port)]
+	if !ep.Dynamic() && !isRecommended {
 		ok := h.wsManager.SetBlockchainPeer(ep)
 		if !ok {
 			log.Warnf("unable to set blockchain peer for %v: no corresponding websockets provider found (ok if websockets URI was omitted)", ep.endpoint.IPPort())
@@ -183,7 +186,7 @@ func (h *Handler) RunPeer(ep *Peer, handler func(*Peer) error) error {
 		return err
 	}
 	defer func() {
-		if !ep.Dynamic() {
+		if !ep.Dynamic() && !isRecommended {
 			ok := h.wsManager.UnsetBlockchainPeer(ep.endpoint)
 			if !ok {
 				log.Warnf("unable to unset blockchain peer for %v: no corresponding websockets provider found (ok if websockets URI was omitted)", ep.endpoint.IPPort())
@@ -336,9 +339,16 @@ func (h *Handler) processNodeConnectionCheckRequest() {
 	var endpoint types.NodeEndpoint
 	for _, peer := range h.peers.getAll() {
 		endpoint = peer.IPEndpoint()
+		if endpoint.IP == "" || endpoint.Port == 0 {
+			continue
+		}
 		break
 	}
 
+	if endpoint.IP == "" || endpoint.Port == 0 {
+		log.Errorf("try to send blockchain status with invalid blockchain ip: %v or post: %v", endpoint.IP, endpoint.Port)
+		return
+	}
 	err := h.bridge.SendNodeConnectionCheckResponse(endpoint)
 	if err != nil {
 		log.Errorf("send blockchain status response: %v", err)

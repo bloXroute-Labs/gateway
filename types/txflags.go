@@ -19,6 +19,8 @@ const (
 	TFNextValidator
 	TFNextValidatorRebroadcast
 	TFFrontRunningProtection
+	TFMevBundleTx
+	_ // [NOTICE] last flag
 
 	TFStatusTrack = TFStatusMonitoring | TFPaidTx
 	TFNonceTrack  = TFNonceMonitoring | TFStatusTrack
@@ -47,6 +49,11 @@ func (f TxFlags) IsReuseSenderNonce() bool {
 // IsPaidTx indicates is transaction is paid transaction
 func (f TxFlags) IsPaidTx() bool {
 	return f&TFPaidTx != 0
+}
+
+// IsMevBundleTx indicates is transaction is paid transaction
+func (f TxFlags) IsMevBundleTx() bool {
+	return f&TFMevBundleTx != 0
 }
 
 // IsDeliverToNode return true if transaction marked to deliver to node

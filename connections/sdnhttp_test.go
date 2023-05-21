@@ -5,17 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/v2"
-	"github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/v2/test"
-	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/bloXroute-Labs/gateway/v2/utils/utilmock"
-	"github.com/gorilla/mux"
-	logrusTest "github.com/sirupsen/logrus/hooks/test"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -23,6 +12,19 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/gorilla/mux"
+	logrusTest "github.com/sirupsen/logrus/hooks/test"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/bloXroute-Labs/gateway/v2"
+	"github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/v2/test"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/bloXroute-Labs/gateway/v2/utils/utilmock"
 )
 
 type handlerArgs struct {
@@ -59,7 +61,7 @@ func testSDNHTTP() realSDNHTTP {
 			NodeID:               "35299c61-55ad-4565-85a3-0cd985953fac",
 			BlockchainNetworkNum: LocalInitiatedPort,
 		},
-		//autoRelays: []nodeLatencyInfo,
+		// autoRelays: []nodeLatencyInfo,
 	}
 }
 
@@ -96,16 +98,12 @@ func TestRegister_BlockchainNetworkNumberUpdated(t *testing.T) {
 				server.Close()
 			}()
 			testCerts := utils.TestCerts()
-			s := realSDNHTTP{
-				sdnURL:   server.URL,
-				sslCerts: &testCerts,
-				nodeModel: &sdnmessage.NodeModel{
-					Protocol: testCase.nodeModel.Protocol,
-					Network:  testCase.nodeModel.Network,
-				},
-			}
 
-			err := s.Register()
+			sdnI, err := NewSDNHTTP(&testCerts, server.URL, sdnmessage.NodeModel{Protocol: testCase.nodeModel.Protocol, Network: testCase.nodeModel.Network}, "")
+			require.NoError(t, err)
+			s := sdnI.(*realSDNHTTP)
+
+			err = s.Register()
 
 			assert.Nil(t, err)
 			assert.Equal(t, testCase.nodeModel.Network, s.nodeModel.Network)
@@ -170,7 +168,9 @@ func TestDirectRelayConnections_IfPingOver40MSLogsWarning(t *testing.T) {
 				server.Close()
 			}()
 
-			sdn := NewSDNHTTP(&sslCerts, server.URL, nodeModel, "").(*realSDNHTTP)
+			sdnI, err := NewSDNHTTP(&sslCerts, server.URL, nodeModel, "")
+			require.NoError(t, err)
+			sdn := sdnI.(*realSDNHTTP)
 
 			globalHook := logrusTest.NewGlobal()
 			getPingLatenciesFunction := func(peers sdnmessage.Peers) []nodeLatencyInfo {
@@ -182,7 +182,7 @@ func TestDirectRelayConnections_IfPingOver40MSLogsWarning(t *testing.T) {
 
 			autoRelayInstructions := make(chan RelayInstruction)
 			go func() { <-autoRelayInstructions }()
-			err := sdn.DirectRelayConnections(ctx, "auto", 1, autoRelayInstructions, time.Second)
+			err = sdn.DirectRelayConnections(ctx, "auto", 1, autoRelayInstructions, time.Second)
 			assert.Nil(t, err)
 			time.Sleep(time.Millisecond)
 
@@ -238,7 +238,7 @@ func TestDirectRelayConnections_IncorrectArgs(t *testing.T) {
 	}
 
 	s := testSDNHTTP()
-	//defer server.Close()
+	// defer server.Close()
 
 	for _, testCase := range testTable {
 		t.Run(fmt.Sprint(testCase.name), func(t *testing.T) {
@@ -359,7 +359,10 @@ func TestDirectRelayConnections_RelayLimit2(t *testing.T) {
 				server.Close()
 			}()
 
-			sdn := NewSDNHTTP(&sslCerts, server.URL, nodeModel, "").(*realSDNHTTP)
+			sdnI, err := NewSDNHTTP(&sslCerts, server.URL, nodeModel, "")
+			require.NoError(t, err)
+			sdn := sdnI.(*realSDNHTTP)
+
 			getPingLatenciesFunction := func(peers sdnmessage.Peers) []nodeLatencyInfo {
 				return latencies
 			}
@@ -371,7 +374,7 @@ func TestDirectRelayConnections_RelayLimit2(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			err := sdn.DirectRelayConnections(ctx, testCase.relaysString, 2, relayInstructions, AutoRelayTimeout)
+			err = sdn.DirectRelayConnections(ctx, testCase.relaysString, 2, relayInstructions, AutoRelayTimeout)
 			assert.Equal(t, testCase.expectedError, err)
 
 			timer := time.NewTimer(1 * time.Second)
@@ -488,7 +491,10 @@ func TestDirectRelayConnections_RelayLimit1(t *testing.T) {
 				server.Close()
 			}()
 
-			sdn := NewSDNHTTP(&sslCerts, server.URL, nodeModel, "").(*realSDNHTTP)
+			sdnI, err := NewSDNHTTP(&sslCerts, server.URL, nodeModel, "")
+			require.NoError(t, err)
+			sdn := sdnI.(*realSDNHTTP)
+
 			getPingLatenciesFunction := func(peers sdnmessage.Peers) []nodeLatencyInfo {
 				return latencies
 			}
@@ -500,7 +506,7 @@ func TestDirectRelayConnections_RelayLimit1(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			err := sdn.DirectRelayConnections(ctx, testCase.relaysString, 1, relayInstructions, time.Second)
+			err = sdn.DirectRelayConnections(ctx, testCase.relaysString, 1, relayInstructions, time.Second)
 			assert.Equal(t, testCase.expectedError, err)
 
 			for i := 0; i < expectedRelayCount; i++ {
@@ -632,7 +638,7 @@ func TestDirectRelayConnections_UpdateAutoRelays(t *testing.T) {
 	for _, testCase := range testTable {
 		t.Run(testCase.name, func(t *testing.T) {
 			s := testSDNHTTP()
-			//defer server.Close()
+			// defer server.Close()
 			s.getPingLatencies = func(peers sdnmessage.Peers) []nodeLatencyInfo {
 				return testCase.initialPingLatencies
 			}
@@ -649,11 +655,11 @@ func TestDirectRelayConnections_UpdateAutoRelays(t *testing.T) {
 			err := s.DirectRelayConnections(ctx, testCase.relaysArgument, 2, relayInstructions, time.Millisecond)
 			require.Nil(t, err)
 			time.Sleep(time.Millisecond * 2)
-			//require.True(t, UnorderedEqual(testCase.expectedInitialAutoRelays, s.autoRelays))
+			// require.True(t, UnorderedEqual(testCase.expectedInitialAutoRelays, s.autoRelays))
 
 			testCase.initialPingLatencies = append(testCase.addPingLatencies, testCase.initialPingLatencies...)
 			time.Sleep(time.Millisecond * 5)
-			//require.True(t, UnorderedEqual(testCase.expectedFinalAutoRelays, s.autoRelays))
+			// require.True(t, UnorderedEqual(testCase.expectedFinalAutoRelays, s.autoRelays))
 		})
 	}
 }
@@ -702,7 +708,7 @@ func TestDirectRelayConnections_UpdateAutoRelaysTwice(t *testing.T) {
 	for _, testCase := range testTable {
 		t.Run(testCase.name, func(t *testing.T) {
 			s := testSDNHTTP()
-			//defer server.Close()
+			// defer server.Close()
 			s.getPingLatencies = func(peers sdnmessage.Peers) []nodeLatencyInfo {
 				return testCase.initialPingLatencies
 			}
@@ -719,15 +725,15 @@ func TestDirectRelayConnections_UpdateAutoRelaysTwice(t *testing.T) {
 			err := s.DirectRelayConnections(ctx, testCase.relaysArgument, 2, relayInstructions, time.Millisecond)
 			require.Nil(t, err)
 			time.Sleep(time.Millisecond * 2)
-			//require.True(t, UnorderedEqual(testCase.expectedAutoRelays1, s.autoRelays))
+			// require.True(t, UnorderedEqual(testCase.expectedAutoRelays1, s.autoRelays))
 
 			testCase.initialPingLatencies = append(testCase.addPingLatencies1, testCase.initialPingLatencies...)
 			time.Sleep(time.Millisecond * 5)
-			//require.True(t, UnorderedEqual(testCase.expectedAutoRelays2, s.autoRelays))
+			// require.True(t, UnorderedEqual(testCase.expectedAutoRelays2, s.autoRelays))
 
 			testCase.initialPingLatencies = append(testCase.addPingLatencies2, testCase.initialPingLatencies...)
 			time.Sleep(time.Millisecond * 5)
-			//require.True(t, UnorderedEqual(testCase.expectedFinalAutoRelays, s.autoRelays))
+			// require.True(t, UnorderedEqual(testCase.expectedFinalAutoRelays, s.autoRelays))
 		})
 	}
 }
@@ -758,7 +764,10 @@ func TestSDNHTTP_CacheFiles_ServiceUnavailable_SDN_BlockchainNetworks(t *testing
 
 		utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
 		// using bad sdn url so get/post to bxapi will fail
-		sdn := NewSDNHTTP(&sslCerts, server.URL, testCase.nodeModel, "").(*realSDNHTTP)
+		sdnI, err := NewSDNHTTP(&sslCerts, server.URL, testCase.nodeModel, "")
+		require.NoError(t, err)
+		sdn := sdnI.(*realSDNHTTP)
+
 		url := fmt.Sprintf("%v/blockchain-networks/%v", sdn.SDNURL(), testCase.networkNumber)
 
 		networks := generateNetworks()
@@ -801,7 +810,9 @@ func TestSDNHTTP_CacheFiles_ServiceUnavailable_SDN_Node(t *testing.T) {
 
 		utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
 		// using bad sdn url so get/post to bxapi will fail
-		sdn := NewSDNHTTP(&sslCerts, server.URL, testCase.nodeModel, "").(*realSDNHTTP)
+		sdnI, err := NewSDNHTTP(&sslCerts, server.URL, testCase.nodeModel, "")
+		require.NoError(t, err)
+		sdn := sdnI.(*realSDNHTTP)
 
 		nodeModel := generateNodeModel()
 		// generate nodemodel.json file which contains nodeModel using UpdateCacheFile method
@@ -843,7 +854,10 @@ func TestSDNHTTP_CacheFiles_ServiceUnavailable_SDN_Relays(t *testing.T) {
 
 		utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
 		// using bad sdn url so get/post to bxapi will fail
-		sdn := NewSDNHTTP(&sslCerts, server.URL, testCase.nodeModel, "").(*realSDNHTTP)
+		sdnI, err := NewSDNHTTP(&sslCerts, server.URL, testCase.nodeModel, "")
+		require.NoError(t, err)
+		sdn := sdnI.(*realSDNHTTP)
+
 		url := fmt.Sprintf("%v/nodes/%v/%v/potential-relays", sdn.SDNURL(), sdn.NodeModel().NodeID, sdn.NodeModel().BlockchainNetworkNum)
 		peers := generatePeers()
 		// generate potentialrelays.json file which contains peers using UpdateCacheFile method
@@ -885,7 +899,9 @@ func TestSDNHTTP_CacheFiles_ServiceUnavailable_SDN_Account(t *testing.T) {
 
 		utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
 		// using bad sdn url so get/post to bxapi will fail
-		sdn := NewSDNHTTP(&sslCerts, server.URL, testCase.nodeModel, "").(*realSDNHTTP)
+		sdnI, err := NewSDNHTTP(&sslCerts, server.URL, testCase.nodeModel, "")
+		require.NoError(t, err)
+		sdn := sdnI.(*realSDNHTTP)
 
 		accountModel := generateAccountModel()
 		// generate accountmodel.json file which contains accountModel using UpdateCacheFile method
@@ -948,7 +964,9 @@ func TestSDNHTTP_InitGateway(t *testing.T) {
 		}()
 
 		utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
-		sdn := NewSDNHTTP(sslCerts, server.URL, sdnmessage.NodeModel{}, "").(*realSDNHTTP)
+		sdnI, err := NewSDNHTTP(sslCerts, server.URL, sdnmessage.NodeModel{}, "")
+		require.NoError(t, err)
+		sdn := sdnI.(*realSDNHTTP)
 
 		assert.Nil(t, sdn.InitGateway(bxgateway.Ethereum, "Mainnet"))
 		assert.Equal(t, testCase.expectedRelayLimit, sdn.accountModel.RelayLimit.MsgQuota.Limit)
@@ -980,7 +998,9 @@ func TestSDNHTTP_InitGateway_Fail(t *testing.T) {
 		}()
 
 		utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
-		sdn := NewSDNHTTP(sslCerts, server.URL, sdnmessage.NodeModel{}, "").(*realSDNHTTP)
+		sdnI, err := NewSDNHTTP(sslCerts, server.URL, sdnmessage.NodeModel{}, "")
+		require.NoError(t, err)
+		sdn := sdnI.(*realSDNHTTP)
 
 		os.Remove(nodeModelCacheFileName)
 		assert.NotNil(t, sdn.InitGateway(bxgateway.Ethereum, "Mainnet"))
@@ -991,7 +1011,10 @@ func TestSDNHTTP_HttpPostBadRequestDetailsResponse(t *testing.T) {
 	sslCerts := utils.SSLCerts{}
 
 	utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
-	sdn := NewSDNHTTP(&sslCerts, "", sdnmessage.NodeModel{ExternalIP: "localhost"}, "").(*realSDNHTTP)
+	sdnI, err := NewSDNHTTP(&sslCerts, "", sdnmessage.NodeModel{ExternalIP: "localhost"}, "")
+	require.NoError(t, err)
+	sdn := sdnI.(*realSDNHTTP)
+
 	testCase := struct {
 		nodeModel         sdnmessage.NodeModel
 		jsonRespNodeModel string
@@ -1029,7 +1052,10 @@ func TestSDNHTTP_HttpPostBadRequestDetailsResponse(t *testing.T) {
 func TestSDNHTTP_HttpGetBadRequestDetailsResponse(t *testing.T) {
 	sslCerts := utils.SSLCerts{}
 	utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
-	sdn := NewSDNHTTP(&sslCerts, "", sdnmessage.NodeModel{ExternalIP: "localhost"}, "").(*realSDNHTTP)
+	sdnI, err := NewSDNHTTP(&sslCerts, "", sdnmessage.NodeModel{ExternalIP: "localhost"}, "")
+	require.NoError(t, err)
+	sdn := sdnI.(*realSDNHTTP)
+
 	testCase := struct {
 		nodeModel         sdnmessage.NodeModel
 		jsonRespNodeModel string
@@ -1090,13 +1116,9 @@ func TestSDNHTTP_HttpPostBodyError(t *testing.T) {
 		}()
 
 		testCerts := utils.TestCerts()
-		sdn := realSDNHTTP{
-			sdnURL:   server.URL,
-			sslCerts: &testCerts,
-			nodeModel: &sdnmessage.NodeModel{
-				NodeType: testCase.nodeModel.NodeType,
-			},
-		}
+		sdnI, err := NewSDNHTTP(&testCerts, server.URL, testCase.nodeModel, "")
+		require.NoError(t, err)
+		sdn := sdnI.(*realSDNHTTP)
 
 		url := fmt.Sprintf("%v/nodes", sdn.SDNURL())
 		resp, err := sdn.http(url, bxgateway.PostMethod, bytes.NewBuffer(sdn.NodeModel().Pack()))
@@ -1134,13 +1156,10 @@ func TestSDNHTTP_HttpPostUnmarshallError(t *testing.T) {
 		}()
 
 		testCerts := utils.TestCerts()
-		sdn := realSDNHTTP{
-			sdnURL:   server.URL,
-			sslCerts: &testCerts,
-			nodeModel: &sdnmessage.NodeModel{
-				NodeType: testCase.nodeModel.NodeType,
-			},
-		}
+
+		sdnI, err := NewSDNHTTP(&testCerts, server.URL, testCase.nodeModel, "")
+		require.NoError(t, err)
+		sdn := sdnI.(*realSDNHTTP)
 
 		url := fmt.Sprintf("%v/nodes", sdn.SDNURL())
 		resp, err := sdn.http(url, bxgateway.PostMethod, bytes.NewBuffer(sdn.NodeModel().Pack()))

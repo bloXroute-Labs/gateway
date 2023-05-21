@@ -109,6 +109,12 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 
 	ethTx := blockchainTx.(*types.EthTransaction)
 	result.Nonce = ethTx.Nonce
+
+	// if tx is from a bundle, we can leave
+	if result.Transaction.Flags().IsMevBundleTx() {
+		return result
+	}
+
 	seenNonce, otherTx := t.track(ethTx, network)
 	if !seenNonce {
 		return result

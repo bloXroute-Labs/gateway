@@ -214,6 +214,10 @@ func (t *BxTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID 
 		result.Reprocess = true
 		bxTransaction.AddFlags(types.TFDeliverToNode)
 	}
+	if !bxTransaction.Flags().IsMevBundleTx() && flags.IsMevBundleTx() {
+		result.Reprocess = true
+		bxTransaction.AddFlags(types.TFMevBundleTx)
+	}
 
 	// check hash in the bloom filter only after it is not seen in txStore
 	if t.bloom != nil && shortID == types.ShortIDEmpty && !result.Reprocess && result.NewTx && t.bloom.Check(hash.Bytes()) {

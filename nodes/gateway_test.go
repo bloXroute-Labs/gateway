@@ -84,17 +84,27 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 		Config:     &logConfig,
 		NodeType:   utils.Gateway,
 		TxTraceLog: &txTraceLog,
+		GRPC:       &config.GRPC{Enabled: true},
 	}
 
 	bridge := blockchain.NewBxBridge(eth.Converter{}, true)
 	blockchainPeers, blockchainPeersInfo := ethtest.GenerateBlockchainPeersInfo(numPeers)
-	node, _ := NewGateway(context.Background(), bxConfig, bridge, eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout), blockchainPeers, blockchainPeersInfo, "", sdn, nil, 0, "", 0, 0)
+	node, _ := NewGateway(context.Background(), bxConfig, bridge, eth.NewEthWSManager(blockchainPeersInfo,
+		eth.NewMockWSProvider, bxgateway.WSProviderTimeout), blockchainPeers, blockchainPeersInfo,
+		make(map[string]struct{}), "", sdn, nil, 0, "", 0, 0)
 
 	g := node.(*gateway)
 	g.setupTxStore()
 	g.txTrace = loggers.NewTxTrace(nil)
 	g.setSyncWithRelay()
-	g.feedManager = servers.NewFeedManager(g.context, g, g.feedChan, services.NewNoOpSubscriptionServices(),
+	g.wsFeedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	g.gRPCFeedChans = servers.GRPCFeeds{
+		NewTxsFeed:     make(chan *pb.TxsReply, bxgateway.BxNotificationChannelSize),
+		PendingTxsFeed: make(chan *pb.TxsReply, bxgateway.BxNotificationChannelSize),
+		NewBlocksFeed:  make(chan *pb.BlocksReply, bxgateway.BxNotificationChannelSize),
+		BdnBlocksFeed:  make(chan *pb.BlocksReply, bxgateway.BxNotificationChannelSize),
+	}
+	g.feedManager = servers.NewFeedManager(g.context, g, g.wsFeedChan, g.gRPCFeedChans, services.NewNoOpSubscriptionServices(),
 		networkNum, types.NetworkID(chainID), g.sdn.NodeModel().NodeID,
 		g.wsManager, g.sdn.AccountModel(), nil,
 		"", "", *g.BxConfig, g.stats, nil, nil)
@@ -625,14 +635,14 @@ func TestGateway_HandleBlockFromBlockchain(t *testing.T) {
 	}()
 
 	g.BxConfig.WebsocketEnabled = true
-	g.feedManager.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.ATierEnterprise, "", "", "", "", "")
-	g.feedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, sdnmessage.ATierEnterprise, "", "", "", "", "")
+	g.wsFeedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 	var count int32
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for v := range g.feedChan {
+		for v := range g.wsFeedChan {
 			fmt.Println(v)
 			atomic.AddInt32(&count, 1)
 		}
@@ -666,7 +676,7 @@ func TestGateway_HandleBlockFromBlockchain(t *testing.T) {
 	// times out, nothing sent (already processed)
 	msgBytes, err = mockTLS.MockAdvanceSent()
 	assert.NotNil(t, err, "unexpected bytes %v", string(msgBytes))
-	close(g.feedChan)
+	close(g.wsFeedChan)
 	wg.Wait()
 	assert.Equal(t, int32(4), atomic.LoadInt32(&count))
 }
@@ -681,14 +691,14 @@ func TestGateway_HandleBlockFromInboundBlockchain(t *testing.T) {
 	}()
 
 	g.BxConfig.WebsocketEnabled = true
-	g.feedManager.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.ATierEnterprise, "", "", "", "", "")
-	g.feedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, sdnmessage.ATierEnterprise, "", "", "", "", "")
+	g.wsFeedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 	var count int32
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for v := range g.feedChan {
+		for v := range g.wsFeedChan {
 			fmt.Println(v)
 			atomic.AddInt32(&count, 1)
 		}
@@ -723,7 +733,7 @@ func TestGateway_HandleBlockFromInboundBlockchain(t *testing.T) {
 	// times out, nothing sent (already processed)
 	msgBytes, err = mockTLS.MockAdvanceSent()
 	assert.NotNil(t, err, "unexpected bytes %v", string(msgBytes))
-	close(g.feedChan)
+	close(g.wsFeedChan)
 	wg.Wait()
 	assert.Equal(t, int32(1), atomic.LoadInt32(&count))
 }
@@ -781,7 +791,7 @@ func TestGateway_HandleBlockFromBlockchain_TwoRelays(t *testing.T) {
 
 func TestGateway_HandleBlockFromRelay(t *testing.T) {
 	bridge, g := setup(t, 1)
-	g.feedManager.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "")
+	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "")
 	_, relayConn1 := addRelayConn(g)
 	mockTLS2, _ := addRelayConn(g)
 
@@ -827,7 +837,7 @@ func TestGateway_HandleBlockFromRelay(t *testing.T) {
 
 func TestGateway_HandleBeaconBlockFromRelay(t *testing.T) {
 	bridge, g := setup(t, 1)
-	g.feedManager.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "")
+	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "")
 	_, relayConn1 := addRelayConn(g)
 	mockTLS2, _ := addRelayConn(g)
 
@@ -928,8 +938,8 @@ func TestGateway_HandleBeaconBlockFromRelay(t *testing.T) {
 
 func TestGateway_ValidateHeightBDNBlocksWithNode(t *testing.T) {
 	bridge, g := setup(t, 1)
-	g.feedManager.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "")
-	g.feedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "")
+	g.wsFeedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 	g.BxConfig.WebsocketEnabled = true
 
 	// block from node
@@ -990,7 +1000,7 @@ func TestGateway_ValidateHeightBDNBlocksWithNode(t *testing.T) {
 
 func TestGateway_BlockFeedIfSubscribeOnly(t *testing.T) {
 	bridge, g := setup(t, 1)
-	g.feedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	g.wsFeedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 	g.BxConfig.WebsocketEnabled = true
 	g.blockchainPeers = []types.NodeEndpoint{}
 
@@ -998,7 +1008,7 @@ func TestGateway_BlockFeedIfSubscribeOnly(t *testing.T) {
 	heightFromNode := 0
 	expectNoFeedNotification(t, bridge, g, true, heightFromNode, heightFromNode, 0)
 
-	g.feedManager.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "")
+	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "")
 	heightFromNode = 10
 	expectFeedNotification(t, bridge, g, true, heightFromNode, heightFromNode, 0)
 
@@ -1006,8 +1016,8 @@ func TestGateway_BlockFeedIfSubscribeOnly(t *testing.T) {
 
 func TestGateway_ValidateHeightBDNBlocksWithoutNode(t *testing.T) {
 	bridge, g := setup(t, 1)
-	g.feedManager.Subscribe(types.BDNBlocksFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "")
-	g.feedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "")
+	g.wsFeedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 	g.BxConfig.WebsocketEnabled = true
 	g.blockchainPeers = []types.NodeEndpoint{}
 
@@ -1036,7 +1046,7 @@ func expectNoFeedNotification(t *testing.T, bridge blockchain.Bridge, g *gateway
 	assert.Nil(t, err)
 
 	select {
-	case <-g.feedChan:
+	case <-g.wsFeedChan:
 		assert.Fail(t, "received unexpected feed notification")
 	default:
 	}
@@ -1063,7 +1073,7 @@ func expectFeedNotification(t *testing.T, bridge blockchain.Bridge, g *gateway, 
 	// It is neccessary to have FailNow to not wait until timeout when something goes wrong
 	for len(expectedNotifications) > 0 {
 		select {
-		case notification := <-g.feedChan:
+		case notification := <-g.wsFeedChan:
 			if _, ok := expectedNotifications[notification.NotificationType()]; ok {
 				delete(expectedNotifications, notification.NotificationType())
 				continue

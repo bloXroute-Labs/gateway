@@ -1,8 +1,9 @@
 package ws
 
 import (
-	"github.com/gorilla/websocket"
 	"sync"
+
+	"github.com/fasthttp/websocket"
 )
 
 // Conn provides interface for websocket connection
@@ -17,6 +18,7 @@ type Conn interface {
 type realWSConn struct {
 	readLock  sync.Mutex
 	writeLock sync.Mutex
+	closed    bool
 
 	realConn *websocket.Conn
 }
@@ -43,6 +45,11 @@ func (c *realWSConn) WriteJSON(v interface{}) error {
 }
 
 func (c *realWSConn) Close() error {
+	c.writeLock.Lock()
+	defer c.writeLock.Unlock()
+
+	c.closed = true
+
 	return c.realConn.Close()
 }
 

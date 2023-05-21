@@ -250,10 +250,10 @@ func NewWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) 
 				return
 			}
 			// if gateway received request from a customer with a different account id, it should verify it with the SDN.
-			//if the gateway does not have permission to verify account id (which mostly happen with external gateways),
-			//SDN will return StatusUnauthorized and fail this connection. if SDN return any other error -
-			//assuming the issue is with the SDN and set default enterprise account for the customer. in order to send request to the gateway,
-			//customer must be enterprise / elite account
+			// if the gateway does not have permission to verify account id (which mostly happen with external gateways),
+			// SDN will return StatusUnauthorized and fail this connection. if SDN return any other error -
+			// assuming the issue is with the SDN and set default enterprise account for the customer. in order to send request to the gateway,
+			// customer must be enterprise / elite account
 			if connectionAccountID != serverAccountID {
 				connectionAccountModel, err = feedManager.getCustomerAccountModel(connectionAccountID)
 				if err != nil {
@@ -522,12 +522,13 @@ func (h *handlerObj) filterAndInclude(clientReq *clientReq, tx *types.NewTransac
 	return &response
 }
 
-func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan *chan *types.Notification, subscriptionID *uuid.UUID, clientReq *clientReq, conn *jsonrpc2.Conn, req *jsonrpc2.Request, feedName types.FeedType) error {
+func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan interface{}, subscriptionID *uuid.UUID, clientReq *clientReq, conn *jsonrpc2.Conn, req *jsonrpc2.Request, feedName types.FeedType) error {
 	for {
 		select {
 		case <-conn.DisconnectNotify():
 			return nil
-		case notification, ok := <-(*feedChan):
+		case n, ok := <-feedChan:
+			notification := n.(*types.Notification)
 			continueProcessing := true
 			multiTxsResponse := MultiTransactions{Subscription: subscriptionID.String()}
 			if !ok {
@@ -554,7 +555,8 @@ func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan *chan *type
 				select {
 				case <-conn.DisconnectNotify():
 					return nil
-				case notification, ok := <-(*feedChan):
+				case n, ok := <-feedChan:
+					notification := n.(*types.Notification)
 					if !ok {
 						if h.FeedManager.SubscriptionExists(*subscriptionID) {
 							SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
@@ -630,7 +632,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		if request.expr != nil {
 			filters = request.expr.String()
 		}
-		sub, errSubscribe := h.FeedManager.Subscribe(request.feed, conn, h.connectionAccount.TierName, h.connectionAccount.AccountID, h.remoteAddress, filters, strings.Join(request.includes, ","), "")
+		sub, errSubscribe := h.FeedManager.Subscribe(request.feed, types.WebSocketFeed, conn, h.connectionAccount.TierName, h.connectionAccount.AccountID, h.remoteAddress, filters, strings.Join(request.includes, ","), "")
 
 		if errSubscribe != nil {
 			SendErrorMsg(ctx, jsonrpc.InvalidParams, errSubscribe.Error(), conn, req.ID)
@@ -674,13 +676,14 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 			case errMsg := <-sub.ErrMsgChan:
 				SendErrorMsg(ctx, jsonrpc.InvalidParams, errMsg, conn, req.ID)
 				return
-			case notification, ok := <-(*sub.FeedChan):
+			case n, ok := <-sub.FeedChan:
 				if !ok {
 					if h.FeedManager.SubscriptionExists(*subscriptionID) {
 						SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
 					}
 					return
 				}
+				notification := n.(*types.Notification)
 				switch feedName {
 				case types.NewTxsFeed:
 					tx := (*notification).(*types.NewTransactionNotification)
@@ -700,6 +703,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 					block := (*notification).(*types.EthBlockNotification)
 					nodeWS, ok := h.getSyncedWSProvider(block.Source())
 					if !ok {
+						SendErrorMsg(ctx, jsonrpc.InvalidRequest, fmt.Sprintf("node ws connection is not available"), conn, req.ID)
 						return
 					}
 
@@ -833,7 +837,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 			ws = connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.FeedManager.networkNum, utils.Websocket)
 		}
 
-		txHash, ok := h.handleSingleTransaction(ctx, conn, req.ID, params.Transaction, ws, params.ValidatorsOnly, true, params.NextValidator, params.Fallback, h.FeedManager.nextValidatorMap, h.FeedManager.validatorStatusMap, params.NodeValidation, params.FrontRunningProtection)
+		txHash, ok := h.handleSingleTransaction(ctx, conn, req.ID, params.Transaction, ws, params.ValidatorsOnly, true, params.MevBundleTx, params.NextValidator, params.Fallback, h.FeedManager.nextValidatorMap, h.FeedManager.validatorStatusMap, params.NodeValidation, params.FrontRunningProtection)
 		if !ok {
 			return
 		}
@@ -871,7 +875,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		}
 
 		for _, transaction := range params.Transactions {
-			txHash, ok := h.handleSingleTransaction(ctx, conn, req.ID, transaction, ws, params.ValidatorsOnly, false, false, 0, nil, nil, false, false)
+			txHash, ok := h.handleSingleTransaction(ctx, conn, req.ID, transaction, ws, params.ValidatorsOnly, false, false, false, 0, nil, nil, false, false)
 			if !ok {
 				continue
 			}
@@ -1004,7 +1008,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		}
 		ws, synced := h.FeedManager.nodeWSManager.SyncedProvider()
 		if !synced {
-			err := fmt.Errorf("unable to forward non-bloxroute RPC request %v to node: no synced ws provider available", req.Method)
+			err := fmt.Errorf("your blockchain node is either not synced or the gateway does not have an active websocket connection to the node - request %v was not sent in order to prevent errors", req.Method)
 			SendErrorMsg(ctx, jsonrpc.MethodNotFound, err.Error(), conn, req.ID)
 			return
 		}
@@ -1043,7 +1047,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 				return
 			}
 			reqWS := connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.FeedManager.networkNum, utils.Websocket)
-			txHash, ok := h.handleSingleTransaction(ctx, conn, req.ID, rawTxStr, reqWS, false, true, false, 0, nil, nil, false, false)
+			txHash, ok := h.handleSingleTransaction(ctx, conn, req.ID, rawTxStr, reqWS, false, true, false, false, 0, nil, nil, false, false)
 			if !ok {
 				err = fmt.Errorf("unable to process eth_sendRawTransaction RPC request")
 				SendErrorMsg(ctx, jsonrpc.InvalidRequest, err.Error(), conn, req.ID)
@@ -1427,7 +1431,7 @@ func EvaluateFilters(expr conditions.Expr) error {
 	return err
 }
 
-func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2.Conn, reqID jsonrpc2.ID, transaction string, ws connections.Conn, validatorsOnly bool, sendError bool, nextValidator bool, fallback uint16, nextValidatorMap *orderedmap.OrderedMap, validatorStatusMap *syncmap.SyncMap[string, bool], nodeValidationRequested bool, frontRunningProtection bool) (string, bool) {
+func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2.Conn, reqID jsonrpc2.ID, transaction string, ws connections.Conn, validatorsOnly bool, sendError bool, mevBundleTx bool, nextValidator bool, fallback uint16, nextValidatorMap *orderedmap.OrderedMap, validatorStatusMap *syncmap.SyncMap[string, bool], nodeValidationRequested bool, frontRunningProtection bool) (string, bool) {
 	h.FeedManager.LockPendingNextValidatorTxs()
 
 	txContent, err := types.DecodeHex(transaction)
@@ -1435,7 +1439,7 @@ func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2
 		SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, reqID)
 		return "", false
 	}
-	tx, pendingReevaluation, err := ValidateTxFromExternalSource(transaction, txContent, validatorsOnly, h.FeedManager.chainID, nextValidator, fallback, nextValidatorMap, validatorStatusMap, h.FeedManager.networkNum, ws.GetAccountID(), nodeValidationRequested, h.FeedManager.nodeWSManager, ws, h.FeedManager.pendingBSCNextValidatorTxHashToInfo, frontRunningProtection)
+	tx, pendingReevaluation, err := ValidateTxFromExternalSource(transaction, txContent, validatorsOnly, h.FeedManager.chainID, mevBundleTx, nextValidator, fallback, nextValidatorMap, validatorStatusMap, h.FeedManager.networkNum, ws.GetAccountID(), nodeValidationRequested, h.FeedManager.nodeWSManager, ws, h.FeedManager.pendingBSCNextValidatorTxHashToInfo, frontRunningProtection)
 	h.FeedManager.UnlockPendingNextValidatorTxs()
 	if err != nil && sendError {
 		SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, reqID)
@@ -1474,7 +1478,7 @@ func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2
 }
 
 // ValidateTxFromExternalSource validate transaction from external source (ws / grpc), return bool indicates if tx is pending reevaluation
-func ValidateTxFromExternalSource(transaction string, txBytes []byte, validatorsOnly bool, gatewayChainID types.NetworkID, nextValidator bool, fallback uint16, nextValidatorMap *orderedmap.OrderedMap, validatorStatusMap *syncmap.SyncMap[string, bool], networkNum types.NetworkNum, accountID types.AccountID, nodeValidationRequested bool, wsManager blockchain.WSManager, source connections.Conn, pendingBSCNextValidatorTxHashToInfo map[string]PendingNextValidatorTxInfo, frontRunningProtection bool) (*bxmessage.Tx, bool, error) {
+func ValidateTxFromExternalSource(transaction string, txBytes []byte, validatorsOnly bool, gatewayChainID types.NetworkID, mevBundleTx bool, nextValidator bool, fallback uint16, nextValidatorMap *orderedmap.OrderedMap, validatorStatusMap *syncmap.SyncMap[string, bool], networkNum types.NetworkNum, accountID types.AccountID, nodeValidationRequested bool, wsManager blockchain.WSManager, source connections.Conn, pendingBSCNextValidatorTxHashToInfo map[string]PendingNextValidatorTxInfo, frontRunningProtection bool) (*bxmessage.Tx, bool, error) {
 	// Ethereum's transactions encoding for RPC interfaces is slightly different from the RLP encoded format, so decode + re-encode the transaction for consistency.
 	// Specifically, note `UnmarshalBinary` should be used for RPC interfaces, and rlp.DecodeBytes should be used for the wire protocol.
 	var ethTx ethtypes.Transaction
@@ -1511,6 +1515,10 @@ func ValidateTxFromExternalSource(transaction string, txBytes []byte, validators
 
 	if frontRunningProtection {
 		txFlags |= types.TFFrontRunningProtection
+	}
+
+	if mevBundleTx {
+		txFlags |= types.TFMevBundleTx
 	}
 
 	var hash types.SHA256Hash
@@ -1595,7 +1603,7 @@ func ProcessNextValidatorTx(tx *bxmessage.Tx, fallback uint16, nextValidatorMap 
 			tx.SetWalletID(0, n1Wallet)
 		} else {
 			blockIntervalBSC := bxgateway.NetworkToBlockDuration[bxgateway.BSCMainnet]
-			if fallback != 0 && fallback < uint16(blockIntervalBSC.Milliseconds()) {
+			if fallback != 0 && fallback < uint16(blockIntervalBSC.Milliseconds()) || tx.Flags().IsMevBundleTx() {
 				return false, nil
 			}
 			pendingBSCNextValidatorTxHashToInfo[tx.Hash().String()] = PendingNextValidatorTxInfo{

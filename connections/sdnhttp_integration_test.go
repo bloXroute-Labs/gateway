@@ -5,19 +5,21 @@ package connections
 
 import (
 	"fmt"
+	"os"
+	"testing"
+
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/stretchr/testify/assert"
-	"os"
-	"testing"
+	"github.com/stretchr/testify/require"
 )
 
-//Requires setting these environment variables:
-//REGISTRATION_ONLY_CERT_PATH
-//REGISTRATION_ONLY_KEY_PATH
-//API_CERT_PATH (for testnet)
-//API_KEY_PATH (for testnet)
+// Requires setting these environment variables:
+// REGISTRATION_ONLY_CERT_PATH
+// REGISTRATION_ONLY_KEY_PATH
+// API_CERT_PATH (for testnet)
+// API_KEY_PATH (for testnet)
 
 func getSSLCerts(t *testing.T) utils.SSLCerts {
 	apiCertPath := os.Getenv("API_CERT_PATH")
@@ -61,24 +63,21 @@ func TestInitGateway_GetsCorrectBlockchainNetworkFromProtocolAndNetwork(t *testi
 		t.Run(fmt.Sprint(testCase), func(t *testing.T) {
 			sslCerts := getSSLCerts(t)
 			sdnURL := "https://bdn-api.testnet.blxrbdn.com"
-			s := realSDNHTTP{
-				sslCerts: &sslCerts,
-				sdnURL:   sdnURL,
-				nodeModel: &sdnmessage.NodeModel{
-					NodeType: "EXTERNAL_GATEWAY",
-				},
-			}
-			err := s.InitGateway(testCase.protocol, testCase.network)
+
+			s, err := NewSDNHTTP(&sslCerts, sdnURL, sdnmessage.NodeModel{NodeType: "EXTERNAL_GATEWAY"}, "")
+			require.NoError(t, err)
+
+			err = s.InitGateway(testCase.protocol, testCase.network)
 			assert.Nil(t, err)
 
-			//check Network Number correct
+			// check Network Number correct
 			bcn, found := (*s.Networks())[testCase.networkNumber]
 			if !found || bcn == nil {
 				t.FailNow()
 			}
 			assert.Len(t, *s.Networks(), 1)
 
-			//check Network correct
+			// check Network correct
 			assert.Equal(t, testCase.protocol, bcn.Protocol)
 			assert.Equal(t, testCase.network, bcn.Network)
 			assert.Equal(t, testCase.networkNumber, bcn.NetworkNum)
@@ -112,14 +111,11 @@ func TestInitGateway_ReturnsErrorIfIncorrectNetworkOrProtocol(t *testing.T) {
 		t.Run(fmt.Sprint(testCase), func(t *testing.T) {
 			sslCerts := getSSLCerts(t)
 			sdnURL := "https://bdn-api.testnet.blxrbdn.com"
-			s := realSDNHTTP{
-				sslCerts: &sslCerts,
-				sdnURL:   sdnURL,
-				nodeModel: &sdnmessage.NodeModel{
-					NodeType: "INTERNAL_GATEWAY",
-				},
-			}
-			err := s.InitGateway(testCase.protocol, testCase.network)
+
+			s, err := NewSDNHTTP(&sslCerts, sdnURL, sdnmessage.NodeModel{NodeType: "EXTERNAL_GATEWAY"}, "")
+			require.NoError(t, err)
+
+			err = s.InitGateway(testCase.protocol, testCase.network)
 
 			if err == nil {
 				t.FailNow()

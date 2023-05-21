@@ -229,7 +229,7 @@ func (b *bloomFilter) storeOnDisk() error {
 	startTime := time.Now()
 	b.mx.RLock()
 	currentCopyBits := make([]uint64, len(b.current.BitSet().Bytes()))
-	copy(b.current.BitSet().Bytes(), currentCopyBits)
+	copy(currentCopyBits, b.current.BitSet().Bytes())
 	currentCopyM := b.current.Cap()
 	currentCopyK := b.current.K()
 	currentCounter := b.counter

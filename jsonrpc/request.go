@@ -37,6 +37,7 @@ const (
 // RPCTxPayload is the payload of blxr_tx requests
 type RPCTxPayload struct {
 	Transaction             string         `json:"transaction"`
+	MevBundleTx             bool           `json:"mev_bundle_tx"`
 	ValidatorsOnly          bool           `json:"validators_only"`
 	NextValidator           bool           `json:"next_validator"`
 	Fallback                uint16         `json:"fall_back"`
@@ -44,7 +45,6 @@ type RPCTxPayload struct {
 	OriginalSenderAccountID string         `json:"original_sender_account_id"`
 	OriginalRPCMethod       RPCRequestType `json:"original_rpc_method"`
 	NodeValidation          bool           `json:"node_validation"`
-	NoBackrun               bool           `json:"no_backrun"`
 	FrontRunningProtection  bool           `json:"front_running_protection"`
 }
 
@@ -58,6 +58,7 @@ type RPCBatchTxPayload struct {
 
 type rpcTxJSON struct {
 	Transaction             string         `json:"transaction"`
+	MevBundleTx             bool           `json:"mev_bundle_tx"`
 	ValidatorsOnly          bool           `json:"validators_only"`
 	NextValidator           bool           `json:"next_validator"`
 	Fallback                uint16         `json:"fall_back"`
@@ -65,7 +66,6 @@ type rpcTxJSON struct {
 	OriginalSenderAccountID string         `json:"original_sender_account_id"`
 	OriginalRPCMethod       RPCRequestType `json:"original_rpc_method"`
 	NodeValidation          bool           `json:"node_validation"`
-	NoBackrun               bool           `json:"no_backrun"`
 	FrontRunningProtection  bool           `json:"front_running_protection"`
 }
 
@@ -96,7 +96,8 @@ func (p *RPCTxPayload) UnmarshalJSON(b []byte) error {
 	p.Fallback = payload.Fallback
 	p.OriginalRPCMethod = payload.OriginalRPCMethod
 	p.NodeValidation = payload.NodeValidation
-	p.NoBackrun = payload.NoBackrun
 	p.FrontRunningProtection = payload.FrontRunningProtection
+	p.MevBundleTx = payload.MevBundleTx
+
 	return nil
 }

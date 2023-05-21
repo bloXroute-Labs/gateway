@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -349,7 +348,7 @@ func ConvertEthHeaderToBlockNotificationHeader(ethHeader *ethtypes.Header) *Head
 		StateRoot:        ethHeader.Root,
 		TransactionsRoot: ethHeader.TxHash,
 		ReceiptsRoot:     ethHeader.ReceiptHash,
-		LogsBloom:        fmt.Sprintf("0x%x", hex.EncodeToString(ethHeader.Bloom.Bytes())),
+		LogsBloom:        fmt.Sprintf("0x%v", hex.EncodeToString(ethHeader.Bloom.Bytes())),
 		Difficulty:       hexutil.EncodeBig(ethHeader.Difficulty),
 		hexNumber:        ethHeader.Number.Uint64(),
 		Number:           hexutil.EncodeBig(ethHeader.Number),
@@ -358,7 +357,7 @@ func ConvertEthHeaderToBlockNotificationHeader(ethHeader *ethtypes.Header) *Head
 		Timestamp:        hexutil.EncodeUint64(ethHeader.Time),
 		ExtraData:        hexutil.Encode(ethHeader.Extra),
 		MixHash:          ethHeader.MixDigest,
-		Nonce:            hexutil.EncodeUint64(ethHeader.Nonce.Uint64()),
+		Nonce:            fmt.Sprintf("0x%016s", hexutil.EncodeUint64(ethHeader.Nonce.Uint64())[2:]),
 		WithdrawalsHash:  ethHeader.WithdrawalsHash,
 	}
 	if ethHeader.BaseFee != nil {

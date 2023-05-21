@@ -7,14 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/v2"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/jinzhu/copier"
 	"io"
-	"io/ioutil"
 	"math"
 	"math/big"
 	"net/http"
@@ -26,6 +19,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jinzhu/copier"
+
+	"github.com/bloXroute-Labs/gateway/v2"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 //go:generate mockgen -destination ../../bxgateway/test/sdnhttpmock/mock_sdnhttp.go -package mock_connections . SDNHTTP
@@ -81,6 +82,7 @@ type realSDNHTTP struct {
 	dataDir          string
 	nodeModel        *sdnmessage.NodeModel
 	relays           sdnmessage.Peers
+	client           *http.Client
 }
 
 // relayMap maps a relay's IP to its port
@@ -119,6 +121,8 @@ const (
 	Connect ConnInstructionType = iota
 	// Disconnect is the instruction to disconnect from a relay
 	Disconnect
+
+	defaultClientTimeout = 15 * time.Second
 )
 
 func init() {
@@ -126,7 +130,26 @@ func init() {
 }
 
 // NewSDNHTTP creates a new connection to the bloxroute API
-func NewSDNHTTP(sslCerts *utils.SSLCerts, sdnURL string, nodeModel sdnmessage.NodeModel, dataDir string) SDNHTTP {
+func NewSDNHTTP(sslCerts *utils.SSLCerts, sdnURL string, nodeModel sdnmessage.NodeModel, dataDir string) (SDNHTTP, error) {
+	var tlsConfig *tls.Config
+	var err error
+
+	if sslCerts.NeedsPrivateCert() {
+		tlsConfig, err = sslCerts.LoadRegistrationConfig()
+	} else {
+		tlsConfig, err = sslCerts.LoadPrivateConfig()
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig,
+		},
+		Timeout: defaultClientTimeout,
+	}
+
 	if nodeModel.ExternalIP == "" {
 		var err error
 		nodeModel.ExternalIP, err = utils.IPResolverHolder.GetPublicIP()
@@ -144,8 +167,10 @@ func NewSDNHTTP(sslCerts *utils.SSLCerts, sdnURL string, nodeModel sdnmessage.No
 		nodeModel:        &nodeModel,
 		getPingLatencies: getPingLatencies,
 		dataDir:          dataDir,
+		client:           client,
 	}
-	return sdn
+
+	return sdn, nil
 }
 
 // FetchAllBlockchainNetworks fetches list of blockchain networks from the sdn
@@ -164,15 +189,11 @@ func (s *realSDNHTTP) Get(endpoint string, requestBody []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	c, err := s.httpClient()
+	resp, err := s.client.Do(proxyReq)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.Do(proxyReq)
-	if err != nil {
-		return nil, err
-	}
-	respBytes, err := ioutil.ReadAll(resp.Body)
+	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -319,7 +340,7 @@ func (s realSDNHTTP) manageAutoRelays(ctx context.Context, autoRelayCount int, r
 	}
 
 	autoRelayCounter := 0
-	//autoRelays := nodeLatencyInfos{}
+	// autoRelays := nodeLatencyInfos{}
 	for idx, pingLatency := range pingLatencies {
 		newRelayIP, err := utils.GetIP(pingLatency.IP)
 		if err != nil {
@@ -332,7 +353,7 @@ func (s realSDNHTTP) manageAutoRelays(ctx context.Context, autoRelayCount int, r
 		}
 		logLowestLatency(pingLatencies[idx])
 		relayInstructions <- RelayInstruction{IP: newRelayIP, Port: pingLatency.Port, Type: Connect}
-		//autoRelays = append(autoRelays, pingLatency)
+		// autoRelays = append(autoRelays, pingLatency)
 
 		autoRelayCounter++
 		if autoRelayCounter == autoRelayCount {
@@ -362,26 +383,6 @@ func (s realSDNHTTP) AccountModel() sdnmessage.Account {
 // NetworkNum returns the registered network number of the node model
 func (s realSDNHTTP) NetworkNum() types.NetworkNum {
 	return s.nodeModel.BlockchainNetworkNum
-}
-
-func (s realSDNHTTP) httpClient() (*http.Client, error) {
-	var tlsConfig *tls.Config
-	var err error
-	if s.sslCerts.NeedsPrivateCert() {
-		tlsConfig, err = s.sslCerts.LoadRegistrationConfig()
-	} else {
-		tlsConfig, err = s.sslCerts.LoadPrivateConfig()
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: tlsConfig,
-		},
-	}
-	return client, nil
 }
 
 // Register submits a registration request to bxapi. This will return private certificates for the node
@@ -562,24 +563,23 @@ func (s *realSDNHTTP) httpWithCache(uri string, method string, fileName string, 
 }
 
 func (s *realSDNHTTP) http(uri string, method string, body io.Reader) ([]byte, error) {
-	client, err := s.httpClient()
-	if err != nil {
-		return nil, err
-	}
+	var err error
 	var resp *http.Response
+
 	defer func() {
 		if resp != nil {
 			s.close(resp)
 		}
 	}()
+
 	switch method {
 	case bxgateway.GetMethod:
-		resp, err = client.Get(uri)
+		resp, err = s.client.Get(uri)
 	case bxgateway.PostMethod:
-		resp, err = client.Post(uri, "application/json", body)
+		resp, err = s.client.Post(uri, "application/json", body)
 	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to send %v request to %v: %v", method, uri, err)
 	}
 	if resp != nil && resp.StatusCode != 200 {
 		if resp.StatusCode == bxgateway.ServiceUnavailable {
@@ -587,7 +587,7 @@ func (s *realSDNHTTP) http(uri string, method string, body io.Reader) ([]byte, e
 			return nil, ErrSDNUnavailable
 		}
 		if resp.Body != nil {
-			b, errMsg := ioutil.ReadAll(resp.Body)
+			b, errMsg := io.ReadAll(resp.Body)
 			if errMsg != nil {
 				return nil, fmt.Errorf("%v on %v could not read response %v, error %v", method, uri, resp.Status, errMsg.Error())
 			}
@@ -602,7 +602,7 @@ func (s *realSDNHTTP) http(uri string, method string, body io.Reader) ([]byte, e
 		return nil, err
 	}
 
-	b, errMsg := ioutil.ReadAll(resp.Body)
+	b, errMsg := io.ReadAll(resp.Body)
 	if errMsg != nil {
 		return nil, fmt.Errorf("%v on %v could not read response %v, error %v", method, uri, resp.Status, errMsg.Error())
 
@@ -686,10 +686,12 @@ func (s *realSDNHTTP) SendNodeEvent(event sdnmessage.NodeEvent, id types.NodeID)
 	eventBytes, err := json.Marshal(event)
 	if err != nil {
 		log.Errorf("error in sending node event to SDN through http, can't serialize node event, %v", err)
+		return
 	}
 	resp, err := s.http(url, bxgateway.PostMethod, bytes.NewBuffer(eventBytes))
 	if err != nil {
 		log.Errorf("error in sending node event to SDN through http, %v", err)
+		return
 	}
 	log.Infof("node event %v sent to SDN, resp is %v", event.EventType, resp)
 }

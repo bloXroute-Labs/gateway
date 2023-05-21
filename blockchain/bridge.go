@@ -57,7 +57,7 @@ type Converter interface {
 
 // constants for transaction channel buffer sizes
 const (
-	transactionBacklog       = 500
+	transactionBacklog       = 2000
 	transactionHashesBacklog = 1000
 	blockBacklog             = 100
 	statusBacklog            = 10
