@@ -28,7 +28,10 @@ type GatewayClient interface {
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 	Subscriptions(ctx context.Context, in *SubscriptionsRequest, opts ...grpc.CallOption) (*SubscriptionsReply, error)
 	DisconnectInboundPeer(ctx context.Context, in *DisconnectInboundPeerRequest, opts ...grpc.CallOption) (*DisconnectInboundPeerReply, error)
-	NewTxs(ctx context.Context, in *NewTxsRequest, opts ...grpc.CallOption) (Gateway_NewTxsClient, error)
+	NewTxs(ctx context.Context, in *TxsRequest, opts ...grpc.CallOption) (Gateway_NewTxsClient, error)
+	PendingTxs(ctx context.Context, in *TxsRequest, opts ...grpc.CallOption) (Gateway_PendingTxsClient, error)
+	NewBlocks(ctx context.Context, in *BlocksRequest, opts ...grpc.CallOption) (Gateway_NewBlocksClient, error)
+	BdnBlocks(ctx context.Context, in *BlocksRequest, opts ...grpc.CallOption) (Gateway_BdnBlocksClient, error)
 }
 
 type gatewayClient struct {
@@ -129,7 +132,7 @@ func (c *gatewayClient) DisconnectInboundPeer(ctx context.Context, in *Disconnec
 	return out, nil
 }
 
-func (c *gatewayClient) NewTxs(ctx context.Context, in *NewTxsRequest, opts ...grpc.CallOption) (Gateway_NewTxsClient, error) {
+func (c *gatewayClient) NewTxs(ctx context.Context, in *TxsRequest, opts ...grpc.CallOption) (Gateway_NewTxsClient, error) {
 	stream, err := c.cc.NewStream(ctx, &Gateway_ServiceDesc.Streams[0], "/gateway.Gateway/NewTxs", opts...)
 	if err != nil {
 		return nil, err
@@ -145,7 +148,7 @@ func (c *gatewayClient) NewTxs(ctx context.Context, in *NewTxsRequest, opts ...g
 }
 
 type Gateway_NewTxsClient interface {
-	Recv() (*NewTxsReply, error)
+	Recv() (*TxsReply, error)
 	grpc.ClientStream
 }
 
@@ -153,8 +156,104 @@ type gatewayNewTxsClient struct {
 	grpc.ClientStream
 }
 
-func (x *gatewayNewTxsClient) Recv() (*NewTxsReply, error) {
-	m := new(NewTxsReply)
+func (x *gatewayNewTxsClient) Recv() (*TxsReply, error) {
+	m := new(TxsReply)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *gatewayClient) PendingTxs(ctx context.Context, in *TxsRequest, opts ...grpc.CallOption) (Gateway_PendingTxsClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Gateway_ServiceDesc.Streams[1], "/gateway.Gateway/PendingTxs", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &gatewayPendingTxsClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Gateway_PendingTxsClient interface {
+	Recv() (*TxsReply, error)
+	grpc.ClientStream
+}
+
+type gatewayPendingTxsClient struct {
+	grpc.ClientStream
+}
+
+func (x *gatewayPendingTxsClient) Recv() (*TxsReply, error) {
+	m := new(TxsReply)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *gatewayClient) NewBlocks(ctx context.Context, in *BlocksRequest, opts ...grpc.CallOption) (Gateway_NewBlocksClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Gateway_ServiceDesc.Streams[2], "/gateway.Gateway/NewBlocks", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &gatewayNewBlocksClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Gateway_NewBlocksClient interface {
+	Recv() (*BlocksReply, error)
+	grpc.ClientStream
+}
+
+type gatewayNewBlocksClient struct {
+	grpc.ClientStream
+}
+
+func (x *gatewayNewBlocksClient) Recv() (*BlocksReply, error) {
+	m := new(BlocksReply)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *gatewayClient) BdnBlocks(ctx context.Context, in *BlocksRequest, opts ...grpc.CallOption) (Gateway_BdnBlocksClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Gateway_ServiceDesc.Streams[3], "/gateway.Gateway/BdnBlocks", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &gatewayBdnBlocksClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Gateway_BdnBlocksClient interface {
+	Recv() (*BlocksReply, error)
+	grpc.ClientStream
+}
+
+type gatewayBdnBlocksClient struct {
+	grpc.ClientStream
+}
+
+func (x *gatewayBdnBlocksClient) Recv() (*BlocksReply, error) {
+	m := new(BlocksReply)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
@@ -175,7 +274,10 @@ type GatewayServer interface {
 	Status(context.Context, *StatusRequest) (*StatusResponse, error)
 	Subscriptions(context.Context, *SubscriptionsRequest) (*SubscriptionsReply, error)
 	DisconnectInboundPeer(context.Context, *DisconnectInboundPeerRequest) (*DisconnectInboundPeerReply, error)
-	NewTxs(*NewTxsRequest, Gateway_NewTxsServer) error
+	NewTxs(*TxsRequest, Gateway_NewTxsServer) error
+	PendingTxs(*TxsRequest, Gateway_PendingTxsServer) error
+	NewBlocks(*BlocksRequest, Gateway_NewBlocksServer) error
+	BdnBlocks(*BlocksRequest, Gateway_BdnBlocksServer) error
 	mustEmbedUnimplementedGatewayServer()
 }
 
@@ -213,8 +315,17 @@ func (UnimplementedGatewayServer) Subscriptions(context.Context, *SubscriptionsR
 func (UnimplementedGatewayServer) DisconnectInboundPeer(context.Context, *DisconnectInboundPeerRequest) (*DisconnectInboundPeerReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DisconnectInboundPeer not implemented")
 }
-func (UnimplementedGatewayServer) NewTxs(*NewTxsRequest, Gateway_NewTxsServer) error {
+func (UnimplementedGatewayServer) NewTxs(*TxsRequest, Gateway_NewTxsServer) error {
 	return status.Errorf(codes.Unimplemented, "method NewTxs not implemented")
+}
+func (UnimplementedGatewayServer) PendingTxs(*TxsRequest, Gateway_PendingTxsServer) error {
+	return status.Errorf(codes.Unimplemented, "method PendingTxs not implemented")
+}
+func (UnimplementedGatewayServer) NewBlocks(*BlocksRequest, Gateway_NewBlocksServer) error {
+	return status.Errorf(codes.Unimplemented, "method NewBlocks not implemented")
+}
+func (UnimplementedGatewayServer) BdnBlocks(*BlocksRequest, Gateway_BdnBlocksServer) error {
+	return status.Errorf(codes.Unimplemented, "method BdnBlocks not implemented")
 }
 func (UnimplementedGatewayServer) mustEmbedUnimplementedGatewayServer() {}
 
@@ -410,7 +521,7 @@ func _Gateway_DisconnectInboundPeer_Handler(srv interface{}, ctx context.Context
 }
 
 func _Gateway_NewTxs_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(NewTxsRequest)
+	m := new(TxsRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
@@ -418,7 +529,7 @@ func _Gateway_NewTxs_Handler(srv interface{}, stream grpc.ServerStream) error {
 }
 
 type Gateway_NewTxsServer interface {
-	Send(*NewTxsReply) error
+	Send(*TxsReply) error
 	grpc.ServerStream
 }
 
@@ -426,7 +537,70 @@ type gatewayNewTxsServer struct {
 	grpc.ServerStream
 }
 
-func (x *gatewayNewTxsServer) Send(m *NewTxsReply) error {
+func (x *gatewayNewTxsServer) Send(m *TxsReply) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _Gateway_PendingTxs_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(TxsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(GatewayServer).PendingTxs(m, &gatewayPendingTxsServer{stream})
+}
+
+type Gateway_PendingTxsServer interface {
+	Send(*TxsReply) error
+	grpc.ServerStream
+}
+
+type gatewayPendingTxsServer struct {
+	grpc.ServerStream
+}
+
+func (x *gatewayPendingTxsServer) Send(m *TxsReply) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _Gateway_NewBlocks_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(BlocksRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(GatewayServer).NewBlocks(m, &gatewayNewBlocksServer{stream})
+}
+
+type Gateway_NewBlocksServer interface {
+	Send(*BlocksReply) error
+	grpc.ServerStream
+}
+
+type gatewayNewBlocksServer struct {
+	grpc.ServerStream
+}
+
+func (x *gatewayNewBlocksServer) Send(m *BlocksReply) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _Gateway_BdnBlocks_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(BlocksRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(GatewayServer).BdnBlocks(m, &gatewayBdnBlocksServer{stream})
+}
+
+type Gateway_BdnBlocksServer interface {
+	Send(*BlocksReply) error
+	grpc.ServerStream
+}
+
+type gatewayBdnBlocksServer struct {
+	grpc.ServerStream
+}
+
+func (x *gatewayBdnBlocksServer) Send(m *BlocksReply) error {
 	return x.ServerStream.SendMsg(m)
 }
 
@@ -482,6 +656,21 @@ var Gateway_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "NewTxs",
 			Handler:       _Gateway_NewTxs_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "PendingTxs",
+			Handler:       _Gateway_PendingTxs_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "NewBlocks",
+			Handler:       _Gateway_NewBlocks_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "BdnBlocks",
+			Handler:       _Gateway_BdnBlocks_Handler,
 			ServerStreams: true,
 		},
 	},

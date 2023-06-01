@@ -2,8 +2,9 @@ package bxmessage
 
 import (
 	"encoding/binary"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"time"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // Pong is a response to Ping messages

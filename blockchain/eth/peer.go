@@ -9,7 +9,7 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2"
+	bxgateway "github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"

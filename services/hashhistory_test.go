@@ -1,11 +1,12 @@
 package services
 
 import (
+	"testing"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/stretchr/testify/assert"
-	"testing"
-	"time"
 )
 
 func TestHashHistory_Set_Get(t *testing.T) {

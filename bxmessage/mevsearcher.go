@@ -10,24 +10,21 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
 	"github.com/bloXroute-Labs/gateway/v2/types"
+	gwUtils "github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	uuid "github.com/satori/go.uuid"
+	"golang.org/x/crypto/sha3"
 )
-
-const (
-	maxAuthNames = 255
-	uuidSize     = 16
-)
-
-var emptyUUID = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 
 // MEVSearcherAuth alias for map[string]string
 type MEVSearcherAuth map[string]string
 
 // MEVSearcherParams alias for json.RawMessage
-// TODO: think about implement SendBundleArgs flashbot struct instead of json.RawMessage
 type MEVSearcherParams = json.RawMessage
 
 // MEVSearcher represents data that we receive from searcher and send to BDN
+// Deprecated: gateways should send MEVBundle instead. Will be removed in the future.
 type MEVSearcher struct {
 	BroadcastHeader
 
@@ -76,6 +73,52 @@ func NewMEVSearcher(mevMinerMethod string, auth MEVSearcherAuth, uuid string, fr
 		CoinbaseProfit:       coinbaseProfit,
 		Params:               params,
 	}, nil
+}
+
+// ToMEVBundle convert MEVSearcher to MEVBundle
+func (m *MEVSearcher) ToMEVBundle() (*MEVBundle, error) {
+	type mevSearcherParams struct {
+		Txs               []hexutil.Bytes `json:"txs"`
+		UUID              string          `json:"uuid,omitempty"`
+		BlockNumber       string          `json:"blockNumber"`
+		MinTimestamp      uint64          `json:"minTimestamp"`
+		MaxTimestamp      uint64          `json:"maxTimestamp"`
+		RevertingTxHashes []common.Hash   `json:"revertingTxHashes"`
+	}
+
+	var params []mevSearcherParams
+	if err := json.Unmarshal(m.Params, &params); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal mevSearcher params: %v", err)
+	}
+
+	if len(params) != 1 {
+		return nil, fmt.Errorf("received invalid number of mevSearcher params, must be 1 element")
+	}
+
+	bundleHash := sha3.NewLegacyKeccak256()
+	txs := make([]string, len(params[0].Txs))
+	for i := range params[0].Txs {
+		txs[i] = params[0].Txs[i].String()
+
+		tx, err := gwUtils.ParseRawTransaction(params[0].Txs[i])
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse raw transaction: %v", err)
+		}
+
+		bundleHash.Write(tx.Hash().Bytes())
+	}
+
+	revertingTxHashes := make([]string, len(params[0].RevertingTxHashes))
+	for i := range params[0].RevertingTxHashes {
+		revertingTxHashes[i] = params[0].RevertingTxHashes[i].String()
+	}
+
+	mevBundle, err := NewMEVBundle(txs, params[0].UUID, params[0].BlockNumber, int(params[0].MinTimestamp), int(params[0].MaxTimestamp), revertingTxHashes, m.Frontrunning, MEVBundleBuilders(m.Auth()), fmt.Sprintf("0x%x", bundleHash.Sum(nil)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create mevBundle: %v", err)
+	}
+
+	return &mevBundle, nil
 }
 
 // SetHash set hash based on MEVSearcher params and auth
@@ -274,7 +317,7 @@ func (m *MEVSearcher) Unpack(buf []byte, protocol Protocol) error {
 		if err := checkBufSize(&buf, offset, uuidSize); err != nil {
 			return err
 		}
-		if bytes.Compare(buf[offset:offset+uuidSize], emptyUUID) != 0 {
+		if !bytes.Equal(buf[offset:offset+uuidSize], emptyUUID) {
 			uuidRaw, err := uuid.FromBytes(buf[offset : offset+uuidSize])
 			if err != nil {
 				return fmt.Errorf("failed to parse uuid from bytes, %v", err)

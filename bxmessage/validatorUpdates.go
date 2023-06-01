@@ -3,6 +3,7 @@ package bxmessage
 import (
 	"encoding/binary"
 	"fmt"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/common"
 )

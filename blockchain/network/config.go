@@ -4,14 +4,15 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"fmt"
-	"github.com/multiformats/go-multiaddr"
-	"github.com/urfave/cli/v2"
 	"math/big"
 	"net"
 	"os"
 	"path"
 	"strings"
 	"time"
+
+	"github.com/multiformats/go-multiaddr"
+	"github.com/urfave/cli/v2"
 
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/ethereum/go-ethereum/common"

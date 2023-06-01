@@ -2,15 +2,20 @@ package bxmessage
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
-	"github.com/stretchr/testify/require"
 	"math/big"
 	"strconv"
 	"testing"
 
+	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
+	"github.com/stretchr/testify/require"
+
 	"github.com/stretchr/testify/assert"
 )
+
+// MEVBundleParams alias for json.RawMessage
+type MEVBundleParams = json.RawMessage
 
 func TestMEVSearcherPackSuccess(t *testing.T) {
 	bigIntNumber := &big.Int{}

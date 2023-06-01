@@ -3,13 +3,14 @@ package services
 import (
 	"crypto/sha256"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/struCoder/pidusage"
 	"math/rand"
 	"os"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/struCoder/pidusage"
 )
 
 type TestManager struct {

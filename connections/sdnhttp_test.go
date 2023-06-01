@@ -5,7 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/v2"
+	"io/ioutil"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"reflect"
+	"testing"
+	"time"
+
+	bxgateway "github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/test"
@@ -16,13 +24,6 @@ import (
 	logrusTest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"io/ioutil"
-	"net/http"
-	"net/http/httptest"
-	"os"
-	"reflect"
-	"testing"
-	"time"
 )
 
 type handlerArgs struct {

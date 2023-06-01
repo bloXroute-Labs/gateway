@@ -4,7 +4,7 @@ import "google/protobuf/timestamp.proto";
 option go_package = "github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/gateway";
 
 // The gateway service definition.
-package  gateway;
+package gateway;
 service Gateway {
   rpc BlxrTx (BlxrTxRequest) returns (BlxrTxReply) {}
   rpc BlxrBatchTX (BlxrBatchTXRequest) returns (BlxrBatchTXReply) {}
@@ -16,12 +16,15 @@ service Gateway {
   rpc Status (StatusRequest) returns (StatusResponse) {}
   rpc Subscriptions (SubscriptionsRequest) returns (SubscriptionsReply){}
   rpc DisconnectInboundPeer (DisconnectInboundPeerRequest) returns (DisconnectInboundPeerReply){}
-  rpc NewTxs (NewTxsRequest) returns (stream NewTxsReply){}
-
+  rpc NewTxs (TxsRequest) returns (stream TxsReply){}
+  rpc PendingTxs (TxsRequest) returns (stream TxsReply){}
+  rpc NewBlocks (BlocksRequest) returns (stream BlocksReply){}
+  rpc BdnBlocks (BlocksRequest) returns (stream BlocksReply){}
 }
 
-message NewTxsRequest{
+message TxsRequest{
   string filters = 1;
+  repeated string includes = 2;
 }
 
 message Tx{
@@ -30,7 +33,7 @@ message Tx{
   string nonce = 3;
   string gas_price = 4;
   string gas = 5;
-  string to =6 ;
+  string to = 6;
   string value = 7;
   string input = 8;
   string v = 9;
@@ -40,11 +43,58 @@ message Tx{
   string type = 13;
   string local_region = 14;
   string time = 15;
-  string rawTx = 16;
+  string raw_tx = 16;
+  string max_fee_per_gas = 17;
+  string max_priority_fee_per_gas = 18;
+  string chainID = 19;
+  repeated AccessTuple access_list = 20;
 }
 
-message NewTxsReply{
+message AccessTuple{
+  string address = 1;
+  repeated string storage_keys = 2;
+}
+
+message TxsReply{
   repeated Tx tx = 1;
+}
+
+message BlocksRequest{
+  repeated string includes = 1;
+}
+
+message BlockHeader{
+  string parent_hash = 1;
+  string sha3_uncles = 2;
+  string miner = 3;
+  string state_root = 4;
+  string transactions_root = 5;
+  string receipts_root = 6;
+  string logs_bloom = 7;
+  string difficulty = 8;
+  string number = 9;
+  string gas_limit = 10;
+  string gas_used = 11;
+  string timestamp = 12;
+  string extra_data = 13;
+  string mix_hash = 14;
+  string nonce = 15;
+  string base_fee_per_gas = 16;
+  string withdrawals_root = 17;
+}
+
+message FutureValidatorInfo{
+  string block_height = 1;
+  string wallet_id = 2;
+  string accessible = 3;
+}
+
+message BlocksReply{
+  string hash = 1;
+  string subscriptionID = 2;
+  BlockHeader header = 3;
+  repeated FutureValidatorInfo future_validator_info = 4;
+  repeated Tx transaction = 5;
 }
 
 message DisconnectInboundPeerRequest {

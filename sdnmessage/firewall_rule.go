@@ -1,8 +1,9 @@
 package sdnmessage
 
 import (
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"time"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // FirewallRule is SDN P2P message that sent to proxy

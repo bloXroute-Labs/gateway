@@ -4,15 +4,16 @@ import (
 	"container/list"
 	"encoding/binary"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/v2"
+	"math"
+	"sync"
+	"time"
+
+	bxgateway "github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"math"
-	"sync"
-	"time"
 )
 
 const (
@@ -294,18 +295,21 @@ func (b *BxConn) ProcessMessage(msg bxmessage.MessageBytes) {
 		_ = syncReq.Unpack(msg, b.Protocol())
 		b.Log().Debugf("TxStore sync: got a request for network %v", syncReq.GetNetworkNum())
 		_ = b.Node.HandleMsg(syncReq, b, connections.RunBackground)
-	case bxmessage.MEVBundleType:
-		mevBundle := &bxmessage.MEVBundle{}
-		_ = mevBundle.Unpack(msg, b.Protocol())
-		_ = b.Node.HandleMsg(mevBundle, b, connections.RunForeground)
-	case bxmessage.MEVSearcherType:
-		mevSearcher := &bxmessage.MEVSearcher{}
-		_ = mevSearcher.Unpack(msg, b.Protocol())
-		_ = b.Node.HandleMsg(mevSearcher, b, connections.RunForeground)
 	case bxmessage.ErrorNotificationType:
 		errorNotification := &bxmessage.ErrorNotification{}
 		_ = errorNotification.Unpack(msg, b.Protocol())
 		_ = b.Node.HandleMsg(errorNotification, b, connections.RunForeground)
+	case bxmessage.MEVSearcherType:
+		mevSearcher := &bxmessage.MEVSearcher{}
+		_ = mevSearcher.Unpack(msg, b.Protocol())
+		_ = b.Node.HandleMsg(mevSearcher, b, connections.RunForeground)
+	case bxmessage.MEVBundleType:
+		mevBundle := &bxmessage.MEVBundle{}
+		if err := mevBundle.Unpack(msg, b.Protocol()); err != nil {
+			b.log.Warnf("Failed to unpack mevBundle bxmessage: %v", err)
+			return
+		}
+		_ = b.Node.HandleMsg(mevBundle, b, connections.RunForeground)
 	default:
 		b.Log().Debugf("read %v (%d bytes)", msgType, len(msg))
 	}

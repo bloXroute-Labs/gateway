@@ -1,14 +1,15 @@
 package handler
 
 import (
+	"runtime"
+	"testing"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/stretchr/testify/assert"
-	"runtime"
-	"testing"
-	"time"
 )
 
 // semi integration test: in general, sleep should be avoided, but these closing tests cases are checking that we are closing goroutines correctly

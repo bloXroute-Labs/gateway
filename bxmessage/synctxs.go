@@ -2,9 +2,10 @@ package bxmessage
 
 import (
 	"encoding/binary"
+	"time"
+
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"time"
 )
 
 // SyncTxContentsShortIDs represents information about a sync transaction received over sync

@@ -2,6 +2,7 @@ package bxmessage
 
 import (
 	"encoding/binary"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 

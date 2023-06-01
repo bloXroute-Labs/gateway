@@ -3,16 +3,17 @@ package types
 import (
 	"bytes"
 	"fmt"
+	"math/big"
+	"strconv"
+	"strings"
+	"sync"
+
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
-	"math/big"
-	"strconv"
-	"strings"
-	"sync"
 )
 
 // EthTransaction represents the JSON encoding of an Ethereum transaction
@@ -122,14 +123,14 @@ func (et *EthTransaction) CreateFieldsGRPC() *pb.Tx {
 
 	var to string
 	if tx.To() != nil {
-		to = addressAsString(tx.To())
+		to = AddressAsString(tx.To())
 	} else {
 		to = "0x0"
 	}
 
 	v, r, s := tx.RawSignatureValues()
 
-	return &pb.Tx{
+	grpcTx := &pb.Tx{
 		Hash:     strings.ToLower(tx.Hash().String()),
 		Nonce:    strings.ToLower(hexutil.EncodeUint64(tx.Nonce())),
 		GasPrice: gasPrice,
@@ -137,12 +138,25 @@ func (et *EthTransaction) CreateFieldsGRPC() *pb.Tx {
 		To:       to,
 		Value:    hexutil.EncodeBig(tx.Value()),
 		Input:    strings.ToLower(hexutil.Encode(tx.Data())),
-		V:        bigintAsString(v),
-		R:        bigintAsString(r),
-		S:        bigintAsString(s),
-		From:     addressAsString(et.From),
+		V:        BigIntAsString(v),
+		R:        BigIntAsString(r),
+		S:        BigIntAsString(s),
+		From:     AddressAsString(et.From),
 		Type:     hexutil.EncodeUint64(uint64(tx.Type())),
 	}
+	if tx.Type() != ethtypes.LegacyTxType {
+		grpcTx.ChainID = strings.ToLower(hexutil.EncodeUint64(tx.ChainId().Uint64()))
+	}
+	if tx.Type() == ethtypes.DynamicFeeTxType {
+		grpcTx.MaxFeePerGas = strings.ToLower(hexutil.EncodeUint64(tx.GasFeeCap().Uint64()))
+		grpcTx.MaxPriorityFeePerGas = strings.ToLower(hexutil.EncodeUint64(tx.GasTipCap().Uint64()))
+	}
+	return grpcTx
+}
+
+// AccessList returns access list
+func (et *EthTransaction) AccessList() ethtypes.AccessList {
+	return et.tx.AccessList()
 }
 
 func (et *EthTransaction) createFields() {
@@ -160,9 +174,9 @@ func (et *EthTransaction) createFields() {
 	fields["nonce"] = strings.ToLower(hexutil.EncodeUint64(tx.Nonce()))
 	fields["input"] = strings.ToLower(hexutil.Encode(tx.Data()))
 	v, r, s := tx.RawSignatureValues()
-	fields["v"] = bigintAsString(v)
-	fields["r"] = bigintAsString(r)
-	fields["s"] = bigintAsString(s)
+	fields["v"] = BigIntAsString(v)
+	fields["r"] = BigIntAsString(r)
+	fields["s"] = BigIntAsString(s)
 
 	if tx.AccessList() != nil {
 		fields["accessList"] = tx.AccessList()
@@ -170,7 +184,7 @@ func (et *EthTransaction) createFields() {
 
 	transactionFilters["chain_id"] = int(tx.ChainId().Int64())
 	if tx.Type() != ethtypes.LegacyTxType {
-		fields["chainId"] = "0x" + strconv.Itoa(int(tx.ChainId().Int64()))
+		fields["chainId"] = strings.ToLower(hexutil.EncodeUint64(tx.ChainId().Uint64()))
 	}
 
 	if tx.Type() == ethtypes.DynamicFeeTxType {
@@ -181,28 +195,28 @@ func (et *EthTransaction) createFields() {
 		transactionFilters["gas_price"] = nil
 		fields["gasPrice"] = nil
 	} else {
-		transactionFilters["gas_price"] = bigIngAsFloat64(tx.GasPrice())
+		transactionFilters["gas_price"] = BigIntAsFloat64(tx.GasPrice())
 		fields["gasPrice"] = hexutil.EncodeBig(tx.GasPrice())
 	}
 
 	transactionFilters["type"] = strconv.Itoa(int(tx.Type()))
 	fields["type"] = hexutil.EncodeUint64(uint64(tx.Type()))
 
-	transactionFilters["value"] = bigIngAsFloat64(tx.Value())
+	transactionFilters["value"] = BigIntAsFloat64(tx.Value())
 	fields["value"] = hexutil.EncodeBig(tx.Value())
 
 	transactionFilters["gas"] = float64(tx.Gas())
 	fields["gas"] = hexutil.EncodeUint64(tx.Gas())
 
 	if tx.To() != nil {
-		transactionFilters["to"] = addressAsString(tx.To())
-		fields["to"] = addressAsString(tx.To())
+		transactionFilters["to"] = AddressAsString(tx.To())
+		fields["to"] = AddressAsString(tx.To())
 	} else {
 		transactionFilters["to"] = "0x0"
 	}
 
 	//if sender != nil {
-	transactionFilters["from"] = addressAsString(et.From)
+	transactionFilters["from"] = AddressAsString(et.From)
 	fields["from"] = transactionFilters["from"]
 	//}
 
@@ -272,19 +286,22 @@ func (et *EthTransaction) Fields(fields []string) map[string]interface{} {
 	return transactionContent
 }
 
-func addressAsString(addr *common.Address) string {
+// AddressAsString converts address to string
+func AddressAsString(addr *common.Address) string {
 	if addr == nil {
 		return string([]byte("0x"))
 	}
 	return strings.ToLower(addr.Hex())
 }
 
-func bigIngAsFloat64(bigint *big.Int) float64 {
+// BigIntAsFloat64 converts BigInt to float64
+func BigIntAsFloat64(bigint *big.Int) float64 {
 	floatValue, _ := new(big.Float).SetInt(bigint).Float64()
 	return floatValue
 }
 
-func bigintAsString(bi *big.Int) string {
+// BigIntAsString converts BigInt to string
+func BigIntAsString(bi *big.Int) string {
 	var b bytes.Buffer
 	var negative = ""
 

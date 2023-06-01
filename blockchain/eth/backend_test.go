@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2"
+	bxgateway "github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
@@ -33,7 +33,7 @@ func setup() (blockchain.Bridge, *Handler, []types.NodeEndpoint) {
 	config, _ := network.NewEthereumPreset("BSC-Mainnet")
 	blockchainPeers, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
 	ctx := context.Background()
-	handler := NewHandler(ctx, &config, NewChain(ctx, config.IgnoreBlockTimeout), bridge, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout))
+	handler := NewHandler(ctx, &config, NewChain(ctx, config.IgnoreBlockTimeout), bridge, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout), make(map[string]struct{}))
 	gateway_test.ConfigureLogger(logger.TraceLevel)
 	return bridge, handler, blockchainPeers
 }
@@ -43,7 +43,7 @@ func setupEthMainnet() (blockchain.Bridge, *Handler, []types.NodeEndpoint) {
 	config, _ := network.NewEthereumPreset("Mainnet")
 	blockchainPeers, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
 	ctx := context.Background()
-	handler := NewHandler(ctx, &config, NewChain(ctx, config.IgnoreBlockTimeout), bridge, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout))
+	handler := NewHandler(ctx, &config, NewChain(ctx, config.IgnoreBlockTimeout), bridge, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout), make(map[string]struct{}))
 	gateway_test.ConfigureLogger(logger.TraceLevel)
 	return bridge, handler, blockchainPeers
 }

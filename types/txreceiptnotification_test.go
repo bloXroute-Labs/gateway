@@ -1,9 +1,10 @@
 package types
 
 import (
+	"testing"
+
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 var txReceiptMap = map[string]interface{}{

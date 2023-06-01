@@ -3,11 +3,12 @@ package websocket
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"sync"
+
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/gorilla/websocket"
-	"strconv"
-	"sync"
 )
 
 // Ethereum is a websocket connection to an Ethereum RPC interface

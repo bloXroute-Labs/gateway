@@ -2,13 +2,14 @@ package eth
 
 import (
 	"fmt"
+	"sync"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"sync"
-	"time"
 )
 
 // WSManager implements the blockchain.WSManager interface for Ethereum

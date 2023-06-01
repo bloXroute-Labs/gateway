@@ -3,6 +3,7 @@ package beacon
 import (
 	"bytes"
 	"fmt"
+
 	"github.com/prysmaticlabs/go-bitfield"
 
 	log "github.com/bloXroute-Labs/gateway/v2/logger"

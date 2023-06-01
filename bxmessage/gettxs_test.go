@@ -2,9 +2,10 @@ package bxmessage
 
 import (
 	"encoding/hex"
+	"testing"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestGetTxsPack(t *testing.T) {

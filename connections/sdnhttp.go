@@ -7,12 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/v2"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/jinzhu/copier"
 	"io"
 	"io/ioutil"
 	"math"
@@ -26,6 +20,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	bxgateway "github.com/bloXroute-Labs/gateway/v2"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/jinzhu/copier"
 )
 
 //go:generate mockgen -destination ../../bxgateway/test/sdnhttpmock/mock_sdnhttp.go -package mock_connections . SDNHTTP

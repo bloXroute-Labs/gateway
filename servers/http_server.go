@@ -5,19 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
+	"net/http"
+	"strings"
+
+	bxgateway "github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/sourcegraph/jsonrpc2"
-	"net/http"
 )
 
 // HTTPServer handler http calls
 type HTTPServer struct {
-	server *http.Server
-
+	server      *http.Server
 	feedManager *FeedManager
 }
 
@@ -81,44 +82,121 @@ func (s HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch jsonrpc.RPCRequestType(rpcRequest.Method) {
 	case jsonrpc.RPCEthSendBundle, jsonrpc.RPCEthSendMegaBundle:
-		params, _ := rpcRequest.Params.MarshalJSON()
-
-		sendBundleArgs := []sendBundleArgs{}
-		err = json.Unmarshal(params, &sendBundleArgs)
-		if err != nil {
+		bundlePayload := []jsonrpc.RPCSendBundle{}
+		if err := json.Unmarshal(*rpcRequest.Params, &bundlePayload); err != nil {
 			log.Errorf("failed to unmarshal mevBundle params: %v", err)
 			writeErrorJSON(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		if len(sendBundleArgs) != 1 {
+		if len(bundlePayload) != 1 {
 			err := errors.New("received invalid number of mevBundle payload, must be 1 element")
 			log.Error(err)
 			writeErrorJSON(w, http.StatusBadRequest, err)
 			return
 		}
 
-		if err := sendBundleArgs[0].validate(); err != nil {
-			log.Errorf("mevBundle payload validation failed: %v", err)
-			writeErrorJSON(w, http.StatusBadRequest, err)
+		// Flashbots and bloXroute used by default. See below
+		if !s.feedManager.accountModel.TierName.IsElite() {
+			accError := fmt.Errorf("EnterpriseElite account is required in order to send %s to %s", rpcRequest.Method, bxgateway.BloxrouteBuilderName)
+			writeErrorJSON(w, http.StatusInternalServerError, accError)
+			log.Error(accError)
 			return
 		}
 
-		// bxmessage.MEVMinerNames empty because that is the relay responsibility to add the correct MEVBuilderNames
-		mevBundle, err := bxmessage.NewMEVBundle(rpcRequest.Method, bxmessage.MEVMinerNames{}, params)
+		payload := jsonrpc.RPCBundleSubmissionPayload{
+			BlockchainNetwork: bxgateway.Mainnet,
+			MEVBuilders: map[string]string{
+				bxgateway.BloxrouteBuilderName: "",
+				bxgateway.FlashbotsBuilderName: "",
+			},
+			Frontrunning:    bundlePayload[0].Frontrunning,
+			Transaction:     bundlePayload[0].Txs,
+			BlockNumber:     bundlePayload[0].BlockNumber,
+			MinTimestamp:    bundlePayload[0].MinTimestamp,
+			MaxTimestamp:    bundlePayload[0].MaxTimestamp,
+			RevertingHashes: bundlePayload[0].RevertingTxHashes,
+			UUID:            bundlePayload[0].UUID,
+		}
+
+		mevBundle, bundleHash, err := mevBundleFromRequest(&payload)
 		if err != nil {
-			err := fmt.Errorf("failed to create new mevBundle: %v", err)
+			if errors.Is(err, errBlockedTxHashes) {
+				var result interface{}
+				if payload.UUID != "" {
+					result = GatewayBundleResponse{BundleHash: bundleHash}
+				}
+
+				writeJSON(w, http.StatusOK, map[string]interface{}{"Result": result})
+				return
+			}
+
+			convertParamsError := errors.New("failed to parse params for blxr_submit_bundle")
+			writeErrorJSON(w, http.StatusBadRequest, convertParamsError)
+			return
+		}
+		mevBundle.SetNetworkNum(s.feedManager.networkNum)
+
+		ws := connections.NewRPCConn(s.feedManager.accountModel.AccountID, r.RemoteAddr, s.feedManager.networkNum, utils.Websocket)
+
+		err = s.feedManager.node.HandleMsg(mevBundle, ws, connections.RunForeground)
+		if err != nil {
+			err := fmt.Errorf("failed to process mevBundle message: %v", err)
 			log.Error(err)
 			writeErrorJSON(w, http.StatusInternalServerError, err)
 			return
 		}
 
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	case jsonrpc.RPCBundleSubmission:
+		params := jsonrpc.RPCBundleSubmissionPayload{
+			Frontrunning: true,
+		}
+		if err := json.Unmarshal(*rpcRequest.Params, &params); err != nil {
+			log.Errorf("failed to unmarshal mevBundle params: %v", err)
+			writeErrorJSON(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		// If MEVBuilders request parameter is empty, only send to default builders.
+		if len(params.MEVBuilders) == 0 {
+			params.MEVBuilders = map[string]string{
+				bxgateway.BloxrouteBuilderName: "",
+				bxgateway.FlashbotsBuilderName: "",
+			}
+		}
+
+		for mevBuilder := range params.MEVBuilders {
+			if strings.ToLower(mevBuilder) == bxgateway.BloxrouteBuilderName && !s.feedManager.accountModel.TierName.IsElite() {
+				accError := fmt.Errorf("EnterpriseElite account is required in order to send %s to %s", jsonrpc.RPCBundleSubmission, bxgateway.BloxrouteBuilderName)
+				writeErrorJSON(w, http.StatusInternalServerError, accError)
+				log.Error(accError)
+				return
+			}
+		}
+
+		mevBundle, bundleHash, err := mevBundleFromRequest(&params)
+		if err != nil {
+			if errors.Is(err, errBlockedTxHashes) {
+				var result interface{}
+				if params.UUID != "" {
+					result = GatewayBundleResponse{BundleHash: bundleHash}
+				}
+
+				writeJSON(w, http.StatusOK, map[string]interface{}{"Result": result})
+				return
+			}
+
+			convertParamsError := errors.New("failed to parse params for blxr_submit_bundle")
+			writeErrorJSON(w, http.StatusBadRequest, convertParamsError)
+			return
+		}
+
+		mevBundle.SetNetworkNum(s.feedManager.networkNum)
+
 		ws := connections.NewRPCConn(s.feedManager.accountModel.AccountID, r.RemoteAddr, s.feedManager.networkNum, utils.Websocket)
 
-		mevBundle.SetHash()
-		mevBundle.SetNetworkNum(s.feedManager.networkNum)
-		err = s.feedManager.node.HandleMsg(&mevBundle, ws, connections.RunForeground)
-		if err != nil {
+		if err := s.feedManager.node.HandleMsg(mevBundle, ws, connections.RunForeground); err != nil {
 			err := fmt.Errorf("failed to process mevBundle message: %v", err)
 			log.Error(err)
 			writeErrorJSON(w, http.StatusInternalServerError, err)

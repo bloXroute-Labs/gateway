@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"github.com/bloXroute-Labs/gateway/v2"
+	bxgateway "github.com/bloXroute-Labs/gateway/v2"
 	"github.com/urfave/cli/v2"
 )
 
@@ -319,10 +319,6 @@ var (
 		Name:  "mev-builder-uri",
 		Usage: "set mev builder for gateway",
 	}
-	MEVMinerURIFlag = &cli.StringFlag{
-		Name:  "mev-miner-uri",
-		Usage: "set mev miner for gateway",
-	}
 	MEVBundleMethodNameFlag = &cli.StringFlag{
 		Name:  "mev-bundle-method-name",
 		Usage: "set custom method for mevBundle request",
@@ -403,14 +399,14 @@ var (
 		Usage: "calling method of the forwarding transaction to rpc endpoint",
 		Value: "",
 	}
-	BSCTransactionHoldDuration = &cli.IntFlag{
-		Name: "bsc-transaction-hold-duration",
+	TransactionHoldDuration = &cli.IntFlag{
+		Name: "transaction-hold-duration",
 		Usage: "number of millisecond before next block, marking the starting window time for processing front-running protection transaction on " +
 			"validator gateway",
 		Value: 500,
 	}
-	BSCTransactionPassedDueDuration = &cli.IntFlag{
-		Name: "bsc-transaction-slot-end-duration",
+	TransactionPassedDueDuration = &cli.IntFlag{
+		Name: "transaction-slot-end-duration",
 		Usage: "number of millisecond before next block, marking the ending window time for processing front-running protection transaction on " +
 			"validator gateway",
 		Value: 200,
@@ -419,5 +415,22 @@ var (
 		Name:  "enable-blockchain-rpc",
 		Usage: "forwards blockchain RPC methods to the node and returns node response",
 		Value: false,
+	}
+	DialRatio = &cli.IntFlag{
+		Name:   "dial-ratio",
+		Usage:  "fraction of total peers that are outbound (i.e. 3 will mean 1/3 of total peers should be outbound)",
+		Value:  2,
+		Hidden: true,
+	}
+	CloudAPIAddress = &cli.StringFlag{
+		Name:  "cloud-api-url",
+		Usage: "setting cloudAPI url",
+		Value: "https://api.blxrbdn.com/",
+	}
+	NumRecommendedPeers = &cli.IntFlag{
+		Name:   "num-recommended-peers",
+		Usage:  "number of recommended peers to connect to",
+		Value:  0,
+		Hidden: true,
 	}
 )

@@ -14,6 +14,15 @@ const (
 	TransactionStatusFeed FeedType = "transactionStatus"
 )
 
+// FeedConnectionType types of feeds
+type FeedConnectionType string
+
+// FeedConnectionType enumeration
+const (
+	WebSocketFeed FeedConnectionType = "ws"
+	GRPCFeed      FeedConnectionType = "grpc"
+)
+
 // Beacon blocks
 const (
 	NewBeaconBlocksFeed FeedType = "newBeaconBlocks"

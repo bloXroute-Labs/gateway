@@ -7,10 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
-
-	"github.com/bloXroute-Labs/gateway/v2"
+	bxgateway "github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
@@ -29,27 +28,28 @@ const (
 	pendingNextValidatorListInitCapacity = 100
 )
 
-// ClientSubscription contains client subscription feed and websocket connection
+// ClientSubscription contains client subscription feed and connection
 type ClientSubscription struct {
-	feed           chan *types.Notification
-	feedType       types.FeedType
-	connection     *jsonrpc2.Conn
-	tier           sdnmessage.AccountTier
-	network        types.NetworkNum
-	accountID      types.AccountID
-	remoteAddress  string
-	filters        string
-	includes       string
-	project        string
-	timeOpenedFeed time.Time
-	messagesSent   uint64
-	errMsgChan     chan string
+	feed               chan interface{}
+	feedType           types.FeedType
+	feedConnectionType types.FeedConnectionType
+	connection         *jsonrpc2.Conn
+	tier               sdnmessage.AccountTier
+	network            types.NetworkNum
+	accountID          types.AccountID
+	remoteAddress      string
+	filters            string
+	includes           string
+	project            string
+	timeOpenedFeed     time.Time
+	messagesSent       uint64
+	errMsgChan         chan string
 }
 
 // ClientSubscriptionHandlingInfo contains all info needed by subscription handler
 type ClientSubscriptionHandlingInfo struct {
 	SubscriptionID     *uuid.UUID
-	FeedChan           *chan *types.Notification
+	FeedChan           chan interface{}
 	ErrMsgChan         chan string
 	PermissionRespChan chan *sdnmessage.SubscriptionPermissionMessage
 }
@@ -62,9 +62,18 @@ type PendingNextValidatorTxInfo struct {
 	Source        connections.Conn
 }
 
+// GRPCFeeds contains channels for notifications for each gRPC feed type
+type GRPCFeeds struct {
+	NewTxsFeed     chan *pb.TxsReply
+	PendingTxsFeed chan *pb.TxsReply
+	NewBlocksFeed  chan *pb.BlocksReply
+	BdnBlocksFeed  chan *pb.BlocksReply
+}
+
 // FeedManager - feed manager fields
 type FeedManager struct {
-	feedChan                            chan types.Notification
+	wsFeed                              chan types.Notification
+	gRPCFeeds                           GRPCFeeds
 	idToClientSubscription              map[uuid.UUID]ClientSubscription
 	subscriptionServices                services.SubscriptionServices
 	lock                                sync.RWMutex
@@ -90,8 +99,8 @@ type FeedManager struct {
 }
 
 // NewFeedManager - create a new feedManager
-func NewFeedManager(parent context.Context, node connections.BxListener, feedChan chan types.Notification,
-	subscriptionServices services.SubscriptionServices,
+func NewFeedManager(parent context.Context, node connections.BxListener, wsFeedChan chan types.Notification,
+	gRPCFeeds GRPCFeeds, subscriptionServices services.SubscriptionServices,
 	networkNum types.NetworkNum, networkID types.NetworkID, nodeID types.NodeID,
 	wsManager blockchain.WSManager,
 	accountModel sdnmessage.Account, getCustomerAccountModel func(types.AccountID) (sdnmessage.Account, error),
@@ -103,7 +112,8 @@ func NewFeedManager(parent context.Context, node connections.BxListener, feedCha
 	})
 
 	newServer := &FeedManager{
-		feedChan:                            feedChan,
+		wsFeed:                              wsFeedChan,
+		gRPCFeeds:                           gRPCFeeds,
 		idToClientSubscription:              make(map[uuid.UUID]ClientSubscription),
 		subscriptionServices:                subscriptionServices,
 		node:                                node,
@@ -158,21 +168,22 @@ func (f *FeedManager) checkForDuplicateFeed(clientSubscription *ClientSubscripti
 }
 
 // Subscribe - subscribe a client to a desired feed
-func (f *FeedManager) Subscribe(feedName types.FeedType, conn *jsonrpc2.Conn, accountTier sdnmessage.AccountTier, accountID types.AccountID, remoteAddress string, filters string, includes string, project string) (*ClientSubscriptionHandlingInfo, error) {
+func (f *FeedManager) Subscribe(feedName types.FeedType, feedConnectionType types.FeedConnectionType, conn *jsonrpc2.Conn, accountTier sdnmessage.AccountTier, accountID types.AccountID, remoteAddress string, filters string, includes string, project string) (*ClientSubscriptionHandlingInfo, error) {
 	id := f.subscriptionServices.GenerateSubscriptionID()
 	clientSubscription := ClientSubscription{
-		feed:           make(chan *types.Notification, bxgateway.BxNotificationChannelSize),
-		feedType:       feedName,
-		connection:     conn,
-		tier:           accountTier,
-		network:        f.networkNum,
-		accountID:      accountID,
-		remoteAddress:  remoteAddress,
-		includes:       includes,
-		filters:        filters,
-		project:        project,
-		timeOpenedFeed: time.Now(),
-		errMsgChan:     make(chan string, 1),
+		feed:               make(chan interface{}, bxgateway.BxNotificationChannelSize),
+		feedType:           feedName,
+		feedConnectionType: feedConnectionType,
+		connection:         conn,
+		tier:               accountTier,
+		network:            f.networkNum,
+		accountID:          accountID,
+		remoteAddress:      remoteAddress,
+		includes:           includes,
+		filters:            filters,
+		project:            project,
+		timeOpenedFeed:     time.Now(),
+		errMsgChan:         make(chan string, 1),
 	}
 
 	if err := f.checkForDuplicateFeed(&clientSubscription, remoteAddress); err != nil {
@@ -203,7 +214,7 @@ func (f *FeedManager) Subscribe(feedName types.FeedType, conn *jsonrpc2.Conn, ac
 
 	handlingInfo := ClientSubscriptionHandlingInfo{
 		SubscriptionID:     &id,
-		FeedChan:           &clientSubscription.feed,
+		FeedChan:           clientSubscription.feed,
 		ErrMsgChan:         clientSubscription.errMsgChan,
 		PermissionRespChan: permissionRespChannel,
 	}
@@ -271,43 +282,89 @@ func (f *FeedManager) CloseAllClientConnections() {
 	}
 }
 
-// run - getting newTx or pendingTx and pass to client via common channel
+// run - getting feed notification and pass to client via common channel
 func (f *FeedManager) run() {
 	defer f.cancel()
 	f.log.Infof("feedManager is Starting for network %v", f.networkNum)
+	defer f.log.Infof("feedManager stopped for network %v", f.networkNum)
+
 	for {
-		notification, ok := <-f.feedChan
-		if !ok {
-			f.log.Errorf("can't pull from feed channel. Terminating")
-			break
-		}
-		f.lock.RLock()
-		for uid, clientSub := range f.idToClientSubscription {
-			if clientSub.feedType == notification.NotificationType() {
-				select {
-				case clientSub.feed <- &notification:
-					// Offer: I took this out as we are locking the map in read and can't write.
-					// also, do we need to update the map after we update the counter?
-					//if entry, ok := f.idToClientSubscription[uid]; ok {
-					//	entry.messagesSent++
-					//	f.idToClientSubscription[uid] = entry
-					//}
-				default:
-					f.log.Errorf("can't send %v to channel %v without blocking. Ignored hash %v and unsubscribing", clientSub.feedType, uid, notification.GetHash())
-					go func(subscriptionID uuid.UUID) {
-						// running as go-routine since we are holding the lock. Closing the connection since we can't write
-						if err := f.Unsubscribe(subscriptionID, true, ""); err != nil {
-							f.log.Debugf("unable to Unsubscribe %v - %v", subscriptionID, err)
-						}
-						// TODO: mark clientSub as "being closed" to prevent multiple Unsubscribe
-					}(uid)
+		select {
+		case notification, ok := <-f.wsFeed:
+			if !ok {
+				f.log.Errorf("can't pull from ws feed channel. Terminating")
+				break
+			}
+			f.lock.RLock()
+			for uid, clientSub := range f.idToClientSubscription {
+				if clientSub.feedConnectionType == types.WebSocketFeed && clientSub.feedType == notification.NotificationType() {
+					select {
+					case clientSub.feed <- &notification:
+						// Offer: I took this out as we are locking the map in read and can't write.
+						// also, do we need to update the map after we update the counter?
+						//if entry, ok := f.idToClientSubscription[uid]; ok {
+						//	entry.messagesSent++
+						//	f.idToClientSubscription[uid] = entry
+						//}
+					default:
+						f.log.Errorf("can't send %v to channel %v without blocking. Ignored hash %v and unsubscribing", clientSub.feedType, uid, notification.GetHash())
+						go func(subscriptionID uuid.UUID) {
+							// running as go-routine since we are holding the lock. Closing the connection since we can't write
+							if err := f.Unsubscribe(subscriptionID, true, ""); err != nil {
+								f.log.Debugf("unable to Unsubscribe %v - %v", subscriptionID, err)
+							}
+							// TODO: mark clientSub as "being closed" to prevent multiple Unsubscribe
+						}(uid)
+					}
 				}
 			}
-
+			f.lock.RUnlock()
+		case notification, ok := <-f.gRPCFeeds.NewTxsFeed:
+			if !ok {
+				f.log.Errorf("can't pull from newTxs gRPC feed channel. Terminating")
+				break
+			}
+			f.gRPCForwardNotificationToClients(notification, types.NewTxsFeed)
+		case notification, ok := <-f.gRPCFeeds.PendingTxsFeed:
+			if !ok {
+				f.log.Errorf("can't pull from pendingTxs gRPC feed channel. Terminating")
+				break
+			}
+			f.gRPCForwardNotificationToClients(notification, types.PendingTxsFeed)
+		case notification, ok := <-f.gRPCFeeds.NewBlocksFeed:
+			if !ok {
+				f.log.Errorf("can't pull from newBlocks gRPC feed channel. Terminating")
+				break
+			}
+			f.gRPCForwardNotificationToClients(notification, types.NewBlocksFeed)
+		case notification, ok := <-f.gRPCFeeds.BdnBlocksFeed:
+			if !ok {
+				f.log.Errorf("can't pull from bdnBlocks gRPC feed channel. Terminating")
+				break
+			}
+			f.gRPCForwardNotificationToClients(notification, types.BDNBlocksFeed)
 		}
-		f.lock.RUnlock()
 	}
-	f.log.Infof("feedManager stopped for network %v", f.networkNum)
+}
+
+func (f *FeedManager) gRPCForwardNotificationToClients(notification interface{}, feedType types.FeedType) {
+	f.lock.RLock()
+	for uid, clientSub := range f.idToClientSubscription {
+		if clientSub.feedConnectionType == types.GRPCFeed && clientSub.feedType == feedType {
+			select {
+			case clientSub.feed <- notification:
+			default:
+				f.log.Errorf("can't send %v notification to gRPC channel %v without blocking. Ignored and unsubscribing", clientSub.feedType, uid)
+				go func(subscriptionID uuid.UUID) {
+					// running as go-routine since we are holding the lock. Closing the connection since we can't write
+					if err := f.Unsubscribe(subscriptionID, true, ""); err != nil {
+						f.log.Debugf("unable to Unsubscribe %v - %v", subscriptionID, err)
+					}
+				}(uid)
+			}
+		}
+	}
+	f.lock.RUnlock()
 }
 
 // SubscriptionExists - check if subscription exists

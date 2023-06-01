@@ -2,15 +2,17 @@ package config
 
 import (
 	"errors"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/urfave/cli/v2"
-	"time"
 )
 
 const (
+	defaultRPCTimeout = 1 * time.Second
 	// this effects the client and not the server for the grpc connection
-	defaultRPCTimeout = 24 * time.Hour
+	defaultStreamTimeout = 24 * time.Hour
 )
 
 // Todo: separate GW and relay config
@@ -43,7 +45,6 @@ type Bx struct {
 	SendConfirmation    bool
 	MEVMaxProfitBuilder bool
 	MEVBuilderURI       string
-	MEVMinerURI         string
 
 	ProcessMegaBundle            bool
 	MevMinerSendBundleMethodName string
@@ -112,7 +113,6 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		AllTransactions:  ctx.Bool(utils.AllTransactionsFlag.Name),
 
 		MEVBuilderURI:                ctx.String(utils.MEVBuilderURIFlag.Name),
-		MEVMinerURI:                  ctx.String(utils.MEVMinerURIFlag.Name),
 		MevMinerSendBundleMethodName: ctx.String(utils.MEVBundleMethodNameFlag.Name),
 		MEVMaxProfitBuilder:          ctx.Bool(utils.MEVMaxProfitBuilder.Name),
 
@@ -161,7 +161,23 @@ func NewGRPCFromCLI(ctx *cli.Context) *GRPC {
 		EncodedAuth:    ctx.String(utils.GRPCAuthFlag.Name),
 		EncodedAuthSet: ctx.IsSet(utils.GRPCAuthFlag.Name),
 		AuthEnabled:    ctx.IsSet(utils.GRPCAuthFlag.Name) || (ctx.IsSet(utils.GRPCUserFlag.Name) && ctx.IsSet(utils.GRPCPasswordFlag.Name)),
-		Timeout:        defaultRPCTimeout,
+		Timeout:        defaultStreamTimeout,
+	}
+	return &grpcConfig
+}
+
+// NewStreamFromCLI builds GRPC stream configuration from the CLI context
+func NewStreamFromCLI(ctx *cli.Context) *GRPC {
+	grpcConfig := GRPC{
+		Enabled:        ctx.Bool(utils.GRPCFlag.Name),
+		Host:           ctx.String(utils.GRPCHostFlag.Name),
+		Port:           ctx.Int(utils.GRPCPortFlag.Name),
+		User:           ctx.String(utils.GRPCUserFlag.Name),
+		Password:       ctx.String(utils.GRPCPasswordFlag.Name),
+		EncodedAuth:    ctx.String(utils.GRPCAuthFlag.Name),
+		EncodedAuthSet: ctx.IsSet(utils.GRPCAuthFlag.Name),
+		AuthEnabled:    ctx.IsSet(utils.GRPCAuthFlag.Name) || (ctx.IsSet(utils.GRPCUserFlag.Name) && ctx.IsSet(utils.GRPCPasswordFlag.Name)),
+		Timeout:        defaultStreamTimeout,
 	}
 	return &grpcConfig
 }

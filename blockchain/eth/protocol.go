@@ -2,8 +2,9 @@ package eth
 
 import (
 	"context"
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"time"
+
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"

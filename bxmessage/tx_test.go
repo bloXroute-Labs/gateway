@@ -2,11 +2,12 @@ package bxmessage
 
 import (
 	"bytes"
+	"testing"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/stretchr/testify/assert"
-	"testing"
-	"time"
 )
 
 var nullByteAccountID = bytes.Repeat([]byte("\x00"), 36)

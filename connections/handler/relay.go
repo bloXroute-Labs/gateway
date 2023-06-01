@@ -2,6 +2,11 @@ package handler
 
 import (
 	"encoding/hex"
+	"net"
+	"strconv"
+	"strings"
+	"sync/atomic"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
@@ -10,10 +15,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	upscale_client "github.com/bloXroute-Labs/upscale-client"
 	upscale_types "github.com/bloXroute-Labs/upscale-client/types"
-	"net"
-	"strconv"
-	"strings"
-	"sync/atomic"
 )
 
 // Relay represents a connection to a relay Node

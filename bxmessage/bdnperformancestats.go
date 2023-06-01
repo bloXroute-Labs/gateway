@@ -4,16 +4,17 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/v2"
-	"github.com/bloXroute-Labs/gateway/v2/blockchain"
-	"github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"math"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	bxgateway "github.com/bloXroute-Labs/gateway/v2"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	"github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // BdnPerformanceStatsData - represent the bdn stat data struct sent in BdnPerformanceStats
@@ -55,7 +56,7 @@ type BdnPerformanceStats struct {
 }
 
 // NewBDNStats returns a new instance of BDNPerformanceStats
-func NewBDNStats(blockchainPeers []types.NodeEndpoint) *BdnPerformanceStats {
+func NewBDNStats(blockchainPeers []types.NodeEndpoint, recommendedPeers map[string]struct{}) *BdnPerformanceStats {
 	bdnStats := BdnPerformanceStats{
 		intervalStartTime: time.Now(),
 		nodeStats:         make(map[string]*BdnPerformanceStatsData),
@@ -65,6 +66,11 @@ func NewBDNStats(blockchainPeers []types.NodeEndpoint) *BdnPerformanceStats {
 		newStatsData := BdnPerformanceStatsData{}
 		newStatsData.IsBeacon = endpoint.IsBeacon
 		newStatsData.BlockchainNetwork = endpoint.BlockchainNetwork
+		// treat recommended peers as dynamic
+		if _, ok := recommendedPeers[ipPort(endpoint.IP, endpoint.Port)]; ok {
+			newStatsData.Dynamic = true
+		}
+		newStatsData.Dynamic = endpoint.IsDynamic()
 		bdnStats.nodeStats[endpoint.IPPort()] = &newStatsData
 	}
 	return &bdnStats
@@ -578,4 +584,8 @@ func (bs *BdnPerformanceStats) size(protocol Protocol) uint32 {
 		total += types.UInt16Len * 2
 	}
 	return total
+}
+
+func ipPort(ip string, port int) string {
+	return fmt.Sprintf("%v:%v", ip, port)
 }
