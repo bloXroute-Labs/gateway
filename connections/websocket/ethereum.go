@@ -3,11 +3,12 @@ package websocket
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"sync"
+
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/gorilla/websocket"
-	"strconv"
-	"sync"
 )
 
 // Ethereum is a websocket connection to an Ethereum RPC interface
@@ -50,7 +51,7 @@ func (e Ethereum) run() {
 	var sendingAttempt int = 0
 
 	for {
-		//connect to websocket node
+		// connect to websocket node
 		ws = e.connect(e.hostAndPort)
 
 		sendingAttempt++
@@ -91,24 +92,24 @@ func (e Ethereum) run() {
 					log.Error(err)
 					break
 				}
-				//TODO ask eth node for content if not exist
-				//e.newPendingTransactionsChannel <- newHashTx
+				// TODO ask eth node for content if not exist
+				// e.newPendingTransactionsChannel <- newHashTx
 				if false {
 					fmt.Println(newHashTx)
 				}
 			}
-			//TODO tx service from hash to content - common
-			//get content of transaction
-			//var connection = web3.NewWeb3(providers.NewHTTPProvider("63.34.22.69:8545", 10, false))
-			//fmt.Println(connection)
-			//pointer, err := e.GetTransactionByHash("nn")
-			//fmt.Println(pointer.Data)
+			// TODO tx service from hash to content - common
+			// get content of transaction
+			// var connection = web3.NewWeb3(providers.NewHTTPProvider("63.34.22.69:8545", 10, false))
+			// fmt.Println(connection)
+			// pointer, err := e.GetTransactionByHash("nn")
+			// fmt.Println(pointer.Data)
 		}
 		log.Info("reconnect")
 	}
 }
 
-//func (e websocket) GetTransactionByHash(hash string) (*dto.TransactionResponse, error) {
+// func (e websocket) GetTransactionByHash(hash string) (*dto.TransactionResponse, error) {
 //
 //	var provider providers.ProviderInterface
 //	params := make([]string, 1)
@@ -122,7 +123,7 @@ func (e Ethereum) run() {
 //		fmt.Println(err)
 //	}
 //	return pointer.ToTransactionResponse()
-//}
+// }
 
 func (e Ethereum) connect(ipAndPort string) *websocket.Conn {
 	dialer := websocket.DefaultDialer

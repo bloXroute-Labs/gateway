@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -13,6 +14,8 @@ import (
 	"syscall"
 
 	upscale_client "github.com/bloXroute-Labs/upscale-client"
+	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/urfave/cli/v2"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
@@ -25,7 +28,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/version"
-	"github.com/urfave/cli/v2"
 )
 
 func main() {
@@ -78,7 +80,7 @@ func main() {
 			utils.LogNetworkContentFlag,
 			utils.WSTLSFlag,
 			utils.MEVBuilderURIFlag,
-			utils.MEVMinerURIFlag,
+			utils.MEVBuildersFilePathFlag,
 			utils.MEVMaxProfitBuilder,
 			utils.MEVBundleMethodNameFlag,
 			utils.SendBlockConfirmation,
@@ -88,9 +90,13 @@ func main() {
 			utils.ForwardTransactionEndpoint,
 			utils.ForwardTransactionMethod,
 			utils.PolygonMainnetHeimdallEndpoint,
-			utils.BSCTransactionHoldDuration,
-			utils.BSCTransactionPassedDueDuration,
+			utils.TransactionHoldDuration,
+			utils.TransactionPassedDueDuration,
 			utils.EnableBlockchainRPCMethodSupport,
+			utils.DialRatio,
+			utils.NumRecommendedPeers,
+			utils.NoTxsToBlockchain,
+			utils.NoBlocks,
 		},
 		Action: runGateway,
 	}
@@ -143,6 +149,8 @@ func runGateway(c *cli.Context) error {
 		} else if blockchainPeerInfo.Multiaddr != nil {
 			endpoint = utils.MultiaddrToNodeEndoint(*blockchainPeerInfo.Multiaddr, blockchainNetwork)
 			prysmEndpoint = endpoint
+		} else {
+			continue
 		}
 
 		blockchainPeers = append(blockchainPeers, endpoint)
@@ -155,6 +163,44 @@ func runGateway(c *cli.Context) error {
 	sslCerts, sdn, err := nodes.InitSDN(bxConfig, blockchainPeers, nodes.GeneratePeers(ethConfig.StaticPeers), len(ethConfig.StaticEnodes()))
 	if err != nil {
 		return err
+	}
+
+	// create a set of recommended peers
+	recommendedPeers := make(map[string]struct{})
+
+	// init upscale client
+	server := os.Getenv("upscale_addr")
+	if server != "" {
+		// initialization of the upscale is done with the gw node id, because upscale accept only string
+		// with 64 chars, thus 0s are added to the beginning of the node id
+		// example: node id 12345e07-1234-1234-1234-464d308375df will be 000000000000000000000000000012345e07-1234-1234-1234-464d308375df
+		uErr := upscale_client.Init(fmt.Sprintf("%064s", string(sdn.NodeID())))
+		if uErr != nil {
+			log.Error("failed to init upscale client", "err", uErr)
+			return uErr
+		}
+
+		nrp := c.Int(utils.NumRecommendedPeers.Name)
+		if nrp != 0 {
+			rp := upscale_client.GetRecommendedPeers(int32(nrp))
+			for _, peer := range rp {
+				recommendedPeers[peer.Info.RemoteAddress] = struct{}{}
+
+				pp := hex.EncodeToString(peer.Info.PeerID.ID)
+
+				n, err := enode.Parse(enode.ValidSchemes, peer.Info.Enode)
+				if err != nil {
+					log.Errorf("failed to parse recommended peer's with ID %v and addr %v: %v", pp, peer.Info.RemoteAddress, err)
+					continue
+				}
+
+				log.Infof("adding recommended peer %s as a static peer with ID %s and address %s", peer.Info.Enode, pp, peer.Info.RemoteAddress)
+
+				ethConfig.StaticPeers = append(ethConfig.StaticPeers, network.PeerInfo{
+					Enode: n,
+				})
+			}
+		}
 	}
 
 	startupBeaconNode := bxConfig.GatewayMode.IsBDN() && len(ethConfig.BeaconNodes()) > 0
@@ -171,15 +217,23 @@ func runGateway(c *cli.Context) error {
 	if bxConfig.ManageWSServer && !bxConfig.WebsocketEnabled && !bxConfig.WebsocketTLSEnabled {
 		return fmt.Errorf("websocket server must be enabled using --ws or --ws-tls if --manage-ws-server is enabled")
 	}
-	wsManager := eth.NewEthWSManager(ethConfig.StaticPeers, eth.NewWSProvider, bxgateway.WSProviderTimeout)
+	if bxConfig.EnableBlockchainRPC && !bxConfig.WebsocketEnabled && !bxConfig.WebsocketTLSEnabled {
+		return fmt.Errorf("websocket server must be enabled using --ws or --ws-tls if --enable-blockchain-rpc is used")
+	}
+	wsManager := eth.NewEthWSManager(ethConfig.StaticPeers, eth.NewWSProvider, bxgateway.WSProviderTimeout, bxConfig.EnableBlockchainRPC)
 	if (bxConfig.WebsocketEnabled || bxConfig.WebsocketTLSEnabled) && !ethConfig.ValidWSAddr() {
 		log.Warn("websocket server enabled but no valid websockets endpoint specified via --eth-ws-uri nor --multi-node: only newTxs and bdnBlocks feeds are available")
 	}
 	if bxConfig.ManageWSServer && !ethConfig.ValidWSAddr() {
 		return fmt.Errorf("if websocket server management is enabled, a valid websocket address must be provided")
 	}
+	if bxConfig.EnableBlockchainRPC && !ethConfig.ValidWSAddr() {
+		return fmt.Errorf("if blockchan rpc is enabled, a valid websocket address must be provided")
+	}
 
-	gateway, err := nodes.NewGateway(ctx, bxConfig, bridge, wsManager, blockchainPeers, ethConfig.StaticPeers, gatewayPublicKey, sdn, sslCerts, len(ethConfig.StaticEnodes()), c.String(utils.PolygonMainnetHeimdallEndpoint.Name), c.Int(utils.BSCTransactionHoldDuration.Name), c.Int(utils.BSCTransactionPassedDueDuration.Name))
+	gateway, err := nodes.NewGateway(ctx, bxConfig, bridge, wsManager, blockchainPeers, ethConfig.StaticPeers, recommendedPeers,
+		gatewayPublicKey, sdn, sslCerts, len(ethConfig.StaticEnodes()), c.String(utils.PolygonMainnetHeimdallEndpoint.Name),
+		c.Int(utils.TransactionHoldDuration.Name), c.Int(utils.TransactionPassedDueDuration.Name))
 	if err != nil {
 		return err
 	}
@@ -205,9 +259,11 @@ func runGateway(c *cli.Context) error {
 			dynamicPeers = 0
 		}
 
-		blockchainServer, err = eth.NewServerWithEthLogger(ctx, port, externalIP, ethConfig, ethChain, bridge, dataDir, wsManager, dynamicPeers)
+		dialRatio := c.Int(utils.DialRatio.Name)
+
+		blockchainServer, err = eth.NewServerWithEthLogger(ctx, port, externalIP, ethConfig, ethChain, bridge, dataDir, wsManager, dynamicPeers, dialRatio, recommendedPeers)
 		if err != nil {
-			return nil
+			return err
 		}
 
 		if err = blockchainServer.AddEthLoggerFileHandler(bxConfig.Config.FileName); err != nil {
@@ -215,13 +271,13 @@ func runGateway(c *cli.Context) error {
 		}
 
 		if err = blockchainServer.Start(); err != nil {
-			return nil
+			return err
 		}
 		if dynamicPeers > 0 {
-			// we initialize upscale with the gw node id, because upscale accept only string with 64 chars we pad the node id with 0s in the start
-			// example: node id 12345e07-1234-1234-1234-464d308375df will be 000000000000000000000000000012345e07-1234-1234-1234-464d308375df
 			log.Infof("starting upscale to manage %v dynamic peers", dynamicPeers)
-			upscale_client.Init(fmt.Sprintf("%064s", string(sdn.NodeID())))
+
+			// start upscale client
+			upscale_client.Run()
 		}
 	} else {
 		log.Infof("skipping starting blockchain client as no enodes have been provided")

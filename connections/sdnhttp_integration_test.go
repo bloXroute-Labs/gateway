@@ -5,12 +5,13 @@ package connections
 
 import (
 	"fmt"
+	"os"
+	"testing"
+
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/stretchr/testify/assert"
-	"os"
-	"testing"
 )
 
 //Requires setting these environment variables:

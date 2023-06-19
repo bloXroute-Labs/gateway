@@ -3,12 +3,13 @@ package services
 import (
 	"context"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/stretchr/testify/assert"
 	"os"
 	"path"
 	"testing"
 	"time"
+
+	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/stretchr/testify/assert"
 )
 
 const (

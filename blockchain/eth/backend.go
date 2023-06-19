@@ -40,24 +40,26 @@ type Backend interface {
 
 // Handler is the Ethereum backend implementation. It passes transactions and blocks to the BDN bridge and tracks received blocks and transactions from peers.
 type Handler struct {
-	chain     *Chain
-	bridge    blockchain.Bridge
-	peers     *peerSet
-	cancel    context.CancelFunc
-	config    *network.EthConfig
-	wsManager blockchain.WSManager
+	chain            *Chain
+	bridge           blockchain.Bridge
+	peers            *peerSet
+	cancel           context.CancelFunc
+	config           *network.EthConfig
+	wsManager        blockchain.WSManager
+	recommendedPeers map[string]struct{}
 }
 
 // NewHandler returns a new Handler and starts its processing go routines
-func NewHandler(parent context.Context, config *network.EthConfig, chain *Chain, bridge blockchain.Bridge, wsManager blockchain.WSManager) *Handler {
+func NewHandler(parent context.Context, config *network.EthConfig, chain *Chain, bridge blockchain.Bridge, wsManager blockchain.WSManager, recommendedPeers map[string]struct{}) *Handler {
 	ctx, cancel := context.WithCancel(parent)
 	h := &Handler{
-		config:    config,
-		chain:     chain,
-		bridge:    bridge,
-		peers:     newPeerSet(),
-		cancel:    cancel,
-		wsManager: wsManager,
+		config:           config,
+		chain:            chain,
+		bridge:           bridge,
+		peers:            newPeerSet(),
+		cancel:           cancel,
+		wsManager:        wsManager,
+		recommendedPeers: recommendedPeers,
 	}
 	go h.checkInitialBlockchainLiveliness(100 * time.Second)
 	go h.handleBDNBridge(ctx)
@@ -170,7 +172,8 @@ func (h *Handler) NetworkConfig() *network.EthConfig {
 
 // RunPeer registers a peer within the peer set and starts handling all its messages
 func (h *Handler) RunPeer(ep *Peer, handler func(*Peer) error) error {
-	if !ep.Dynamic() {
+	_, isRecommended := h.recommendedPeers[fmt.Sprintf("%s:%d", ep.endpoint.IP, ep.endpoint.Port)]
+	if !ep.Dynamic() && !isRecommended {
 		ok := h.wsManager.SetBlockchainPeer(ep)
 		if !ok {
 			log.Warnf("unable to set blockchain peer for %v: no corresponding websockets provider found (ok if websockets URI was omitted)", ep.endpoint.IPPort())
@@ -183,7 +186,7 @@ func (h *Handler) RunPeer(ep *Peer, handler func(*Peer) error) error {
 		return err
 	}
 	defer func() {
-		if !ep.Dynamic() {
+		if !ep.Dynamic() && !isRecommended {
 			ok := h.wsManager.UnsetBlockchainPeer(ep.endpoint)
 			if !ok {
 				log.Warnf("unable to unset blockchain peer for %v: no corresponding websockets provider found (ok if websockets URI was omitted)", ep.endpoint.IPPort())
@@ -336,9 +339,16 @@ func (h *Handler) processNodeConnectionCheckRequest() {
 	var endpoint types.NodeEndpoint
 	for _, peer := range h.peers.getAll() {
 		endpoint = peer.IPEndpoint()
+		if endpoint.IP == "" || endpoint.Port == 0 {
+			continue
+		}
 		break
 	}
 
+	if endpoint.IP == "" || endpoint.Port == 0 {
+		log.Errorf("try to send blockchain status with invalid blockchain ip: %v or post: %v", endpoint.IP, endpoint.Port)
+		return
+	}
 	err := h.bridge.SendNodeConnectionCheckResponse(endpoint)
 	if err != nil {
 		log.Errorf("send blockchain status response: %v", err)
@@ -645,19 +655,22 @@ type ExtraData struct {
 // UnmarshalJSON is used for deserialize BSC block extra data
 func (ed *ExtraData) UnmarshalJSON(b []byte) error {
 	// the first 32 bytes and the last 65 byte of the extra data field are not interested, https://github.com/ethereum/EIPs/blob/master/EIPS/eip-225.md
-	// we grab the b[32:len(b)-65], every 20 bytes is a validator address
-	if len(b) < 97 {
+	// 33rd bytes marks the length of total validator list, each validator is 68 bytes ( 20 bytes + 48 bytes padding)
+
+	// 32 + 65 + 1
+	if len(b) < 98 {
 		return errors.New("wrong extra data, too small")
 	}
-	validatorListBytes := b[32 : len(b)-65]
-	if len(validatorListBytes)%20 != 0 {
+
+	validatorNum := int(b[32])
+	validatorListBytes := b[33 : len(b)-65]
+	if len(validatorListBytes) != 68*validatorNum {
 		return errors.New("wrong extra data format, validator list is not aligned")
 	}
 
-	validatorNum := len(validatorListBytes) / 20
 	validatorList := make([]string, 0, validatorNum)
 	for i := 0; i < validatorNum; i++ {
-		validatorAddr := ethcommon.BytesToAddress(validatorListBytes[i*20 : (i+1)*20])
+		validatorAddr := ethcommon.BytesToAddress(validatorListBytes[i*68 : i*68+20])
 		validatorList = append(validatorList, validatorAddr.String())
 	}
 
@@ -836,7 +849,6 @@ func (h *Handler) storeBDNBlock(bdnBlock *types.BxBlock) (*BlockInfo, error) {
 
 func (h *Handler) checkInitialBlockchainLiveliness(initialLivelinessCheckDelay time.Duration) {
 	time.Sleep(initialLivelinessCheckDelay)
-
 	if len(h.peers.getAll()) == 0 {
 		err := h.bridge.SendNoActiveBlockchainPeersAlert()
 		if err == blockchain.ErrChannelFull {

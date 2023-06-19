@@ -2,11 +2,12 @@ package connections
 
 import (
 	"crypto/tls"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"net"
 	"strconv"
 	"time"
+
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // Socket represents an in between interface between connection objects and network sockets

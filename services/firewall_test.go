@@ -1,12 +1,13 @@
 package services
 
 import (
+	"testing"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/stretchr/testify/assert"
-	"testing"
-	"time"
 )
 
 func TestFirewall_Add(t *testing.T) {
@@ -146,12 +147,12 @@ func TestFirewall_ConnectionAllowed(t *testing.T) {
 
 func generateRandAccountID() types.AccountID {
 	id := utils.GenerateUUID()
-	accountID := types.AccountID(id.String())
+	accountID := types.AccountID(id)
 	return accountID
 }
 
 func generateRandNodeID() types.NodeID {
 	id := utils.GenerateUUID()
-	nodeID := types.NodeID(id.String())
+	nodeID := types.NodeID(id)
 	return nodeID
 }

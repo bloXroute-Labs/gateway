@@ -1,8 +1,9 @@
 package services
 
 import (
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"time"
+
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // RateSnapshot indicates the number of events in the last intervals

@@ -2,6 +2,7 @@ package sdnmessage
 
 import (
 	"fmt"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 

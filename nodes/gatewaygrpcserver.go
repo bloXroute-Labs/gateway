@@ -4,11 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/rpc"
 	"google.golang.org/grpc"
-	"net"
+)
+
+const (
+	windowSize = 128 * 1024
+	// bufferSize determines how much data can be batched before doing a write
+	// on the wire. Zero or negative values will disable the write buffer such that each
+	// write will be on underlying connection.
+	bufferSize = 0
 )
 
 type gatewayGRPCServer struct {
@@ -53,7 +62,13 @@ func (ggs *gatewayGRPCServer) run() {
 		log.Fatalf("failed to listen: %v", err)
 	}
 
-	ggs.server = grpc.NewServer(grpc.UnaryInterceptor(ggs.authenticate))
+	serverOptions := []grpc.ServerOption{
+		grpc.WriteBufferSize(bufferSize),
+		grpc.InitialConnWindowSize(windowSize),
+		grpc.UnaryInterceptor(ggs.authenticate),
+	}
+
+	ggs.server = grpc.NewServer(serverOptions...)
 	pb.RegisterGatewayServer(ggs.server, ggs.gateway)
 
 	log.Infof("GRPC server is starting on %v", ggs.listenAddr)

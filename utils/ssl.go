@@ -9,10 +9,11 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"io/ioutil"
 	"os"
 	"path"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // SSLCerts represents the required certificate files for interacting with the BDN.

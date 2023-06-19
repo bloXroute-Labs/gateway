@@ -4,14 +4,15 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"fmt"
-	"github.com/multiformats/go-multiaddr"
-	"github.com/urfave/cli/v2"
 	"math/big"
 	"net"
 	"os"
 	"path"
 	"strings"
 	"time"
+
+	"github.com/multiformats/go-multiaddr"
+	"github.com/urfave/cli/v2"
 
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/ethereum/go-ethereum/common"
@@ -72,14 +73,14 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 			return nil, "", err
 		}
 	} else {
+		var peer PeerInfo
 		if ctx.IsSet(utils.EnodesFlag.Name) {
 			enodeString := ctx.String(utils.EnodesFlag.Name)
-			var peer PeerInfo
-			enode, err := enode.Parse(enode.ValidSchemes, enodeString)
+			node, err := enode.Parse(enode.ValidSchemes, enodeString)
 			if err != nil {
 				return nil, "", err
 			}
-			peer.Enode = enode
+			peer.Enode = node
 			if ctx.IsSet(utils.EthWSUriFlag.Name) {
 				ethWSURI := ctx.String(utils.EthWSUriFlag.Name)
 				err = validateWSURI(ethWSURI)
@@ -99,7 +100,16 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 				peer.PrysmAddr = prysmGRPCURI
 			}
 			peers = append(peers, peer)
+		} else if ctx.IsSet(utils.EthWSUriFlag.Name) {
+			ethWSURI := ctx.String(utils.EthWSUriFlag.Name)
+			err = validateWSURI(ethWSURI)
+			if err != nil {
+				return nil, "", err
+			}
+			peer.EthWSURI = ethWSURI
+			peers = append(peers, peer)
 		}
+
 		if ctx.IsSet(utils.BeaconENRFlag.Name) || ctx.IsSet(utils.BeaconMultiaddrFlag.Name) {
 			if ctx.IsSet(utils.BeaconENRFlag.Name) && ctx.IsSet(utils.BeaconMultiaddrFlag.Name) {
 				return nil, "", fmt.Errorf("parameters --enr and --multiaddr should not be used simultaneously; if you would like to use multiple p2p connections, use --multi-node")
@@ -107,19 +117,19 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 
 			peer := PeerInfo{}
 			if ctx.IsSet(utils.BeaconENRFlag.Name) {
-				multiaddr, err := multiaddrFromEnodeStr(ctx.String(utils.BeaconENRFlag.Name))
+				multiAddr, err := multiaddrFromEnodeStr(ctx.String(utils.BeaconENRFlag.Name))
 				if err != nil {
 					return nil, "", fmt.Errorf("unable to parse --enr argument: %v", err)
 				}
 
-				peer.Multiaddr = &multiaddr
+				peer.Multiaddr = &multiAddr
 			} else if ctx.IsSet(utils.BeaconMultiaddrFlag.Name) {
-				multiaddr, err := multiaddrFromStr(ctx.String(utils.BeaconMultiaddrFlag.Name))
+				multiAddr, err := multiaddrFromStr(ctx.String(utils.BeaconMultiaddrFlag.Name))
 				if err != nil {
 					return nil, "", fmt.Errorf("unable to parse --multiaddr argument: %v", err)
 				}
 
-				peer.Multiaddr = &multiaddr
+				peer.Multiaddr = &multiAddr
 			}
 
 			if ctx.IsSet(utils.PrysmGRPCFlag.Name) {
@@ -387,7 +397,7 @@ func (ec *EthConfig) Update(otherConfig EthConfig) {
 func (ec *EthConfig) StaticEnodes() []*enode.Node {
 	var enodesList []*enode.Node
 	for _, peerInfo := range ec.StaticPeers {
-		if peerInfo.Multiaddr == nil {
+		if peerInfo.Multiaddr == nil && peerInfo.Enode != nil {
 			enodesList = append(enodesList, peerInfo.Enode)
 		}
 	}

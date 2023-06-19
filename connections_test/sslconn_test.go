@@ -1,6 +1,10 @@
 package connections_test
 
 import (
+	"runtime"
+	"testing"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/logger"
@@ -8,9 +12,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/stretchr/testify/assert"
-	"runtime"
-	"testing"
-	"time"
 )
 
 func TestSSLConn_ClosingFromSend(t *testing.T) {

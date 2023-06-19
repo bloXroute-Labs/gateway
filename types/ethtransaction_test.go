@@ -2,15 +2,16 @@ package types
 
 import (
 	"encoding/hex"
+	"math/big"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/assert"
-	"math/big"
-	"strings"
-	"testing"
-	"time"
 )
 
 func ethTransaction(hashString string, txString string) (SHA256Hash, EthTransaction, *BxTransaction, error) {
@@ -65,7 +66,7 @@ func TestLegacyTransaction(t *testing.T) {
 	ethTx.Filters([]string{})
 	assert.Equal(t, "0x0", ethTx.fields["type"])
 	assert.Equal(t, "0x"+hash.String(), ethTx.fields["hash"])
-	assert.Equal(t, bigintAsString(expectedGasPrice), ethTx.fields["gasPrice"])
+	assert.Equal(t, BigIntAsString(expectedGasPrice), ethTx.fields["gasPrice"])
 	assert.Equal(t, expectedGasPrice, ethTx.GasFeeCap)
 	assert.Equal(t, expectedGasPrice, ethTx.GasTipCap)
 	assert.Equal(t, expectedChainID, ethTx.ChainID)
@@ -119,7 +120,7 @@ func TestAccessListTransaction(t *testing.T) {
 	ethTx.Filters([]string{})
 	assert.Equal(t, "0x1", ethTx.fields["type"])
 	assert.Equal(t, "0x"+hash.String(), ethTx.fields["hash"])
-	assert.Equal(t, bigintAsString(expectedGasPrice), ethTx.fields["gasPrice"])
+	assert.Equal(t, BigIntAsString(expectedGasPrice), ethTx.fields["gasPrice"])
 	assert.Equal(t, expectedGasPrice, ethTx.GasFeeCap)
 	assert.Equal(t, expectedGasPrice, ethTx.GasTipCap)
 	assert.Equal(t, strings.ToLower(expectedFromAddress.String()), ethTx.fields["from"])

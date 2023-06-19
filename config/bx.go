@@ -1,16 +1,22 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/bloXroute-Labs/gateway/v2/utils/bundle"
 	"github.com/urfave/cli/v2"
-	"time"
 )
 
 const (
+	defaultRPCTimeout = 1 * time.Second
 	// this effects the client and not the server for the grpc connection
-	defaultRPCTimeout = 24 * time.Hour
+	defaultStreamTimeout = 24 * time.Hour
 )
 
 // Todo: separate GW and relay config
@@ -43,7 +49,7 @@ type Bx struct {
 	SendConfirmation    bool
 	MEVMaxProfitBuilder bool
 	MEVBuilderURI       string
-	MEVMinerURI         string
+	MEVBuilders         map[string]*bundle.Builder
 
 	ProcessMegaBundle            bool
 	MevMinerSendBundleMethodName string
@@ -51,6 +57,9 @@ type Bx struct {
 	ForwardTransactionMethod     string
 	EnableDynamicPeers           bool
 	EnableBlockchainRPC          bool
+	PendingTxsSourceFromNode     bool
+	NoTxsToBlockchain            bool
+	NoBlocks                     bool
 
 	*GRPC
 	*Env
@@ -85,6 +94,18 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		}
 	}
 
+	var mevBuilders map[string]*bundle.Builder
+	if ctx.IsSet(utils.MEVBuildersFilePathFlag.Name) {
+		contents, err := os.ReadFile(ctx.String(utils.MEVBuildersFilePathFlag.Name))
+		if err != nil {
+			return nil, fmt.Errorf("failed to open mev builders file: %s", err)
+		}
+
+		if err := json.Unmarshal(contents, &mevBuilders); err != nil {
+			return nil, fmt.Errorf("failed to decode mev builders file: %s", err)
+		}
+	}
+
 	bxConfig := &Bx{
 		Host:               ctx.String(utils.HostFlag.Name),
 		OverrideExternalIP: ctx.IsSet(utils.ExternalIPFlag.Name),
@@ -111,16 +132,18 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		SendConfirmation: ctx.Bool(utils.SendBlockConfirmation.Name),
 		AllTransactions:  ctx.Bool(utils.AllTransactionsFlag.Name),
 
-		MEVBuilderURI:                ctx.String(utils.MEVBuilderURIFlag.Name),
-		MEVMinerURI:                  ctx.String(utils.MEVMinerURIFlag.Name),
-		MevMinerSendBundleMethodName: ctx.String(utils.MEVBundleMethodNameFlag.Name),
-		MEVMaxProfitBuilder:          ctx.Bool(utils.MEVMaxProfitBuilder.Name),
+		MEVBuilderURI:       ctx.String(utils.MEVBuilderURIFlag.Name),
+		MEVBuilders:         mevBuilders,
+		MEVMaxProfitBuilder: ctx.Bool(utils.MEVMaxProfitBuilder.Name),
 
 		ProcessMegaBundle:          ctx.Bool(utils.MegaBundleProcessing.Name),
 		ForwardTransactionEndpoint: ctx.String(utils.ForwardTransactionEndpoint.Name),
 		ForwardTransactionMethod:   ctx.String(utils.ForwardTransactionMethod.Name),
 		EnableDynamicPeers:         ctx.Bool(utils.EnableDynamicPeers.Name),
 		EnableBlockchainRPC:        ctx.Bool(utils.EnableBlockchainRPCMethodSupport.Name),
+		PendingTxsSourceFromNode:   ctx.Bool(utils.PendingTxsSourceFromNode.Name),
+		NoTxsToBlockchain:          ctx.Bool(utils.NoTxsToBlockchain.Name),
+		NoBlocks:                   ctx.Bool(utils.NoBlocks.Name),
 
 		GRPC:       grpcConfig,
 		Env:        env,
@@ -161,7 +184,23 @@ func NewGRPCFromCLI(ctx *cli.Context) *GRPC {
 		EncodedAuth:    ctx.String(utils.GRPCAuthFlag.Name),
 		EncodedAuthSet: ctx.IsSet(utils.GRPCAuthFlag.Name),
 		AuthEnabled:    ctx.IsSet(utils.GRPCAuthFlag.Name) || (ctx.IsSet(utils.GRPCUserFlag.Name) && ctx.IsSet(utils.GRPCPasswordFlag.Name)),
-		Timeout:        defaultRPCTimeout,
+		Timeout:        defaultStreamTimeout,
+	}
+	return &grpcConfig
+}
+
+// NewStreamFromCLI builds GRPC stream configuration from the CLI context
+func NewStreamFromCLI(ctx *cli.Context) *GRPC {
+	grpcConfig := GRPC{
+		Enabled:        ctx.Bool(utils.GRPCFlag.Name),
+		Host:           ctx.String(utils.GRPCHostFlag.Name),
+		Port:           ctx.Int(utils.GRPCPortFlag.Name),
+		User:           ctx.String(utils.GRPCUserFlag.Name),
+		Password:       ctx.String(utils.GRPCPasswordFlag.Name),
+		EncodedAuth:    ctx.String(utils.GRPCAuthFlag.Name),
+		EncodedAuthSet: ctx.IsSet(utils.GRPCAuthFlag.Name),
+		AuthEnabled:    ctx.IsSet(utils.GRPCAuthFlag.Name) || (ctx.IsSet(utils.GRPCUserFlag.Name) && ctx.IsSet(utils.GRPCPasswordFlag.Name)),
+		Timeout:        defaultStreamTimeout,
 	}
 	return &grpcConfig
 }

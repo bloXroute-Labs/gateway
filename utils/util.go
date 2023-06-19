@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	cryptorand "crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
+
+	"crypto/rand"
 
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -131,7 +134,19 @@ func getTypeString(t reflect.Type) string {
 }
 
 // GenerateUUID generates random subscription ID
-func GenerateUUID() uuid.UUID {
+func GenerateUUID() string {
 	newUUID, _ := uuid.NewV4()
-	return newUUID
+	return newUUID.String()
+}
+
+// GenerateU128 generates random u128 string as subscription ID
+func GenerateU128() (string, error) {
+	u128 := make([]byte, 16)
+	_, err := rand.Read(u128)
+	if err != nil {
+		return "", err
+	}
+
+	hexEncoded := hex.EncodeToString(u128)
+	return "0x" + hexEncoded, nil
 }

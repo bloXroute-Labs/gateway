@@ -1,10 +1,11 @@
 package bxmessage
 
 import (
+	"testing"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestValidatorUpdatesPackUnpack(t *testing.T) {

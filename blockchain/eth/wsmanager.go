@@ -1,14 +1,18 @@
 package eth
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"sync"
+	"time"
+
+	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"sync"
-	"time"
 )
 
 // WSManager implements the blockchain.WSManager interface for Ethereum
@@ -21,13 +25,23 @@ type WSManager struct {
 }
 
 // NewEthWSManager - returns a new instance of WSManager
-func NewEthWSManager(blockchainPeersInfo []network.PeerInfo, newWS func(string, types.NodeEndpoint, time.Duration) blockchain.WSProvider, timeout time.Duration) blockchain.WSManager {
+func NewEthWSManager(blockchainPeersInfo []network.PeerInfo, newWS func(string, types.NodeEndpoint, time.Duration) blockchain.WSProvider, timeout time.Duration, enableBlockchainRPC bool) blockchain.WSManager {
 	var wsManager WSManager
 	wsManager.wsProviders = make(map[string]blockchain.WSProvider)
 	for _, peerInfo := range blockchainPeersInfo {
 		if peerInfo.EthWSURI == "" {
 			continue
+		} else if peerInfo.Enode == nil {
+			// if ws uri provided but no enode, we connect to the ws only if web3 bridge enabled
+			if enableBlockchainRPC {
+				wsProvider := newWS(peerInfo.EthWSURI, types.NodeEndpoint{IP: "", Port: 0}, timeout)
+				wsProvider.UpdateSyncStatus(blockchain.Synced)
+				wsManager.wsProviders[wsProvider.BlockchainPeerEndpoint().IPPort()] = wsProvider
+				go wsProvider.Dial()
+			}
+			continue
 		}
+
 		peerEndpoint := types.NodeEndpoint{IP: peerInfo.Enode.IP().String(), Port: peerInfo.Enode.TCP()}
 		wsProvider := newWS(peerInfo.EthWSURI, peerEndpoint, timeout)
 		wsManager.wsProviders[wsProvider.BlockchainPeerEndpoint().IPPort()] = wsProvider
@@ -67,6 +81,108 @@ func (m *WSManager) SyncedProvider() (blockchain.WSProvider, bool) {
 		}
 	}
 	return nil, false
+}
+
+// ProviderWithBlock returns a WSProvider that has the blockNumber
+// If preferredEndpoint is not nil, it will try to return a WSProvider that matches the endpoint
+// If preferredEndpoint is nil, it will return the first WSProvider that has the blockNumber
+func (m *WSManager) ProviderWithBlock(preferredEndpoint *types.NodeEndpoint, blockNumber uint64) (blockchain.WSProvider, bool) {
+	if !m.Synced() {
+		return nil, false
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), bxgateway.EthFetchBlockDeadlineInterval)
+	defer cancel()
+
+	if preferredEndpoint != nil {
+		provider, ok := m.syncedPreferredProvider(preferredEndpoint)
+		if ok {
+			if err := m.waitProviderBlock(ctx, provider, blockNumber); err != nil {
+				log.Warningf("failed to wait for block %v from %v: %v", blockNumber, provider.BlockchainPeerEndpoint(), err)
+				return nil, false
+			}
+
+			log.Debugf("found blockchain provider %v", provider.BlockchainPeerEndpoint().IPPort())
+
+			return provider, true
+		}
+	}
+
+	provider, err := m.firstSyncedProviderWithBlock(ctx, blockNumber)
+	if err != nil {
+		log.Warningf("failed to find synced provider for block %v: %v", blockNumber, err)
+		return nil, false
+	}
+
+	return provider, true
+}
+
+func (m *WSManager) syncedPreferredProvider(preferredEndpoint *types.NodeEndpoint) (blockchain.WSProvider, bool) {
+	nodeWS, ok := m.Provider(preferredEndpoint)
+	if !ok || nodeWS.SyncStatus() != blockchain.Synced {
+		return nil, false
+	}
+	return nodeWS, ok
+}
+
+func (m *WSManager) waitProviderBlock(ctx context.Context, provider blockchain.WSProvider, blockNumber uint64) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return errors.New("deadline exceeded")
+		default:
+			response, err := provider.FetchBlock([]interface{}{fmt.Sprintf("0x%x", blockNumber), false}, blockchain.RPCOptions{RetryAttempts: bxgateway.MaxEthOnBlockCallRetries, RetryInterval: bxgateway.EthOnBlockCallRetrySleepInterval})
+			if err != nil {
+				return err
+			}
+
+			if response != nil {
+				return nil
+			}
+
+			time.Sleep(bxgateway.EthFetchBlockCallRetrySleepInterval)
+		}
+	}
+}
+
+func (m *WSManager) firstSyncedProviderWithBlock(ctx context.Context, blockNumber uint64) (blockchain.WSProvider, error) {
+	providersChan := make(chan blockchain.WSProvider)
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel() // stop all goroutines if one of them finds a provider
+
+	providers := make([]blockchain.WSProvider, 0)
+	for _, provider := range m.Providers() {
+		if provider.SyncStatus() != blockchain.Synced {
+			continue
+		}
+		providers = append(providers, provider)
+	}
+
+	if len(providers) == 0 {
+		return nil, errors.New("no synced providers")
+	}
+
+	for _, provider := range providers {
+		go func(provider blockchain.WSProvider) {
+			if err := m.waitProviderBlock(ctx, provider, blockNumber); err != nil {
+				log.Debugf("waitWSProviderBlock failed to wait block %v from %v: %v", blockNumber, provider.BlockchainPeerEndpoint(), err)
+				return
+			}
+
+			select {
+			case providersChan <- provider:
+			default:
+			}
+		}(provider)
+	}
+
+	select {
+	case provider := <-providersChan:
+		return provider, nil
+	case <-ctx.Done():
+		return nil, errors.New("no provider with block found")
+	}
 }
 
 // Providers returns map of NodeEndpoint to WSProvider

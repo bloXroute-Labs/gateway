@@ -3,13 +3,14 @@ package eth
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/ethereum/go-ethereum/rpc"
-	"strings"
-	"time"
 )
 
 // WSProvider implements the blockchain.WSProvider interface for Ethereum
@@ -70,16 +71,17 @@ func (ws *WSProvider) Dial() {
 	// gateway should retry connecting to the ws url until it's successfully connected
 	ws.log.Debugf("dialing %v... process %v", ws.addr, utils.GetGID())
 	for {
-		client, err := rpc.Dial(ws.addr)
+		ctx, cancel := context.WithTimeout(context.Background(), ws.timeout)
+		client, err := rpc.DialContext(ctx, ws.addr)
 		if err == nil {
+			cancel()
 			ws.client = client
 			ws.open = true
-			ws.log.Infof("connection was successfully established with %v", ws.addr)
+			ws.log.Info("connection was successfully established")
 			return
 		}
 
-		time.Sleep(5 * time.Second)
-		ws.log.Warnf("Failed to dial %v, retrying..  process %v", ws.addr, utils.GetGID())
+		ws.log.Warnf("failed to dial: err %v, retrying...", err)
 		continue
 	}
 }
@@ -107,11 +109,18 @@ func (ws *WSProvider) BlockchainPeerEndpoint() types.NodeEndpoint {
 }
 
 // Subscribe - subscribes to Ethereum feeds and returns subscription
-func (ws *WSProvider) Subscribe(responseChannel interface{}, feedName string) (*blockchain.Subscription, error) {
+func (ws *WSProvider) Subscribe(responseChannel interface{}, feedName string, args ...interface{}) (*blockchain.Subscription, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), ws.timeout)
 	defer cancel()
 
-	sub, err := ws.client.EthSubscribe(ctx, responseChannel, feedName)
+	var sub *rpc.ClientSubscription
+	var err error
+	if len(args) < 1 {
+		sub, err = ws.client.EthSubscribe(ctx, responseChannel, feedName)
+	} else {
+		sub, err = ws.client.EthSubscribe(ctx, responseChannel, feedName, args[0])
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to subscribe to feed %v: %v", feedName, err)
 	}

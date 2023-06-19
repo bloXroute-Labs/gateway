@@ -2,11 +2,12 @@ package connections
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"time"
 )
 
 // Blockchain is a placeholder struct to represent a connection for blockchain nodes

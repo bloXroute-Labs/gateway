@@ -1,10 +1,11 @@
 package utils
 
 import (
-	"github.com/bloXroute-Labs/gateway/v2/test"
-	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
+
+	"github.com/bloXroute-Labs/gateway/v2/test"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestSSLCerts_NoKeysProvided(t *testing.T) {

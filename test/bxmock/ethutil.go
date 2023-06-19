@@ -1,11 +1,12 @@
 package bxmock
 
 import (
+	"hash"
+	"math/rand"
+
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"golang.org/x/crypto/sha3"
-	"hash"
-	"math/rand"
 )
 
 // GenerateBloom randomly generates a bloom

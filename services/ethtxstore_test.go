@@ -2,6 +2,11 @@ package services
 
 import (
 	"context"
+	"math/big"
+	"math/rand"
+	"testing"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
@@ -12,10 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"math/big"
-	"math/rand"
-	"testing"
-	"time"
 )
 
 var privateKey, _ = crypto.GenerateKey()

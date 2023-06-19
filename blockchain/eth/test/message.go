@@ -1,9 +1,10 @@
 package test
 
 import (
+	"time"
+
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rlp"
-	"time"
 )
 
 // MsgReadWriter is a test implementation of the RW connection interface on RLP peers

@@ -1,9 +1,10 @@
 package logger
 
 import (
+	"strings"
+
 	"github.com/evalphobia/logrus_fluent"
 	"github.com/sirupsen/logrus"
-	"strings"
 )
 
 // InitFluentD - initialise logging

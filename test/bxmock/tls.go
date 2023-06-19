@@ -5,14 +5,15 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"errors"
-	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
-	"github.com/bloXroute-Labs/gateway/v2/connections"
-	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"net"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
+	"github.com/bloXroute-Labs/gateway/v2/connections"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 const connectionTimeout = 200 * time.Millisecond

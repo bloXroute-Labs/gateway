@@ -109,6 +109,11 @@ func IsBDN(capabilities types.CapabilityFlags) bool {
 	return capabilities&types.CapabilityBDN != 0
 }
 
+// IsBlockchainRPCEnabled indicates if the connection is enabled web3 bridge
+func IsBlockchainRPCEnabled(capabilities types.CapabilityFlags) bool {
+	return capabilities&types.CapabilityBlockchainRPCEnabled != 0
+}
+
 // IsCloudAPI indicates if the connection is a cloud-api
 func IsCloudAPI(connectionType utils.NodeType) bool {
 	return connectionType&utils.CloudAPI != 0

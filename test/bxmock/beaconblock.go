@@ -2,9 +2,10 @@ package bxmock
 
 import (
 	"encoding/hex"
-	"github.com/prysmaticlabs/go-bitfield"
 	"strings"
 	"testing"
+
+	"github.com/prysmaticlabs/go-bitfield"
 
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/prysmaticlabs/prysm/v4/config/params"

@@ -1,9 +1,10 @@
 package servers
 
 import (
-	"github.com/stretchr/testify/assert"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // pythonFiltersToGoFilters - contains available filters in python format and theirs go format filters
