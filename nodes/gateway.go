@@ -14,16 +14,15 @@ import (
 	"path"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	uuid "github.com/satori/go.uuid"
-
 	"github.com/cenkalti/backoff/v4"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/pkg/errors"
@@ -48,7 +47,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/connections/handler"
-	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/servers"
 	"github.com/bloXroute-Labs/gateway/v2/services"
@@ -56,14 +54,15 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/bloXroute-Labs/gateway/v2/utils/bundle"
 	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
 	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 	"github.com/bloXroute-Labs/gateway/v2/version"
 )
 
 const (
-	flashbotAuthHeader = "X-Flashbots-Signature"
-	invalidTX          = "0000000000000000000000000000000000000000000000000000000000000000"
+	invalidTX       = "0000000000000000000000000000000000000000000000000000000000000000"
+	ignoreSeenEvent = "ignore seen"
 )
 
 type gateway struct {
@@ -77,7 +76,8 @@ type gateway struct {
 	accountID          types.AccountID
 	bridge             blockchain.Bridge
 	feedManager        *servers.FeedManager
-	feedChan           chan types.Notification
+	wsFeedChan         chan types.Notification
+	gRPCFeedChans      servers.GRPCFeeds
 	asyncMsgChannel    chan services.MsgInfo
 	isBDN              bool
 	bdnStats           *bxmessage.BdnPerformanceStats
@@ -97,11 +97,14 @@ type gateway struct {
 
 	bestBlockHeight       int
 	bdnBlocksSkipCount    int
+	seenMEVBundles        services.HashHistory
 	seenMEVMinerBundles   services.HashHistory
 	seenMEVSearchers      services.HashHistory
 	seenBlockConfirmation services.HashHistory
 
-	mevClient        *http.Client
+	mevClient           *http.Client
+	mevBundleDispatcher *bundle.Dispatcher
+
 	bscTxClient      *http.Client
 	gatewayPeers     string
 	gatewayPublicKey string
@@ -120,6 +123,7 @@ type gateway struct {
 	nextBlockTime                time.Time
 
 	polygonValidatorInfoManager polygon.ValidatorInfoManager
+	blockTime                   time.Duration
 }
 
 // GeneratePeers generate string peers separated by coma
@@ -142,10 +146,11 @@ func GeneratePeers(peersInfo []network.PeerInfo) string {
 
 // NewGateway returns a new gateway node to send messages from a blockchain node to the relay network
 func NewGateway(parent context.Context, bxConfig *config.Bx, bridge blockchain.Bridge, wsManager blockchain.WSManager,
-	blockchainPeers []types.NodeEndpoint, peersInfo []network.PeerInfo, gatewayPublicKeyStr string, sdn connections.SDNHTTP,
+	blockchainPeers []types.NodeEndpoint, peersInfo []network.PeerInfo, recommendedPeers map[string]struct{}, gatewayPublicKeyStr string, sdn connections.SDNHTTP,
 	sslCerts *utils.SSLCerts, staticEnodesCount int, polygonHeimdallEndpoint string, transactionSlotStartDuration int, transactionSlotEndDuration int) (Node, error) {
 	ctx, cancel := context.WithCancel(parent)
 	clock := utils.RealClock{}
+	blockTime, _ := bxgateway.NetworkToBlockDuration[bxConfig.BlockchainNetwork]
 
 	g := &gateway{
 		Bx:                           NewBx(bxConfig, "datadir", nil),
@@ -159,6 +164,7 @@ func NewGateway(parent context.Context, bxConfig *config.Bx, bridge blockchain.B
 		possiblePendingTxs:           services.NewHashHistory("possiblePendingTxs", 15*time.Minute),
 		bdnBlocks:                    services.NewHashHistory("bdnBlocks", 15*time.Minute),
 		newBlocks:                    services.NewHashHistory("newBlocks", 15*time.Minute),
+		seenMEVBundles:               services.NewHashHistory("mevBundle", 30*time.Minute),
 		seenMEVMinerBundles:          services.NewHashHistory("mevMinerBundle", 30*time.Minute),
 		seenMEVSearchers:             services.NewHashHistory("mevSearcher", 30*time.Minute),
 		seenBlockConfirmation:        services.NewHashHistory("blockConfirmation", 30*time.Minute),
@@ -169,9 +175,9 @@ func NewGateway(parent context.Context, bxConfig *config.Bx, bridge blockchain.B
 		staticEnodesCount:            staticEnodesCount,
 		transactionSlotStartDuration: transactionSlotStartDuration,
 		transactionSlotEndDuration:   transactionSlotEndDuration,
-
-		sdn:      sdn,
-		sslCerts: sslCerts,
+		sdn:                          sdn,
+		sslCerts:                     sslCerts,
+		blockTime:                    blockTime,
 	}
 
 	g.polygonValidatorInfoManager = bor.NewSprintManager(parent, &g.wsManager, bor.NewHeimdallSpanner(parent, polygonHeimdallEndpoint))
@@ -196,18 +202,10 @@ func NewGateway(parent context.Context, bxConfig *config.Bx, bridge blockchain.B
 	}
 
 	g.asyncMsgChannel = services.NewAsyncMsgChannel(g)
-	g.mevClient = &http.Client{
-		Transport: &http.Transport{
-			MaxConnsPerHost:     100,
-			MaxIdleConnsPerHost: 100,
-			MaxIdleConns:        100,
-			IdleConnTimeout:     0 * time.Second,
-		},
-		Timeout: 60 * time.Second,
-	}
+	g.mevBundleDispatcher = bundle.NewDispatcher(bxConfig.MEVBuilderURI, bxConfig.MEVBuilders, bxConfig.MEVMaxProfitBuilder, bxConfig.ProcessMegaBundle)
 
 	// create tx store service pass to eth client
-	g.bdnStats = bxmessage.NewBDNStats(blockchainPeers)
+	g.bdnStats = bxmessage.NewBDNStats(blockchainPeers, recommendedPeers)
 	g.burstLimiter = services.NewAccountBurstLimiter(g.clock)
 
 	// set empty default stats, Run function will override it
@@ -250,23 +248,24 @@ func InitSDN(bxConfig *config.Bx, blockchainPeers []types.NodeEndpoint, gatewayP
 	}
 
 	nodeModel := sdnmessage.NodeModel{
-		NodeType:        gatewayType.String(),
-		GatewayMode:     string(gatewayMode),
-		ExternalIP:      bxConfig.ExternalIP,
-		ExternalPort:    bxConfig.ExternalPort,
-		BlockchainIP:    blockchainPeerEndpoint.IP,
-		BlockchainPeers: gatewayPeers,
-		NodePublicKey:   blockchainPeerEndpoint.PublicKey,
-		BlockchainPort:  blockchainPeerEndpoint.Port,
-		ProgramName:     types.BloxrouteGoGateway,
-		SourceVersion:   version.BuildVersion,
-		IsDocker:        isDocker,
-		Hostname:        hostname,
-		OsVersion:       runtime.GOOS,
-		ProtocolVersion: bxmessage.CurrentProtocol,
-		IsGatewayMiner:  bxConfig.BlocksOnly,
-		NodeStartTime:   time.Now().Format(bxgateway.TimeLayoutISO),
-		StartupArgs:     strings.Join(os.Args[1:], " "),
+		NodeType:             gatewayType.String(),
+		GatewayMode:          string(gatewayMode),
+		ExternalIP:           bxConfig.ExternalIP,
+		ExternalPort:         bxConfig.ExternalPort,
+		BlockchainIP:         blockchainPeerEndpoint.IP,
+		BlockchainPeers:      gatewayPeers,
+		NodePublicKey:        blockchainPeerEndpoint.PublicKey,
+		BlockchainPort:       blockchainPeerEndpoint.Port,
+		ProgramName:          types.BloxrouteGoGateway,
+		SourceVersion:        version.BuildVersion,
+		IsDocker:             isDocker,
+		Hostname:             hostname,
+		OsVersion:            runtime.GOOS,
+		ProtocolVersion:      bxmessage.CurrentProtocol,
+		IsGatewayMiner:       bxConfig.BlocksOnly,
+		NodeStartTime:        time.Now().Format(bxgateway.TimeLayoutISO),
+		StartupArgs:          strings.Join(os.Args[1:], " "),
+		BlockchainRPCEnabled: bxConfig.EnableBlockchainRPC,
 	}
 
 	sdn := connections.NewSDNHTTP(&sslCerts, bxConfig.SDNURL, nodeModel, bxConfig.DataDir)
@@ -280,13 +279,6 @@ func InitSDN(bxConfig *config.Bx, blockchainPeers []types.NodeEndpoint, gatewayP
 	if bxConfig.MEVBuilderURI != "" && accountModel.MEVBuilder == "" {
 		return nil, nil, fmt.Errorf(
 			"account %v is not allowed for mev builder service, closing the gateway. Please contact support@bloxroute.com to enable running as mev builder",
-			accountModel.AccountID,
-		)
-	}
-
-	if bxConfig.MEVMinerURI != "" && accountModel.MEVMiner == "" {
-		return nil, nil, fmt.Errorf(
-			"account %v is not allowed for mev miner service, closing the gateway. Please contact support@bloxroute.com to enable running as mev miner",
 			accountModel.AccountID,
 		)
 	}
@@ -374,25 +366,36 @@ func (g *gateway) Run() error {
 	g.stats = statistics.NewStats(g.BxConfig.FluentDEnabled, g.BxConfig.FluentDHost, g.sdn.NodeID(), g.sdn.Networks(), g.BxConfig.LogNetworkContent)
 
 	sslCert := g.sslCerts
-	g.feedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	g.wsFeedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	g.gRPCFeedChans = servers.GRPCFeeds{
+		NewTxsFeed:     make(chan *pb.TxsReply, bxgateway.BxNotificationChannelSize),
+		PendingTxsFeed: make(chan *pb.TxsReply, bxgateway.BxNotificationChannelSize),
+		NewBlocksFeed:  make(chan *pb.BlocksReply, bxgateway.BxNotificationChannelSize),
+		BdnBlocksFeed:  make(chan *pb.BlocksReply, bxgateway.BxNotificationChannelSize),
+	}
 
 	blockchainNetwork, err := g.sdn.FindNetwork(networkNum)
 	if err != nil {
 		return fmt.Errorf("failed to find the blockchainNetwork with networkNum %v, %v", networkNum, err)
 	}
 
-	g.feedManager = servers.NewFeedManager(g.context, g, g.feedChan, services.NewNoOpSubscriptionServices(), networkNum,
+	g.feedManager = servers.NewFeedManager(g.context, g, g.wsFeedChan, g.gRPCFeedChans, services.NewNoOpSubscriptionServices(), networkNum,
 		blockchainNetwork.DefaultAttributes.NetworkID, g.sdn.NodeModel().NodeID,
 		g.wsManager, accountModel, g.sdn.FetchCustomerAccountModel,
 		sslCert.PrivateCertFile(), sslCert.PrivateKeyFile(), *g.BxConfig, g.stats, g.nextValidatorMap, g.validatorStatusMap,
 	)
+
+	// start feed manager if websocket or gRPC is enabled
+	if g.BxConfig.WebsocketEnabled || g.BxConfig.WebsocketTLSEnabled || g.BxConfig.GRPC.Enabled {
+		g.feedManager.Start()
+	}
+
 	if g.BxConfig.WebsocketEnabled || g.BxConfig.WebsocketTLSEnabled {
 		clientHandler := servers.NewClientHandler(g.feedManager, nil, servers.NewHTTPServer(g.feedManager, g.BxConfig.HTTPPort), g.BxConfig.EnableBlockchainRPC, g.sdn.GetQuotaUsage, log.WithFields(log.Fields{
 			"component": "gatewayClientHandler",
-		}))
+		}), &g.BxConfig.PendingTxsSourceFromNode)
 		go clientHandler.ManageWSServer(g.BxConfig.ManageWSServer)
 		go clientHandler.ManageHTTPServer(g.context)
-		g.feedManager.Start()
 	}
 
 	if err = log.InitFluentD(g.BxConfig.FluentDEnabled, g.BxConfig.FluentDHost, string(g.sdn.NodeID()), logrus.InfoLevel); err != nil {
@@ -792,6 +795,7 @@ func (g *gateway) publishBlock(bxBlock *types.BxBlock, nodeSource *connections.B
 	if nodeSource == nil {
 		upscale_client.BlockTransactions(extractTxsFromBlock(bxBlock))
 	}
+
 	// publishing a block means extracting the sender for all the block transactions which is heavy.
 	// if there are no active block related feed subscribers we can skip this.
 	if !g.feedManager.NeedBlocks() {
@@ -847,6 +851,10 @@ func (g *gateway) notifyBlockFeeds(bxBlock *types.BxBlock, nodeSource *connectio
 			notification := ethNotification.Clone()
 			notification.SetNotificationType(types.BDNBlocksFeed)
 			g.notify(notification)
+
+			// Waits response from node WS provider
+			// Because it is in goroutine time will not be present in handleDuration
+			go g.notifyTxReceiptsAndOnBlockFeeds(nodeSource, ethNotification)
 		} else {
 			log.Tracef("duplicate ETH block %v from %v for bdnBlocks", block.Hash(), nodeSource)
 		}
@@ -858,22 +866,6 @@ func (g *gateway) notifyBlockFeeds(bxBlock *types.BxBlock, nodeSource *connectio
 
 				notification := ethNotification.Clone()
 				notification.SetNotificationType(types.NewBlocksFeed)
-				g.notify(notification)
-
-				notification = ethNotification.Clone()
-				notification.SetNotificationType(types.OnBlockFeed)
-				if nodeSource != nil {
-					sourceEndpoint := nodeSource.NodeEndpoint()
-					notification.SetSource(&sourceEndpoint)
-				}
-				g.notify(notification)
-
-				notification = ethNotification.Clone()
-				notification.SetNotificationType(types.TxReceiptsFeed)
-				if nodeSource != nil {
-					sourceEndpoint := nodeSource.NodeEndpoint()
-					notification.SetSource(&sourceEndpoint)
-				}
 				g.notify(notification)
 			} else {
 				log.Tracef("duplicate ETH block %v from %v for newBlocks", block.Hash(), nodeSource)
@@ -921,6 +913,31 @@ func (g *gateway) notifyBlockFeeds(bxBlock *types.BxBlock, nodeSource *connectio
 	}
 
 	return nil
+}
+
+func (g *gateway) notifyTxReceiptsAndOnBlockFeeds(nodeSource *connections.Blockchain, ethNotification *types.EthBlockNotification) {
+	var nodeEndpoint *types.NodeEndpoint
+	if nodeSource != nil { // from blockchain node
+		e := nodeSource.NodeEndpoint()
+		nodeEndpoint = &e
+	}
+
+	wsProvider, ok := g.wsManager.ProviderWithBlock(nodeEndpoint, ethNotification.Header.GetNumber())
+	if !ok {
+		return
+	}
+
+	sourceEndpoint := wsProvider.BlockchainPeerEndpoint()
+
+	notification := ethNotification.Clone()
+	notification.SetNotificationType(types.OnBlockFeed)
+	notification.SetSource(&sourceEndpoint)
+	g.notify(notification)
+
+	notification = ethNotification.Clone()
+	notification.SetNotificationType(types.TxReceiptsFeed)
+	notification.SetSource(&sourceEndpoint)
+	g.notify(notification)
 }
 
 func (g *gateway) publishPendingTx(txHash types.SHA256Hash, bxTx *types.BxTransaction, fromNode bool) {
@@ -1011,28 +1028,36 @@ func (g *gateway) handleBridgeMessages() error {
 				}
 			}, "ReceiveTransactionHashesAnnouncement", txAnnouncement.PeerID, int64(len(txAnnouncement.Hashes)))
 		case _ = <-g.bridge.ReceiveNoActiveBlockchainPeersAlert():
-			if !g.sdn.AccountTier().IsElite() {
+			// either gateway is none elite and running no active p2p blockchain connection
+			// or gateway is not running with web3 bridge enabled (currently enterprise and above)
+			if !g.sdn.AccountTier().IsElite() && !(g.BxConfig.EnableBlockchainRPC && g.sdn.AccountTier().IsEnterprise()) {
 				// TODO should fix code to stop gateway appropriately
 				log.Errorf("Gateway does not have an active blockchain connection. Enterprise-Elite account is required in order to run gateway without a blockchain node.")
 				log.Exit(0)
 			}
 		case confirmBlock := <-g.bridge.ReceiveConfirmedBlockFromNode():
-			traceIfSlow(func() {
-				bcnfMsg := bxmessage.BlockConfirmation{}
-				txList := make(types.SHA256HashList, 0, len(confirmBlock.Block.Txs))
-				for _, tx := range confirmBlock.Block.Txs {
-					txList = append(txList, tx.Hash())
-				}
+			if !g.BxConfig.NoBlocks {
+				traceIfSlow(func() {
+					bcnfMsg := bxmessage.BlockConfirmation{}
+					txList := make(types.SHA256HashList, 0, len(confirmBlock.Block.Txs))
+					for _, tx := range confirmBlock.Block.Txs {
+						txList = append(txList, tx.Hash())
+					}
 
-				bcnfMsg.Hashes = txList
-				bcnfMsg.SetNetworkNum(g.sdn.NetworkNum())
-				bcnfMsg.SetHash(confirmBlock.Block.Hash())
-				blockchainConnection := connections.NewBlockchainConn(confirmBlock.PeerEndpoint)
-				g.HandleMsg(&bcnfMsg, blockchainConnection, connections.RunBackground)
-			}, "ReceiveConfirmedBlockFromNode", confirmBlock.PeerEndpoint.String(), 1)
+					bcnfMsg.Hashes = txList
+					bcnfMsg.SetNetworkNum(g.sdn.NetworkNum())
+					bcnfMsg.SetHash(confirmBlock.Block.Hash())
+					blockchainConnection := connections.NewBlockchainConn(confirmBlock.PeerEndpoint)
+					if err = g.HandleMsg(&bcnfMsg, blockchainConnection, connections.RunBackground); err != nil {
+						log.Errorf("Error handling block confirmation message: %v", err)
+					}
+				}, "ReceiveConfirmedBlockFromNode", confirmBlock.PeerEndpoint.String(), 1)
+			}
 		case blockchainBlock := <-g.bridge.ReceiveBlockFromNode():
-			traceIfSlow(func() { g.handleBlockFromBlockchain(blockchainBlock) },
-				"handleBlockFromBlockchain", blockchainBlock.PeerEndpoint.String(), 1)
+			if !g.BxConfig.NoBlocks {
+				traceIfSlow(func() { g.handleBlockFromBlockchain(blockchainBlock) },
+					"handleBlockFromBlockchain", blockchainBlock.PeerEndpoint.String(), 1)
+			}
 		}
 	}
 }
@@ -1040,16 +1065,16 @@ func (g *gateway) handleBridgeMessages() error {
 func (g *gateway) NodeStatus() connections.NodeStatus {
 	var capabilities types.CapabilityFlags
 
-	if g.BxConfig.MEVBuilderURI != "" {
+	if g.BxConfig.MEVBuilderURI != "" || len(g.BxConfig.MEVBuilders) > 0 {
 		capabilities |= types.CapabilityMEVBuilder
-	}
-
-	if g.BxConfig.MEVMinerURI != "" {
-		capabilities |= types.CapabilityMEVMiner
 	}
 
 	if g.BxConfig.GatewayMode.IsBDN() {
 		capabilities |= types.CapabilityBDN
+	}
+
+	if g.BxConfig.EnableBlockchainRPC {
+		capabilities |= types.CapabilityBlockchainRPCEnabled
 	}
 
 	return connections.NodeStatus{
@@ -1072,7 +1097,9 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 		g.processValidatorUpdate(typedMsg, source)
 	case *bxmessage.Broadcast:
 		// handle in a go-routing so tx flow from relay will not be delayed
-		go g.processBroadcast(typedMsg, source)
+		if !g.BxConfig.NoBlocks {
+			go g.processBroadcast(typedMsg, source)
+		}
 	case *bxmessage.RefreshBlockchainNetwork:
 		go g.processBlockchainNetworkUpdate(source)
 	case *bxmessage.Txs:
@@ -1085,8 +1112,6 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 		err = g.Bx.HandleMsg(msg, source)
 	case *bxmessage.MEVBundle:
 		go g.handleMEVBundleMessage(*typedMsg, source)
-	case *bxmessage.MEVSearcher:
-		go g.handleMEVSearcherMessage(*typedMsg, source)
 	case *bxmessage.ErrorNotification:
 		source.Log().Errorf("received an error notification %v. terminating the gateway", typedMsg.Reason)
 		// TODO should also close the gateway while notify the bridge and other go routine (web socket server, ...)
@@ -1158,9 +1183,6 @@ func (g *gateway) gatewayHasBlockchainConnection() bool {
 
 func (g *gateway) processBroadcast(broadcastMsg *bxmessage.Broadcast, source connections.Conn) {
 	startTime := time.Now()
-	// update the next block time
-	blockTime, _ := bxgateway.NetworkToBlockDuration[g.BxConfig.BlockchainNetwork]
-	g.nextBlockTime = startTime.Add(blockTime).Round(time.Second)
 	bxBlock, missingShortIDs, err := g.blockProcessor.BxBlockFromBroadcast(broadcastMsg)
 	if err != nil {
 		switch err {
@@ -1203,6 +1225,9 @@ func (g *gateway) processBroadcast(broadcastMsg *bxmessage.Broadcast, source con
 
 		return
 	}
+
+	// update the next block time
+	g.nextBlockTime = startTime.Add(g.blockTime).Round(time.Second)
 
 	source.Log().Infof("processing %v from BDN, block number: %v", broadcastMsg, bxBlock.Number)
 	g.processBlockFromBDN(bxBlock)
@@ -1250,29 +1275,40 @@ func (g *gateway) processValidatorUpdate(msg *bxmessage.ValidatorUpdates, source
 }
 
 func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) {
+	var (
+		sentToBDN            bool
+		sentToBlockchainNode bool
+
+		frontRunProtectionDelay time.Duration
+
+		broadcastRes types.BroadcastResults
+
+		eventName = "TxProcessedByGatewayFromPeerIgnoreSeen"
+	)
+
 	startTime := time.Now()
-	networkDuration := startTime.Sub(tx.Timestamp()).Microseconds()
-	sentToBlockchainNode := false
-	sentToBDN := false
-	connectionType := source.GetConnectionType()
-	nodeID := source.GetNodeID()
 	peerIP := source.GetPeerIP()
 	peerPort := source.GetPeerPort()
 	sourceEndpoint := types.NodeEndpoint{IP: peerIP, Port: int(peerPort), PublicKey: source.GetPeerEnode()}
-	connEndpoint, ok := source.(connections.EndpointConn)
-	frontRunProtectionDelay := time.Duration(0)
-	if ok {
+
+	if connEndpoint, ok := source.(connections.EndpointConn); ok {
 		sourceEndpoint = connEndpoint.NodeEndpoint()
 	}
-	var broadcastRes types.BroadcastResults
+
 	upscale_client.AddTransactionEvents(sourceEndpoint.ID, upscale_client.TX, 1)
 
+	connectionType := source.GetConnectionType()
 	isRelay := connections.IsRelay(connectionType)
-	isGrpc := connections.IsGrpc(connectionType)
+
 	sender := tx.Sender()
 	// we add the transaction to TxStore with current time, so we can measure time difference to node announcement/confirmation
-	txResult := g.TxStore.Add(tx.Hash(), tx.Content(), tx.ShortID(), tx.GetNetworkNum(), !(isRelay || (isGrpc && sender != types.EmptySender)), tx.Flags(), g.clock.Now(), 0, sender)
-	eventName := "TxProcessedByGatewayFromPeerIgnoreSeen"
+	txResult := g.TxStore.Add(tx.Hash(), tx.Content(), tx.ShortID(), tx.GetNetworkNum(), !(isRelay || (connections.IsGrpc(connectionType) && sender != types.EmptySender)), tx.Flags(), g.clock.Now(), 0, sender)
+
+	if !txResult.FailedValidation && !txResult.NewSID {
+		upscale_client.TransactionAdded(tx.Hash().String(), sourceEndpoint.ID, isRelay)
+	}
+
+	nodeID := source.GetNodeID()
 
 	switch {
 	case txResult.FailedValidation:
@@ -1285,9 +1321,6 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 	case txResult.NewContent || txResult.NewSID || txResult.Reprocess:
 		eventName = "TxProcessedByGatewayFromPeer"
 		if txResult.NewContent || txResult.Reprocess {
-			if txResult.NewContent {
-				upscale_client.TransactionAdded(tx.Hash().String(), sourceEndpoint.ID)
-			}
 			validatorsOnlyTxFromCloudAPI := connectionType == utils.CloudAPI && tx.Flags().IsValidatorsOnly()
 			nextValidatorTxFromCloudAPI := connectionType == utils.CloudAPI && tx.Flags().IsNextValidator()
 			if txResult.NewContent && !tx.Flags().IsValidatorsOnly() && !tx.Flags().IsNextValidator() {
@@ -1355,12 +1388,8 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 				}
 			}
 
-			shouldSendTxFromNodeToOtherNodes := connectionType == utils.Blockchain && len(g.blockchainPeers) > 1
-			// send to node if all are true
-			shouldSendTxFromBDNToNodes := len(g.blockchainPeers) > 0 && // Gateway is connected to nodes
-				connectionType != utils.Blockchain && // Transaction is not from blockchain node (transaction is from Relay or RPC)
-				((!g.BxConfig.BlocksOnly && tx.Flags().ShouldDeliverToNode()) || // (Gateway didn't start with blocks only mode and DeliverToNode flag is on) OR
-					(g.BxConfig.AllTransactions && !validatorsOnlyTxFromCloudAPI && !nextValidatorTxFromCloudAPI)) // OR (Gateway started with a flag to send all transactions and the tx is not sent from Cloud API for validators only)
+			shouldSendTxFromNodeToOtherNodes := connectionType == utils.Blockchain && len(g.blockchainPeers) > 1 && !g.BxConfig.NoTxsToBlockchain
+			shouldSendTxFromBDNToNodes := g.shouldSendTxFromBDNToNodes(connectionType, tx, validatorsOnlyTxFromCloudAPI, nextValidatorTxFromCloudAPI) && !g.BxConfig.NoTxsToBlockchain
 
 			if shouldSendTxFromNodeToOtherNodes || shouldSendTxFromBDNToNodes {
 				txsToDeliverToNodes := blockchain.Transactions{
@@ -1370,17 +1399,17 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 				}
 
 				// Check for front run protection, if tx arrive too earlier, we send it with delay, if arrive too late, do not send to node
-				if tx.Flags().IsFrontRunningProtection() {
+				if !tx.Flags().IsNextValidatorRebroadcast() && tx.Flags().IsFrontRunningProtection() && tx.Flags().IsNextValidator() {
 					now := time.Now()
 					deadline := g.nextBlockTime.Add(-time.Millisecond * time.Duration(g.transactionSlotEndDuration))
 					slotBegin := g.nextBlockTime.Add(-time.Millisecond * time.Duration(g.transactionSlotStartDuration))
 					if now.Before(slotBegin) {
 						frontRunProtectionDelay = slotBegin.Sub(now)
 						sentToBlockchainNode = true
-						log.Debugf("received next validator tx %v before slot start %v, wait for %v to prevent front running", tx.String(), slotBegin.String(), frontRunProtectionDelay.String())
+						log.Debugf("received next validator tx %v before slot start (%v), next block time is %v, wait for %v to prevent front running", tx.String(), slotBegin.String(), g.nextBlockTime.String(), frontRunProtectionDelay.String())
 					} else if now.After(deadline) {
 						sentToBlockchainNode = false
-						log.Errorf("received next validator tx %v after slot deadline %v, will not send the tx", tx.String(), deadline.String())
+						log.Errorf("received next validator tx %v from %v after slot deadline (%v), next block time is %v, will not send the tx", tx.String(), source.GetPeerIP(), deadline.String(), g.nextBlockTime.String())
 						break
 					}
 
@@ -1424,7 +1453,11 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 				g.bdnStats.LogNewTxFromBDN()
 			}
 
-			g.txTrace.Log(tx.Hash(), source)
+			// in case this is just a transaction with new short id,
+			// it should not be logged
+			if !txResult.NewSID {
+				g.txTrace.Log(tx.Hash(), source)
+			}
 		}
 	default:
 		// duplicate transaction
@@ -1445,13 +1478,31 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 	log.Tracef(
 		"msgTx: from %v, hash %v, nonce %v, flags %v, new Tx %v, new content %v, new shortid %v, event %v,"+
 			" sentToBDN: %v, sentPeersNum %v, sentToBlockchainNode: %v, handling duration %v, sender %v,"+
-			" networkDuration %v statsDuration %v, nextValidator enabled %v,fallback duration %v,"+
+			" networkDuration %v, statsDuration %v, nextValidator enabled %v,fallback duration %v,"+
 			" next validator fallback %v, front run protection delay %v",
 		source, tx.Hash(), txResult.Nonce, tx.Flags(), txResult.NewTx, txResult.NewContent, txResult.NewSID, eventName,
-		sentToBDN, broadcastRes.SentPeers, sentToBlockchainNode, time.Since(startTime), txResult.Transaction.Sender(),
-		networkDuration, statsDuration, tx.Flags().IsNextValidator(), tx.Fallback(),
+		sentToBDN, broadcastRes.SentPeers, sentToBlockchainNode, g.clock.Now().Sub(startTime), txResult.Transaction.Sender(),
+		startTime.Sub(tx.Timestamp()).Microseconds(), statsDuration, tx.Flags().IsNextValidator(), tx.Fallback(),
 		tx.Flags().IsNextValidatorRebroadcast(), frontRunProtectionDelay.String(),
 	)
+}
+
+// shouldSendTxFromBDNToNodes send to node if all are true
+func (g *gateway) shouldSendTxFromBDNToNodes(connectionType utils.NodeType, tx *bxmessage.Tx, validatorsOnlyTxFromCloudAPI bool, nextValidatorTxFromCloudAPI bool) (send bool) {
+	if connectionType == utils.Blockchain {
+		return // Transaction is from blockchain node (transaction is not from Relay or RPC)
+	}
+
+	if len(g.blockchainPeers) == 0 {
+		return // Gateway is not connected to nodes
+	}
+
+	if (!g.BxConfig.BlocksOnly && tx.Flags().ShouldDeliverToNode()) || // (Gateway didn't start with blocks only mode and DeliverToNode flag is on) OR
+		(g.BxConfig.AllTransactions && !validatorsOnlyTxFromCloudAPI && !nextValidatorTxFromCloudAPI) { // OR (Gateway started with a flag to send all transactions and the tx is not sent from Cloud API for validators only)
+		send = true
+	}
+
+	return
 }
 
 func (g *gateway) updateValidatorStateMap() {
@@ -1543,139 +1594,40 @@ func (g *gateway) processBlockFromBDN(bxBlock *types.BxBlock) {
 func (g *gateway) notify(notification types.Notification) {
 	if g.BxConfig.WebsocketEnabled || g.BxConfig.WebsocketTLSEnabled {
 		select {
-		case g.feedChan <- notification:
+		case g.wsFeedChan <- notification:
 		default:
 			log.Warnf("gateway feed channel is full. Can't add %v without blocking. Ignoring hash %v", reflect.TypeOf(notification), notification.GetHash())
 		}
 	}
+	if g.BxConfig.GRPC.Enabled {
+		g.notifyGRPCFeeds(&notification)
+	}
 }
 
-func (g gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source connections.Conn) {
+func (g *gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source connections.Conn) {
 	start := time.Now()
-	event := "ignore seen"
 	broadcastRes := types.BroadcastResults{}
 
-	if g.seenMEVMinerBundles.SetIfAbsent(mevBundle.Hash().String(), time.Minute*30) {
-		event = "broadcast"
-		if connections.IsRelay(source.GetConnectionType()) {
-			if g.BxConfig.MEVMinerURI == "" {
-				log.Warnf("received mevBundle message, but mev miner uri is empty. Message %v from %v in network %v", mevBundle.Hash(), mevBundle.SourceID(), mevBundle.GetNetworkNum())
-				return
-			}
-
-			// we can override method name based on flag when gateway starts
-			if mevBundle.Method == string(jsonrpc.RPCEthSendBundle) {
-				mevBundle.Method = g.BxConfig.MevMinerSendBundleMethodName
-			}
-			if mevBundle.Method == string(jsonrpc.RPCEthSendMegaBundle) && !g.BxConfig.ProcessMegaBundle {
-				source.Log().Debugf("received megaBundle message. Message %v from %v in network %v", mevBundle.Hash(), mevBundle.SourceID(), mevBundle.GetNetworkNum())
-				return
-			}
-
-			// TODO: check the usage of mevBundle.ID and is it ok to set it to "1"
-			mevBundle.ID, mevBundle.JSONRPC = "1", "2.0"
-			mevRPC, err := json.Marshal(mevBundle)
-			if err != nil {
-				source.Log().Errorf("failed to create new mevBundle http request for: %v, hash: %v, %v", g.BxConfig.MEVMinerURI, mevBundle.Hash(), err)
-				return
-			}
-
-			resp, err := g.mevClient.Post(g.BxConfig.MEVMinerURI, "application/json", bytes.NewReader(mevRPC))
-			if err != nil {
-				source.Log().Errorf("failed to perform mevBundle request for: %v, hash: %v, %v", g.BxConfig.MEVMinerURI, mevBundle.Hash(), err)
-				return
-			}
-
-			defer resp.Body.Close()
-			respBody, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				source.Log().Errorf("failed to read mevBundle response, hash: %v, %v", mevBundle.Hash(), err)
-				return
-			}
-
-			if resp.StatusCode != http.StatusOK {
-				source.Log().Errorf("invalid mevBundle status code from: %v, hash: %v, code: %v", g.BxConfig.MEVMinerURI, mevBundle.Hash(), resp.StatusCode)
-				return
-			}
-
-			source.Log().Tracef("%v mevBundle message hash %v to mev miner, duration: %v, response: %v", event, mevBundle.Hash(), time.Since(start).Milliseconds(), string(respBody))
-			return
-		}
-
-		// sending message from mev-relay to BDN. Gateway set the hash and network that relays will use.
-		broadcastRes = g.broadcast(&mevBundle, source, utils.RelayTransaction)
+	if !g.seenMEVBundles.SetIfAbsent(mevBundle.Hash().String(), time.Minute*30) {
+		source.Log().Tracef("%v mevBundle message hash: %v in network %v to relays, result: [%v], duration: %v ms, time in network: %v ms", ignoreSeenEvent, mevBundle.BundleHash, mevBundle.GetNetworkNum(), broadcastRes, time.Since(start).Milliseconds(), start.Sub(mevBundle.PerformanceTimestamp).Milliseconds())
+		return
 	}
 
-	source.Log().Tracef("%v mevBundle message msg: %v in network %v to relays, result: [%v], duration: %v", event, mevBundle.Hash(), mevBundle.GetNetworkNum(), broadcastRes, time.Since(start).Milliseconds())
-}
+	var event string
+	if connections.IsRelay(source.GetConnectionType()) {
+		event = "forward"
 
-// TODO: think about remove code duplication and merge this func with handleMEVBundleMessage
-func (g gateway) handleMEVSearcherMessage(mevSearcher bxmessage.MEVSearcher, source connections.Conn) {
-	start := time.Now()
-	event := "ignore seen"
-	broadcastRes := types.BroadcastResults{}
-
-	if g.seenMEVSearchers.SetIfAbsent(mevSearcher.Hash().String(), time.Minute*30) {
-		event = "broadcast"
-		if connections.IsRelay(source.GetConnectionType()) {
-			if g.BxConfig.MEVBuilderURI == "" {
-				log.Warnf("received mevSearcher message, but mev-builder-uri is empty. Message %v from %v in network %v", mevSearcher.Hash(), mevSearcher.SourceID(), mevSearcher.GetNetworkNum())
-				return
-			}
-
-			if !g.BxConfig.MEVMaxProfitBuilder && mevSearcher.Frontrunning {
-				return
-			}
-
-			mevSearcher.ID, mevSearcher.JSONRPC = "1", "2.0"
-			mevRPC, err := json.Marshal(mevSearcher)
-			if err != nil {
-				log.Errorf("failed to marshal mevSearcher payload for: %v, hash: %v, params: %v, error: %v", g.BxConfig.MEVBuilderURI, mevSearcher.Hash(), string(mevSearcher.Params), err)
-				return
-			}
-
-			req, err := http.NewRequest(http.MethodPost, g.BxConfig.MEVBuilderURI, bytes.NewReader(mevRPC))
-			if err != nil {
-				log.Errorf("failed to create new mevSearcher http request for: %v, hash: %v, %v", g.BxConfig.MEVBuilderURI, mevSearcher.Hash(), err)
-				return
-			}
-			req.Header.Add("Content-Type", "application/json")
-
-			// For this case we always have only 1 element
-			var mevSearcherAuth string
-			for _, auth := range mevSearcher.Auth() {
-				mevSearcherAuth = auth
-				break
-			}
-
-			req.Header.Add(flashbotAuthHeader, mevSearcherAuth)
-			resp, err := g.mevClient.Do(req)
-			if err != nil {
-				log.Errorf("failed to perform mevSearcher request for: %v, hash: %v, %v", g.BxConfig.MEVBuilderURI, mevSearcher.Hash(), err)
-				return
-			}
-
-			defer resp.Body.Close()
-			respBody, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				source.Log().Errorf("failed to read mevSearcher response, hash: %v, %v", mevSearcher.Hash(), err)
-				return
-			}
-
-			if resp.StatusCode != http.StatusOK {
-				log.Errorf("invalid mevSearcher status code from: %v, hash: %v, code: %v", g.BxConfig.MEVBuilderURI, mevSearcher.Hash(), resp.StatusCode)
-				return
-			}
-
-			source.Log().Tracef("%v mevSearcher message hash %v to mev relay, duration: %v, response: %v", event, mevSearcher.Hash(), time.Since(start).Milliseconds(), string(respBody))
-			return
+		if err := g.mevBundleDispatcher.Dispatch(&mevBundle); err != nil {
+			log.Errorf("failed to dispatch mev bundle %v: %v", mevBundle.BundleHash, err)
 		}
-
-		// sending message from searcher to BDN. Gateway set the hash and network that relays will use.
-		broadcastRes = g.broadcast(&mevSearcher, source, utils.RelayTransaction)
+	} else {
+		event = "broadcast"
+		// set timestamp as late as possible.
+		mevBundle.PerformanceTimestamp = time.Now()
+		broadcastRes = g.broadcast(&mevBundle, source, utils.RelayTransaction|utils.RelayProxy)
 	}
 
-	source.Log().Tracef("%v mevSearcher message msg: %v in network %v to relays, result: [%v], duration: %v", event, mevSearcher.Hash(), mevSearcher.GetNetworkNum(), broadcastRes, time.Since(start).Milliseconds())
+	source.Log().Tracef("%v mevBundle message hash: %v in network %v to relays, result: [%v], duration: %v ms, time in network: %v ms", event, mevBundle.BundleHash, mevBundle.GetNetworkNum(), broadcastRes, time.Since(start).Milliseconds(), start.Sub(mevBundle.PerformanceTimestamp).Milliseconds())
 }
 
 func (g *gateway) Peers(ctx context.Context, req *pb.PeersRequest) (*pb.PeersReply, error) {
@@ -1930,10 +1882,7 @@ func (g *gateway) BlxrBatchTX(_ context.Context, req *pb.BlxrBatchTXRequest) (*p
 				continue
 			}
 			g.feedManager.LockPendingNextValidatorTxs()
-			validTx, pendingReevaluation, err := servers.ValidateTxFromExternalSource(
-				tx, txContent, req.ValidatorsOnly, blockchainNetwork.DefaultAttributes.NetworkID,
-				req.NextValidator, uint16(req.Fallback), g.nextValidatorMap, g.validatorStatusMap, networkNum,
-				accountID, req.NodeValidation, g.wsManager, grpc, g.feedManager.GetPendingNextValidatorTxs(), false)
+			validTx, pendingReevaluation, err := servers.ValidateTxFromExternalSource(tx, txContent, req.ValidatorsOnly, blockchainNetwork.DefaultAttributes.NetworkID, req.NextValidator, uint16(req.Fallback), g.nextValidatorMap, g.validatorStatusMap, networkNum, accountID, req.NodeValidation, g.wsManager, grpc, g.feedManager.GetPendingNextValidatorTxs(), false)
 			g.feedManager.UnlockPendingNextValidatorTxs()
 			if err != nil {
 				txErrors = append(txErrors, &pb.ErrorIndex{Idx: int32(idx), Error: err.Error()})
@@ -1980,65 +1929,71 @@ func (g *gateway) handleBlockchainConnectionStatusUpdate() {
 		if _, ok := g.bdnStats.NodeStats()[blockchainConnectionStatus.PeerEndpoint.IPPort()]; ok {
 			g.bdnStats.NodeStats()[blockchainConnectionStatus.PeerEndpoint.IPPort()].IsConnected = blockchainConnectionStatus.IsConnected
 		}
+
+		if blockchainConnectionStatus.IsDynamic {
+			continue
+		}
+
 		blockchainIP := blockchainConnectionStatus.PeerEndpoint.IP
 		blockchainPort := blockchainConnectionStatus.PeerEndpoint.Port
-		if !blockchainConnectionStatus.IsDynamic {
-			// check if gateway is connected to a relay
-			if blockchainConnectionStatus.IsConnected {
-				g.sdn.SendNodeEvent(
-					sdnmessage.NewBlockchainNodeConnEstablishedEvent(
-						g.sdn.NodeID(),
-						blockchainIP,
-						blockchainPort,
-						g.clock.Now().String(),
-						blockchainConnectionStatus.PeerEndpoint.Version,
-						blockchainConnectionStatus.PeerEndpoint.Name,
-					),
-					g.sdn.NodeID(),
-				)
-				// check if gateway has relay connection
-				if !g.sdn.AccountModel().Miner {
-					return
-				}
-				var isConnectedRelay bool
-				for _, conn := range g.Connections {
-					if connections.IsRelay(conn.GetConnectionType()) {
-						isConnectedRelay = true
-					}
-				}
-				if isConnectedRelay {
-					g.sdn.SendNodeEvent(
-						sdnmessage.NewAddAccessibleGatewayEvent(g.sdn.NodeID(), fmt.Sprintf(
-							"gateway %v (%v) from account %v established connection with node %v:%v",
-							g.sdn.NodeModel().ExternalIP, g.sdn.NodeID(), g.accountID, blockchainIP, int64(blockchainPort),
-						), g.clock.Now().String()),
-						g.sdn.NodeID())
-				} else {
-					g.sdn.SendNodeEvent(
-						sdnmessage.NewRemoveAccessibleGatewayEvent(g.sdn.NodeID(), fmt.Sprintf(
-							"gateway %v (%v) from account %v established connection with node %v:%v but not connected to any relay",
-							g.sdn.NodeModel().ExternalIP, g.sdn.NodeID(), g.accountID, blockchainIP, int64(blockchainPort),
-						), g.clock.Now().String()),
-						g.sdn.NodeID())
-				}
-			} else {
-				g.sdn.SendNodeEvent(
-					sdnmessage.NewBlockchainNodeConnError(g.sdn.NodeID(), blockchainIP, blockchainPort, g.clock.Now().String()),
-					g.sdn.NodeID(),
-				)
-				if g.sdn.AccountModel().Miner && !g.gatewayHasBlockchainConnection() {
-					go func() {
-						// check if gateway doesn't have any other node connections
-						g.sdn.SendNodeEvent(
-							sdnmessage.NewRemoveAccessibleGatewayEvent(g.sdn.NodeID(), fmt.Sprintf(
-								"gateway %v (%v) from account %v is not connected to any node",
-								g.sdn.NodeModel().ExternalIP, g.sdn.NodeID(), g.accountID,
-							), g.clock.Now().String()),
-							g.sdn.NodeID())
 
-					}()
+		// check if gateway is connected to a relay
+		if blockchainConnectionStatus.IsConnected {
+			g.sdn.SendNodeEvent(
+				sdnmessage.NewBlockchainNodeConnEstablishedEvent(
+					g.sdn.NodeID(),
+					blockchainIP,
+					blockchainPort,
+					g.clock.Now().String(),
+					blockchainConnectionStatus.PeerEndpoint.Version,
+					blockchainConnectionStatus.PeerEndpoint.Name,
+				),
+				g.sdn.NodeID(),
+			)
+			// check if gateway has relay connection
+			if !g.sdn.AccountModel().Miner {
+				continue
+			}
+			var isConnectedRelay bool
+			for _, conn := range g.Connections {
+				if connections.IsRelay(conn.GetConnectionType()) {
+					isConnectedRelay = true
 				}
 			}
+			if isConnectedRelay {
+				g.sdn.SendNodeEvent(
+					sdnmessage.NewAddAccessibleGatewayEvent(g.sdn.NodeID(), fmt.Sprintf(
+						"gateway %v (%v) from account %v established connection with node %v:%v",
+						g.sdn.NodeModel().ExternalIP, g.sdn.NodeID(), g.accountID, blockchainIP, int64(blockchainPort),
+					), g.clock.Now().String()),
+					g.sdn.NodeID())
+			} else {
+				g.sdn.SendNodeEvent(
+					sdnmessage.NewRemoveAccessibleGatewayEvent(g.sdn.NodeID(), fmt.Sprintf(
+						"gateway %v (%v) from account %v established connection with node %v:%v but not connected to any relay",
+						g.sdn.NodeModel().ExternalIP, g.sdn.NodeID(), g.accountID, blockchainIP, int64(blockchainPort),
+					), g.clock.Now().String()),
+					g.sdn.NodeID())
+			}
+
+			continue
+		}
+
+		g.sdn.SendNodeEvent(
+			sdnmessage.NewBlockchainNodeConnError(g.sdn.NodeID(), blockchainIP, blockchainPort, g.clock.Now().String()),
+			g.sdn.NodeID(),
+		)
+		if g.sdn.AccountModel().Miner && !g.gatewayHasBlockchainConnection() {
+			go func() {
+				// check if gateway doesn't have any other node connections
+				g.sdn.SendNodeEvent(
+					sdnmessage.NewRemoveAccessibleGatewayEvent(g.sdn.NodeID(), fmt.Sprintf(
+						"gateway %v (%v) from account %v is not connected to any node",
+						g.sdn.NodeModel().ExternalIP, g.sdn.NodeID(), g.accountID,
+					), g.clock.Now().String()),
+					g.sdn.NodeID())
+
+			}()
 		}
 	}
 }
@@ -2057,8 +2012,7 @@ func traceIfSlow(f func(), name string, from string, count int64) {
 	}
 }
 
-func generateTx(notification *types.Notification, subscriptionID *uuid.UUID) *pb.Tx {
-	tx := (*notification).(*types.NewTransactionNotification)
+func generateTx(tx *types.NewTransactionNotification) *pb.Tx {
 	err := tx.MakeBlockchainTransaction()
 	if err != nil {
 		return nil
@@ -2066,83 +2020,456 @@ func generateTx(notification *types.Notification, subscriptionID *uuid.UUID) *pb
 	if tx.BlockchainTransaction != nil {
 		ethTx := tx.BlockchainTransaction.(*types.EthTransaction)
 		generatedTx := ethTx.CreateFieldsGRPC()
-		generatedTx.LocalRegion = fmt.Sprint(tx.LocalRegion())
-		generatedTx.Time = time.Now().Format(bxgateway.MicroSecTimeFormat)
-		generatedTx.SubscriptionID = subscriptionID.String()
-		generatedTx.RawTx = hexutil.Encode(tx.RawTx())
+		generatedTx.LocalRegion = tx.LocalRegion()
+		generatedTx.Time = time.Now().UnixNano()
+		generatedTx.RawTx = tx.RawTx()
+		generatedTx.AccessList = createAccessListGRPC(ethTx.AccessList())
 		return generatedTx
 	}
 	return nil
 }
 
-// send expr instead of req
-func filterAndIncludeGRPC(expr conditions.Expr, filters string, tx *types.NewTransactionNotification) bool {
-	if filters != "" {
-		if expr != nil {
-			txFilters := tx.Filters(expr.Args())
-			if txFilters == nil {
-				return false
-			}
+func filterTxGRPCNotification(tx *pb.Tx, expr conditions.Expr) (bool, error) {
+	if expr == nil {
+		return true, nil
+	}
+	filters := make(map[string]interface{})
 
-			shouldSend, err := conditions.Evaluate(expr, txFilters)
-			if err != nil {
-				log.Errorf("error evaluate Filters")
-				return false
-			}
-			if !shouldSend {
-				return false
-			}
+	if tx.GasPrice != "" {
+		gasPrice, err := hexutil.DecodeBig(tx.GasPrice)
+		if err != nil {
+			return false, fmt.Errorf("error converting gas price tx gRPC filter to BigInt [gasPrice: %v] err: %v", tx.GasPrice, err)
 		}
+		filters["gas_price"] = types.BigIntAsFloat64(gasPrice)
+	} else {
+		filters["gas_price"] = 0
 	}
 
-	return true
+	filters["from"] = tx.From
+	filters["to"] = tx.To
+
+	if tx.Value != "" {
+		value, err := hexutil.DecodeBig(tx.Value)
+		if err != nil {
+			return false, fmt.Errorf("error converting value tx gRPC filter to BigInt [value: %v] err: %v", tx.Value, err)
+		}
+		filters["value"] = types.BigIntAsFloat64(value)
+	} else {
+		filters["value"] = 0
+	}
+
+	methodID := tx.Input
+	if len(methodID) >= 10 {
+		filters["method_id"] = "0x" + methodID[2:10]
+	} else {
+		filters["method_id"] = methodID
+	}
+
+	shouldSend, err := conditions.Evaluate(expr, filters)
+	if err != nil {
+		return false, fmt.Errorf("error evaluating tx gRPC filters [expr: %v, filters: %+v] err: %v", expr, filters, err)
+	}
+	return shouldSend, nil
 }
 
-func (g *gateway) NewTxs(req *pb.NewTxsRequest, stream pb.Gateway_NewTxsServer) error {
+func createExprFromFilters(filters string) conditions.Expr {
 	var expr conditions.Expr
 	var err error
-	if req.GetFilters() != "" {
-		// Parse the condition language and get expression
-		_, expr, err = servers.ParseFilter(req.GetFilters())
-		if err != nil {
-			log.Debugf("error parsing Filters from method: subscribe. params: %v. error - %v", req.GetFilters(), err)
-			return nil
-
-		}
-		err = servers.EvaluateFilters(expr)
-		if err != nil {
-			log.Debugf("error evaluated Filters from method: subscribe. params: %s. error - %v", expr, err)
-			return nil
-		}
-		if expr != nil {
-			log.Infof("GetTxContentAndFilters string - %s, GetTxContentAndFilters args - %s", expr, expr.Args())
-		}
-	}
-
-	sub, err := g.feedManager.Subscribe("newTxs", nil, g.sdn.AccountModel().TierName, g.sdn.AccountModel().AccountID, "", req.GetFilters(), "", "")
+	_, expr, err = servers.ParseFilter(filters)
 	if err != nil {
-		return errors.New("failed to subscribe newTxs using gRPC")
+		log.Debugf("error parsing Filters from method: subscribe. params: %v. error - %v", filters, err)
+		return nil
 	}
+	if expr == nil {
+		return nil
+	}
+	if expr == nil {
+		return nil
+	}
+	err = servers.EvaluateFilters(expr)
+	if err != nil {
+		log.Debugf("error evaluated Filters from method: subscribe. params: %s. error - %v", expr, err)
+		return nil
+	}
+	log.Infof("GetTxContentAndFilters string - %s, GetTxContentAndFilters args - %s", expr, expr.Args())
+	return expr
+}
+
+func applyTxIncludes(tx *pb.Tx, includes []string) (*pb.Tx, error) {
+	txWithIncludes := pb.Tx{}
+	for _, param := range includes {
+		parts := strings.Split(param, ".")
+		numParts := len(parts)
+		if numParts == 1 {
+			switch param {
+			case "tx_hash":
+				txWithIncludes.Hash = tx.Hash
+			case "local_region":
+				txWithIncludes.LocalRegion = tx.LocalRegion
+			case "raw_tx":
+				txWithIncludes.RawTx = tx.RawTx
+			default:
+				return nil, fmt.Errorf("unrecognized include param [%v]", param)
+			}
+		} else if numParts == 2 {
+			param = parts[1]
+			switch param {
+			case "from":
+				txWithIncludes.From = tx.From
+			case "to":
+				txWithIncludes.To = tx.To
+			case "nonce":
+				txWithIncludes.Nonce = tx.Nonce
+			case "input":
+				txWithIncludes.Input = tx.Input
+			case "v":
+				txWithIncludes.V = tx.V
+			case "r":
+				txWithIncludes.R = tx.R
+			case "s":
+				txWithIncludes.S = tx.S
+			case "type":
+				txWithIncludes.Type = tx.Type
+			case "value":
+				txWithIncludes.Value = tx.Value
+			case "gas":
+				txWithIncludes.Gas = tx.Gas
+			case "gas_price":
+				txWithIncludes.GasPrice = tx.GasPrice
+			case "max_priority_fee_per_gas":
+				txWithIncludes.MaxPriorityFeePerGas = tx.MaxPriorityFeePerGas
+			case "max_fee_per_gas":
+				txWithIncludes.MaxFeePerGas = tx.MaxFeePerGas
+			case "chain_id":
+				txWithIncludes.ChainID = tx.ChainID
+			default:
+				return nil, fmt.Errorf("unrecognized include param [%v]", param)
+			}
+		} else {
+			return nil, fmt.Errorf("include param in unexpected format [%v]: not applying includes", param)
+		}
+	}
+	return &txWithIncludes, nil
+}
+
+func (g *gateway) notifyGRPCFeeds(n *types.Notification) {
+	switch (*n).NotificationType() {
+	case types.NewTxsFeed:
+		txReply := &pb.TxsReply{}
+		tx := generateTx((*n).(*types.NewTransactionNotification))
+		if tx != nil {
+			txReply.Tx = append(txReply.Tx, tx)
+			select {
+			case g.gRPCFeedChans.NewTxsFeed <- txReply:
+			default:
+				log.Warn("NewTxsFeed channel is full, dropping notification to the GRPC feed")
+			}
+		}
+	case types.PendingTxsFeed:
+		txReply := &pb.TxsReply{}
+		tx := generateTx(&(*n).(*types.PendingTransactionNotification).NewTransactionNotification)
+		if tx != nil {
+			txReply.Tx = append(txReply.Tx, tx)
+			select {
+			case g.gRPCFeedChans.PendingTxsFeed <- txReply:
+			default:
+				log.Warn("PendingTxsFeed channel is full, dropping notification to the GRPC feed")
+			}
+		}
+	case types.NewBlocksFeed:
+		newBlocksNotification := (*n).(*types.EthBlockNotification)
+		blocksReply := generateBlockReplyGRPC(newBlocksNotification)
+		select {
+		case g.gRPCFeedChans.NewBlocksFeed <- blocksReply:
+		default:
+			log.Warn("NewBlocksFeed channel is full, dropping notification to the GRPC feed")
+		}
+	case types.BDNBlocksFeed:
+		bdnBlocksNotification := (*n).(*types.EthBlockNotification)
+		blocksReply := generateBlockReplyGRPC(bdnBlocksNotification)
+		select {
+		case g.gRPCFeedChans.BdnBlocksFeed <- blocksReply:
+		default:
+			log.Warn("BdnBlocksFeed channel is full, dropping notification to the GRPC feed")
+		}
+	}
+}
+
+// createTxReplyWithNeededFields we only want to send raw tx, sender, time and local region, so we create new reply with only this fields
+func createTxReplyWithNeededFields(txReply *pb.TxsReply) *pb.TxsReply {
+	var response pb.TxsReply
+	txWithNeededFields := &pb.Tx{
+		Time:        txReply.Tx[0].Time,
+		LocalRegion: txReply.Tx[0].LocalRegion,
+		RawTx:       txReply.Tx[0].RawTx,
+		From:        txReply.Tx[0].From,
+	}
+	response.Tx = append(response.Tx, txWithNeededFields)
+
+	return &response
+}
+
+func (g *gateway) NewTxs(req *pb.TxsRequest, stream pb.Gateway_NewTxsServer) error {
+	var expr conditions.Expr
+	if req.GetFilters() != "" {
+		expr = createExprFromFilters(req.GetFilters())
+	}
+
+	sub, err := g.feedManager.Subscribe(types.NewTxsFeed, types.GRPCFeed, nil, g.sdn.AccountModel().TierName, g.sdn.AccountModel().AccountID, "", req.GetFilters(), "", "", false)
+	if err != nil {
+		return errors.New("failed to subscribe to gRPC newTxs")
+	}
+	defer g.feedManager.Unsubscribe(sub.SubscriptionID, true, "")
+
 	for {
 		select {
-		case notification, ok := <-(*sub.FeedChan):
+		case notification, ok := <-sub.FeedChan:
 			if !ok {
-				return errors.New("error when reading new notification")
+				return errors.New("error when reading new notification for gRPC newTxs")
 			}
-			newTxNotification := (*notification).(*types.NewTransactionNotification)
-			if filterAndIncludeGRPC(expr, req.GetFilters(), newTxNotification) {
-				txsList := &pb.NewTxsReply{}
-				tx := generateTx(notification, sub.SubscriptionID)
-				if tx != nil {
-					txsList.Tx = append(txsList.Tx, tx)
-					err = stream.Send(txsList)
+			txsReply := notification.(*pb.TxsReply)
+			tx := txsReply.Tx[0]
+			tx.SubscriptionID = sub.SubscriptionID
+			shouldSend, filtersErr := filterTxGRPCNotification(tx, expr)
+			if shouldSend {
+				includes := req.GetIncludes()
+				if includes != nil && len(includes) > 0 {
+					txWithIncludes, err := applyTxIncludes(tx, includes)
 					if err != nil {
 						return err
 					}
+					txsReply.Tx[0] = txWithIncludes
 				}
+				txWithNeededFields := createTxReplyWithNeededFields(txsReply)
+				err = stream.Send(txWithNeededFields)
+				if err != nil {
+					return err
+				}
+			} else if filtersErr != nil {
+				log.Errorf(filtersErr.Error())
+				return filtersErr
 			}
 		}
 	}
+}
+
+func (g *gateway) PendingTxs(req *pb.TxsRequest, stream pb.Gateway_PendingTxsServer) error {
+	var expr conditions.Expr
+	if req.GetFilters() != "" {
+		expr = createExprFromFilters(req.GetFilters())
+	}
+
+	sub, err := g.feedManager.Subscribe(types.PendingTxsFeed, types.GRPCFeed, nil, g.sdn.AccountModel().TierName, g.sdn.AccountModel().AccountID, "", req.GetFilters(), "", "", false)
+	if err != nil {
+		return errors.New("failed to subscribe to gRPC pendingTxs")
+	}
+	defer g.feedManager.Unsubscribe(sub.SubscriptionID, false, "")
+
+	for {
+		select {
+		case notification, ok := <-sub.FeedChan:
+			if !ok {
+				return errors.New("error when reading new notification for gRPC pendingTxs")
+			}
+			txsReply := notification.(*pb.TxsReply)
+			tx := txsReply.Tx[0]
+			tx.SubscriptionID = sub.SubscriptionID
+			shouldSend, filtersErr := filterTxGRPCNotification(tx, expr)
+			if shouldSend {
+				includes := req.GetIncludes()
+				if includes != nil && len(includes) > 0 {
+					txWithIncludes, err := applyTxIncludes(tx, includes)
+					if err != nil {
+						return err
+					}
+					txsReply.Tx[0] = txWithIncludes
+				}
+				txWithNeededFields := createTxReplyWithNeededFields(txsReply)
+				err = stream.Send(txWithNeededFields)
+				if err != nil {
+					return err
+				}
+			} else if filtersErr != nil {
+				log.Errorf(filtersErr.Error())
+				return filtersErr
+			}
+		}
+	}
+}
+
+func (g *gateway) NewBlocks(req *pb.BlocksRequest, stream pb.Gateway_NewBlocksServer) error {
+	sub, err := g.feedManager.Subscribe(types.NewBlocksFeed, types.GRPCFeed, nil, g.sdn.AccountModel().TierName, g.sdn.AccountModel().AccountID, "", "", "", "", false)
+	if err != nil {
+		return errors.New("failed to subscribe to gRPC newBlocks")
+	}
+	defer g.feedManager.Unsubscribe(sub.SubscriptionID, false, "")
+
+	for {
+		select {
+		case notification, ok := <-sub.FeedChan:
+			if !ok {
+				return errors.New("error when reading new notification for gRPC newBlocks")
+			}
+			blocksReply := notification.(*pb.BlocksReply)
+			blocksReply.SubscriptionID = sub.SubscriptionID
+			includes := req.GetIncludes()
+			if len(includes) > 0 {
+				applyBlockIncludes(blocksReply, includes)
+			}
+			err = stream.Send(blocksReply)
+			if err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func (g *gateway) BdnBlocks(req *pb.BlocksRequest, stream pb.Gateway_BdnBlocksServer) error {
+	sub, err := g.feedManager.Subscribe(types.BDNBlocksFeed, types.GRPCFeed, nil, g.sdn.AccountModel().TierName, g.sdn.AccountModel().AccountID, "", "", "", "", false)
+	if err != nil {
+		return errors.New("failed to subscribe to gRPC bdnBlocks")
+	}
+	defer g.feedManager.Unsubscribe(sub.SubscriptionID, false, "")
+
+	for {
+		select {
+		case notification, ok := <-sub.FeedChan:
+			if !ok {
+				return errors.New("error when reading new notification for gRPC bdnBlocks")
+			}
+			blocksReply := notification.(*pb.BlocksReply)
+			blocksReply.SubscriptionID = sub.SubscriptionID
+			includes := req.GetIncludes()
+			if len(includes) > 0 {
+				applyBlockIncludes(blocksReply, includes)
+			}
+			err = stream.Send(blocksReply)
+			if err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func applyBlockIncludes(reply *pb.BlocksReply, includes []string) {
+	if !utils.Exists("hash", includes) {
+		reply.Hash = ""
+	}
+	if !utils.Exists("header", includes) {
+		reply.Header = nil
+	}
+	if !utils.Exists("transactions", includes) {
+		reply.Transaction = nil
+	}
+	if !utils.Exists("future_validator_info", includes) {
+		reply.FutureValidatorInfo = nil
+	}
+}
+
+func createAccessListGRPC(accessList ethtypes.AccessList) []*pb.AccessTuple {
+	if accessList == nil {
+		return nil
+	}
+	var accessListGRPC []*pb.AccessTuple
+	for _, accessTuple := range accessList {
+		var storageKeys []string
+		for _, storageKey := range accessTuple.StorageKeys {
+			storageKeys = append(storageKeys, storageKey.String())
+		}
+		accessListGRPC = append(accessListGRPC, &pb.AccessTuple{
+			Address:     strings.ToLower(accessTuple.Address.String()),
+			StorageKeys: storageKeys,
+		})
+	}
+	return accessListGRPC
+}
+
+func generateBlockReplyHeader(h *types.Header) *pb.BlockHeader {
+	blockReplyHeader := pb.BlockHeader{}
+	blockReplyHeader.ParentHash = h.ParentHash.String()
+	blockReplyHeader.Sha3Uncles = h.Sha3Uncles.String()
+	blockReplyHeader.Miner = strings.ToLower(h.Miner.String())
+	blockReplyHeader.StateRoot = h.StateRoot.String()
+	blockReplyHeader.TransactionsRoot = h.TransactionsRoot.String()
+	blockReplyHeader.ReceiptsRoot = h.ReceiptsRoot.String()
+	blockReplyHeader.LogsBloom = h.LogsBloom
+	blockReplyHeader.Difficulty = h.Difficulty
+	blockReplyHeader.Number = h.Number
+	blockReplyHeader.GasLimit = h.GasLimit
+	blockReplyHeader.GasUsed = h.GasUsed
+	blockReplyHeader.Timestamp = h.Timestamp
+	blockReplyHeader.ExtraData = h.ExtraData
+	blockReplyHeader.MixHash = h.MixHash.String()
+	if h.WithdrawalsHash != nil {
+		blockReplyHeader.WithdrawalsRoot = h.WithdrawalsHash.String()
+	}
+	if h.BaseFee != nil {
+		blockReplyHeader.BaseFeePerGas = strconv.FormatInt(int64(*h.BaseFee), 10)
+	}
+	return &blockReplyHeader
+}
+
+func convertStringToHex(tx string) []byte {
+	if len(tx) > 2 && tx[:2] == "0x" {
+		tx = tx[2:]
+	}
+
+	hexBytes, err := hex.DecodeString(tx)
+	if err != nil {
+		log.Errorf("Error decoding hexadecimal string: %v", err)
+		hexBytes = nil
+	}
+	return hexBytes
+}
+
+func generateBlockReplyGRPC(n *types.EthBlockNotification) *pb.BlocksReply {
+	blockReply := &pb.BlocksReply{}
+	blockReply.Hash = n.BlockHash.String()
+	blockReply.Header = generateBlockReplyHeader(n.Header)
+	for _, vi := range n.ValidatorInfo {
+		blockReply.FutureValidatorInfo = append(blockReply.FutureValidatorInfo, &pb.FutureValidatorInfo{
+			BlockHeight: strconv.FormatUint(vi.BlockHeight, 10),
+			WalletId:    vi.WalletID,
+			Accessible:  strconv.FormatBool(vi.Accessible),
+		})
+	}
+	for _, tx := range n.Transactions {
+		blockTx := &pb.Tx{
+			Hash:  tx["hash"].(string),
+			Nonce: tx["nonce"].(string),
+			Value: tx["value"].(string),
+			Input: tx["input"].(string),
+			V:     tx["v"].(string),
+			R:     tx["r"].(string),
+			S:     tx["s"].(string),
+			From:  convertStringToHex(tx["from"].(string)),
+			Type:  tx["type"].(string),
+		}
+		if chainID, exists := tx["chainId"]; exists {
+			blockTx.ChainID = chainID.(string)
+		}
+		if gasPrice, exists := tx["gasPrice"]; exists {
+			blockTx.GasPrice = gasPrice.(string)
+		}
+		if gas, exists := tx["gas"]; exists {
+			blockTx.Gas = gas.(string)
+		}
+		if to, exists := tx["to"]; exists {
+			blockTx.To = to.(string)
+		}
+		if maxFeePerGas, exists := tx["maxFeePerGas"]; exists {
+			blockTx.MaxFeePerGas = maxFeePerGas.(string)
+		}
+		if maxPriorityFeePerGas, exists := tx["maxPriorityFeePerGas"]; exists {
+			blockTx.MaxPriorityFeePerGas = maxPriorityFeePerGas.(string)
+		}
+		if accessList, exists := tx["accessList"]; exists {
+			blockTx.AccessList = createAccessListGRPC(accessList.(ethtypes.AccessList))
+		}
+
+		blockReply.Transaction = append(blockReply.Transaction, blockTx)
+	}
+	return blockReply
 }
 
 func forwardBSCTx(conn *http.Client, txHash string, tx string, endpoint string, rpcType string) {

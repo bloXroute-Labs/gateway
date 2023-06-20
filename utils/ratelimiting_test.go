@@ -2,12 +2,13 @@ package utils
 
 import (
 	"fmt"
+	"testing"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/sirupsen/logrus"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
-	"testing"
-	"time"
 )
 
 func TestLeakyBucketRateLimiter_refill(t *testing.T) {

@@ -2,11 +2,12 @@ package test
 
 import (
 	"fmt"
+	"math/rand"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/ethereum/go-ethereum/p2p/enode"
-	"math/rand"
 )
 
 // GenerateEnodeID randomly creates an enode for testing purposes

@@ -2,14 +2,15 @@ package test
 
 import (
 	"encoding/json"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"math/rand"
 	"os"
 	"regexp"
 	"strings"
 	"sync"
+
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
 // MarshallJSONToMap is a test utility for serializing a struct to JSON while easily being able to assert on its contents
@@ -77,4 +78,17 @@ func ToSnakeCase(str string) string {
 func ConfigureLogger(level log.Level) {
 	log.SetLevel(level)
 	log.SetOutput(os.Stdout)
+}
+
+// MapsEqual util function to check if two maps are equal
+func MapsEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if b[k] != v {
+			return false
+		}
+	}
+	return true
 }

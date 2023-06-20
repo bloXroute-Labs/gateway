@@ -2,10 +2,11 @@ package utils
 
 import (
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/v2/test"
 	"io/ioutil"
 	"os"
 	"path"
+
+	"github.com/bloXroute-Labs/gateway/v2/test"
 )
 
 // TestCerts uses the test certs specified in constants to return an utils.SSLCerts object for connection testing

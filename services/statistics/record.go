@@ -3,7 +3,6 @@ package statistics
 import (
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	uuid "github.com/satori/go.uuid"
 )
 
 // Record represents a bloxroute style stat type record
@@ -89,7 +88,7 @@ type txExtraData struct {
 }
 
 type subscribeRecord struct {
-	SubscriptionID *uuid.UUID             `json:"subscription_id"`
+	SubscriptionID string                 `json:"subscription_id"`
 	Type           string                 `json:"type"`
 	Event          string                 `json:"event"`
 	FeedFilters    string                 `json:"feed_filters"`
@@ -103,7 +102,7 @@ type subscribeRecord struct {
 }
 
 type unsubscribeRecord struct {
-	SubscriptionID *uuid.UUID             `json:"subscription_id"`
+	SubscriptionID string                 `json:"subscription_id"`
 	Type           string                 `json:"type"`
 	Event          string                 `json:"event"`
 	FeedName       types.FeedType         `json:"feed_name"`

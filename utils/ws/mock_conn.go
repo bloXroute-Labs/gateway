@@ -1,8 +1,10 @@
 package ws
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+
 	"github.com/sourcegraph/jsonrpc2"
 )
 
@@ -11,21 +13,17 @@ type mockConn struct {
 	currentRequestID chan string
 }
 
-func (mockWS *mockConn) ReadMessage() (messageType int, p []byte, err error) {
+func (mockWS *mockConn) ReadMessage(ctx context.Context) ([]byte, error) {
 	requestID, ok := <-mockWS.currentRequestID
 	if !ok {
-		return 0, nil, errors.New("mock ws connection closed")
+		return nil, errors.New("mock ws connection closed")
 	}
 
 	resp := jsonrpc2.Response{Result: (*json.RawMessage)(&mockWS.responseBytes), Error: nil, ID: jsonrpc2.ID{Str: requestID, IsString: true}}
-	json, err := resp.MarshalJSON()
-	if err != nil {
-		return 0, nil, err
-	}
-	return 1, json, nil
+	return resp.MarshalJSON()
 }
 
-func (mockWS *mockConn) WriteMessage(messageType int, data []byte) error {
+func (mockWS *mockConn) WriteMessage(ctx context.Context, data []byte) error {
 	req := jsonrpc2.Request{}
 	err := json.Unmarshal(data, &req)
 	if err != nil {
@@ -37,7 +35,7 @@ func (mockWS *mockConn) WriteMessage(messageType int, data []byte) error {
 	return nil
 }
 
-func (mockWS *mockConn) WriteJSON(v interface{}) error {
+func (mockWS *mockConn) WriteJSON(ctx context.Context, v interface{}) error {
 	req, ok := v.(jsonrpc2.Request)
 	if !ok {
 		return errors.New("not jsonrpc2 request")
@@ -46,6 +44,21 @@ func (mockWS *mockConn) WriteJSON(v interface{}) error {
 	mockWS.currentRequestID <- req.ID.Str
 
 	return nil
+}
+
+func (mockWS *mockConn) ReadJSON(ctx context.Context, v interface{}) error {
+	requestID, ok := <-mockWS.currentRequestID
+	if !ok {
+		return errors.New("mock ws connection closed")
+	}
+
+	resp := jsonrpc2.Response{Result: (*json.RawMessage)(&mockWS.responseBytes), Error: nil, ID: jsonrpc2.ID{Str: requestID, IsString: true}}
+	data, err := resp.MarshalJSON()
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(data, &v)
 }
 
 func (mockWS *mockConn) Close() error {

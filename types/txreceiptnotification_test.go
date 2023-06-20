@@ -1,9 +1,10 @@
 package types
 
 import (
+	"testing"
+
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 var txReceiptMap = map[string]interface{}{
@@ -25,10 +26,10 @@ var txReceiptMap = map[string]interface{}{
 
 var validTxReceiptParams = []string{"block_hash", "block_number", "contract_address",
 	"cumulative_gas_used", "effective_gas_price", "from", "gas_used", "logs", "logs_bloom",
-	"status", "to", "transaction_hash", "transaction_index", "type"}
+	"status", "to", "transaction_hash", "transaction_index", "type", "txs_count"}
 
 func TestTxReceiptNotification(t *testing.T) {
-	txReceiptNotification := NewTxReceiptNotification(txReceiptMap)
+	txReceiptNotification := NewTxReceiptNotification(txReceiptMap, "0x0")
 
 	txReceiptWithFields := txReceiptNotification.WithFields(validTxReceiptParams)
 
@@ -48,7 +49,7 @@ func TestTxReceiptNotification(t *testing.T) {
 }
 
 func TestTxReceiptNotificationWithoutToField(t *testing.T) {
-	txReceiptNotification := NewTxReceiptNotification(txReceiptMap)
+	txReceiptNotification := NewTxReceiptNotification(txReceiptMap, "0x0")
 
 	txReceiptWithFields := txReceiptNotification.WithFields([]string{"transaction_hash"})
 
@@ -70,7 +71,7 @@ func TestContractCreationTxReceipt(t *testing.T) {
 	}
 	contractCreationReceiptMap["to"] = nil
 
-	txReceiptNotification := NewTxReceiptNotification(contractCreationReceiptMap)
+	txReceiptNotification := NewTxReceiptNotification(contractCreationReceiptMap, "0x0")
 
 	txReceiptWithFields := txReceiptNotification.WithFields([]string{"to", "from"})
 

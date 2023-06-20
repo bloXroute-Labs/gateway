@@ -2,8 +2,9 @@ package bxmessage
 
 import (
 	"encoding/binary"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"time"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // Ping initiates a ping for connection liveliness

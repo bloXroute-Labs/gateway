@@ -2,11 +2,12 @@ package servers
 
 import (
 	"fmt"
+	"net/http"
+
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/gorilla/websocket"
 	"github.com/sourcegraph/jsonrpc2"
 	websocketjsonrpc2 "github.com/sourcegraph/jsonrpc2/websocket"
-	"net/http"
 )
 
 // WebsocketRPCServer represents a simple RPC server

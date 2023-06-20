@@ -1,10 +1,11 @@
 package bxmessage
 
 import (
-	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestPackUnpackTimeStamp(t *testing.T) {

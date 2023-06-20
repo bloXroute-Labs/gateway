@@ -3,7 +3,6 @@ package services
 import (
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	baseutils "github.com/bloXroute-Labs/gateway/v2/utils"
-	uuid "github.com/satori/go.uuid"
 )
 
 // SubscriptionServices provides interface to core subscription management functions
@@ -11,7 +10,7 @@ type SubscriptionServices interface {
 	IsSubscriptionAllowed(*sdnmessage.SubscriptionModel) (bool, string, chan *sdnmessage.SubscriptionPermissionMessage)
 	SendUnsubscribeNotification(*sdnmessage.SubscriptionModel)
 	SendSubscriptionResetNotification([]sdnmessage.SubscriptionModel)
-	GenerateSubscriptionID() uuid.UUID
+	GenerateSubscriptionID(bool) string
 }
 
 // NoOpSubscriptionServices no-op implementation of SubscriptionServices interface
@@ -40,6 +39,11 @@ func (n NoOpSubscriptionServices) SendSubscriptionResetNotification([]sdnmessage
 }
 
 // GenerateSubscriptionID generate uuid
-func (n NoOpSubscriptionServices) GenerateSubscriptionID() uuid.UUID {
+func (n NoOpSubscriptionServices) GenerateSubscriptionID(ethSubscribe bool) string {
+	if ethSubscribe {
+		u128, _ := baseutils.GenerateU128()
+		return u128
+	}
+
 	return baseutils.GenerateUUID()
 }

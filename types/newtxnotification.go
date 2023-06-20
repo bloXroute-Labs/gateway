@@ -2,10 +2,11 @@ package types
 
 import (
 	"fmt"
+	"sync"
+
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
-	"sync"
 )
 
 // TxValidationStatus indicates the validation status of transaction notifications

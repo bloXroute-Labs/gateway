@@ -27,10 +27,11 @@ type txReceipt struct {
 	TransactionHash   string        `json:"transaction_hash,omitempty"`
 	TransactionIndex  string        `json:"transaction_index,omitempty"`
 	TxType            string        `json:"type,omitempty"`
+	TxsCount          string        `json:"txs_count,omitempty"`
 }
 
 // NewTxReceiptNotification returns a new TxReceiptNotification
-func NewTxReceiptNotification(txReceipt map[string]interface{}) *TxReceiptNotification {
+func NewTxReceiptNotification(txReceipt map[string]interface{}, txsCount string) *TxReceiptNotification {
 	txReceiptNotification := TxReceiptNotification{}
 
 	blockHash, ok := txReceipt["blockHash"]
@@ -103,6 +104,8 @@ func NewTxReceiptNotification(txReceipt map[string]interface{}) *TxReceiptNotifi
 		txReceiptNotification.receipt.TxType = txType.(string)
 	}
 
+	txReceiptNotification.receipt.TxsCount = txsCount
+
 	return &txReceiptNotification
 }
 
@@ -154,6 +157,8 @@ func (r *TxReceiptNotification) WithFields(fields []string) Notification {
 			txReceiptNotification.receipt.TransactionIndex = r.receipt.TransactionIndex
 		case "type":
 			txReceiptNotification.receipt.TxType = r.receipt.TxType
+		case "txs_count":
+			txReceiptNotification.receipt.TxsCount = r.receipt.TxsCount
 		}
 	}
 	return &txReceiptNotification

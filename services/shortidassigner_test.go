@@ -1,8 +1,9 @@
 package services
 
 import (
-	"github.com/bmizerany/assert"
 	"testing"
+
+	"github.com/bmizerany/assert"
 )
 
 func TestShortIDAssigner(t *testing.T) {

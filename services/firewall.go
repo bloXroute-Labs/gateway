@@ -2,12 +2,13 @@ package services
 
 import (
 	"fmt"
+	"sync"
+	"time"
+
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"sync"
-	"time"
 )
 
 // FirewallRulesCleanupInterval - is cleanup interval for firewall rules

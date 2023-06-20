@@ -319,9 +319,10 @@ var (
 		Name:  "mev-builder-uri",
 		Usage: "set mev builder for gateway",
 	}
-	MEVMinerURIFlag = &cli.StringFlag{
-		Name:  "mev-miner-uri",
-		Usage: "set mev miner for gateway",
+	MEVBuildersFilePathFlag = &cli.StringFlag{
+		Name:   "mev-builders-file-path",
+		Usage:  "set mev builders file path for gateway",
+		Hidden: true,
 	}
 	MEVBundleMethodNameFlag = &cli.StringFlag{
 		Name:  "mev-bundle-method-name",
@@ -403,14 +404,14 @@ var (
 		Usage: "calling method of the forwarding transaction to rpc endpoint",
 		Value: "",
 	}
-	BSCTransactionHoldDuration = &cli.IntFlag{
-		Name: "bsc-transaction-hold-duration",
+	TransactionHoldDuration = &cli.IntFlag{
+		Name: "transaction-hold-duration",
 		Usage: "number of millisecond before next block, marking the starting window time for processing front-running protection transaction on " +
 			"validator gateway",
 		Value: 500,
 	}
-	BSCTransactionPassedDueDuration = &cli.IntFlag{
-		Name: "bsc-transaction-slot-end-duration",
+	TransactionPassedDueDuration = &cli.IntFlag{
+		Name: "transaction-slot-end-duration",
 		Usage: "number of millisecond before next block, marking the ending window time for processing front-running protection transaction on " +
 			"validator gateway",
 		Value: 200,
@@ -419,5 +420,44 @@ var (
 		Name:  "enable-blockchain-rpc",
 		Usage: "forwards blockchain RPC methods to the node and returns node response",
 		Value: false,
+	}
+	DialRatio = &cli.IntFlag{
+		Name:   "dial-ratio",
+		Usage:  "fraction of total peers that are outbound (i.e. 3 will mean 1/3 of total peers should be outbound)",
+		Value:  2,
+		Hidden: true,
+	}
+	CloudAPIAddress = &cli.StringFlag{
+		Name:  "cloud-api-url",
+		Usage: "setting cloudAPI url",
+		Value: "https://mev.api.blxrbdn.com/",
+	}
+	NumRecommendedPeers = &cli.IntFlag{
+		Name:   "num-recommended-peers",
+		Usage:  "number of recommended peers to connect to",
+		Value:  0,
+		Hidden: true,
+	}
+	PendingTxsSourceFromNode = cli.BoolFlag{
+		Name:  "new-pending-txs-source-from-node",
+		Usage: "enable this flag will make the source of newPendingTransactions feed to be node pendingTxs",
+		Value: false,
+	}
+	NoTxsToBlockchain = &cli.BoolFlag{
+		Name:   "no-txs",
+		Usage:  "enable NoTxsToBlockchain for not sending txs to blockchain nodes",
+		Value:  false,
+		Hidden: true,
+	}
+	NoBlocks = &cli.BoolFlag{
+		Name:   "no-blocks",
+		Usage:  "enable no-blocks for not processing blocks",
+		Value:  false,
+		Hidden: true,
+	}
+	BundleSimulationAuthHeader = &cli.StringFlag{
+		Name:     "bundle-simulation-auth-header",
+		Usage:    "provide authorisation header for cloudAPI bundle simulation",
+		Required: true,
 	}
 )

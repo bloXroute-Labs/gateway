@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
@@ -64,6 +65,7 @@ type NodeModel struct {
 	ProgramName               string           `json:"program_name"`
 	RelayType                 types.RelayType  `json:"relay_type"`
 	StartupArgs               string           `json:"startup_args"`
+	BlockchainRPCEnabled      bool             `json:"blockchain_rpc_enabled"`
 }
 
 // Pack serializes a NodeModel into a buffer for sending

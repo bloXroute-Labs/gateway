@@ -2,9 +2,10 @@ package types
 
 import (
 	"encoding/hex"
-	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // example of real tx

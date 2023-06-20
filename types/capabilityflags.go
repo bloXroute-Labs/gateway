@@ -9,4 +9,5 @@ const (
 	CapabilityMEVBuilder
 	CapabilityMEVMiner
 	CapabilityBDN
+	CapabilityBlockchainRPCEnabled
 )

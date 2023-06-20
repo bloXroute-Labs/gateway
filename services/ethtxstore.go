@@ -109,6 +109,7 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 
 	ethTx := blockchainTx.(*types.EthTransaction)
 	result.Nonce = ethTx.Nonce
+
 	seenNonce, otherTx := t.track(ethTx, network)
 	if !seenNonce {
 		return result

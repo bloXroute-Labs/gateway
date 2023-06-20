@@ -58,6 +58,12 @@ const MaxEthOnBlockCallRetries = 2
 // EthOnBlockCallRetrySleepInterval - duration of sleep between RPC call retry attempts
 const EthOnBlockCallRetrySleepInterval = 10 * time.Millisecond
 
+// EthFetchBlockCallRetrySleepInterval - duration of sleep between RPC call retry attempts
+const EthFetchBlockCallRetrySleepInterval = 10 * time.Millisecond
+
+// EthFetchBlockDeadlineInterval - maximum time to wait for fetch block RPC call return block
+const EthFetchBlockDeadlineInterval = 2 * time.Second
+
 // MaxEthTxReceiptCallRetries - max number of retries for eth RPC calls executed for txReceipts feed
 const MaxEthTxReceiptCallRetries = 5
 
@@ -131,6 +137,12 @@ const (
 
 	// ExternalBeaverBuilderName - set beaverbuild external mev builders name
 	ExternalBeaverBuilderName = "beaverbuild"
+
+	// ExternalEdenBuilderName - set eden external mev builders name
+	ExternalEdenBuilderName = "eden"
+
+	// ExternalBlocknativeBuilderName - set blocknative external mev builders name
+	ExternalBlocknativeBuilderName = "blocknative"
 )
 
 // Mainnet - for Ethereum main net blockchain network name
@@ -138,6 +150,9 @@ const Mainnet = "Mainnet"
 
 // BSCMainnet - for BSC main net blockchain network name
 const BSCMainnet = "BSC-Mainnet"
+
+// BSCTestnet - for BSC testnet blockchain network name
+const BSCTestnet = "BSC-Testnet"
 
 // Ropsten - for Ropsten blockchain network name
 const Ropsten = "Ropsten"
@@ -160,6 +175,15 @@ const BSCMainnetNum types.NetworkNum = 10
 // BSCChainID - BSC chain ID
 const BSCChainID = 56
 
+// EthChainID - eth chain ID
+const EthChainID types.NetworkID = 1
+
+// PolygonChainID - polygon chain ID
+const PolygonChainID types.NetworkID = 137
+
+// BSCTestnetChainID - BSC Testnet chain ID
+const BSCTestnetChainID = 97
+
 // PolygonMainnetNum - for Polygon main net blockchain network number
 const PolygonMainnetNum types.NetworkNum = 36
 
@@ -169,6 +193,9 @@ const RopstenNum types.NetworkNum = 32
 // GoerliNum - for Goerli blockchain network number
 const GoerliNum types.NetworkNum = 45
 
+// BSCTestnetNum - for BSC-Testnet blockchain network number
+const BSCTestnetNum types.NetworkNum = 42
+
 // BlockchainNetworkToNetworkNum converts blockchain network to number
 var BlockchainNetworkToNetworkNum = map[string]types.NetworkNum{
 	Mainnet:        MainnetNum,
@@ -176,11 +203,20 @@ var BlockchainNetworkToNetworkNum = map[string]types.NetworkNum{
 	PolygonMainnet: PolygonMainnetNum,
 	Ropsten:        RopstenNum,
 	Goerli:         GoerliNum,
+	BSCTestnet:     BSCTestnetNum,
 }
 
 // NetworkToBlockDuration defines block interval for each network
 var NetworkToBlockDuration = map[string]time.Duration{
 	Mainnet:        12 * time.Second,
 	BSCMainnet:     3 * time.Second,
+	BSCTestnet:     3 * time.Second,
 	PolygonMainnet: 2 * time.Second,
+}
+
+// NetworkToChainID - Mapping from network to chainID
+var NetworkToChainID = map[string]types.NetworkID{
+	Mainnet:        EthChainID,
+	BSCMainnet:     BSCChainID,
+	PolygonMainnet: PolygonChainID,
 }

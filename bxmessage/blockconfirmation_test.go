@@ -1,8 +1,9 @@
 package bxmessage
 
 import (
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestEmptyPackSize(t *testing.T) {

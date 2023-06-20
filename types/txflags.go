@@ -19,6 +19,8 @@ const (
 	TFNextValidator
 	TFNextValidatorRebroadcast
 	TFFrontRunningProtection
+	_
+	_ // [NOTICE] last flag
 
 	TFStatusTrack = TFStatusMonitoring | TFPaidTx
 	TFNonceTrack  = TFNonceMonitoring | TFStatusTrack

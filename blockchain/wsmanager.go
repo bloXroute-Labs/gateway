@@ -12,6 +12,7 @@ type WSManager interface {
 	SyncedProvider() (WSProvider, bool)
 	Provider(nodeEndpoint *types.NodeEndpoint) (WSProvider, bool)
 	Providers() map[string]WSProvider
+	ProviderWithBlock(nodeEndpoint *types.NodeEndpoint, blockNumber uint64) (WSProvider, bool)
 	SetBlockchainPeer(peer interface{}) bool
 	UnsetBlockchainPeer(peerEndpoint types.NodeEndpoint) bool
 	ValidRPCCallMethods() []string

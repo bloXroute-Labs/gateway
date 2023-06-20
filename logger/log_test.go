@@ -1,9 +1,10 @@
 package logger
 
 import (
+	"testing"
+
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestLog_Exit(t *testing.T) {

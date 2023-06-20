@@ -2,7 +2,6 @@ package bor
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -55,28 +54,20 @@ func TestGetSpanIdByHeight(t *testing.T) {
 	height := startSpanHeight - 1
 	targetSpanID := mainTargetSpanID - 1
 
-	t.Run(fmt.Sprintf("%d", height), func(t *testing.T) {
-		resolvedSpanID = GetSpanIDByHeight(height)
-		assert.Equalf(t, targetSpanID, resolvedSpanID, "expected: %d, actual: %d", targetSpanID, resolvedSpanID)
-	})
+	resolvedSpanID = GetSpanIDByHeight(height)
+	assert.Equalf(t, targetSpanID, resolvedSpanID, "expected: %d, actual: %d, height: %d", targetSpanID, resolvedSpanID, height)
 
 	height = startSpanHeight
 	targetSpanID = mainTargetSpanID
 
-	for ; height <= endSpanHeight; height++ {
-		t.Run(fmt.Sprintf("%d", height), func(t *testing.T) {
-			resolvedSpanID = GetSpanIDByHeight(height)
-			assert.Equalf(t, targetSpanID, resolvedSpanID, "expected: %d, actual: %d", targetSpanID, resolvedSpanID)
-		})
-	}
+	resolvedSpanID = GetSpanIDByHeight(height)
+	assert.Equalf(t, targetSpanID, resolvedSpanID, "expected: %d, actual: %d, height: %d", targetSpanID, resolvedSpanID, height)
 
 	height = endSpanHeight + 1
 	targetSpanID = mainTargetSpanID + 1
 
-	t.Run(fmt.Sprintf("%d", height), func(t *testing.T) {
-		resolvedSpanID = GetSpanIDByHeight(height)
-		assert.Equalf(t, targetSpanID, resolvedSpanID, "expected: %d, actual: %d", targetSpanID, resolvedSpanID)
-	})
+	resolvedSpanID = GetSpanIDByHeight(height)
+	assert.Equalf(t, targetSpanID, resolvedSpanID, "expected: %d, actual: %d, height: %d", targetSpanID, resolvedSpanID, height)
 }
 
 func TestSpanStart(t *testing.T) {
@@ -92,11 +83,9 @@ func TestSpanStart(t *testing.T) {
 	}
 
 	for height := startBlock; height <= endBlock; height++ {
-		t.Run(fmt.Sprintf("%d", height), func(t *testing.T) {
-			spanStart := spanStarts[GetSpanIDByHeight(height)]
-			recoveredSpanStart := SpanStart(height)
+		spanStart := spanStarts[GetSpanIDByHeight(height)]
+		recoveredSpanStart := SpanStart(height)
 
-			require.Equal(t, spanStart, recoveredSpanStart)
-		})
+		require.Equal(t, spanStart, recoveredSpanStart, "expected: %d, actual: %d, height: %d", spanStart, recoveredSpanStart, height)
 	}
 }

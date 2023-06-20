@@ -1,12 +1,39 @@
 package eth
 
 import (
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/rpc"
-	"time"
 )
+
+var textBlockMap = map[string]interface{}{
+	"baseFeePerGas":   "0x7ed4d4dd0",
+	"difficulty":      "0x0",
+	"extraData":       "0x496c6c756d696e61746520446d6f63726174697a6520447374726962757465",
+	"gasLimit":        "0x1c9c380",
+	"gasUsed":         "0xa19801",
+	"hash":            "0xa3a4e0f6561d18f1188e714afe13e3e56b7fadd10504193fcf08c76cb651a73c",
+	"logsBloom":       "0xc2212318c10003f9c4ab519c81413c2102417ac32410584274a9b20006168534114712bca6a81820f82c34263c8281c112a1d902ba023d22da700281906d21a0004ef11832025a3cef0044c9bf2498a7af018c0f4562ad8e14871b49c0600aa15a207c71862b0e0734991390812c5b6803d04460212c5c20a42e439ce0b8008559d1cd7b938a088d94ec44e077818e86202417a5a92902ec164429c2a7370800aa4babcd97837919150362b853e7fc43870c05bcbd0694ba0534b4b3843c1767825a06df9c99407b013244f2aa78b784e466646f82bd24707430c33f082224639150385ccd029aa99955041e41700a4c9903953233dc0542096a6e1b8a638764",
+	"miner":           "0xdafea492d9c6733ae3d56b7ed1adb60692c98bc5",
+	"mixHash":         "0x776bd31b55e90d06dd75513af678f6434511a40be7e8bdedaa5f8c5f9b08da22",
+	"nonce":           "0x0000000000000000",
+	"number":          "0x107e107",
+	"parentHash":      "0xf1ae1f4d524a977ef2bc95844dd10aa1ce91ebe5fe8f8f89398d9996479d7250",
+	"receiptsRoot":    "0x4944041b5c0f2bedd593017ce3c55c47aeebd5741e9c17a75244f2cc551869c9",
+	"sha3Uncles":      "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+	"size":            "0xb863",
+	"stateRoot":       "0x6c03b3023115152825e6fb21f95522c3982e48d798a4bd188d5f0e74a0248cab",
+	"timestamp":       "0x64676d47",
+	"totalDifficulty": "0xc70d815d562d3cfa955",
+	"transactions": []interface{}{
+		"0x4df870e552898df04761d6ea87ac848e3c60bfa35a9036b2b4d53ac64730a5b6",
+	},
+	"transactionsRoot": "0x1e1b41dfa3e2549bb76e976dc8296e18aaba570e633fe786c51087dfc19274df",
+	"withdrawalsRoot":  "0x0",
+}
 
 var testTxReceiptMap = map[string]interface{}{
 	"to":                "0x18cf158e1766ca6bdbe2719dace440121b4603b3",
@@ -65,7 +92,7 @@ func (m *MockWSProvider) BlockchainPeer() interface{} {
 }
 
 // Subscribe returns a dummy subscription
-func (m *MockWSProvider) Subscribe(responseChannel interface{}, feedName string) (*blockchain.Subscription, error) {
+func (m *MockWSProvider) Subscribe(responseChannel interface{}, feedName string, args ...interface{}) (*blockchain.Subscription, error) {
 	return &blockchain.Subscription{&rpc.ClientSubscription{}}, nil
 }
 
@@ -94,7 +121,7 @@ func (m *MockWSProvider) FetchTransaction(payload []interface{}, options blockch
 
 // FetchBlock query a block given height via CallRPC
 func (m *MockWSProvider) FetchBlock(_ []interface{}, _ blockchain.RPCOptions) (interface{}, error) {
-	return nil, nil
+	return textBlockMap, nil
 }
 
 // Dial is a no-op

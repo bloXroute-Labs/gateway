@@ -15,7 +15,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/fluent/fluent-logger-golang/fluent"
-	uuid "github.com/satori/go.uuid"
 )
 
 const (
@@ -38,9 +37,9 @@ type Stats interface {
 		startTime time.Time, priority bxmessage.SendPriority, debugData interface{})
 	AddGatewayBlockEvent(name string, source connections.Conn, blockHash, beaconBlockHash types.SHA256Hash, networkNum types.NetworkNum,
 		sentPeers int, startTime time.Time, sentGatewayPeers int, originalSize int, compressSize int, shortIDsCount int, txsCount int, recoveredTxsCount int, block *types.BxBlock)
-	LogSubscribeStats(subscriptionID *uuid.UUID, accountID types.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
+	LogSubscribeStats(subscriptionID string, accountID types.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
 		ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string, feedProject string)
-	LogUnsubscribeStats(subscriptionID *uuid.UUID, feedName types.FeedType, networkNum types.NetworkNum, accountID types.AccountID, tierName sdnmessage.AccountTier)
+	LogUnsubscribeStats(subscriptionID string, feedName types.FeedType, networkNum types.NetworkNum, accountID types.AccountID, tierName sdnmessage.AccountTier)
 }
 
 // NoStats is used to generate empty stats
@@ -64,12 +63,12 @@ func (NoStats) AddTxsByShortIDsEvent(name string, source connections.Conn, txInf
 }
 
 // LogSubscribeStats does nothing
-func (NoStats) LogSubscribeStats(subscriptionID *uuid.UUID, accountID types.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
+func (NoStats) LogSubscribeStats(subscriptionID string, accountID types.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
 	ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string, feedProject string) {
 }
 
 // LogUnsubscribeStats does nothing
-func (NoStats) LogUnsubscribeStats(subscriptionID *uuid.UUID, feedName types.FeedType, networkNum types.NetworkNum, accountID types.AccountID, tierName sdnmessage.AccountTier) {
+func (NoStats) LogUnsubscribeStats(subscriptionID string, feedName types.FeedType, networkNum types.NetworkNum, accountID types.AccountID, tierName sdnmessage.AccountTier) {
 }
 
 // FluentdStats struct that represents fluentd stats info
@@ -301,7 +300,7 @@ func (s FluentdStats) getLogPercentageByHash(networkNum types.NetworkNum) float6
 }
 
 // LogSubscribeStats generates a fluentd STATS event
-func (s FluentdStats) LogSubscribeStats(subscriptionID *uuid.UUID, accountID types.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
+func (s FluentdStats) LogSubscribeStats(subscriptionID string, accountID types.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
 	ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string, feedProject string) {
 	now := time.Now()
 	record := subscribeRecord{
@@ -321,7 +320,7 @@ func (s FluentdStats) LogSubscribeStats(subscriptionID *uuid.UUID, accountID typ
 }
 
 // LogUnsubscribeStats generates a fluentd STATS event
-func (s FluentdStats) LogUnsubscribeStats(subscriptionID *uuid.UUID, feedName types.FeedType, networkNum types.NetworkNum, accountID types.AccountID, tierName sdnmessage.AccountTier) {
+func (s FluentdStats) LogUnsubscribeStats(subscriptionID string, feedName types.FeedType, networkNum types.NetworkNum, accountID types.AccountID, tierName sdnmessage.AccountTier) {
 	now := time.Now()
 	record := unsubscribeRecord{
 		Type:           "subscriptions",

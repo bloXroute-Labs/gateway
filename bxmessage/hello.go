@@ -3,8 +3,9 @@ package bxmessage
 import (
 	"encoding/binary"
 	"encoding/hex"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"strings"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // Hello exchanges node and protocol info when two bloxroute nodes initially connect

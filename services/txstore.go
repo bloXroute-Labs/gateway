@@ -1,9 +1,10 @@
 package services
 
 import (
+	"time"
+
 	pbbase "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"time"
 )
 
 // ReEntryProtectionFlags protect against hash re-entrance

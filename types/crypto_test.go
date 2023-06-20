@@ -3,9 +3,10 @@ package types
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"testing"
+
 	utils2 "github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestSHA256(t *testing.T) {

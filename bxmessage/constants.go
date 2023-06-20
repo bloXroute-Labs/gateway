@@ -86,7 +86,10 @@ const EmptyProtocol = 0
 const MinProtocol = 19
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
-const CurrentProtocol = ShanghaiProtocol
+const CurrentProtocol = BundlesOverBDNProtocol
+
+// BundlesOverBDNProtocol is the minimum protocol version that supports bundles over BDN
+const BundlesOverBDNProtocol = 37
 
 // ShanghaiProtocol is the minimum protocol version that supports Capella blocks
 const ShanghaiProtocol = 36

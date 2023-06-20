@@ -2,13 +2,14 @@ package statistics
 
 import (
 	"encoding/binary"
+	"math/rand"
+	"testing"
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/stretchr/testify/assert"
-	"math/rand"
-	"testing"
-	"time"
 )
 
 func TestShouldLog(t *testing.T) {

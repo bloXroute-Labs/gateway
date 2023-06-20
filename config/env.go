@@ -2,10 +2,11 @@ package config
 
 import (
 	"fmt"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/urfave/cli/v2"
 	"path"
 	"strconv"
+
+	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/urfave/cli/v2"
 )
 
 // Env represents configuration pertaining to a specific development environment
