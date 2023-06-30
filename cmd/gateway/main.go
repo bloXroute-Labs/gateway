@@ -27,6 +27,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/nodes"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
+	httpclient "github.com/bloXroute-Labs/gateway/v2/utils/httpclient"
 	"github.com/bloXroute-Labs/gateway/v2/version"
 )
 
@@ -67,6 +68,7 @@ func main() {
 			utils.BeaconENRFlag,
 			utils.BeaconMultiaddrFlag,
 			utils.PrysmGRPCFlag,
+			utils.BeaconAPIUriFlag,
 			utils.BlocksOnlyFlag,
 			utils.GensisFilePath,
 			utils.AllTransactionsFlag,
@@ -79,7 +81,6 @@ func main() {
 			utils.ManageWSServer,
 			utils.LogNetworkContentFlag,
 			utils.WSTLSFlag,
-			utils.MEVBuilderURIFlag,
 			utils.MEVBuildersFilePathFlag,
 			utils.MEVMaxProfitBuilder,
 			utils.MEVBundleMethodNameFlag,
@@ -97,6 +98,7 @@ func main() {
 			utils.NumRecommendedPeers,
 			utils.NoTxsToBlockchain,
 			utils.NoBlocks,
+			utils.NoStats,
 		},
 		Action: runGateway,
 	}
@@ -206,6 +208,7 @@ func runGateway(c *cli.Context) error {
 	startupBeaconNode := bxConfig.GatewayMode.IsBDN() && len(ethConfig.BeaconNodes()) > 0
 	startupBlockchainClient := startupBeaconNode || len(ethConfig.StaticEnodes()) > 0 || bxConfig.EnableDynamicPeers // if beacon node running we need to receive txs also
 	startupPrysmClient := bxConfig.GatewayMode.IsBDN() && prysmAddr != ""
+	startupBeaconAPIClients := bxConfig.GatewayMode.IsBDN() && len(ethConfig.BeaconAPIEndpoints) > 0
 
 	var bridge blockchain.Bridge
 	if startupBlockchainClient || startupBeaconNode || startupPrysmClient {
@@ -312,6 +315,13 @@ func runGateway(c *cli.Context) error {
 	if startupPrysmClient {
 		prysmClient = beacon.NewPrysmClient(ctx, ethConfig, prysmAddr, bridge, prysmEndpoint)
 		prysmClient.Start()
+	}
+
+	if startupBeaconAPIClients {
+		for _, endpoint := range ethConfig.BeaconAPIEndpoints {
+			beaconAPIClient := beacon.NewAPIClient(ctx, httpclient.Client(nil), ethConfig, bridge, endpoint, blockchainNetwork)
+			beaconAPIClient.Start()
+		}
 	}
 
 	<-sigc

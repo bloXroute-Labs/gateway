@@ -33,7 +33,8 @@ func TestBxConn_BDNIsDefaultForOldProtocol(t *testing.T) {
 
 	helloMessage := bxmessage.Hello{}
 	b, _ := helloMessage.Pack(bxmessage.FlashbotsGatewayProtocol - 1)
-	bx.ProcessMessage(b)
+	msg := bxmessage.NewMessageBytes(b, time.Now())
+	bx.ProcessMessage(msg)
 
 	assert.True(t, bx.capabilities&types.CapabilityBDN != 0)
 }
@@ -53,8 +54,8 @@ func TestBxConn_ClosingFromHandler(t *testing.T) {
 	_, err = tls.MockAdvanceSent()
 	assert.Nil(t, err)
 
-	// expect 2 additional goroutines: read loop, send loop
-	assert.Equal(t, startCount+2, runtime.NumGoroutine())
+	// expect 3 additional goroutines: read loop, send loop and read from receive channel
+	assert.Equal(t, startCount+3, runtime.NumGoroutine())
 
 	// queue message, which should trigger a close
 	helloMessage := bxmessage.Hello{}

@@ -99,10 +99,11 @@ func (r *Relay) addBdnToUpscale() {
 }
 
 // ProcessMessage handles messages received on the relay connection, delegating to the BxListener when appropriate
-func (r *Relay) ProcessMessage(msg bxmessage.MessageBytes) {
+func (r *Relay) ProcessMessage(msgBytes bxmessage.MessageBytes) {
 	var err error
 
-	msgType := msg.BxType()
+	msgType := msgBytes.BxType()
+	msg := msgBytes.Raw()
 	if msgType != bxmessage.TxType {
 		r.Log().Tracef("processing message %v", msgType)
 	}
@@ -112,6 +113,7 @@ func (r *Relay) ProcessMessage(msg bxmessage.MessageBytes) {
 	case bxmessage.TxType:
 		tx := &bxmessage.Tx{}
 		_ = tx.Unpack(msg, r.Protocol())
+		tx.SetMsgMetaData(msgBytes.ReceiveTime(), msgBytes.ProcessingStartTime(), msgBytes.ChannelPosition())
 		_ = r.Node.HandleMsg(tx, r, connections.RunForeground)
 	case bxmessage.HelloType:
 		// if the running program is gw and the connected component is relay - we want to add the relay as an active peer to upscale
@@ -119,7 +121,7 @@ func (r *Relay) ProcessMessage(msg bxmessage.MessageBytes) {
 			connections.IsRelay(r.GetConnectionType()) {
 			r.addBdnToUpscale()
 		}
-		r.BxConn.ProcessMessage(msg)
+		r.BxConn.ProcessMessage(msgBytes)
 		r.syncDoneCount = 0
 		if !r.sendSyncReq {
 			break
@@ -164,7 +166,7 @@ func (r *Relay) ProcessMessage(msg bxmessage.MessageBytes) {
 		err = r.Node.HandleMsg(txs, r, connections.RunForeground)
 	case bxmessage.BlockTxsType:
 	default:
-		r.BxConn.ProcessMessage(msg)
+		r.BxConn.ProcessMessage(msgBytes)
 	}
 
 	if err != nil {

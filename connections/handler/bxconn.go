@@ -17,7 +17,8 @@ import (
 )
 
 const (
-	connTimeout = 5 * time.Second
+	connTimeout        = 5 * time.Second
+	receiveChannelSize = 500
 )
 
 // BxConn is a connection to any other bloxroute Node. BxConn implements connections.ConnHandler.
@@ -50,6 +51,7 @@ type BxConn struct {
 	clientVersion         string
 	sameRegion            bool
 	connectedAt           time.Time
+	receiveChan           chan bxmessage.MessageBytes
 }
 
 // NewBxConn constructs a connection to a bloxroute node.
@@ -75,12 +77,22 @@ func NewBxConn(node connections.BxListener, connect func() (connections.Socket, 
 			"connType":   connectionType.String(),
 			"remoteAddr": "<connecting>",
 		}),
-		clock:      clock,
-		sameRegion: sameRegion,
+		clock:       clock,
+		sameRegion:  sameRegion,
+		receiveChan: make(chan bxmessage.MessageBytes, receiveChannelSize),
 	}
 	bc.stringRepresentation = fmt.Sprintf("%v/%v@<connecting...>", connectionType, bc.Conn)
+	go bc.readFromChannel()
 
 	return bc
+}
+
+// readFromChannel reads from receiveChan and send it to ProcessMessage, the go routing terminates when the channel is closed
+func (b *BxConn) readFromChannel() {
+	for msg := range b.receiveChan {
+		msg.SetProcessingTime(time.Now())
+		b.Handler.ProcessMessage(msg)
+	}
 }
 
 // Start kicks off main goroutine of the connection
@@ -192,8 +204,9 @@ func (b *BxConn) Close(reason string) error {
 
 // ProcessMessage constructs a message from the buffer and handles it
 // This method only handles messages that do not require querying the BxListener interface
-func (b *BxConn) ProcessMessage(msg bxmessage.MessageBytes) {
-	msgType := msg.BxType()
+func (b *BxConn) ProcessMessage(msgBytes bxmessage.MessageBytes) {
+	msgType := msgBytes.BxType()
+	msg := msgBytes.Raw()
 	switch msgType {
 	case bxmessage.HelloType:
 		helloMsg := &bxmessage.Hello{}
@@ -372,10 +385,21 @@ func (b *BxConn) handleNonces(nodeNonce, peerNonce uint64) {
 
 }
 
+func (b *BxConn) processMessage(msgBytes bxmessage.MessageBytes) {
+	msgBytes.SetChannelPosition(len(b.receiveChan))
+	select {
+	case b.receiveChan <- msgBytes:
+	default:
+		b.log.Errorf("receiveChan is full")
+		return
+	}
+}
+
 // readLoop connects and reads messages from the socket.
 // If we are the initiator of the connection we auto-recover on disconnect.
 func (b *BxConn) readLoop() {
 	isInitiator := b.IsInitiator()
+	defer close(b.receiveChan)
 	for {
 		err := b.Connect()
 		if err != nil {
@@ -404,7 +428,7 @@ func (b *BxConn) readLoop() {
 
 		closeReason := "read loop closed"
 		for b.Conn.IsOpen() {
-			_, err := b.ReadMessages(b.Handler.ProcessMessage, 30*time.Second, bxmessage.HeaderLen,
+			_, err := b.ReadMessages(b.processMessage, 30*time.Second, bxmessage.HeaderLen,
 				func(b []byte) int {
 					return int(binary.LittleEndian.Uint32(b[bxmessage.PayloadSizeOffset:]))
 				})

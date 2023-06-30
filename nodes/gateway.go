@@ -202,7 +202,7 @@ func NewGateway(parent context.Context, bxConfig *config.Bx, bridge blockchain.B
 	}
 
 	g.asyncMsgChannel = services.NewAsyncMsgChannel(g)
-	g.mevBundleDispatcher = bundle.NewDispatcher(bxConfig.MEVBuilderURI, bxConfig.MEVBuilders, bxConfig.MEVMaxProfitBuilder, bxConfig.ProcessMegaBundle)
+	g.mevBundleDispatcher = bundle.NewDispatcher(bxConfig.MEVBuilders, bxConfig.MEVMaxProfitBuilder, bxConfig.ProcessMegaBundle)
 
 	// create tx store service pass to eth client
 	g.bdnStats = bxmessage.NewBDNStats(blockchainPeers, recommendedPeers)
@@ -276,14 +276,25 @@ func InitSDN(bxConfig *config.Bx, blockchainPeers []types.NodeEndpoint, gatewayP
 	}
 
 	accountModel := sdn.AccountModel()
-	if bxConfig.MEVBuilderURI != "" && accountModel.MEVBuilder == "" {
-		return nil, nil, fmt.Errorf(
-			"account %v is not allowed for mev builder service, closing the gateway. Please contact support@bloxroute.com to enable running as mev builder",
-			accountModel.AccountID,
-		)
+
+	accountBuilders := make(map[string]bool)
+	for _, builder := range accountModel.MEVBuilders {
+		accountBuilders[builder] = true
+	}
+
+	// Check if the account is allowed to run the mev builder
+	for builder := range bxConfig.MEVBuilders {
+		if !accountBuilders[builder] {
+			return nil, nil, fmt.Errorf("account %v is not allowed to run %v mev builder, closing the gateway. Please contact support@bloxroute.com to enable running this mev builder", accountModel.AccountID, builder)
+		}
 	}
 
 	if uint64(staticEnodesCount) < uint64(accountModel.MinAllowedNodes.MsgQuota.Limit) {
+		if staticEnodesCount == 0 {
+			panic(fmt.Sprintf("Account %v is not allowed to run a gateway without node. Please check prior log entries for the reason the gateway is not connected to the node",
+				accountModel.AccountID))
+		}
+
 		panic(fmt.Sprintf(
 			"account %v is not allowed to run %d blockchain nodes. Minimum is %d",
 			accountModel.AccountID,
@@ -363,7 +374,11 @@ func (g *gateway) Run() error {
 	go g.TxStore.Start()
 	go g.updateValidatorStateMap()
 
-	g.stats = statistics.NewStats(g.BxConfig.FluentDEnabled, g.BxConfig.FluentDHost, g.sdn.NodeID(), g.sdn.Networks(), g.BxConfig.LogNetworkContent)
+	if g.BxConfig.NoStats {
+		g.stats = statistics.NoStats{}
+	} else {
+		g.stats = statistics.NewStats(g.BxConfig.FluentDEnabled, g.BxConfig.FluentDHost, g.sdn.NodeID(), g.sdn.Networks(), g.BxConfig.LogNetworkContent)
+	}
 
 	sslCert := g.sslCerts
 	g.wsFeedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
@@ -978,6 +993,7 @@ func (g *gateway) handleBridgeMessages() error {
 				blockchainConnection := connections.NewBlockchainConn(txsFromNode.PeerEndpoint)
 				for _, blockchainTx := range txsFromNode.Transactions {
 					tx := bxmessage.NewTx(blockchainTx.Hash(), blockchainTx.Content(), g.sdn.NetworkNum(), types.TFLocalRegion, types.EmptyAccountID)
+					tx.SetMsgMetaData(g.clock.Now(), g.clock.Now(), 0)
 					g.processTransaction(tx, blockchainConnection)
 				}
 			}, "ReceiveNodeTransactions", txsFromNode.PeerEndpoint.String(), int64(len(txsFromNode.Transactions)))
@@ -1065,7 +1081,7 @@ func (g *gateway) handleBridgeMessages() error {
 func (g *gateway) NodeStatus() connections.NodeStatus {
 	var capabilities types.CapabilityFlags
 
-	if g.BxConfig.MEVBuilderURI != "" || len(g.BxConfig.MEVBuilders) > 0 {
+	if len(g.BxConfig.MEVBuilders) > 0 {
 		capabilities |= types.CapabilityMEVBuilder
 	}
 
@@ -1479,11 +1495,11 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 		"msgTx: from %v, hash %v, nonce %v, flags %v, new Tx %v, new content %v, new shortid %v, event %v,"+
 			" sentToBDN: %v, sentPeersNum %v, sentToBlockchainNode: %v, handling duration %v, sender %v,"+
 			" networkDuration %v, statsDuration %v, nextValidator enabled %v,fallback duration %v,"+
-			" next validator fallback %v, front run protection delay %v",
+			" next validator fallback %v, front run protection delay %v, waiting duration %v, txs in channel %v",
 		source, tx.Hash(), txResult.Nonce, tx.Flags(), txResult.NewTx, txResult.NewContent, txResult.NewSID, eventName,
-		sentToBDN, broadcastRes.SentPeers, sentToBlockchainNode, g.clock.Now().Sub(startTime), txResult.Transaction.Sender(),
-		startTime.Sub(tx.Timestamp()).Microseconds(), statsDuration, tx.Flags().IsNextValidator(), tx.Fallback(),
-		tx.Flags().IsNextValidatorRebroadcast(), frontRunProtectionDelay.String(),
+		sentToBDN, broadcastRes.SentPeers, sentToBlockchainNode, g.clock.Now().Sub(tx.ProcessingStartTime()).Microseconds(), txResult.Transaction.Sender(),
+		tx.ReceiveTime().Sub(tx.Timestamp()).Microseconds(), statsDuration, tx.Flags().IsNextValidator(), tx.Fallback(),
+		tx.Flags().IsNextValidatorRebroadcast(), frontRunProtectionDelay.String(), tx.ProcessingStartTime().Sub(tx.ReceiveTime()).Microseconds(), tx.ChannelPosition(),
 	)
 }
 

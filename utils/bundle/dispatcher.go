@@ -44,14 +44,13 @@ func (r *request) String() string {
 // Dispatcher is responsible for dispatching MEV bundles to MEV builders
 type Dispatcher struct {
 	client              *http.Client
-	mevBuilderURI       string // Deprecated
 	builders            map[string]*Builder
 	mevMaxProfitBuilder bool
 	processMegaBundle   bool
 }
 
 // NewDispatcher creates a new NewDispatcher
-func NewDispatcher(mevBuilderURI string, builders map[string]*Builder, mevMaxProfitBuilder bool, processMegaBundle bool) *Dispatcher {
+func NewDispatcher(builders map[string]*Builder, mevMaxProfitBuilder bool, processMegaBundle bool) *Dispatcher {
 	for name, builder := range builders {
 		builder.Name = name
 	}
@@ -66,7 +65,6 @@ func NewDispatcher(mevBuilderURI string, builders map[string]*Builder, mevMaxPro
 			},
 			Timeout: 60 * time.Second,
 		},
-		mevBuilderURI:       mevBuilderURI,
 		builders:            builders,
 		mevMaxProfitBuilder: mevMaxProfitBuilder,
 		processMegaBundle:   processMegaBundle,
@@ -75,7 +73,7 @@ func NewDispatcher(mevBuilderURI string, builders map[string]*Builder, mevMaxPro
 
 // Dispatch dispatches the MEV bundle to the MEV builders
 func (d *Dispatcher) Dispatch(bundle *bxmessage.MEVBundle) error {
-	if len(d.builders) == 0 && d.mevBuilderURI == "" {
+	if len(d.builders) == 0 {
 		log.Warnf("received mevBundle message, but mev-builders-file-path is empty. Message %v from %v in network %v", bundle.BundleHash, bundle.SourceID(), bundle.GetNetworkNum())
 		return nil
 	}
@@ -152,7 +150,7 @@ func (d *Dispatcher) makeRequests(bundle *bxmessage.MEVBundle, json []byte) []*r
 	for builderName := range bundle.MEVBuilders {
 		builder := d.getBuilder(builderName)
 		if builder == nil {
-			log.Errorf("failed to find mev builder %v in config, bundleHash: %v", builder, bundle.BundleHash)
+			log.Errorf("failed to find mev builder %v in config, bundleHash: %v", builderName, bundle.BundleHash)
 			continue
 		}
 
@@ -197,10 +195,7 @@ func (d *Dispatcher) getBuilder(builder string) *Builder {
 
 	}
 
-	// Deprecated single value in account
-	return &Builder{
-		Endpoints: []string{d.mevBuilderURI},
-	}
+	return nil
 }
 
 func (d *Dispatcher) bundleRequest(endpoint string, builder *Builder, bundle *bxmessage.MEVBundle, json []byte) (*http.Request, error) {

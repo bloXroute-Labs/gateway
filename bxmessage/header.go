@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"time"
 )
 
 // Protocol represents the Protocol version number
@@ -29,8 +30,33 @@ func (p SendPriority) String() string {
 
 // Header represents the shared header of a bloxroute message
 type Header struct {
-	priority *SendPriority
-	msgType  string
+	priority            *SendPriority
+	msgType             string
+	receiveTime         time.Time
+	processingStartTime time.Time
+	channelPosition     int
+}
+
+// SetMsgMetaData set msg metadata
+func (h *Header) SetMsgMetaData(receiveTime time.Time, processingStartTime time.Time, channelPosition int) {
+	h.receiveTime = receiveTime
+	h.processingStartTime = processingStartTime
+	h.channelPosition = channelPosition
+}
+
+// ReceiveTime return receiveTime
+func (h Header) ReceiveTime() time.Time {
+	return h.receiveTime
+}
+
+// ProcessingStartTime return processingStartTime
+func (h Header) ProcessingStartTime() time.Time {
+	return h.processingStartTime
+}
+
+// ChannelPosition return channelPosition
+func (h Header) ChannelPosition() int {
+	return h.channelPosition
 }
 
 // Pack serializes a Header into a buffer for sending on the wire

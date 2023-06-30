@@ -167,7 +167,7 @@ message Peer {
   int64 port = 13;
   bool disabled = 14;
   string mev_miner = 15;
-  string mev_builder = 16;
+  string mev_builder = 16; // Deprecated
   uint32 capability = 17;
   int64 unpaid_tx_burst_limit = 18;
   int64 paid_tx_burst_limit = 19;
@@ -176,6 +176,7 @@ message Peer {
   RateSnapshot paid_tx_throughput = 22;
   RateSnapshot unpaid_tx_throughput = 23;
   string trusted = 24;
+  repeated string mev_builders = 25;
 }
 
 message PeersReply {

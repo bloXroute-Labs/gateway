@@ -315,10 +315,6 @@ var (
 		Usage: "for gateways only, monitors blockchain node sync status and shuts down/restarts websocket server accordingly",
 		Value: false,
 	}
-	MEVBuilderURIFlag = &cli.StringFlag{
-		Name:  "mev-builder-uri",
-		Usage: "set mev builder for gateway",
-	}
 	MEVBuildersFilePathFlag = &cli.StringFlag{
 		Name:   "mev-builders-file-path",
 		Usage:  "set mev builders file path for gateway",
@@ -459,5 +455,11 @@ var (
 		Name:     "bundle-simulation-auth-header",
 		Usage:    "provide authorisation header for cloudAPI bundle simulation",
 		Required: true,
+	}
+	NoStats = &cli.BoolFlag{
+		Name:   "no-stats",
+		Usage:  "enable no-stats for not processing stats",
+		Value:  false,
+		Hidden: true,
 	}
 )
