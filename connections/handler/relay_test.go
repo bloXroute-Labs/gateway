@@ -25,8 +25,8 @@ func TestRelay_ClosingFromLocal(t *testing.T) {
 	_, err = tls.MockAdvanceSent()
 	assert.Nil(t, err)
 
-	// expect 2 new  goroutines: read loop, send loop
-	assert.Equal(t, startCount+2, runtime.NumGoroutine())
+	// expect 3 new  goroutines: read loop, send loop and read from receive channel
+	assert.Equal(t, startCount+3, runtime.NumGoroutine())
 
 	err = r.Close("test close")
 	assert.Nil(t, err)
@@ -49,9 +49,9 @@ func TestRelay_ClosingFromRemote(t *testing.T) {
 	_, err = tls.MockAdvanceSent()
 	assert.Nil(t, err)
 
-	// expect 2 new goroutines: read loop, send loop
+	// expect 2 new goroutines: read loop, send loop and read from receive channel
 	startedCount := runtime.NumGoroutine()
-	assert.Equal(t, startCount+2, startedCount)
+	assert.Equal(t, startCount+3, startedCount)
 
 	err = tls.Close("test close")
 	assert.Nil(t, err)
@@ -61,7 +61,7 @@ func TestRelay_ClosingFromRemote(t *testing.T) {
 
 	// only readloop go routines should be closed, since connection is expecting retry
 
-	assert.Equal(t, startCount+1, runtime.NumGoroutine())
+	assert.Equal(t, startCount+2, runtime.NumGoroutine())
 }
 
 func relayConn() (bxmock.MockTLS, *Relay) {

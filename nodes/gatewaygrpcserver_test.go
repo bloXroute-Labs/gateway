@@ -2,6 +2,8 @@ package nodes
 
 import (
 	"context"
+	"github.com/stretchr/testify/require"
+	"runtime"
 	"testing"
 	"time"
 
@@ -124,21 +126,24 @@ func TestGatewayGRPCNewTxs(t *testing.T) {
 
 	_ = rpc.GatewayConsoleCall(clientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
 		res, err := client.NewTxs(ctx, &pb.TxsRequest{})
-		assert.Nil(t, err)
+		require.NoError(t, err)
+
+		time.Sleep(time.Millisecond)
+		runtime.Gosched()
 
 		newTxsStream, ok := res.(pb.Gateway_NewTxsClient)
-		assert.True(t, ok)
+		require.True(t, ok)
 
 		_, relayConn1 := addRelayConn(g)
 		_, deliveredTxMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0)
 
 		err = g.HandleMsg(deliveredTxMessage, relayConn1, connections.RunForeground)
-		assert.Nil(t, err)
+		require.NoError(t, err)
 
 		txNotification, err := newTxsStream.Recv()
-		assert.Nil(t, err)
-		assert.NotNil(t, txNotification.Tx)
-		assert.Equal(t, 1, len(txNotification.Tx))
+		require.Nil(t, err)
+		require.NotNil(t, txNotification.Tx)
+		require.Equal(t, 1, len(txNotification.Tx))
 
 		return txNotification, err
 	})
@@ -232,21 +237,26 @@ func TestGatewayGRPCBdnBlocks(t *testing.T) {
 
 	go func() {
 		err := g.handleBridgeMessages()
-		assert.Nil(t, err)
+		require.NoError(t, err)
 	}()
 
-	_ = g.feedManager.Start()
+	err := g.feedManager.Start()
+	require.NoError(t, err)
 
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
-	_ = rpc.GatewayConsoleCall(clientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
+	err = rpc.GatewayConsoleCall(clientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
 		res, err := client.BdnBlocks(ctx, &pb.BlocksRequest{})
-		assert.Nil(t, err)
+		require.NoError(t, err)
+
+		time.Sleep(time.Millisecond)
+		runtime.Gosched()
 
 		bdnBlocksStream, ok := res.(pb.Gateway_BdnBlocksClient)
-		assert.True(t, ok)
+		require.True(t, ok)
 
 		ethBlock := bxmock.NewEthBlock(10, common.Hash{})
-		bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
+		bxBlock, err := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
+		require.NoError(t, err)
 
 		// compress a transaction
 		bxTransaction, _ := bridge.TransactionBlockchainToBDN(ethBlock.Transactions()[0])
@@ -254,18 +264,22 @@ func TestGatewayGRPCBdnBlocks(t *testing.T) {
 		g.TxStore.Add(bxTransaction.Hash(), bxTransaction.Content(), 1, networkNum, false, 0, time.Now(), 0, types.EmptySender)
 
 		broadcastMessage, _, err := bp.BxBlockToBroadcast(bxBlock, networkNum, g.sdn.MinTxAge())
-		assert.Nil(t, err)
+		require.NoError(t, err)
 
 		err = g.HandleMsg(broadcastMessage, relayConn1, connections.RunForeground)
+		require.NoError(t, err)
 
 		bdnBlocksNotification, err := bdnBlocksStream.Recv()
+		require.NoError(t, err)
 
-		assert.Nil(t, err)
-		assert.NotNil(t, bdnBlocksNotification.Header)
-		assert.Equal(t, ethBlock.Hash().String(), bdnBlocksNotification.Hash)
-		assert.NotNil(t, bdnBlocksNotification.SubscriptionID)
-		assert.Equal(t, 3, len(ethBlock.Transactions()))
+		require.Nil(t, err)
+		require.NotNil(t, bdnBlocksNotification.Header)
+		require.Equal(t, ethBlock.Hash().String(), bdnBlocksNotification.Hash)
+		require.NotNil(t, bdnBlocksNotification.SubscriptionID)
+		require.Equal(t, 3, len(ethBlock.Transactions()))
 
 		return bdnBlocksNotification, err
 	})
+
+	require.NoError(t, err)
 }

@@ -134,6 +134,11 @@ func IsRelayProxy(connectionType utils.NodeType) bool {
 	return connectionType&utils.RelayProxy != 0
 }
 
+// IsAPISocket indicates if the connection is api-socket
+func IsAPISocket(connectionType utils.NodeType) bool {
+	return connectionType&utils.APISocket != 0
+}
+
 // IsRelay indicates if the connection is a relay type
 func IsRelay(connectionType utils.NodeType) bool {
 	return connectionType&utils.RelayProxy != 0 || connectionType&utils.RelayTransaction != 0 || connectionType&utils.RelayBlock != 0

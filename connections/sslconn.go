@@ -215,6 +215,7 @@ func (s *SSLConn) ReadMessages(callBack func(msg bxmessage.MessageBytes), readDe
 		_ = s.Close("connect closed by remote while reading")
 		return n, err
 	}
+	receiveTime := s.clock.Now()
 
 	// TODO: why ReadMessages has to return every socket read?
 	s.buf.Write(s.packet[:n])
@@ -235,11 +236,12 @@ func (s *SSLConn) ReadMessages(callBack func(msg bxmessage.MessageBytes), readDe
 			s.Log().Warnf("encountered error while reading message: %v, skipping", err)
 			continue
 		}
-		msgType := bxmessage.MessageBytes(msg).BxType()
+		msgBytes := bxmessage.NewMessageBytes(msg, receiveTime)
+		msgType := msgBytes.BxType()
 		if s.IsDisabled() && msgType != bxmessage.PingType && msgType != bxmessage.PongType {
 			continue
 		}
-		callBack(msg)
+		callBack(msgBytes)
 	}
 
 	return n, nil

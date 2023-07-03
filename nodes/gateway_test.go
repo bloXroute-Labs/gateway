@@ -137,7 +137,8 @@ func addRelayConn(g *gateway) (bxmock.MockTLS, *handler.Relay) {
 		Protocol: relayConn.Protocol(),
 	}
 	b, _ := hello.Pack(relayConn.Protocol())
-	relayConn.ProcessMessage(b)
+	msg := bxmessage.NewMessageBytes(b, time.Now())
+	relayConn.ProcessMessage(msg)
 
 	// advance ack message
 	ackBytes, err := mockTLS.MockAdvanceSent()

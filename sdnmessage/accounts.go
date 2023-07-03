@@ -278,7 +278,6 @@ type AccountInfo struct {
 	TierName           AccountTier     `json:"tier_name"`
 	Miner              bool            `json:"is_miner"`
 	Untrusted          bool            `json:"untrusted"`
-	MEVBuilder         string          `json:"mev_builder"` // Deprecated. Use MEVBuilders instead
 	MEVBuilders        []string        `json:"mev_builders"`
 }
 

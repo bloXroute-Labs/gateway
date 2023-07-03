@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -227,15 +228,21 @@ func TestDispatcher(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			mu := &sync.Mutex{}
+			wg := &sync.WaitGroup{}
 			buildersMap := makeBuildersMap("", tc.expBuilders)
-			var dispatched bool
+			wg.Add(len(tc.expBuilders))
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				defer wg.Done()
+
 				assert.Equal(t, "POST", r.Method)
 
 				path := strings.TrimPrefix(r.URL.Path, "/")
+				mu.Lock()
 				_, ok := buildersMap[path]
 				assert.True(t, ok)
 				delete(buildersMap, path)
+				mu.Unlock()
 
 				var req jsonrpc2.Request
 				err := json.NewDecoder(r.Body).Decode(&req)
@@ -248,16 +255,15 @@ func TestDispatcher(t *testing.T) {
 				assert.NoError(t, err)
 
 				assert.Equal(t, *tc.expPayload, payload[0])
-				dispatched = true
 			}))
 			defer server.Close()
 
-			d := NewDispatcher("", makeBuildersMap(fmt.Sprintf("%s/", server.URL), tc.builders), tc.mevMaxProfitBuilder, true)
+			d := NewDispatcher(makeBuildersMap(fmt.Sprintf("%s/", server.URL), tc.builders), tc.mevMaxProfitBuilder, true)
 			err := d.Dispatch(&tc.bundle)
 			assert.NoError(t, err)
 
-			time.Sleep(5 * time.Millisecond)
-			assert.True(t, tc.expPayload == nil || dispatched)
+			wg.Wait()
+			time.Sleep(5 * time.Millisecond) // wait if there are any non expected calls
 			assert.Empty(t, buildersMap)
 		})
 	}

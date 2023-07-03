@@ -48,7 +48,6 @@ type Bx struct {
 	AllTransactions     bool
 	SendConfirmation    bool
 	MEVMaxProfitBuilder bool
-	MEVBuilderURI       string
 	MEVBuilders         map[string]*bundle.Builder
 
 	ProcessMegaBundle            bool
@@ -60,6 +59,7 @@ type Bx struct {
 	PendingTxsSourceFromNode     bool
 	NoTxsToBlockchain            bool
 	NoBlocks                     bool
+	NoStats                      bool
 
 	*GRPC
 	*Env
@@ -132,7 +132,6 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		SendConfirmation: ctx.Bool(utils.SendBlockConfirmation.Name),
 		AllTransactions:  ctx.Bool(utils.AllTransactionsFlag.Name),
 
-		MEVBuilderURI:       ctx.String(utils.MEVBuilderURIFlag.Name),
 		MEVBuilders:         mevBuilders,
 		MEVMaxProfitBuilder: ctx.Bool(utils.MEVMaxProfitBuilder.Name),
 
@@ -144,6 +143,7 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		PendingTxsSourceFromNode:   ctx.Bool(utils.PendingTxsSourceFromNode.Name),
 		NoTxsToBlockchain:          ctx.Bool(utils.NoTxsToBlockchain.Name),
 		NoBlocks:                   ctx.Bool(utils.NoBlocks.Name),
+		NoStats:                    ctx.Bool(utils.NoStats.Name),
 
 		GRPC:       grpcConfig,
 		Env:        env,

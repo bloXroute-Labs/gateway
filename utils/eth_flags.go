@@ -38,6 +38,11 @@ var (
 		Usage:       "Ethereum websockets endpoint",
 		DefaultText: "",
 	}
+	BeaconAPIUriFlag = &cli.StringFlag{
+		Name:     "beacon-api-uri",
+		Usage:    "Beacon API endpoints. Expected format: \"IP:PORT,IP:PORT,...\"",
+		Required: false,
+	}
 	PrysmGRPCFlag = &cli.StringFlag{
 		Name:  "prysm-grpc-uri",
 		Usage: "Prysm gRPC endpoint. Expected format: IP:PORT",

@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,6 +49,7 @@ type EthConfig struct {
 	ExecutionLayerForks     []string
 	BlockConfirmationsCount int
 	SendBlockConfirmation   bool
+	BeaconAPIEndpoints      []string
 
 	IgnoreBlockTimeout time.Duration
 	IgnoreSlotCount    int
@@ -202,6 +204,26 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 		preset.TTDOverrides = true
 	}
 
+	if ctx.IsSet(utils.BeaconAPIUriFlag.Name) {
+		beaconAPIEndpointsArg := ctx.String(utils.BeaconAPIUriFlag.Name)
+		endpointsSlice := strings.Split(beaconAPIEndpointsArg, ",")
+		uniqueIPs := make(map[string]bool) // for checking duplicated ip
+
+		for i := 0; i < len(endpointsSlice); i++ {
+			endpointsSlice[i] = strings.TrimSpace(endpointsSlice[i])
+			ip, _, err := net.SplitHostPort(endpointsSlice[i])
+			if !uniqueIPs[ip] {
+				if err = validateBeaconAPIURI(endpointsSlice[i]); err != nil {
+					return nil, "", fmt.Errorf("Error in parsing %d index endpoint: %v", i, err)
+				}
+				uniqueIPs[ip] = true
+			} else {
+				return nil, "", fmt.Errorf("You have duplicated ip address in --beacon-api-uri list")
+			}
+		}
+		preset.BeaconAPIEndpoints = endpointsSlice
+	}
+
 	return &preset, node, nil
 }
 
@@ -275,6 +297,25 @@ func ParseMultiNode(multiNodeStr string) ([]PeerInfo, error) {
 		peers = append(peers, peer)
 	}
 	return peers, nil
+}
+
+func validateBeaconAPIURI(uri string) error {
+	parts := strings.Split(uri, ":")
+	if len(parts) != 2 {
+		return fmt.Errorf("--beacon-api-uri: invalid format, must be 'IP:PORT'")
+	}
+
+	ip := net.ParseIP(parts[0])
+	if ip == nil {
+		return fmt.Errorf("--beacon-api-uri: invalid IP address")
+	}
+
+	port, err := strconv.Atoi(parts[1])
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("--beacon-api-uri: invalid port number")
+	}
+
+	return nil
 }
 
 func validateWSURI(ethWSURI string) error {
