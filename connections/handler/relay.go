@@ -105,9 +105,8 @@ func (r *Relay) ProcessMessage(msgBytes bxmessage.MessageBytes) {
 	msgType := msgBytes.BxType()
 	msg := msgBytes.Raw()
 	if msgType != bxmessage.TxType {
-		r.Log().Tracef("processing message %v", msgType)
+		r.Log().Tracef("processing message %v, msg len %v", msgType, len(msg))
 	}
-
 	switch msgType {
 
 	case bxmessage.TxType:
