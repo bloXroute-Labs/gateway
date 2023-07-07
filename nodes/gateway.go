@@ -180,7 +180,11 @@ func NewGateway(parent context.Context, bxConfig *config.Bx, bridge blockchain.B
 		blockTime:                    blockTime,
 	}
 
-	g.polygonValidatorInfoManager = bor.NewSprintManager(parent, &g.wsManager, bor.NewHeimdallSpanner(parent, polygonHeimdallEndpoint))
+	if polygonHeimdallEndpoint != "" {
+		g.polygonValidatorInfoManager = bor.NewSprintManager(parent, &g.wsManager, bor.NewHeimdallSpanner(parent, polygonHeimdallEndpoint))
+	} else {
+		g.polygonValidatorInfoManager = nil
+	}
 
 	if bxConfig.BlockchainNetwork == bxgateway.BSCMainnet || bxConfig.BlockchainNetwork == bxgateway.PolygonMainnet {
 		g.validatorStatusMap = syncmap.NewStringMapOf[bool]()
@@ -435,7 +439,7 @@ func (g *gateway) Run() error {
 
 	go g.handleBlockchainConnectionStatusUpdate()
 
-	if networkNum == bxgateway.PolygonMainnetNum {
+	if networkNum == bxgateway.PolygonMainnetNum && g.polygonValidatorInfoManager != nil {
 		// running as goroutine to not block starting of node
 		go func() {
 			if retryErr := backoff.RetryNotify(
@@ -719,7 +723,7 @@ func (g *gateway) reevaluatePendingBSCNextValidatorTx() {
 func (g *gateway) generatePolygonValidator(bxBlock *types.BxBlock) []*types.FutureValidatorInfo {
 	blockHeight := bxBlock.Number.Uint64()
 
-	if g.validatorStatusMap == nil || g.wsManager == nil || !g.polygonValidatorInfoManager.IsRunning() {
+	if g.validatorStatusMap == nil || g.wsManager == nil || g.polygonValidatorInfoManager == nil || !g.polygonValidatorInfoManager.IsRunning() {
 		return blockchain.DefaultValidatorInfo(blockHeight)
 	}
 
@@ -1489,17 +1493,16 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 	statsStart := time.Now()
 	g.stats.AddTxsByShortIDsEvent(eventName, source, txResult.Transaction, tx.ShortID(), nodeID, broadcastRes.RelevantPeers, broadcastRes.SentGatewayPeers, startTime, tx.GetPriority(), txResult.DebugData)
 	statsDuration := time.Since(statsStart)
-
 	// usage of log.WithFields 7 times slower than usage of direct log.Tracef
 	log.Tracef(
 		"msgTx: from %v, hash %v, nonce %v, flags %v, new Tx %v, new content %v, new shortid %v, event %v,"+
 			" sentToBDN: %v, sentPeersNum %v, sentToBlockchainNode: %v, handling duration %v, sender %v,"+
 			" networkDuration %v, statsDuration %v, nextValidator enabled %v,fallback duration %v,"+
-			" next validator fallback %v, front run protection delay %v, waiting duration %v, txs in channel %v",
+			" next validator fallback %v, front run protection delay %v, waiting duration %v, txs in channel %v, msg len %v",
 		source, tx.Hash(), txResult.Nonce, tx.Flags(), txResult.NewTx, txResult.NewContent, txResult.NewSID, eventName,
 		sentToBDN, broadcastRes.SentPeers, sentToBlockchainNode, g.clock.Now().Sub(tx.ProcessingStartTime()).Microseconds(), txResult.Transaction.Sender(),
 		tx.ReceiveTime().Sub(tx.Timestamp()).Microseconds(), statsDuration, tx.Flags().IsNextValidator(), tx.Fallback(),
-		tx.Flags().IsNextValidatorRebroadcast(), frontRunProtectionDelay.String(), tx.ProcessingStartTime().Sub(tx.ReceiveTime()).Microseconds(), tx.ChannelPosition(),
+		tx.Flags().IsNextValidatorRebroadcast(), frontRunProtectionDelay.String(), tx.ProcessingStartTime().Sub(tx.ReceiveTime()).Microseconds(), tx.ChannelPosition(), tx.BufLen(),
 	)
 }
 
