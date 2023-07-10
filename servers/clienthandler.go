@@ -3,12 +3,10 @@ package servers
 import (
 	"context"
 	"crypto/tls"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,6 +45,7 @@ type ClientHandler struct {
 	enableBlockchainRPC      bool
 	pendingTxsSourceFromNode *bool
 	log                      *log.Entry
+	authorize                func(accountID types.AccountID, secretHash string) (sdnmessage.Account, error)
 }
 
 // MultiTransactions - response for MultiTransactions subscription
@@ -153,7 +152,7 @@ func newCall(name string) *RPCCall {
 }
 
 // NewClientHandler is a constructor for ClientHandler
-func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, httpServer *HTTPServer, enableBlockchainRPC bool, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), log *log.Entry, pendingTxsSourceFromNode *bool) ClientHandler {
+func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, httpServer *HTTPServer, enableBlockchainRPC bool, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), log *log.Entry, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string) (sdnmessage.Account, error)) ClientHandler {
 	return ClientHandler{
 		feedManager:              feedManager,
 		websocketServer:          websocketServer,
@@ -161,6 +160,7 @@ func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, ht
 		getQuotaUsage:            getQuotaUsage,
 		enableBlockchainRPC:      enableBlockchainRPC,
 		pendingTxsSourceFromNode: pendingTxsSourceFromNode,
+		authorize:                authorize,
 		log:                      log,
 	}
 }
@@ -262,56 +262,45 @@ type PayloadData struct {
 }
 
 // NewWSServer creates and returns a new websocket server managed by FeedManager
-func NewWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool, pendingTxsSourceFromNode *bool) *http.Server {
+func NewWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string) (sdnmessage.Account, error)) *http.Server {
 	handler := http.NewServeMux()
 	wsHandler := func(responseWriter http.ResponseWriter, request *http.Request) {
 		// if enable client handler - skip authorization
 		serverAccountID := feedManager.accountModel.AccountID
 		connectionAccountModel := sdnmessage.Account{}
 		var err error
+		var accountID types.AccountID
+		var secretHash string
 		if !enableBlockchainRPC {
-			connectionAccountID, connectionSecretHash, err := getAccountIDSecretHashFromReq(request, feedManager.cfg.WebsocketTLSEnabled)
-			if err != nil {
-				log.Errorf("RemoteAddr: %v RequestURI: %v - %v.", request.RemoteAddr, request.RequestURI, err.Error())
-				errorWithDelay(responseWriter, request, "failed parsing the authorization header")
-				return
-			}
-			// if gateway received request from a customer with a different account id, it should verify it with the SDN.
-			// if the gateway does not have permission to verify account id (which mostly happen with external gateways),
-			// SDN will return StatusUnauthorized and fail this connection. if SDN return any other error -
-			// assuming the issue is with the SDN and set default enterprise account for the customer. in order to send request to the gateway,
-			// customer must be enterprise / elite account
-			if connectionAccountID != serverAccountID {
-				connectionAccountModel, err = feedManager.getCustomerAccountModel(connectionAccountID)
+			authHeader := request.Header.Get("Authorization")
+			switch {
+			case authHeader != "":
+				accountID, secretHash, err = utils.GetAccountIDSecretHashFromHeader(authHeader)
 				if err != nil {
-					if strings.Contains(strconv.FormatInt(http.StatusUnauthorized, 10), err.Error()) {
-						log.Errorf("Account %v is not authorized to get other account %v information", serverAccountID, connectionAccountID)
-						errorWithDelay(responseWriter, request, "account is not authorized to get other accounts information")
-						return
-					}
-					log.Errorf("Failed to get customer account model, account id: %v, remote addr: %v, connectionSecretHash: %v, error: %v",
-						connectionAccountID, request.RemoteAddr, connectionSecretHash, err)
-					connectionAccountModel = sdnmessage.GetDefaultEliteAccount(time.Now().UTC())
-					connectionAccountModel.AccountID = connectionAccountID
-					connectionAccountModel.SecretHash = connectionSecretHash
-				}
-				if !connectionAccountModel.TierName.IsEnterprise() {
-					log.Warnf("Customer account %v must be enterprise / enterprise elite / ultra but it is %v", connectionAccountID, connectionAccountModel.TierName)
-					errorWithDelay(responseWriter, request, "account must be enterprise / enterprise elite / ultra")
+					log.Errorf("remoteAddr: %v requestURI: %v - %v.", request.RemoteAddr, request.RequestURI, err.Error())
+					errorWithDelay(responseWriter, request, "failed parsing the authorization header")
 					return
 				}
-			} else {
-				connectionAccountModel = feedManager.accountModel
+			case feedManager.cfg.WebsocketTLSEnabled:
+				if request.TLS != nil && len(request.TLS.PeerCertificates) > 0 {
+					accountID, err = utils.GetAccountIDFromBxCertificate(request.TLS.PeerCertificates[0].Extensions)
+					if err != nil {
+						errorWithDelay(responseWriter, request, fmt.Errorf("failed to get account_id extension, %w", err).Error())
+						return
+					}
+				}
+			default:
+				errorWithDelay(responseWriter, request, fmt.Errorf("missing authorization from method: %v", request.Method).Error())
 			}
-			if connectionAccountModel.SecretHash != connectionSecretHash && connectionSecretHash != "" {
-				log.Errorf("Account %v sent a different secret hash than set in the account model, remoteAddress: %v", connectionAccountID, request.RemoteAddr)
-				errorWithDelay(responseWriter, request, "wrong value in the authorization header")
+			connectionAccountModel, err = authorize(accountID, secretHash)
+			if err != nil {
+				errorWithDelay(responseWriter, request, err.Error())
 				return
 			}
 		} else {
 			connectionAccountModel, err = feedManager.getCustomerAccountModel(serverAccountID)
 			if err != nil {
-				log.Errorf("Failed to get customer account model, account id: %v, remote addr: %v, error: %v",
+				log.Errorf("failed to get customer account model, account id: %v, remote addr: %v, error: %v",
 					serverAccountID, request.RemoteAddr, err)
 			}
 		}
@@ -372,40 +361,8 @@ func handleWSClientConnection(feedManager *FeedManager, w http.ResponseWriter, r
 	_ = jsonrpc2.NewConn(r.Context(), websocketjsonrpc2.NewObjectStream(connection), asynHhandler)
 }
 
-func getAccountIDSecretHashFromReq(request *http.Request, websocketTLSEnabled bool) (accountID types.AccountID, secretHash string, err error) {
-	tokenString := request.Header.Get("Authorization")
-	var payload []byte
-	if tokenString != "" {
-		payload, err = base64.StdEncoding.DecodeString(tokenString)
-		if err != nil {
-			err = fmt.Errorf("DecodeString error: %v invalid Authorization: %v", err, tokenString)
-			return
-		}
-		accountIDAndHash := strings.SplitN(string(payload), ":", 2)
-		if len(accountIDAndHash) == 1 {
-			err = fmt.Errorf("invalid Authorization: %v palyoad: %v, authorization can be generate from account_id", tokenString, payload)
-			return
-		}
-		accountID = types.AccountID(accountIDAndHash[0])
-		secretHash = accountIDAndHash[1]
-	} else if websocketTLSEnabled {
-		if request.TLS != nil && len(request.TLS.PeerCertificates) > 0 {
-			accountID, err = utils.GetAccountIDFromBxCertificate(request.TLS.PeerCertificates[0].Extensions)
-			if err != nil {
-				err = fmt.Errorf("failed to get account_id extension, %w", err)
-				return
-			}
-		}
-	}
-	if accountID == "" {
-		err = fmt.Errorf("missing authorization from method: %v", request.Method)
-		return
-	}
-	return
-}
-
 func (ch *ClientHandler) runWSServer() {
-	ch.websocketServer = NewWSServer(ch.feedManager, ch.getQuotaUsage, ch.enableBlockchainRPC, ch.pendingTxsSourceFromNode)
+	ch.websocketServer = NewWSServer(ch.feedManager, ch.getQuotaUsage, ch.enableBlockchainRPC, ch.pendingTxsSourceFromNode, ch.authorize)
 	ch.log.Infof("starting websockets RPC server at: %v", ch.websocketServer.Addr)
 	var err error
 	if ch.feedManager.cfg.WebsocketTLSEnabled {
@@ -502,7 +459,7 @@ func (h *handlerObj) validateFeed(feedName types.FeedType, feedStreaming sdnmess
 	return nil
 }
 
-func (h *handlerObj) filterAndInclude(clientReq *clientReq, tx *types.NewTransactionNotification) *TxResult {
+func filterAndInclude(clientReq *clientReq, tx *types.NewTransactionNotification, remoteAddress string, accountID types.AccountID) *TxResult {
 	hasTxContent := false
 	if clientReq.expr != nil {
 		txFilters := tx.Filters(clientReq.expr.Args())
@@ -512,8 +469,8 @@ func (h *handlerObj) filterAndInclude(clientReq *clientReq, tx *types.NewTransac
 		// Evaluate if we should send the tx
 		shouldSend, err := conditions.Evaluate(clientReq.expr, txFilters)
 		if err != nil {
-			h.log.Errorf("error evaluate Filters. feed: %v. method: %v. Filters: %v. remote address: %v. account id: %v error - %v tx: %v.",
-				clientReq.feed, clientReq.includes[0], clientReq.expr.String(), h.remoteAddress, h.connectionAccount.AccountID, err.Error(), txFilters)
+			log.Errorf("error evaluate Filters. feed: %v. method: %v. Filters: %v. remote address: %v. account id: %v error - %v tx: %v.",
+				clientReq.feed, clientReq.includes[0], clientReq.expr.String(), remoteAddress, accountID, err.Error(), txFilters)
 			return nil
 		}
 		if !shouldSend {
@@ -551,13 +508,12 @@ func (h *handlerObj) filterAndInclude(clientReq *clientReq, tx *types.NewTransac
 	return &response
 }
 
-func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan interface{}, subscriptionID string, clientReq *clientReq, conn *jsonrpc2.Conn, req *jsonrpc2.Request, feedName types.FeedType) error {
+func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan types.Notification, subscriptionID string, clientReq *clientReq, conn *jsonrpc2.Conn, req *jsonrpc2.Request, feedName types.FeedType) error {
 	for {
 		select {
 		case <-conn.DisconnectNotify():
 			return nil
-		case n, ok := <-feedChan:
-			notification := n.(*types.Notification)
+		case notification, ok := <-feedChan:
 			continueProcessing := true
 			multiTxsResponse := MultiTransactions{Subscription: subscriptionID}
 			if !ok {
@@ -568,14 +524,14 @@ func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan interf
 			}
 			switch feedName {
 			case types.NewTxsFeed:
-				tx := (*notification).(*types.NewTransactionNotification)
-				response := h.filterAndInclude(clientReq, tx)
+				tx := (notification).(*types.NewTransactionNotification)
+				response := filterAndInclude(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
 				if response != nil {
 					multiTxsResponse.Result = append(multiTxsResponse.Result, *response)
 				}
 			case types.PendingTxsFeed:
-				tx := (*notification).(*types.PendingTransactionNotification)
-				response := h.filterAndInclude(clientReq, &tx.NewTransactionNotification)
+				tx := (notification).(*types.PendingTransactionNotification)
+				response := filterAndInclude(clientReq, &tx.NewTransactionNotification, h.remoteAddress, h.connectionAccount.AccountID)
 				if response != nil {
 					multiTxsResponse.Result = append(multiTxsResponse.Result, *response)
 				}
@@ -584,8 +540,7 @@ func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan interf
 				select {
 				case <-conn.DisconnectNotify():
 					return nil
-				case n, ok := <-feedChan:
-					notification := n.(*types.Notification)
+				case notification, ok := <-feedChan:
 					if !ok {
 						if h.FeedManager.SubscriptionExists(subscriptionID) {
 							SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
@@ -594,14 +549,14 @@ func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan interf
 					}
 					switch feedName {
 					case types.NewTxsFeed:
-						tx := (*notification).(*types.NewTransactionNotification)
-						response := h.filterAndInclude(clientReq, tx)
+						tx := (notification).(*types.NewTransactionNotification)
+						response := filterAndInclude(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
 						if response != nil {
 							multiTxsResponse.Result = append(multiTxsResponse.Result, *response)
 						}
 					case types.PendingTxsFeed:
-						tx := (*notification).(*types.PendingTransactionNotification)
-						response := h.filterAndInclude(clientReq, &tx.NewTransactionNotification)
+						tx := (notification).(*types.PendingTransactionNotification)
+						response := filterAndInclude(clientReq, &tx.NewTransactionNotification, h.remoteAddress, h.connectionAccount.AccountID)
 						if response != nil {
 							multiTxsResponse.Result = append(multiTxsResponse.Result, *response)
 						}
@@ -705,31 +660,31 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 			case errMsg := <-sub.ErrMsgChan:
 				SendErrorMsg(ctx, jsonrpc.InvalidParams, errMsg, conn, req.ID)
 				return
-			case n, ok := <-sub.FeedChan:
+			case notification, ok := <-(sub.FeedChan):
 				if !ok {
 					if h.FeedManager.SubscriptionExists(subscriptionID) {
 						SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
 					}
 					return
 				}
-				notification := n.(*types.Notification)
+
 				switch feedName {
 				case types.NewTxsFeed:
-					tx := (*notification).(*types.NewTransactionNotification)
+					tx := (notification).(*types.NewTransactionNotification)
 					if h.sendTxNotification(ctx, subscriptionID, request, conn, tx) != nil {
 						return
 					}
 				case types.PendingTxsFeed:
-					tx := (*notification).(*types.PendingTransactionNotification)
+					tx := (notification).(*types.PendingTransactionNotification)
 					if h.sendTxNotification(ctx, subscriptionID, request, conn, &tx.NewTransactionNotification) != nil {
 						return
 					}
 				case types.BDNBlocksFeed, types.NewBlocksFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed:
-					if h.sendNotification(ctx, subscriptionID, request, conn, *notification) != nil {
+					if h.sendNotification(ctx, subscriptionID, request, conn, notification) != nil {
 						return
 					}
 				case types.TxReceiptsFeed:
-					block := (*notification).(*types.EthBlockNotification)
+					block := notification.(*types.EthBlockNotification)
 					nodeWS, ok := h.getSyncedWSProvider(block.Source())
 					if !ok {
 						SendErrorMsg(ctx, jsonrpc.InvalidRequest, fmt.Sprintf("node ws connection is not available"), conn, req.ID)
@@ -769,7 +724,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 					}
 					h.log.Debugf("finished fetching transaction receipts for block %v, %v", block.BlockHash, block.Header.Number)
 				case types.OnBlockFeed:
-					block := (*notification).(*types.EthBlockNotification)
+					block := notification.(*types.EthBlockNotification)
 					// check if block
 					if len(block.Transactions) > 0 {
 						nodeWS, ok := h.getSyncedWSProvider(block.Source())
@@ -1174,22 +1129,22 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 					case errMsg := <-sub.ErrMsgChan:
 						SendErrorMsg(ctx, jsonrpc.InvalidParams, errMsg, conn, req.ID)
 						return
-					case n, ok := <-sub.FeedChan:
+					case notification, ok := <-sub.FeedChan:
 						if !ok {
 							if h.FeedManager.SubscriptionExists(subscriptionID) {
 								SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
 							}
 							return
 						}
-						notification := n.(*types.Notification)
+
 						switch request.feed {
 						case types.NewTxsFeed:
-							tx := (*notification).(*types.NewTransactionNotification)
+							tx := (notification).(*types.NewTransactionNotification)
 							if h.sendTxNotificationEthFormat(ctx, subscriptionID, request, conn, tx) != nil {
 								return
 							}
 						case types.PendingTxsFeed:
-							tx := (*notification).(*types.PendingTransactionNotification)
+							tx := (notification).(*types.PendingTransactionNotification)
 							if h.sendTxNotificationEthFormat(ctx, subscriptionID, request, conn, &tx.NewTransactionNotification) != nil {
 								return
 							}
@@ -1225,15 +1180,14 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 					case errMsg := <-sub.ErrMsgChan:
 						SendErrorMsg(ctx, jsonrpc.InvalidParams, errMsg, conn, req.ID)
 						return
-					case n, ok := <-sub.FeedChan:
+					case notification, ok := <-sub.FeedChan:
 						if !ok {
 							if h.FeedManager.SubscriptionExists(subscriptionID) {
 								SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
 							}
 							return
 						}
-						notification := n.(*types.Notification)
-						bxBlock := (*notification).(*types.EthBlockNotification)
+						bxBlock := (notification).(*types.EthBlockNotification)
 						NewHeadsBlock := types.NewHeadsBlockFromEthBlockNotification(bxBlock)
 						if h.sendNotification(ctx, subscriptionID, request, conn, NewHeadsBlock) != nil {
 							return
@@ -1363,14 +1317,13 @@ func (h *handlerObj) handleMEVBundle(ctx context.Context, conn *jsonrpc2.Conn, r
 	}
 
 	mevBundle, bundleHash, err := mevBundleFromRequest(params)
+	var result interface{}
+	if params.UUID == "" {
+		result = GatewayBundleResponse{BundleHash: bundleHash}
+	}
 	if err != nil {
 		if errors.Is(err, errBlockedTxHashes) {
-			var result interface{}
-			if params.UUID != "" {
-				result = GatewayBundleResponse{BundleHash: bundleHash}
-			}
-
-			if err := reply(ctx, conn, req.ID, map[string]interface{}{"Result": result}); err != nil {
+			if err := reply(ctx, conn, req.ID, result); err != nil {
 				h.log.Errorf(err.Error())
 				return
 			}
@@ -1396,7 +1349,7 @@ func (h *handlerObj) handleMEVBundle(ctx context.Context, conn *jsonrpc2.Conn, r
 		return
 	}
 
-	if err := reply(ctx, conn, req.ID, map[string]string{"status": "ok"}); err != nil {
+	if err := reply(ctx, conn, req.ID, result); err != nil {
 		h.log.Errorf("%v error: %v", jsonrpc.RPCBundleSubmission, err)
 		return
 	}
@@ -1430,7 +1383,7 @@ func (h *handlerObj) sendNotification(ctx context.Context, subscriptionID string
 
 // sendTxNotification - build a response according to client request and notify client
 func (h *handlerObj) sendTxNotification(ctx context.Context, subscriptionID string, clientReq *clientReq, conn *jsonrpc2.Conn, tx *types.NewTransactionNotification) error {
-	result := h.filterAndInclude(clientReq, tx)
+	result := filterAndInclude(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
 	if result == nil {
 		return nil
 	}
@@ -1450,7 +1403,7 @@ func (h *handlerObj) sendTxNotification(ctx context.Context, subscriptionID stri
 
 // sendTxNotificationEthSubscribeFormat - build a response according to client request and notify client
 func (h *handlerObj) sendTxNotificationEthFormat(ctx context.Context, subscriptionID string, clientReq *clientReq, conn *jsonrpc2.Conn, tx *types.NewTransactionNotification) error {
-	result := h.filterAndInclude(clientReq, tx)
+	result := filterAndInclude(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
 	if result == nil {
 		return nil
 	}
@@ -1583,20 +1536,13 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 
 	var expr conditions.Expr
 	if request.options.Filters != "" {
-		// Parse the condition language and get expression
-		_, expr, err = ParseFilter(request.options.Filters)
+		expr, err = createFiltersExpression(request.options.Filters)
 		if err != nil {
-			h.log.Debugf("error parsing Filters from request id: %v. method: %v. params: %s. remote address: %v account id: %v error - %v",
+			h.log.Debugf("error when creating filters. request id: %v. method: %v. params: %s. remote address: %v account id: %v error - %v",
 				req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID, err.Error())
-			return nil, fmt.Errorf("error parsing Filters %v", err.Error())
+			return nil, fmt.Errorf("error creating Filters- %v", err.Error())
+		}
 
-		}
-		err = EvaluateFilters(expr)
-		if err != nil {
-			h.log.Debugf("error evalued Filters from request id: %v. method: %v. params: %s. remote address: %v account id: %v error - %v",
-				req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID, err.Error())
-			return nil, fmt.Errorf("error evaluat Filters- %v", err.Error())
-		}
 		if expr != nil {
 			h.log.Infof("GetTxContentAndFilters string - %s, GetTxContentAndFilters args - %s", expr, expr.Args())
 		}
@@ -1684,109 +1630,6 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 	clientRequest.MultiTxs = request.options.MultiTxs
 	clientRequest.calls = &calls
 	return clientRequest, nil
-}
-
-// ParseFilter parsing the filter
-func ParseFilter(filters string) (string, conditions.Expr, error) {
-	// if the filters values are go-type filters, for example: {value}, parse the filters
-	// if not go-type, convert it to go-type filters
-	if strings.Contains(filters, "{") {
-		p := conditions.NewParser(strings.NewReader(strings.ToLower(strings.Replace(filters, "'", "\"", -1))))
-		expr, err := p.Parse()
-		if err == nil {
-			isEmptyValue := filtersHasEmptyValue(expr.String())
-			if isEmptyValue != nil {
-				return "", nil, errors.New("filter is empty")
-			}
-		}
-
-		return "", expr, err
-	}
-
-	// convert the string and add whitespace to separate elements
-	tempFilters := strings.ReplaceAll(filters, "(", " ( ")
-	tempFilters = strings.ReplaceAll(tempFilters, ")", " ) ")
-	tempFilters = strings.ReplaceAll(tempFilters, "[", " [ ")
-	tempFilters = strings.ReplaceAll(tempFilters, "]", " ] ")
-	tempFilters = strings.ReplaceAll(tempFilters, ",", " , ")
-	tempFilters = strings.ReplaceAll(tempFilters, "=", " = ")
-	tempFilters = strings.ReplaceAll(tempFilters, "<", " < ")
-	tempFilters = strings.ReplaceAll(tempFilters, ">", " > ")
-	tempFilters = strings.ReplaceAll(tempFilters, "!", " ! ")
-	tempFilters = strings.ReplaceAll(tempFilters, ",", " , ")
-	tempFilters = strings.ReplaceAll(tempFilters, "<  =", "<=")
-	tempFilters = strings.ReplaceAll(tempFilters, ">  =", ">=")
-	tempFilters = strings.ReplaceAll(tempFilters, "!  =", "!=")
-	tempFilters = strings.Trim(tempFilters, " ")
-	tempFilters = strings.ToLower(tempFilters)
-	filtersArr := strings.Split(tempFilters, " ")
-
-	var newFilterString strings.Builder
-	for _, elem := range filtersArr {
-		switch {
-		case elem == "":
-		case elem == "(", elem == ")", elem == ",", elem == "]", elem == "[":
-			newFilterString.WriteString(elem)
-		case utils.Exists(elem, operators):
-			newFilterString.WriteString(" ")
-			if elem == "=" {
-				newFilterString.WriteString(elem)
-			}
-			newFilterString.WriteString(elem + " ")
-		case utils.Exists(elem, operands):
-			newFilterString.WriteString(")")
-			newFilterString.WriteString(" " + elem + " ")
-		case utils.Exists(elem, availableFilters):
-			newFilterString.WriteString("({" + elem + "}")
-		default:
-			isString := false
-			if _, err := strconv.Atoi(elem); err != nil {
-				isString = true
-			}
-			switch {
-			case isString && len(elem) >= 2 && elem[0:2] != "0x":
-				newFilterString.WriteString("'0x" + elem + "'")
-			case isString && len(elem) >= 2 && elem[0:2] == "0x":
-				newFilterString.WriteString("'" + elem + "'")
-			default:
-				newFilterString.WriteString(elem)
-			}
-		}
-	}
-
-	newFilterString.WriteString(")")
-
-	p := conditions.NewParser(strings.NewReader(strings.ToLower(strings.Replace(newFilterString.String(), "'", "\"", -1))))
-	expr, err := p.Parse()
-
-	if err == nil {
-		isEmptyValue := filtersHasEmptyValue(expr.String())
-		if isEmptyValue != nil {
-			return "", nil, errors.New("filter is empty")
-		}
-	}
-
-	return newFilterString.String(), expr, err
-}
-
-func filtersHasEmptyValue(rawFilters string) error {
-	rex := regexp.MustCompile(`\(([^)]+)\)`)
-	out := rex.FindAllStringSubmatch(rawFilters, -1)
-	for _, i := range out {
-		for _, filter := range availableFilters {
-			if i[1] == filter || filter == rawFilters {
-				return fmt.Errorf("%v", i[1])
-			}
-		}
-	}
-	return nil
-}
-
-// EvaluateFilters - evaluating if the Filters provided by the user are ok
-func EvaluateFilters(expr conditions.Expr) error {
-	// Evaluate if we should send the tx
-	_, err := conditions.Evaluate(expr, types.EmptyFilteredTransactionMap)
-	return err
 }
 
 func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2.Conn, reqID jsonrpc2.ID, transaction string, ws connections.Conn, validatorsOnly bool, sendError bool, nextValidator bool, fallback uint16, nextValidatorMap *orderedmap.OrderedMap, validatorStatusMap *syncmap.SyncMap[string, bool], nodeValidationRequested bool, frontRunningProtection bool) (string, bool) {

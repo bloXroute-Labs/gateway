@@ -237,7 +237,7 @@ var (
 		Value: "",
 	}
 	GRPCAuthFlag = &cli.StringFlag{
-		Name:  "grpc-auth",
+		Name:  "auth-header",
 		Usage: "raw authentication header for GRPC ",
 	}
 	PeerFileFlag = &cli.StringFlag{
@@ -461,5 +461,10 @@ var (
 		Usage:  "enable no-stats for not processing stats",
 		Value:  false,
 		Hidden: true,
+	}
+	BSCBundleMinAvgGasFee = &cli.IntFlag{
+		Name:  "bsc-bundle-min-avg-gas-fee",
+		Usage: "provide the minimum gwei gas fee needed for a BSC bundle",
+		Value: 3,
 	}
 )

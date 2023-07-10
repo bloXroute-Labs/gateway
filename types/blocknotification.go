@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -262,6 +263,7 @@ type EthBlockNotification struct {
 	Transactions     []map[string]interface{} `json:"transactions,omitempty"`
 	Uncles           []Header                 `json:"uncles,omitempty"`
 	ValidatorInfo    []*FutureValidatorInfo   `json:"future_validator_info,omitempty"`
+	rawTransactions  [][]byte
 	notificationType FeedType
 	source           *NodeEndpoint
 }
@@ -272,7 +274,9 @@ func NewEthBlockNotification(hash ethcommon.Hash, block *ethtypes.Block, info []
 		return nil, errors.New("empty block hash")
 	}
 
+	rawTransactions := [][]byte{}
 	ethTxs := make([]map[string]interface{}, 0)
+
 	for _, tx := range block.Transactions() {
 		var ethTx *EthTransaction
 		txHash, err := NewSHA256Hash(tx.Hash().Bytes())
@@ -285,12 +289,21 @@ func NewEthBlockNotification(hash ethcommon.Hash, block *ethtypes.Block, info []
 		if err != nil {
 			return nil, err
 		}
+
 		fields := ethTx.Fields(AllFields)
 		// todo: calculate gasPrice for DynamicFeeTxType properly
 		if ethTx.Type() == ethtypes.DynamicFeeTxType {
 			fields["gasPrice"] = fields["maxFeePerGas"]
 		}
 		ethTxs = append(ethTxs, ethTx.Fields(AllFields))
+
+		rawTx, err := ethTx.rawTx()
+		if err != nil {
+			log.Errorf("failed to create raw transaction: %v", err)
+			rawTx = []byte{}
+		}
+
+		rawTransactions = append(rawTransactions, rawTx)
 	}
 	ethUncles := make([]Header, 0, len(block.Uncles()))
 	for _, uncle := range block.Uncles() {
@@ -298,11 +311,12 @@ func NewEthBlockNotification(hash ethcommon.Hash, block *ethtypes.Block, info []
 		ethUncles = append(ethUncles, *ethUncle)
 	}
 	return &EthBlockNotification{
-		BlockHash:     &hash,
-		Header:        ConvertEthHeaderToBlockNotificationHeader(block.Header()),
-		Transactions:  ethTxs,
-		Uncles:        ethUncles,
-		ValidatorInfo: info,
+		BlockHash:       &hash,
+		Header:          ConvertEthHeaderToBlockNotificationHeader(block.Header()),
+		Transactions:    ethTxs,
+		Uncles:          ethUncles,
+		ValidatorInfo:   info,
+		rawTransactions: rawTransactions,
 	}, nil
 }
 
@@ -371,6 +385,7 @@ func ConvertEthHeaderToBlockNotificationHeader(ethHeader *ethtypes.Header) *Head
 // WithFields returns notification with specified fields
 func (ethBlockNotification *EthBlockNotification) WithFields(fields []string) Notification {
 	block := EthBlockNotification{}
+
 	for _, param := range fields {
 		switch param {
 		case "hash":
@@ -379,6 +394,7 @@ func (ethBlockNotification *EthBlockNotification) WithFields(fields []string) No
 			block.Header = ethBlockNotification.Header
 		case "transactions":
 			block.Transactions = ethBlockNotification.Transactions
+			block.rawTransactions = ethBlockNotification.rawTransactions
 		case "uncles":
 			block.Uncles = ethBlockNotification.Uncles
 		case "future_validator_info":
@@ -432,4 +448,14 @@ func (ethBlockNotification *EthBlockNotification) IsNil() bool {
 func (ethBlockNotification *EthBlockNotification) Clone() BlockNotification {
 	n := *ethBlockNotification
 	return &n
+}
+
+// GetRawTxByIndex return rawTransaction data by given index
+func (ethBlockNotification *EthBlockNotification) GetRawTxByIndex(index int) []byte {
+	if index > len(ethBlockNotification.rawTransactions) {
+		log.Errorf("failed to find raw transaction by index: %d, block hash %s", index, ethBlockNotification.GetHash())
+		return []byte{}
+	}
+
+	return ethBlockNotification.rawTransactions[index]
 }

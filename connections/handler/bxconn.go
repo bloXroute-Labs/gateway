@@ -90,7 +90,7 @@ func NewBxConn(node connections.BxListener, connect func() (connections.Socket, 
 // readFromChannel reads from receiveChan and send it to ProcessMessage, the go routing terminates when the channel is closed
 func (b *BxConn) readFromChannel() {
 	for msg := range b.receiveChan {
-		msg.SetProcessingTime(time.Now())
+		msg.SetWaitingDuration()
 		b.Handler.ProcessMessage(msg)
 	}
 }
@@ -386,7 +386,7 @@ func (b *BxConn) handleNonces(nodeNonce, peerNonce uint64) {
 }
 
 func (b *BxConn) processMessage(msgBytes bxmessage.MessageBytes) {
-	msgBytes.SetChannelPosition(len(b.receiveChan))
+	msgBytes.SetNetworkChannelPositionAndInsertTime(len(b.receiveChan), b.clock.Now())
 	select {
 	case b.receiveChan <- msgBytes:
 	default:

@@ -1,7 +1,7 @@
 syntax = "proto3";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/bloXroute-Labs/bxgateway-private-go/bxgateway/gateway";
+option go_package = "github.com/bloXroute-Labs/gateway/gateway";
 
 // The gateway service definition.
 package gateway;
@@ -25,29 +25,14 @@ service Gateway {
 message TxsRequest{
   string filters = 1;
   repeated string includes = 2;
+  string auth_header = 3;
 }
 
 message Tx{
-  string hash = 1 [deprecated=true];
-  string subscriptionID = 2 [deprecated=true];
-  string nonce = 3 [deprecated=true];
-  string gas_price = 4 [deprecated=true];
-  string gas = 5 [deprecated=true];
-  string to = 6 [deprecated=true];
-  string value = 7 [deprecated=true];
-  string input = 8 [deprecated=true];
-  string v = 9 [deprecated=true];
-  string r = 10 [deprecated=true];
-  string s = 11 [deprecated=true];
   bytes from = 12;
-  string type = 13 [deprecated=true];
   bool local_region = 14;
   int64 time = 15;
   bytes raw_tx = 16;
-  string max_fee_per_gas = 17 [deprecated=true];
-  string max_priority_fee_per_gas = 18 [deprecated=true];
-  string chainID = 19 [deprecated=true];
-  repeated AccessTuple access_list = 20 [deprecated=true];
 }
 
 message AccessTuple{
@@ -61,6 +46,7 @@ message TxsReply{
 
 message BlocksRequest{
   repeated string includes = 1;
+  string auth_header = 2;
 }
 
 message BlockHeader{
@@ -91,7 +77,7 @@ message FutureValidatorInfo{
 
 message BlocksReply{
   string hash = 1;
-  string subscriptionID = 2;
+  string subscriptionID = 2 [deprecated=true];
   BlockHeader header = 3;
   repeated FutureValidatorInfo future_validator_info = 4;
   repeated Tx transaction = 5;
@@ -101,6 +87,7 @@ message DisconnectInboundPeerRequest {
   string peer_ip = 1;
   int64 peer_port = 2;
   string public_key = 3;
+  string auth_header = 4;
 }
 
 message DisconnectInboundPeerReply {
@@ -108,7 +95,7 @@ message DisconnectInboundPeerReply {
 }
 
 message SubscriptionsRequest{
-
+  string auth_header = 1;
 }
 
 message Subscription{
@@ -128,6 +115,7 @@ message SubscriptionsReply {
 }
 
 message VersionRequest{
+  string auth_header = 1;
 }
 
 message VersionReply{
@@ -136,6 +124,7 @@ message VersionReply{
 }
 
 message StopRequest{
+  string auth_header = 1;
 }
 
 message StopReply{
@@ -143,6 +132,7 @@ message StopReply{
 
 message PeersRequest {
   string type = 1;
+  string auth_header = 2;
 }
 
 message RateSnapshot {
@@ -208,7 +198,9 @@ message GetBxTransactionResponse {
   BxTransaction tx = 1;
 }
 
-message TxStoreRequest {}
+message TxStoreRequest {
+  string auth_header = 1;
+}
 
 message TxStoreNetworkData{
   uint64 network = 4;
@@ -221,7 +213,6 @@ message TxStoreReply {
   uint64 tx_count = 1;
   uint64 short_id_count = 2;
   repeated TxStoreNetworkData network_data = 3;
-
 }
 
 message TxAndSender {
@@ -236,13 +227,15 @@ message BlxrBatchTXRequest {
   int32 fallback = 4;
   bool validators_only = 5;
   bool node_validation = 6;
-  int64 sending_time=7;
+  int64 sending_time = 7;
+  string auth_header = 8;
 }
 
 message BlxrTxRequest {
   string transaction = 1;
   bool nonce_monitoring = 2;
   bool next_validator = 3;
+  string auth_header = 4;
 }
 
 message BlxrTxReply {
@@ -264,11 +257,18 @@ message BlxrBatchTXReply {
   repeated ErrorIndex tx_errors = 2;
 }
 
-message StatusRequest {}
+message StatusRequest {
+  string auth_header = 1;
+}
 
 message AccountInfo {
   string account_id = 1;
   string expire_date = 2;
+}
+
+message QueuesStats {
+  uint64 txs_queue_count = 1;
+  uint64 txs_order_queue_count = 2;
 }
 
 message NodePerformance {
@@ -333,6 +333,7 @@ message StatusResponse {
   map<string, NodeConnStatus> nodes = 3;
   map<string, BDNConnStatus> relays = 4;
   AccountInfo account_info = 1;
+  QueuesStats queue_stats = 5;
 }
 
 message TxResult {

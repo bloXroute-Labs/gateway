@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -106,52 +105,6 @@ func (et EthTransaction) Hash() SHA256Hash {
 		}
 	}
 	return hash
-}
-
-// CreateFieldsGRPC creates fields for GRPC
-func (et *EthTransaction) CreateFieldsGRPC() *pb.Tx {
-	et.lock.Lock()
-	defer et.lock.Unlock()
-	tx := et.tx
-
-	var gasPrice string
-	if tx.Type() == ethtypes.DynamicFeeTxType {
-		gasPrice = ""
-	} else {
-		gasPrice = hexutil.EncodeBig(tx.GasPrice())
-	}
-
-	var to string
-	if tx.To() != nil {
-		to = AddressAsString(tx.To())
-	} else {
-		to = "0x0"
-	}
-
-	v, r, s := tx.RawSignatureValues()
-
-	grpcTx := &pb.Tx{
-		Hash:     strings.ToLower(tx.Hash().String()),
-		Nonce:    strings.ToLower(hexutil.EncodeUint64(tx.Nonce())),
-		GasPrice: gasPrice,
-		Gas:      hexutil.EncodeUint64(tx.Gas()),
-		To:       to,
-		Value:    hexutil.EncodeBig(tx.Value()),
-		Input:    strings.ToLower(hexutil.Encode(tx.Data())),
-		V:        BigIntAsString(v),
-		R:        BigIntAsString(r),
-		S:        BigIntAsString(s),
-		From:     et.From.Bytes(),
-		Type:     hexutil.EncodeUint64(uint64(tx.Type())),
-	}
-	if tx.Type() != ethtypes.LegacyTxType {
-		grpcTx.ChainID = strings.ToLower(hexutil.EncodeUint64(tx.ChainId().Uint64()))
-	}
-	if tx.Type() == ethtypes.DynamicFeeTxType {
-		grpcTx.MaxFeePerGas = strings.ToLower(hexutil.EncodeUint64(tx.GasFeeCap().Uint64()))
-		grpcTx.MaxPriorityFeePerGas = strings.ToLower(hexutil.EncodeUint64(tx.GasTipCap().Uint64()))
-	}
-	return grpcTx
 }
 
 // AccessList returns access list
@@ -284,6 +237,10 @@ func (et *EthTransaction) Fields(fields []string) map[string]interface{} {
 		}
 	}
 	return transactionContent
+}
+
+func (et *EthTransaction) rawTx() ([]byte, error) {
+	return et.tx.MarshalBinary()
 }
 
 // AddressAsString converts address to string

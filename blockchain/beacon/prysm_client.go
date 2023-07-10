@@ -73,7 +73,7 @@ func (c *PrysmClient) run() {
 
 			client := ethpb.NewBeaconNodeValidatorClient(conn)
 
-			stream, err := client.StreamBlocksAltair(c.ctx, &ethpb.StreamBlocksRequest{VerifiedOnly: false})
+			stream, err := client.StreamBlocksAltair(c.ctx, &ethpb.StreamBlocksRequest{VerifiedOnly: true})
 			if err != nil {
 				c.log.Errorf("could not subscribe to Prysm: %v, retrying.", err)
 				return
@@ -112,7 +112,7 @@ func (c *PrysmClient) run() {
 
 				if blk.Block().Slot() <= currentSlot(c.config.GenesisTime)-prysmTypes.Slot(c.config.IgnoreSlotCount) {
 					c.log.Errorf("block[slot=%d,hash=%s] is too old to process", blk.Block().Slot(), blockHashHex)
-					return
+					continue
 				}
 
 				if err := sendBlockToBDN(c.clock, c.log, blk, c.bridge, c.endpoint); err != nil {

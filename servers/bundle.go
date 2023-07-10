@@ -204,5 +204,5 @@ func mevBundleFromRequest(payload *jsonrpc.RPCBundleSubmissionPayload) (*bxmessa
 
 	mevBundle.SetHash()
 
-	return &mevBundle, "", nil
+	return &mevBundle, parsedBundle.bundleHash, nil
 }

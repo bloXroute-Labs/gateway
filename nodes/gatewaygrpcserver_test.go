@@ -2,10 +2,11 @@ package nodes
 
 import (
 	"context"
-	"github.com/stretchr/testify/require"
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
@@ -13,6 +14,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/rpc"
+	"github.com/bloXroute-Labs/gateway/v2/servers"
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
@@ -26,6 +28,7 @@ func spawnGRPCServer(t *testing.T, port int, user string, password string) (*gat
 	serverConfig := config.NewGRPC("0.0.0.0", port, user, password)
 	bridge, g := setup(t, 1)
 	g.BxConfig.GRPC = serverConfig
+	g.grpcHandler = servers.NewGrpcHandler(g.feedManager)
 	s := newGatewayGRPCServer(g, serverConfig.Host, serverConfig.Port, serverConfig.User, serverConfig.Password)
 	go func() {
 		_ = s.Start()
@@ -125,7 +128,7 @@ func TestGatewayGRPCNewTxs(t *testing.T) {
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
 
 	_ = rpc.GatewayConsoleCall(clientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
-		res, err := client.NewTxs(ctx, &pb.TxsRequest{})
+		res, err := client.NewTxs(ctx, &pb.TxsRequest{AuthHeader: "Og=="})
 		require.NoError(t, err)
 
 		time.Sleep(time.Millisecond)
@@ -166,7 +169,7 @@ func TestGatewayGRPCPendingTxs(t *testing.T) {
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
 
 	_ = rpc.GatewayConsoleCall(clientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
-		res, err := client.PendingTxs(ctx, &pb.TxsRequest{})
+		res, err := client.PendingTxs(ctx, &pb.TxsRequest{AuthHeader: "Og=="})
 		assert.Nil(t, err)
 
 		pendingTxsStream, ok := res.(pb.Gateway_PendingTxsClient)
@@ -202,7 +205,7 @@ func TestGatewayGRPCNewBlocks(t *testing.T) {
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
 
 	_ = rpc.GatewayConsoleCall(clientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
-		res, err := client.NewBlocks(ctx, &pb.BlocksRequest{})
+		res, err := client.NewBlocks(ctx, &pb.BlocksRequest{AuthHeader: "Og=="})
 		assert.Nil(t, err)
 
 		newBlocksStream, ok := res.(pb.Gateway_NewBlocksClient)
@@ -245,7 +248,7 @@ func TestGatewayGRPCBdnBlocks(t *testing.T) {
 
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
 	err = rpc.GatewayConsoleCall(clientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
-		res, err := client.BdnBlocks(ctx, &pb.BlocksRequest{})
+		res, err := client.BdnBlocks(ctx, &pb.BlocksRequest{AuthHeader: "Og=="})
 		require.NoError(t, err)
 
 		time.Sleep(time.Millisecond)

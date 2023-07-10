@@ -12,7 +12,6 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
-	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/sourcegraph/jsonrpc2"
 
 	"github.com/bloXroute-Labs/gateway/v2"
@@ -74,6 +73,10 @@ var accountIDToAccountModel = map[types.AccountID]sdnmessage.Account{
 			},
 		},
 	},
+}
+
+func mockAuthorize(accountID types.AccountID, _ string) (sdnmessage.Account, error) {
+	return getMockCustomerAccountModel(accountID)
 }
 
 func getMockCustomerAccountModel(accountID types.AccountID) (sdnmessage.Account, error) {
@@ -139,13 +142,8 @@ func TestClientHandler(t *testing.T) {
 	cfg := config.Bx{WebsocketPort: 28332, ManageWSServer: true, WebsocketTLSEnabled: false}
 
 	blockchainPeers, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
-	gRPCFeedChans := GRPCFeeds{
-		NewTxsFeed:     make(chan *pb.TxsReply, bxgateway.BxNotificationChannelSize),
-		PendingTxsFeed: make(chan *pb.TxsReply, bxgateway.BxNotificationChannelSize),
-		NewBlocksFeed:  make(chan *pb.BlocksReply, bxgateway.BxNotificationChannelSize),
-		BdnBlocksFeed:  make(chan *pb.BlocksReply, bxgateway.BxNotificationChannelSize),
-	}
-	fm := NewFeedManager(context.Background(), g, feedChan, gRPCFeedChans, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 1, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil, nil)
+
+	fm := NewFeedManager(context.Background(), g, feedChan, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 1, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil, nil)
 	providers := fm.nodeWSManager.Providers()
 	p1 := providers[blockchainPeers[0].IPPort()]
 	assert.NotNil(t, p1)
@@ -158,7 +156,7 @@ func TestClientHandler(t *testing.T) {
 	sourceFromNode := false
 	clientHandler := NewClientHandler(fm, nil, NewHTTPServer(fm, cfg.HTTPPort), true, nil, log.WithFields(log.Fields{
 		"component": "gatewayClientHandler",
-	}), &sourceFromNode)
+	}), &sourceFromNode, mockAuthorize)
 	go clientHandler.ManageWSServer(cfg.ManageWSServer)
 	go clientHandler.ManageHTTPServer(context.Background())
 	group.Go(fm.Start)
@@ -169,12 +167,12 @@ func TestClientHandler(t *testing.T) {
 	BscWsURLs := fmt.Sprintf("ws://%s/ws", urlBSC)
 	blockchainPeersBSC, blockchainPeersInfoBSC := test.GenerateBlockchainPeersInfo(1)
 
-	fmBSC := NewFeedManager(context.Background(), g, feedChan, gRPCFeedChans, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 56, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfoBSC, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false), gwAccount, getMockCustomerAccountModel, "", "", cfgBSC, stats, nil, nil)
+	fmBSC := NewFeedManager(context.Background(), g, feedChan, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 56, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfoBSC, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false), gwAccount, getMockCustomerAccountModel, "", "", cfgBSC, stats, nil, nil)
 	p4 := providers[blockchainPeersBSC[0].IPPort()]
 	assert.NotNil(t, p4)
 	clientHandlerBSC := NewClientHandler(fmBSC, nil, NewHTTPServer(fmBSC, cfg.HTTPPort+1), false, getMockQuotaUsage, log.WithFields(log.Fields{
 		"component": "gatewayClientHandlerBSC",
-	}), &sourceFromNode)
+	}), &sourceFromNode, mockAuthorize)
 	go clientHandlerBSC.ManageWSServer(false)
 	go clientHandlerBSC.ManageHTTPServer(context.Background())
 	group.Go(fmBSC.Start)
@@ -241,10 +239,10 @@ func TestClientHandler(t *testing.T) {
 			testWSShutdown(t, fm, ws, blockchainPeers)
 		})
 		// restart bc last test shut down ws server
-		fm = NewFeedManager(context.Background(), g, make(chan types.Notification), gRPCFeedChans, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 1, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil, nil)
+		fm = NewFeedManager(context.Background(), g, make(chan types.Notification), services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 1, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil, nil)
 		clientHandler = NewClientHandler(fm, nil, NewHTTPServer(fm, cfg.HTTPPort), true, getMockQuotaUsage, log.WithFields(log.Fields{
 			"component": "gatewayClientHandler",
-		}), &sourceFromNode)
+		}), &sourceFromNode, mockAuthorize)
 		go clientHandler.ManageWSServer(cfg.ManageWSServer)
 		go clientHandler.ManageHTTPServer(context.Background())
 		group.Go(fm.Start)
@@ -384,7 +382,7 @@ func handleEthSubscribe(t *testing.T, fm *FeedManager, ws *websocket.Conn, block
 	feedNotification.SetSource(&sourceEndpoint)
 	assert.True(t, fm.nodeWSManager.Synced())
 
-	fm.wsFeed <- feedNotification
+	fm.feed <- feedNotification
 	time.Sleep(time.Millisecond)
 
 	for i := 0; i < 1; i++ {
@@ -495,7 +493,7 @@ func handleTxReceiptsNotification(t *testing.T, fm *FeedManager, ws *websocket.C
 	feedNotification.SetSource(&sourceEndpoint)
 	assert.True(t, fm.nodeWSManager.Synced())
 
-	fm.wsFeed <- feedNotification
+	fm.feed <- feedNotification
 	time.Sleep(5 * time.Millisecond)
 	assert.Equal(t, numTx, wsProvider.(*eth.MockWSProvider).NumReceiptsFetched)
 
@@ -585,7 +583,7 @@ func handleOnBlockNotification(t *testing.T, fm *FeedManager, ws *websocket.Conn
 	feedNotification.SetSource(&sourceEndpoint)
 	assert.True(t, fm.nodeWSManager.Synced())
 
-	fm.wsFeed <- feedNotification
+	fm.feed <- feedNotification
 	time.Sleep(time.Millisecond)
 	assert.Equal(t, 1, wsProvider.(*eth.MockWSProvider).NumRPCCalls)
 
@@ -630,7 +628,7 @@ func handleTxReceiptsNotificationRequestedUnsynced(t *testing.T, fm *FeedManager
 	time.Sleep(time.Millisecond)
 	assert.True(t, fm.nodeWSManager.Synced())
 
-	fm.wsFeed <- feedNotification
+	fm.feed <- feedNotification
 	time.Sleep(time.Millisecond)
 	assert.Equal(t, numTx, expectedSyncedWSProvider.(*eth.MockWSProvider).NumReceiptsFetched)
 	assert.Equal(t, 0, requestedUnsyncedWSProvider.(*eth.MockWSProvider).NumReceiptsFetched)
@@ -675,7 +673,7 @@ func handleOnBlockNotificationRequestedUnsynced(t *testing.T, fm *FeedManager, w
 	time.Sleep(time.Millisecond)
 	assert.True(t, fm.nodeWSManager.Synced())
 
-	fm.wsFeed <- feedNotification
+	fm.feed <- feedNotification
 	time.Sleep(time.Millisecond)
 	assert.Equal(t, 1, expectedSyncedWSProvider.(*eth.MockWSProvider).NumRPCCalls)
 	assert.Equal(t, 0, requestedUnsyncedWSProvider.(*eth.MockWSProvider).NumRPCCalls)
@@ -729,7 +727,7 @@ func handleTxReceiptsNotificationNoneSynced(t *testing.T, fm *FeedManager, ws *w
 	assert.False(t, fm.nodeWSManager.Synced())
 	assert.False(t, fm.SubscriptionExists(subscriptionID))
 
-	fm.wsFeed <- feedNotification
+	fm.feed <- feedNotification
 	time.Sleep(time.Millisecond)
 	assert.Equal(t, 0, ws0.(*eth.MockWSProvider).NumReceiptsFetched)
 	assert.Equal(t, 0, ws1.(*eth.MockWSProvider).NumReceiptsFetched)
@@ -766,7 +764,7 @@ func handleOnBlockNotificationNoneSynced(t *testing.T, fm *FeedManager, ws *webs
 	assert.False(t, fm.nodeWSManager.Synced())
 	assert.False(t, fm.SubscriptionExists(subscriptionID))
 
-	fm.wsFeed <- feedNotification
+	fm.feed <- feedNotification
 	time.Sleep(time.Millisecond)
 	assert.Equal(t, 0, ws0.(*eth.MockWSProvider).NumRPCCalls)
 	assert.Equal(t, 0, ws1.(*eth.MockWSProvider).NumRPCCalls)

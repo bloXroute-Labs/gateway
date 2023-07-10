@@ -29,7 +29,7 @@ const (
 
 // ClientSubscription contains client subscription feed and connection
 type ClientSubscription struct {
-	feed               chan interface{}
+	feed               chan types.Notification
 	feedType           types.FeedType
 	feedConnectionType types.FeedConnectionType
 	connection         *jsonrpc2.Conn
@@ -48,7 +48,7 @@ type ClientSubscription struct {
 // ClientSubscriptionHandlingInfo contains all info needed by subscription handler
 type ClientSubscriptionHandlingInfo struct {
 	SubscriptionID     string
-	FeedChan           chan interface{}
+	FeedChan           chan types.Notification
 	ErrMsgChan         chan string
 	PermissionRespChan chan *sdnmessage.SubscriptionPermissionMessage
 }
@@ -61,18 +61,9 @@ type PendingNextValidatorTxInfo struct {
 	Source        connections.Conn
 }
 
-// GRPCFeeds contains channels for notifications for each gRPC feed type
-type GRPCFeeds struct {
-	NewTxsFeed     chan *pb.TxsReply
-	PendingTxsFeed chan *pb.TxsReply
-	NewBlocksFeed  chan *pb.BlocksReply
-	BdnBlocksFeed  chan *pb.BlocksReply
-}
-
 // FeedManager - feed manager fields
 type FeedManager struct {
-	wsFeed                              chan types.Notification
-	gRPCFeeds                           GRPCFeeds
+	feed                                chan types.Notification
 	idToClientSubscription              map[string]ClientSubscription
 	subscriptionServices                services.SubscriptionServices
 	lock                                sync.RWMutex
@@ -99,7 +90,7 @@ type FeedManager struct {
 
 // NewFeedManager - create a new feedManager
 func NewFeedManager(parent context.Context, node connections.BxListener, wsFeedChan chan types.Notification,
-	gRPCFeeds GRPCFeeds, subscriptionServices services.SubscriptionServices,
+	subscriptionServices services.SubscriptionServices,
 	networkNum types.NetworkNum, networkID types.NetworkID, nodeID types.NodeID,
 	wsManager blockchain.WSManager,
 	accountModel sdnmessage.Account, getCustomerAccountModel func(types.AccountID) (sdnmessage.Account, error),
@@ -111,8 +102,7 @@ func NewFeedManager(parent context.Context, node connections.BxListener, wsFeedC
 	})
 
 	newServer := &FeedManager{
-		wsFeed:                              wsFeedChan,
-		gRPCFeeds:                           gRPCFeeds,
+		feed:                                wsFeedChan,
 		idToClientSubscription:              make(map[string]ClientSubscription),
 		subscriptionServices:                subscriptionServices,
 		node:                                node,
@@ -170,7 +160,7 @@ func (f *FeedManager) checkForDuplicateFeed(clientSubscription *ClientSubscripti
 func (f *FeedManager) Subscribe(feedName types.FeedType, feedConnectionType types.FeedConnectionType, conn *jsonrpc2.Conn, accountTier sdnmessage.AccountTier, accountID types.AccountID, remoteAddress string, filters string, includes string, project string, ethSubscribe bool) (*ClientSubscriptionHandlingInfo, error) {
 	id := f.subscriptionServices.GenerateSubscriptionID(ethSubscribe)
 	clientSubscription := ClientSubscription{
-		feed:               make(chan interface{}, bxgateway.BxNotificationChannelSize),
+		feed:               make(chan types.Notification, bxgateway.BxNotificationChannelSize),
 		feedType:           feedName,
 		feedConnectionType: feedConnectionType,
 		connection:         conn,
@@ -290,16 +280,16 @@ func (f *FeedManager) run() {
 
 	for {
 		select {
-		case notification, ok := <-f.wsFeed:
+		case notification, ok := <-f.feed:
 			if !ok {
 				f.log.Errorf("can't pull from ws feed channel. Terminating")
 				break
 			}
 			f.lock.RLock()
 			for uid, clientSub := range f.idToClientSubscription {
-				if clientSub.feedConnectionType == types.WebSocketFeed && clientSub.feedType == notification.NotificationType() {
+				if (clientSub.feedConnectionType == types.WebSocketFeed || clientSub.feedConnectionType == types.GRPCFeed) && clientSub.feedType == notification.NotificationType() {
 					select {
-					case clientSub.feed <- &notification:
+					case clientSub.feed <- notification:
 						// Offer: I took this out as we are locking the map in read and can't write.
 						// also, do we need to update the map after we update the counter?
 						// if entry, ok := f.idToClientSubscription[uid]; ok {
@@ -319,52 +309,8 @@ func (f *FeedManager) run() {
 				}
 			}
 			f.lock.RUnlock()
-		case notification, ok := <-f.gRPCFeeds.NewTxsFeed:
-			if !ok {
-				f.log.Errorf("can't pull from newTxs gRPC feed channel. Terminating")
-				break
-			}
-			f.gRPCForwardNotificationToClients(notification, types.NewTxsFeed)
-		case notification, ok := <-f.gRPCFeeds.PendingTxsFeed:
-			if !ok {
-				f.log.Errorf("can't pull from pendingTxs gRPC feed channel. Terminating")
-				break
-			}
-			f.gRPCForwardNotificationToClients(notification, types.PendingTxsFeed)
-		case notification, ok := <-f.gRPCFeeds.NewBlocksFeed:
-			if !ok {
-				f.log.Errorf("can't pull from newBlocks gRPC feed channel. Terminating")
-				break
-			}
-			f.gRPCForwardNotificationToClients(notification, types.NewBlocksFeed)
-		case notification, ok := <-f.gRPCFeeds.BdnBlocksFeed:
-			if !ok {
-				f.log.Errorf("can't pull from bdnBlocks gRPC feed channel. Terminating")
-				break
-			}
-			f.gRPCForwardNotificationToClients(notification, types.BDNBlocksFeed)
 		}
 	}
-}
-
-func (f *FeedManager) gRPCForwardNotificationToClients(notification interface{}, feedType types.FeedType) {
-	f.lock.RLock()
-	for uid, clientSub := range f.idToClientSubscription {
-		if clientSub.feedConnectionType == types.GRPCFeed && clientSub.feedType == feedType {
-			select {
-			case clientSub.feed <- notification:
-			default:
-				f.log.Errorf("can't send %v notification to gRPC channel %v without blocking. Ignored and unsubscribing", clientSub.feedType, uid)
-				go func(subscriptionID string) {
-					// running as go-routine since we are holding the lock. Closing the connection since we can't write
-					if err := f.Unsubscribe(subscriptionID, true, ""); err != nil {
-						f.log.Debugf("unable to Unsubscribe %v - %v", subscriptionID, err)
-					}
-				}(uid)
-			}
-		}
-	}
-	f.lock.RUnlock()
 }
 
 // SubscriptionExists - check if subscription exists

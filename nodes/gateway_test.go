@@ -101,14 +101,9 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 	g.setupTxStore()
 	g.txTrace = loggers.NewTxTrace(nil)
 	g.setSyncWithRelay()
-	g.wsFeedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
-	g.gRPCFeedChans = servers.GRPCFeeds{
-		NewTxsFeed:     make(chan *pb.TxsReply, bxgateway.BxNotificationChannelSize),
-		PendingTxsFeed: make(chan *pb.TxsReply, bxgateway.BxNotificationChannelSize),
-		NewBlocksFeed:  make(chan *pb.BlocksReply, bxgateway.BxNotificationChannelSize),
-		BdnBlocksFeed:  make(chan *pb.BlocksReply, bxgateway.BxNotificationChannelSize),
-	}
-	g.feedManager = servers.NewFeedManager(g.context, g, g.wsFeedChan, g.gRPCFeedChans, services.NewNoOpSubscriptionServices(),
+	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+
+	g.feedManager = servers.NewFeedManager(g.context, g, g.feedManagerChan, services.NewNoOpSubscriptionServices(),
 		networkNum, types.NetworkID(chainID), g.sdn.NodeModel().NodeID,
 		g.wsManager, g.sdn.AccountModel(), nil,
 		"", "", *g.BxConfig, g.stats, nil, nil)
@@ -206,6 +201,16 @@ func assertNoTransactionSentToRelay(t *testing.T, relayTLS bxmock.MockTLS) {
 func assertNoBlockSentToRelay(t *testing.T, relayTLS bxmock.MockTLS) {
 	_, err := relayTLS.MockAdvanceSent()
 	assert.NotNil(t, err)
+}
+
+func waitUntillTXQueueChannelIsEmpty(g *gateway) {
+	for {
+		if g.txsQueue.Len() == 0 {
+			time.Sleep(10 * time.Millisecond)
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 func TestGateway_PushBlockchainConfig(t *testing.T) {
@@ -399,7 +404,7 @@ func TestGateway_HandleTransactionFromRPC_BurstLimitPaid(t *testing.T) {
 	txMessage.SetFlags(types.TFPaidTx)
 	err := g.HandleMsg(txMessage, connections.NewRPCConn(account.AccountID, "", networkNum, utils.Websocket), connections.RunForeground)
 	assert.Nil(t, err)
-
+	waitUntillTXQueueChannelIsEmpty(g)
 	countLimitPaid := g.bdnStats.BurstLimitedTransactionsPaid()
 	assert.Equal(t, countLimitPaid, uint16(1))
 }
@@ -434,7 +439,7 @@ func TestGateway_HandleTransactionFromRPC_BurstLimitUnpaid(t *testing.T) {
 		err := g.HandleMsg(txMessage, connections.NewRPCConn(account.AccountID, "", networkNum, utils.Websocket), connections.RunForeground)
 		assert.Nil(t, err)
 	}
-
+	waitUntillTXQueueChannelIsEmpty(g)
 	countLimitUnpaid := g.bdnStats.BurstLimitedTransactionsUnpaid()
 	assert.Equal(t, countLimitUnpaid, uint16(5))
 }
@@ -694,13 +699,13 @@ func TestGateway_HandleBlockFromBlockchain(t *testing.T) {
 
 	g.BxConfig.WebsocketEnabled = true
 	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, sdnmessage.ATierEnterprise, "", "", "", "", "", false)
-	g.wsFeedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 	var count int32
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for v := range g.wsFeedChan {
+		for v := range g.feedManagerChan {
 			fmt.Println(v)
 			atomic.AddInt32(&count, 1)
 		}
@@ -734,7 +739,7 @@ func TestGateway_HandleBlockFromBlockchain(t *testing.T) {
 	// times out, nothing sent (already processed)
 	msgBytes, err = mockTLS.MockAdvanceSent()
 	assert.NotNil(t, err, "unexpected bytes %v", string(msgBytes))
-	close(g.wsFeedChan)
+	close(g.feedManagerChan)
 	wg.Wait()
 	assert.Equal(t, int32(4), atomic.LoadInt32(&count))
 }
@@ -750,13 +755,13 @@ func TestGateway_HandleBlockFromInboundBlockchain(t *testing.T) {
 
 	g.BxConfig.WebsocketEnabled = true
 	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, sdnmessage.ATierEnterprise, "", "", "", "", "", false)
-	g.wsFeedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 	var count int32
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for v := range g.wsFeedChan {
+		for v := range g.feedManagerChan {
 			fmt.Println(v.NotificationType())
 			atomic.AddInt32(&count, 1)
 		}
@@ -791,7 +796,7 @@ func TestGateway_HandleBlockFromInboundBlockchain(t *testing.T) {
 	// times out, nothing sent (already processed)
 	msgBytes, err = mockTLS.MockAdvanceSent()
 	assert.NotNil(t, err, "unexpected bytes %v", string(msgBytes))
-	close(g.wsFeedChan)
+	close(g.feedManagerChan)
 	wg.Wait()
 	assert.Equal(t, int32(3), atomic.LoadInt32(&count))
 }
@@ -997,7 +1002,7 @@ func TestGateway_HandleBeaconBlockFromRelay(t *testing.T) {
 func TestGateway_ValidateHeightBDNBlocksWithNode(t *testing.T) {
 	bridge, g := setup(t, 1)
 	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "", false)
-	g.wsFeedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 	g.BxConfig.WebsocketEnabled = true
 
 	// block from node
@@ -1058,7 +1063,7 @@ func TestGateway_ValidateHeightBDNBlocksWithNode(t *testing.T) {
 
 func TestGateway_BlockFeedIfSubscribeOnly(t *testing.T) {
 	bridge, g := setup(t, 1)
-	g.wsFeedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 	g.BxConfig.WebsocketEnabled = true
 	g.blockchainPeers = []types.NodeEndpoint{}
 
@@ -1075,7 +1080,7 @@ func TestGateway_BlockFeedIfSubscribeOnly(t *testing.T) {
 func TestGateway_ValidateHeightBDNBlocksWithoutNode(t *testing.T) {
 	bridge, g := setup(t, 1)
 	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "", false)
-	g.wsFeedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 	g.BxConfig.WebsocketEnabled = true
 	g.blockchainPeers = []types.NodeEndpoint{}
 
@@ -1104,7 +1109,7 @@ func expectNoFeedNotification(t *testing.T, bridge blockchain.Bridge, g *gateway
 	assert.Nil(t, err)
 
 	select {
-	case <-g.wsFeedChan:
+	case <-g.feedManagerChan:
 		assert.Fail(t, "received unexpected feed notification")
 	default:
 	}
@@ -1134,7 +1139,7 @@ func expectFeedNotification(t *testing.T, bridge blockchain.Bridge, g *gateway, 
 	// It is neccessary to have FailNow to not wait until timeout when something goes wrong
 	for len(expectedNotifications) > 0 {
 		select {
-		case notification := <-g.wsFeedChan:
+		case notification := <-g.feedManagerChan:
 			if _, ok := expectedNotifications[notification.NotificationType()]; ok {
 				delete(expectedNotifications, notification.NotificationType())
 				continue

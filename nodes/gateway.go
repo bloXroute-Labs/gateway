@@ -3,6 +3,7 @@ package nodes
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -29,7 +30,6 @@ import (
 	"github.com/prysmaticlabs/prysm/v4/consensus-types/interfaces"
 	"github.com/sirupsen/logrus"
 	"github.com/sourcegraph/jsonrpc2"
-	"github.com/zhouzhuojie/conditions"
 	"go.uber.org/atomic"
 
 	upscale_client "github.com/bloXroute-Labs/upscale-client"
@@ -65,6 +65,11 @@ const (
 	ignoreSeenEvent = "ignore seen"
 )
 
+type txWithSource struct {
+	tx     *bxmessage.Tx
+	source connections.Conn
+}
+
 type gateway struct {
 	Bx
 	pb.UnimplementedGatewayServer
@@ -76,8 +81,7 @@ type gateway struct {
 	accountID          types.AccountID
 	bridge             blockchain.Bridge
 	feedManager        *servers.FeedManager
-	wsFeedChan         chan types.Notification
-	gRPCFeedChans      servers.GRPCFeeds
+	feedManagerChan    chan types.Notification
 	asyncMsgChannel    chan services.MsgInfo
 	isBDN              bool
 	bdnStats           *bxmessage.BdnPerformanceStats
@@ -124,6 +128,10 @@ type gateway struct {
 
 	polygonValidatorInfoManager polygon.ValidatorInfoManager
 	blockTime                   time.Duration
+
+	grpcHandler   *servers.GrpcHandler
+	txsQueue      services.MessageQueue
+	txsOrderQueue services.MessageQueue
 }
 
 // GeneratePeers generate string peers separated by coma
@@ -180,7 +188,11 @@ func NewGateway(parent context.Context, bxConfig *config.Bx, bridge blockchain.B
 		blockTime:                    blockTime,
 	}
 
-	g.polygonValidatorInfoManager = bor.NewSprintManager(parent, &g.wsManager, bor.NewHeimdallSpanner(parent, polygonHeimdallEndpoint))
+	if polygonHeimdallEndpoint != "" {
+		g.polygonValidatorInfoManager = bor.NewSprintManager(parent, &g.wsManager, bor.NewHeimdallSpanner(parent, polygonHeimdallEndpoint))
+	} else {
+		g.polygonValidatorInfoManager = nil
+	}
 
 	if bxConfig.BlockchainNetwork == bxgateway.BSCMainnet || bxConfig.BlockchainNetwork == bxgateway.PolygonMainnet {
 		g.validatorStatusMap = syncmap.NewStringMapOf[bool]()
@@ -210,8 +222,17 @@ func NewGateway(parent context.Context, bxConfig *config.Bx, bridge blockchain.B
 
 	// set empty default stats, Run function will override it
 	g.stats = statistics.NewStats(false, "127.0.0.1", "", nil, false)
+	g.txsQueue = services.NewMsgQueue(runtime.NumCPU()*2, bxgateway.TXQueueChannelSize, g.msgAdapter)
+	g.txsOrderQueue = services.NewMsgQueue(1, bxgateway.TXQueueChannelSize, g.msgAdapter)
 
 	return g, nil
+}
+
+func (g *gateway) msgAdapter(msg bxmessage.Message, source connections.Conn, waitingDuration time.Duration, workerChannelPosition int) {
+	if tx, ok := msg.(*bxmessage.Tx); ok {
+		tx.SetProcessingStats(waitingDuration, workerChannelPosition)
+		g.processTransaction(tx, source)
+	}
 }
 
 func (g *gateway) isSyncWithRelay() bool {
@@ -381,24 +402,20 @@ func (g *gateway) Run() error {
 	}
 
 	sslCert := g.sslCerts
-	g.wsFeedChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
-	g.gRPCFeedChans = servers.GRPCFeeds{
-		NewTxsFeed:     make(chan *pb.TxsReply, bxgateway.BxNotificationChannelSize),
-		PendingTxsFeed: make(chan *pb.TxsReply, bxgateway.BxNotificationChannelSize),
-		NewBlocksFeed:  make(chan *pb.BlocksReply, bxgateway.BxNotificationChannelSize),
-		BdnBlocksFeed:  make(chan *pb.BlocksReply, bxgateway.BxNotificationChannelSize),
-	}
+	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 
 	blockchainNetwork, err := g.sdn.FindNetwork(networkNum)
 	if err != nil {
 		return fmt.Errorf("failed to find the blockchainNetwork with networkNum %v, %v", networkNum, err)
 	}
 
-	g.feedManager = servers.NewFeedManager(g.context, g, g.wsFeedChan, g.gRPCFeedChans, services.NewNoOpSubscriptionServices(), networkNum,
+	g.feedManager = servers.NewFeedManager(g.context, g, g.feedManagerChan, services.NewNoOpSubscriptionServices(), networkNum,
 		blockchainNetwork.DefaultAttributes.NetworkID, g.sdn.NodeModel().NodeID,
 		g.wsManager, accountModel, g.sdn.FetchCustomerAccountModel,
 		sslCert.PrivateCertFile(), sslCert.PrivateKeyFile(), *g.BxConfig, g.stats, g.nextValidatorMap, g.validatorStatusMap,
 	)
+
+	g.grpcHandler = servers.NewGrpcHandler(g.feedManager)
 
 	// start feed manager if websocket or gRPC is enabled
 	if g.BxConfig.WebsocketEnabled || g.BxConfig.WebsocketTLSEnabled || g.BxConfig.GRPC.Enabled {
@@ -408,7 +425,7 @@ func (g *gateway) Run() error {
 	if g.BxConfig.WebsocketEnabled || g.BxConfig.WebsocketTLSEnabled {
 		clientHandler := servers.NewClientHandler(g.feedManager, nil, servers.NewHTTPServer(g.feedManager, g.BxConfig.HTTPPort), g.BxConfig.EnableBlockchainRPC, g.sdn.GetQuotaUsage, log.WithFields(log.Fields{
 			"component": "gatewayClientHandler",
-		}), &g.BxConfig.PendingTxsSourceFromNode)
+		}), &g.BxConfig.PendingTxsSourceFromNode, g.authorize)
 		go clientHandler.ManageWSServer(g.BxConfig.ManageWSServer)
 		go clientHandler.ManageHTTPServer(g.context)
 	}
@@ -435,7 +452,7 @@ func (g *gateway) Run() error {
 
 	go g.handleBlockchainConnectionStatusUpdate()
 
-	if networkNum == bxgateway.PolygonMainnetNum {
+	if networkNum == bxgateway.PolygonMainnetNum && g.polygonValidatorInfoManager != nil {
 		// running as goroutine to not block starting of node
 		go func() {
 			if retryErr := backoff.RetryNotify(
@@ -719,7 +736,7 @@ func (g *gateway) reevaluatePendingBSCNextValidatorTx() {
 func (g *gateway) generatePolygonValidator(bxBlock *types.BxBlock) []*types.FutureValidatorInfo {
 	blockHeight := bxBlock.Number.Uint64()
 
-	if g.validatorStatusMap == nil || g.wsManager == nil || !g.polygonValidatorInfoManager.IsRunning() {
+	if g.validatorStatusMap == nil || g.wsManager == nil || g.polygonValidatorInfoManager == nil || !g.polygonValidatorInfoManager.IsRunning() {
 		return blockchain.DefaultValidatorInfo(blockHeight)
 	}
 
@@ -990,10 +1007,12 @@ func (g *gateway) handleBridgeMessages() error {
 				if !g.isSyncWithRelay() {
 					return
 				}
+				receiveTime := g.clock.Now()
 				blockchainConnection := connections.NewBlockchainConn(txsFromNode.PeerEndpoint)
 				for _, blockchainTx := range txsFromNode.Transactions {
 					tx := bxmessage.NewTx(blockchainTx.Hash(), blockchainTx.Content(), g.sdn.NetworkNum(), types.TFLocalRegion, types.EmptyAccountID)
-					tx.SetMsgMetaData(g.clock.Now(), g.clock.Now(), 0)
+					tx.SetReceiveTime(receiveTime.Add(-time.Microsecond))
+					tx.SetTimestamp(receiveTime)
 					g.processTransaction(tx, blockchainConnection)
 				}
 			}, "ReceiveNodeTransactions", txsFromNode.PeerEndpoint.String(), int64(len(txsFromNode.Transactions)))
@@ -1108,7 +1127,15 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 
 	switch typedMsg := msg.(type) {
 	case *bxmessage.Tx:
-		g.processTransaction(typedMsg, source)
+		// insert to order queue if tx is flagged as send to node and no txs to blockchain is false, and we have static peers or dynamic peers
+		if typedMsg.Flags().ShouldDeliverToNode() && !g.BxConfig.NoTxsToBlockchain && (g.staticEnodesCount > 0 || g.BxConfig.EnableDynamicPeers) {
+			err = g.txsOrderQueue.Insert(typedMsg, source)
+		} else {
+			err = g.txsQueue.Insert(typedMsg, source)
+		}
+		if err != nil {
+			log.Errorf("%v, discarding tx from %v, tx hash %v", err, source, typedMsg.Hash().String())
+		}
 	case *bxmessage.ValidatorUpdates:
 		g.processValidatorUpdate(typedMsg, source)
 	case *bxmessage.Broadcast:
@@ -1303,6 +1330,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 	)
 
 	startTime := time.Now()
+	txTime := tx.Timestamp()
 	peerIP := source.GetPeerIP()
 	peerPort := source.GetPeerPort()
 	sourceEndpoint := types.NodeEndpoint{IP: peerIP, Port: int(peerPort), PublicKey: source.GetPeerEnode()}
@@ -1489,17 +1517,17 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 	statsStart := time.Now()
 	g.stats.AddTxsByShortIDsEvent(eventName, source, txResult.Transaction, tx.ShortID(), nodeID, broadcastRes.RelevantPeers, broadcastRes.SentGatewayPeers, startTime, tx.GetPriority(), txResult.DebugData)
 	statsDuration := time.Since(statsStart)
-
 	// usage of log.WithFields 7 times slower than usage of direct log.Tracef
+	handlingTime := g.clock.Now().Sub(tx.ReceiveTime()).Microseconds() - tx.WaitDuration().Microseconds()
 	log.Tracef(
 		"msgTx: from %v, hash %v, nonce %v, flags %v, new Tx %v, new content %v, new shortid %v, event %v,"+
 			" sentToBDN: %v, sentPeersNum %v, sentToBlockchainNode: %v, handling duration %v, sender %v,"+
 			" networkDuration %v, statsDuration %v, nextValidator enabled %v,fallback duration %v,"+
-			" next validator fallback %v, front run protection delay %v, waiting duration %v, txs in channel %v",
+			" next validator fallback %v, front run protection delay %v, waiting duration %v, txs in NetworkChannel %v, txs in processing channel %v, msg len %v",
 		source, tx.Hash(), txResult.Nonce, tx.Flags(), txResult.NewTx, txResult.NewContent, txResult.NewSID, eventName,
-		sentToBDN, broadcastRes.SentPeers, sentToBlockchainNode, g.clock.Now().Sub(tx.ProcessingStartTime()).Microseconds(), txResult.Transaction.Sender(),
-		tx.ReceiveTime().Sub(tx.Timestamp()).Microseconds(), statsDuration, tx.Flags().IsNextValidator(), tx.Fallback(),
-		tx.Flags().IsNextValidatorRebroadcast(), frontRunProtectionDelay.String(), tx.ProcessingStartTime().Sub(tx.ReceiveTime()).Microseconds(), tx.ChannelPosition(),
+		sentToBDN, broadcastRes.SentPeers, sentToBlockchainNode, handlingTime, txResult.Transaction.Sender(),
+		tx.ReceiveTime().Sub(txTime).Microseconds(), statsDuration, tx.Flags().IsNextValidator(), tx.Fallback(),
+		tx.Flags().IsNextValidatorRebroadcast(), frontRunProtectionDelay.String(), tx.WaitDuration(), tx.NetworkChannelPosition(), tx.ProcessChannelPosition(), tx.BufLen(),
 	)
 }
 
@@ -1608,15 +1636,12 @@ func (g *gateway) processBlockFromBDN(bxBlock *types.BxBlock) {
 }
 
 func (g *gateway) notify(notification types.Notification) {
-	if g.BxConfig.WebsocketEnabled || g.BxConfig.WebsocketTLSEnabled {
+	if g.BxConfig.WebsocketEnabled || g.BxConfig.WebsocketTLSEnabled || g.BxConfig.GRPC.Enabled {
 		select {
-		case g.wsFeedChan <- notification:
+		case g.feedManagerChan <- notification:
 		default:
 			log.Warnf("gateway feed channel is full. Can't add %v without blocking. Ignoring hash %v", reflect.TypeOf(notification), notification.GetHash())
 		}
-	}
-	if g.BxConfig.GRPC.Enabled {
-		g.notifyGRPCFeeds(&notification)
 	}
 }
 
@@ -1647,12 +1672,22 @@ func (g *gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source c
 }
 
 func (g *gateway) Peers(ctx context.Context, req *pb.PeersRequest) (*pb.PeersReply, error) {
+	err := g.validateAuthHeader(req.AuthHeader)
+	if err != nil {
+		return nil, err
+	}
+
 	return g.Bx.Peers(ctx, req)
 }
 
 // DisconnectInboundPeer disconnect inbound peer from gateway
 func (g *gateway) DisconnectInboundPeer(_ context.Context, req *pb.DisconnectInboundPeerRequest) (*pb.DisconnectInboundPeerReply, error) {
-	err := g.bridge.SendDisconnectEvent(types.NodeEndpoint{IP: req.PeerIp, Port: int(req.PeerPort), PublicKey: req.PublicKey})
+	err := g.validateAuthHeader(req.AuthHeader)
+	if err != nil {
+		return nil, err
+	}
+
+	err = g.bridge.SendDisconnectEvent(types.NodeEndpoint{IP: req.PeerIp, Port: int(req.PeerPort), PublicKey: req.PublicKey})
 	if err != nil {
 		return &pb.DisconnectInboundPeerReply{Status: err.Error()}, err
 	}
@@ -1664,7 +1699,76 @@ const (
 	connectionStatusNotConnected = "not_connected"
 )
 
-func (g *gateway) Version(_ context.Context, _ *pb.VersionRequest) (*pb.VersionReply, error) {
+func (g *gateway) validateAuthHeader(authHeader string) error {
+	var err error
+	if authHeader == "" {
+		if g.sdn.AccountModel().AccountID == types.BloxrouteAccountID {
+			return fmt.Errorf("could not connect to internal gateway without auth header")
+		}
+		authHeader = g.getHeaderFromGateway()
+	}
+	accountID, secretHash, err := utils.GetAccountIDSecretHashFromHeader(authHeader)
+	if err != nil {
+		return err
+	}
+
+	_, err = g.authorize(accountID, secretHash)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (g *gateway) getHeaderFromGateway() string {
+	accountID := g.sdn.AccountModel().AccountID
+	secretHash := g.sdn.AccountModel().SecretHash
+	accountIDAndHash := fmt.Sprintf("%s:%s", accountID, secretHash)
+	return base64.StdEncoding.EncodeToString([]byte(accountIDAndHash))
+}
+
+func (g *gateway) authorize(accountID types.AccountID, secretHash string) (sdnmessage.Account, error) {
+	// if gateway received request from a customer with a different account id, it should verify it with the SDN.
+	// if the gateway does not have permission to verify account id (which mostly happen with external gateways),
+	// SDN will return StatusUnauthorized and fail this connection. if SDN return any other error -
+	// assuming the issue is with the SDN and set default enterprise account for the customer. in order to send request to the gateway,
+	// customer must be enterprise / elite account
+	var connectionAccountModel sdnmessage.Account
+	var err error
+	if accountID != g.sdn.AccountModel().AccountID {
+		connectionAccountModel, err = g.sdn.FetchCustomerAccountModel(accountID)
+		if err != nil {
+			if strings.Contains(strconv.FormatInt(http.StatusUnauthorized, 10), err.Error()) {
+				log.Errorf("account %v is not authorized to get other account %v information", g.sdn.AccountModel().AccountID, accountID)
+				return connectionAccountModel, fmt.Errorf("account is not authorized to get other accounts information")
+			}
+			log.Errorf("failed to get customer account model, account id: %v, connectionSecretHash: %v, error: %v",
+				accountID, secretHash, err)
+			connectionAccountModel = sdnmessage.GetDefaultEliteAccount(time.Now().UTC())
+			connectionAccountModel.AccountID = accountID
+			connectionAccountModel.SecretHash = secretHash
+		}
+		if !connectionAccountModel.TierName.IsEnterprise() {
+			log.Warnf("customer account %v must be enterprise / enterprise elite / ultra but it is %v", accountID, connectionAccountModel.TierName)
+			return connectionAccountModel, fmt.Errorf("account must be enterprise / enterprise elite / ultra")
+		}
+	} else {
+		connectionAccountModel = g.sdn.AccountModel()
+	}
+
+	if secretHash != connectionAccountModel.SecretHash && secretHash != "" {
+		log.Errorf("account %v sent a different secret hash than set in the account model", accountID)
+		return connectionAccountModel, fmt.Errorf("wrong value in the authorization header")
+	}
+
+	return connectionAccountModel, nil
+}
+
+func (g *gateway) Version(_ context.Context, req *pb.VersionRequest) (*pb.VersionReply, error) {
+	err := g.validateAuthHeader(req.AuthHeader)
+	if err != nil {
+		return nil, err
+	}
+
 	resp := &pb.VersionReply{
 		Version:   version.BuildVersion,
 		BuildDate: version.BuildDate,
@@ -1674,7 +1778,12 @@ func (g *gateway) Version(_ context.Context, _ *pb.VersionRequest) (*pb.VersionR
 
 const bdn = "BDN"
 
-func (g *gateway) Status(context.Context, *pb.StatusRequest) (*pb.StatusResponse, error) {
+func (g *gateway) Status(_ context.Context, req *pb.StatusRequest) (*pb.StatusResponse, error) {
+	err := g.validateAuthHeader(req.AuthHeader)
+	if err != nil {
+		return nil, err
+	}
+
 	var bdnConn = func() map[string]*pb.BDNConnStatus {
 		var mp = make(map[string]*pb.BDNConnStatus)
 
@@ -1836,6 +1945,10 @@ func (g *gateway) Status(context.Context, *pb.StatusRequest) (*pb.StatusResponse
 			AccountId:  string(accountModel.AccountID),
 			ExpireDate: accountModel.ExpireDate,
 		},
+		QueueStats: &pb.QueuesStats{
+			TxsQueueCount:      g.txsQueue.TxsCount(),
+			TxsOrderQueueCount: g.txsOrderQueue.TxsCount(),
+		},
 	}
 
 	return rsp, nil
@@ -1843,11 +1956,21 @@ func (g *gateway) Status(context.Context, *pb.StatusRequest) (*pb.StatusResponse
 
 func ipport(ip string, port int) string { return fmt.Sprintf("%s:%d", ip, port) }
 
-func (g *gateway) Subscriptions(_ context.Context, _ *pb.SubscriptionsRequest) (*pb.SubscriptionsReply, error) {
+func (g *gateway) Subscriptions(_ context.Context, req *pb.SubscriptionsRequest) (*pb.SubscriptionsReply, error) {
+	err := g.validateAuthHeader(req.AuthHeader)
+	if err != nil {
+		return nil, err
+	}
+
 	return g.feedManager.GetGrpcSubscriptionReply(), nil
 }
 
 func (g *gateway) BlxrTx(_ context.Context, req *pb.BlxrTxRequest) (*pb.BlxrTxReply, error) {
+	err := g.validateAuthHeader(req.AuthHeader)
+	if err != nil {
+		return nil, err
+	}
+
 	tx := bxmessage.Tx{}
 	tx.SetTimestamp(time.Now())
 
@@ -1873,6 +1996,11 @@ func (g *gateway) BlxrTx(_ context.Context, req *pb.BlxrTxRequest) (*pb.BlxrTxRe
 }
 
 func (g *gateway) BlxrBatchTX(_ context.Context, req *pb.BlxrBatchTXRequest) (*pb.BlxrBatchTXReply, error) {
+	err := g.validateAuthHeader(req.AuthHeader)
+	if err != nil {
+		return nil, err
+	}
+
 	startTime := time.Now()
 	var txHashes []*pb.TxIndex
 	var txErrors []*pb.ErrorIndex
@@ -1917,6 +2045,42 @@ func (g *gateway) BlxrBatchTX(_ context.Context, req *pb.BlxrBatchTXRequest) (*p
 
 	log.Debugf("blxr-batch-tx network time %v, handle time: %v, txs success: %v, txs error: %v, validatorsOnly: %v, nextValidator %v fallback %v ms, nodeValidation %v", startTime.Sub(time.Unix(0, req.GetSendingTime())), time.Now().Sub(startTime), len(txHashes), len(txErrors), req.ValidatorsOnly, req.NextValidator, req.Fallback, req.NodeValidation)
 	return &pb.BlxrBatchTXReply{TxHashes: txHashes, TxErrors: txErrors}, nil
+}
+
+func (g *gateway) NewTxs(req *pb.TxsRequest, stream pb.Gateway_NewTxsServer) error {
+	err := g.validateAuthHeader(req.AuthHeader)
+	if err != nil {
+		return err
+	}
+
+	return g.grpcHandler.NewTxs(req, stream, g.sdn.AccountModel())
+}
+
+func (g *gateway) PendingTxs(req *pb.TxsRequest, stream pb.Gateway_PendingTxsServer) error {
+	err := g.validateAuthHeader(req.AuthHeader)
+	if err != nil {
+		return err
+	}
+
+	return g.grpcHandler.PendingTxs(req, stream, g.sdn.AccountModel())
+}
+
+func (g *gateway) NewBlocks(req *pb.BlocksRequest, stream pb.Gateway_NewBlocksServer) error {
+	err := g.validateAuthHeader(req.AuthHeader)
+	if err != nil {
+		return err
+	}
+
+	return g.grpcHandler.NewBlocks(req, stream, g.sdn.AccountModel())
+}
+
+func (g *gateway) BdnBlocks(req *pb.BlocksRequest, stream pb.Gateway_BdnBlocksServer) error {
+	err := g.validateAuthHeader(req.AuthHeader)
+	if err != nil {
+		return err
+	}
+
+	return g.grpcHandler.BdnBlocks(req, stream, g.sdn.AccountModel())
 }
 
 func (g *gateway) sendStatsOnInterval(interval time.Duration) {
@@ -2026,466 +2190,6 @@ func traceIfSlow(f func(), name string, from string, count int64) {
 			log.Tracef("%s from %v spent %v processing %v entries", name, from, duration, count)
 		}
 	}
-}
-
-func generateTx(tx *types.NewTransactionNotification) *pb.Tx {
-	err := tx.MakeBlockchainTransaction()
-	if err != nil {
-		return nil
-	}
-	if tx.BlockchainTransaction != nil {
-		ethTx := tx.BlockchainTransaction.(*types.EthTransaction)
-		generatedTx := ethTx.CreateFieldsGRPC()
-		generatedTx.LocalRegion = tx.LocalRegion()
-		generatedTx.Time = time.Now().UnixNano()
-		generatedTx.RawTx = tx.RawTx()
-		generatedTx.AccessList = createAccessListGRPC(ethTx.AccessList())
-		return generatedTx
-	}
-	return nil
-}
-
-func filterTxGRPCNotification(tx *pb.Tx, expr conditions.Expr) (bool, error) {
-	if expr == nil {
-		return true, nil
-	}
-	filters := make(map[string]interface{})
-
-	if tx.GasPrice != "" {
-		gasPrice, err := hexutil.DecodeBig(tx.GasPrice)
-		if err != nil {
-			return false, fmt.Errorf("error converting gas price tx gRPC filter to BigInt [gasPrice: %v] err: %v", tx.GasPrice, err)
-		}
-		filters["gas_price"] = types.BigIntAsFloat64(gasPrice)
-	} else {
-		filters["gas_price"] = 0
-	}
-
-	filters["from"] = tx.From
-	filters["to"] = tx.To
-
-	if tx.Value != "" {
-		value, err := hexutil.DecodeBig(tx.Value)
-		if err != nil {
-			return false, fmt.Errorf("error converting value tx gRPC filter to BigInt [value: %v] err: %v", tx.Value, err)
-		}
-		filters["value"] = types.BigIntAsFloat64(value)
-	} else {
-		filters["value"] = 0
-	}
-
-	methodID := tx.Input
-	if len(methodID) >= 10 {
-		filters["method_id"] = "0x" + methodID[2:10]
-	} else {
-		filters["method_id"] = methodID
-	}
-
-	shouldSend, err := conditions.Evaluate(expr, filters)
-	if err != nil {
-		return false, fmt.Errorf("error evaluating tx gRPC filters [expr: %v, filters: %+v] err: %v", expr, filters, err)
-	}
-	return shouldSend, nil
-}
-
-func createExprFromFilters(filters string) conditions.Expr {
-	var expr conditions.Expr
-	var err error
-	_, expr, err = servers.ParseFilter(filters)
-	if err != nil {
-		log.Debugf("error parsing Filters from method: subscribe. params: %v. error - %v", filters, err)
-		return nil
-	}
-	if expr == nil {
-		return nil
-	}
-	if expr == nil {
-		return nil
-	}
-	err = servers.EvaluateFilters(expr)
-	if err != nil {
-		log.Debugf("error evaluated Filters from method: subscribe. params: %s. error - %v", expr, err)
-		return nil
-	}
-	log.Infof("GetTxContentAndFilters string - %s, GetTxContentAndFilters args - %s", expr, expr.Args())
-	return expr
-}
-
-func applyTxIncludes(tx *pb.Tx, includes []string) (*pb.Tx, error) {
-	txWithIncludes := pb.Tx{}
-	for _, param := range includes {
-		parts := strings.Split(param, ".")
-		numParts := len(parts)
-		if numParts == 1 {
-			switch param {
-			case "tx_hash":
-				txWithIncludes.Hash = tx.Hash
-			case "local_region":
-				txWithIncludes.LocalRegion = tx.LocalRegion
-			case "raw_tx":
-				txWithIncludes.RawTx = tx.RawTx
-			default:
-				return nil, fmt.Errorf("unrecognized include param [%v]", param)
-			}
-		} else if numParts == 2 {
-			param = parts[1]
-			switch param {
-			case "from":
-				txWithIncludes.From = tx.From
-			case "to":
-				txWithIncludes.To = tx.To
-			case "nonce":
-				txWithIncludes.Nonce = tx.Nonce
-			case "input":
-				txWithIncludes.Input = tx.Input
-			case "v":
-				txWithIncludes.V = tx.V
-			case "r":
-				txWithIncludes.R = tx.R
-			case "s":
-				txWithIncludes.S = tx.S
-			case "type":
-				txWithIncludes.Type = tx.Type
-			case "value":
-				txWithIncludes.Value = tx.Value
-			case "gas":
-				txWithIncludes.Gas = tx.Gas
-			case "gas_price":
-				txWithIncludes.GasPrice = tx.GasPrice
-			case "max_priority_fee_per_gas":
-				txWithIncludes.MaxPriorityFeePerGas = tx.MaxPriorityFeePerGas
-			case "max_fee_per_gas":
-				txWithIncludes.MaxFeePerGas = tx.MaxFeePerGas
-			case "chain_id":
-				txWithIncludes.ChainID = tx.ChainID
-			default:
-				return nil, fmt.Errorf("unrecognized include param [%v]", param)
-			}
-		} else {
-			return nil, fmt.Errorf("include param in unexpected format [%v]: not applying includes", param)
-		}
-	}
-	return &txWithIncludes, nil
-}
-
-func (g *gateway) notifyGRPCFeeds(n *types.Notification) {
-	switch (*n).NotificationType() {
-	case types.NewTxsFeed:
-		txReply := &pb.TxsReply{}
-		tx := generateTx((*n).(*types.NewTransactionNotification))
-		if tx != nil {
-			txReply.Tx = append(txReply.Tx, tx)
-			select {
-			case g.gRPCFeedChans.NewTxsFeed <- txReply:
-			default:
-				log.Warn("NewTxsFeed channel is full, dropping notification to the GRPC feed")
-			}
-		}
-	case types.PendingTxsFeed:
-		txReply := &pb.TxsReply{}
-		tx := generateTx(&(*n).(*types.PendingTransactionNotification).NewTransactionNotification)
-		if tx != nil {
-			txReply.Tx = append(txReply.Tx, tx)
-			select {
-			case g.gRPCFeedChans.PendingTxsFeed <- txReply:
-			default:
-				log.Warn("PendingTxsFeed channel is full, dropping notification to the GRPC feed")
-			}
-		}
-	case types.NewBlocksFeed:
-		newBlocksNotification := (*n).(*types.EthBlockNotification)
-		blocksReply := generateBlockReplyGRPC(newBlocksNotification)
-		select {
-		case g.gRPCFeedChans.NewBlocksFeed <- blocksReply:
-		default:
-			log.Warn("NewBlocksFeed channel is full, dropping notification to the GRPC feed")
-		}
-	case types.BDNBlocksFeed:
-		bdnBlocksNotification := (*n).(*types.EthBlockNotification)
-		blocksReply := generateBlockReplyGRPC(bdnBlocksNotification)
-		select {
-		case g.gRPCFeedChans.BdnBlocksFeed <- blocksReply:
-		default:
-			log.Warn("BdnBlocksFeed channel is full, dropping notification to the GRPC feed")
-		}
-	}
-}
-
-// createTxReplyWithNeededFields we only want to send raw tx, sender, time and local region, so we create new reply with only this fields
-func createTxReplyWithNeededFields(txReply *pb.TxsReply) *pb.TxsReply {
-	var response pb.TxsReply
-	txWithNeededFields := &pb.Tx{
-		Time:        txReply.Tx[0].Time,
-		LocalRegion: txReply.Tx[0].LocalRegion,
-		RawTx:       txReply.Tx[0].RawTx,
-		From:        txReply.Tx[0].From,
-	}
-	response.Tx = append(response.Tx, txWithNeededFields)
-
-	return &response
-}
-
-func (g *gateway) NewTxs(req *pb.TxsRequest, stream pb.Gateway_NewTxsServer) error {
-	var expr conditions.Expr
-	if req.GetFilters() != "" {
-		expr = createExprFromFilters(req.GetFilters())
-	}
-
-	sub, err := g.feedManager.Subscribe(types.NewTxsFeed, types.GRPCFeed, nil, g.sdn.AccountModel().TierName, g.sdn.AccountModel().AccountID, "", req.GetFilters(), "", "", false)
-	if err != nil {
-		return errors.New("failed to subscribe to gRPC newTxs")
-	}
-	defer g.feedManager.Unsubscribe(sub.SubscriptionID, true, "")
-
-	for {
-		select {
-		case notification, ok := <-sub.FeedChan:
-			if !ok {
-				return errors.New("error when reading new notification for gRPC newTxs")
-			}
-			txsReply := notification.(*pb.TxsReply)
-			tx := txsReply.Tx[0]
-			tx.SubscriptionID = sub.SubscriptionID
-			shouldSend, filtersErr := filterTxGRPCNotification(tx, expr)
-			if shouldSend {
-				includes := req.GetIncludes()
-				if includes != nil && len(includes) > 0 {
-					txWithIncludes, err := applyTxIncludes(tx, includes)
-					if err != nil {
-						return err
-					}
-					txsReply.Tx[0] = txWithIncludes
-				}
-				txWithNeededFields := createTxReplyWithNeededFields(txsReply)
-				err = stream.Send(txWithNeededFields)
-				if err != nil {
-					return err
-				}
-			} else if filtersErr != nil {
-				log.Errorf(filtersErr.Error())
-				return filtersErr
-			}
-		}
-	}
-}
-
-func (g *gateway) PendingTxs(req *pb.TxsRequest, stream pb.Gateway_PendingTxsServer) error {
-	var expr conditions.Expr
-	if req.GetFilters() != "" {
-		expr = createExprFromFilters(req.GetFilters())
-	}
-
-	sub, err := g.feedManager.Subscribe(types.PendingTxsFeed, types.GRPCFeed, nil, g.sdn.AccountModel().TierName, g.sdn.AccountModel().AccountID, "", req.GetFilters(), "", "", false)
-	if err != nil {
-		return errors.New("failed to subscribe to gRPC pendingTxs")
-	}
-	defer g.feedManager.Unsubscribe(sub.SubscriptionID, false, "")
-
-	for {
-		select {
-		case notification, ok := <-sub.FeedChan:
-			if !ok {
-				return errors.New("error when reading new notification for gRPC pendingTxs")
-			}
-			txsReply := notification.(*pb.TxsReply)
-			tx := txsReply.Tx[0]
-			tx.SubscriptionID = sub.SubscriptionID
-			shouldSend, filtersErr := filterTxGRPCNotification(tx, expr)
-			if shouldSend {
-				includes := req.GetIncludes()
-				if includes != nil && len(includes) > 0 {
-					txWithIncludes, err := applyTxIncludes(tx, includes)
-					if err != nil {
-						return err
-					}
-					txsReply.Tx[0] = txWithIncludes
-				}
-				txWithNeededFields := createTxReplyWithNeededFields(txsReply)
-				err = stream.Send(txWithNeededFields)
-				if err != nil {
-					return err
-				}
-			} else if filtersErr != nil {
-				log.Errorf(filtersErr.Error())
-				return filtersErr
-			}
-		}
-	}
-}
-
-func (g *gateway) NewBlocks(req *pb.BlocksRequest, stream pb.Gateway_NewBlocksServer) error {
-	sub, err := g.feedManager.Subscribe(types.NewBlocksFeed, types.GRPCFeed, nil, g.sdn.AccountModel().TierName, g.sdn.AccountModel().AccountID, "", "", "", "", false)
-	if err != nil {
-		return errors.New("failed to subscribe to gRPC newBlocks")
-	}
-	defer g.feedManager.Unsubscribe(sub.SubscriptionID, false, "")
-
-	for {
-		select {
-		case notification, ok := <-sub.FeedChan:
-			if !ok {
-				return errors.New("error when reading new notification for gRPC newBlocks")
-			}
-			blocksReply := notification.(*pb.BlocksReply)
-			blocksReply.SubscriptionID = sub.SubscriptionID
-			includes := req.GetIncludes()
-			if len(includes) > 0 {
-				applyBlockIncludes(blocksReply, includes)
-			}
-			err = stream.Send(blocksReply)
-			if err != nil {
-				return err
-			}
-		}
-	}
-}
-
-func (g *gateway) BdnBlocks(req *pb.BlocksRequest, stream pb.Gateway_BdnBlocksServer) error {
-	sub, err := g.feedManager.Subscribe(types.BDNBlocksFeed, types.GRPCFeed, nil, g.sdn.AccountModel().TierName, g.sdn.AccountModel().AccountID, "", "", "", "", false)
-	if err != nil {
-		return errors.New("failed to subscribe to gRPC bdnBlocks")
-	}
-	defer g.feedManager.Unsubscribe(sub.SubscriptionID, false, "")
-
-	for {
-		select {
-		case notification, ok := <-sub.FeedChan:
-			if !ok {
-				return errors.New("error when reading new notification for gRPC bdnBlocks")
-			}
-			blocksReply := notification.(*pb.BlocksReply)
-			blocksReply.SubscriptionID = sub.SubscriptionID
-			includes := req.GetIncludes()
-			if len(includes) > 0 {
-				applyBlockIncludes(blocksReply, includes)
-			}
-			err = stream.Send(blocksReply)
-			if err != nil {
-				return err
-			}
-		}
-	}
-}
-
-func applyBlockIncludes(reply *pb.BlocksReply, includes []string) {
-	if !utils.Exists("hash", includes) {
-		reply.Hash = ""
-	}
-	if !utils.Exists("header", includes) {
-		reply.Header = nil
-	}
-	if !utils.Exists("transactions", includes) {
-		reply.Transaction = nil
-	}
-	if !utils.Exists("future_validator_info", includes) {
-		reply.FutureValidatorInfo = nil
-	}
-}
-
-func createAccessListGRPC(accessList ethtypes.AccessList) []*pb.AccessTuple {
-	if accessList == nil {
-		return nil
-	}
-	var accessListGRPC []*pb.AccessTuple
-	for _, accessTuple := range accessList {
-		var storageKeys []string
-		for _, storageKey := range accessTuple.StorageKeys {
-			storageKeys = append(storageKeys, storageKey.String())
-		}
-		accessListGRPC = append(accessListGRPC, &pb.AccessTuple{
-			Address:     strings.ToLower(accessTuple.Address.String()),
-			StorageKeys: storageKeys,
-		})
-	}
-	return accessListGRPC
-}
-
-func generateBlockReplyHeader(h *types.Header) *pb.BlockHeader {
-	blockReplyHeader := pb.BlockHeader{}
-	blockReplyHeader.ParentHash = h.ParentHash.String()
-	blockReplyHeader.Sha3Uncles = h.Sha3Uncles.String()
-	blockReplyHeader.Miner = strings.ToLower(h.Miner.String())
-	blockReplyHeader.StateRoot = h.StateRoot.String()
-	blockReplyHeader.TransactionsRoot = h.TransactionsRoot.String()
-	blockReplyHeader.ReceiptsRoot = h.ReceiptsRoot.String()
-	blockReplyHeader.LogsBloom = h.LogsBloom
-	blockReplyHeader.Difficulty = h.Difficulty
-	blockReplyHeader.Number = h.Number
-	blockReplyHeader.GasLimit = h.GasLimit
-	blockReplyHeader.GasUsed = h.GasUsed
-	blockReplyHeader.Timestamp = h.Timestamp
-	blockReplyHeader.ExtraData = h.ExtraData
-	blockReplyHeader.MixHash = h.MixHash.String()
-	if h.WithdrawalsHash != nil {
-		blockReplyHeader.WithdrawalsRoot = h.WithdrawalsHash.String()
-	}
-	if h.BaseFee != nil {
-		blockReplyHeader.BaseFeePerGas = strconv.FormatInt(int64(*h.BaseFee), 10)
-	}
-	return &blockReplyHeader
-}
-
-func convertStringToHex(tx string) []byte {
-	if len(tx) > 2 && tx[:2] == "0x" {
-		tx = tx[2:]
-	}
-
-	hexBytes, err := hex.DecodeString(tx)
-	if err != nil {
-		log.Errorf("Error decoding hexadecimal string: %v", err)
-		hexBytes = nil
-	}
-	return hexBytes
-}
-
-func generateBlockReplyGRPC(n *types.EthBlockNotification) *pb.BlocksReply {
-	blockReply := &pb.BlocksReply{}
-	blockReply.Hash = n.BlockHash.String()
-	blockReply.Header = generateBlockReplyHeader(n.Header)
-	for _, vi := range n.ValidatorInfo {
-		blockReply.FutureValidatorInfo = append(blockReply.FutureValidatorInfo, &pb.FutureValidatorInfo{
-			BlockHeight: strconv.FormatUint(vi.BlockHeight, 10),
-			WalletId:    vi.WalletID,
-			Accessible:  strconv.FormatBool(vi.Accessible),
-		})
-	}
-	for _, tx := range n.Transactions {
-		blockTx := &pb.Tx{
-			Hash:  tx["hash"].(string),
-			Nonce: tx["nonce"].(string),
-			Value: tx["value"].(string),
-			Input: tx["input"].(string),
-			V:     tx["v"].(string),
-			R:     tx["r"].(string),
-			S:     tx["s"].(string),
-			From:  convertStringToHex(tx["from"].(string)),
-			Type:  tx["type"].(string),
-		}
-		if chainID, exists := tx["chainId"]; exists {
-			blockTx.ChainID = chainID.(string)
-		}
-		if gasPrice, exists := tx["gasPrice"]; exists {
-			blockTx.GasPrice = gasPrice.(string)
-		}
-		if gas, exists := tx["gas"]; exists {
-			blockTx.Gas = gas.(string)
-		}
-		if to, exists := tx["to"]; exists {
-			blockTx.To = to.(string)
-		}
-		if maxFeePerGas, exists := tx["maxFeePerGas"]; exists {
-			blockTx.MaxFeePerGas = maxFeePerGas.(string)
-		}
-		if maxPriorityFeePerGas, exists := tx["maxPriorityFeePerGas"]; exists {
-			blockTx.MaxPriorityFeePerGas = maxPriorityFeePerGas.(string)
-		}
-		if accessList, exists := tx["accessList"]; exists {
-			blockTx.AccessList = createAccessListGRPC(accessList.(ethtypes.AccessList))
-		}
-
-		blockReply.Transaction = append(blockReply.Transaction, blockTx)
-	}
-	return blockReply
 }
 
 func forwardBSCTx(conn *http.Client, txHash string, tx string, endpoint string, rpcType string) {

@@ -287,7 +287,8 @@ func readBloomFromFile(path string) (*bloom.BloomFilter, int64, error) {
 
 	bf := bloom.New(0, 0)
 
-	readBytes, err = bf.ReadFrom(f)
+	dataReader := bufio.NewReader(f)
+	readBytes, err = bf.ReadFrom(dataReader)
 	if err != nil {
 		return nil, readBytes, fmt.Errorf("read bloom filter from file %s: %w", path, err)
 	}
@@ -307,9 +308,14 @@ func writeBloomToFile(bf *bloom.BloomFilter, path string) (int64, error) {
 		return savedBytes, fmt.Errorf("create file %s: %w", path, err)
 	}
 
-	savedBytes, err = bf.WriteTo(f)
+	dataWriter := bufio.NewWriter(f)
+	savedBytes, err = bf.WriteTo(dataWriter)
 	if err != nil {
 		return savedBytes, fmt.Errorf("write bloom filter into a file %s: %w", path, err)
+	}
+
+	if err = dataWriter.Flush(); err != nil {
+		return savedBytes, err
 	}
 
 	err = f.Close()

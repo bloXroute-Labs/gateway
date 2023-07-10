@@ -94,6 +94,9 @@ const DefaultRoutingConfigFileName = "defaultRoutingConfig.json"
 // MaxAnnouncementFromNode restrict the size of the announcment message from the node
 const MaxAnnouncementFromNode = 100
 
+// TXQueueChannelSize - size of TXQueueChannel
+const TXQueueChannelSize = 1000
+
 // GetMethod - get method for http
 const GetMethod = "GET"
 
