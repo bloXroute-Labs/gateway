@@ -70,13 +70,13 @@ func (s HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 	rpcRequest := jsonrpc2.Request{}
 	err := json.NewDecoder(r.Body).Decode(&rpcRequest)
 	if err != nil {
-		writeErrorJSON(w, http.StatusBadRequest, err)
+		writeErrorJSON(w, rpcRequest.ID, http.StatusBadRequest, err)
 		return
 	}
 
 	if rpcRequest.Params == nil {
 		err := errors.New("failed to unmarshal request.Params for mevBundle from mev-builder, error: EOF")
-		writeErrorJSON(w, http.StatusBadRequest, err)
+		writeErrorJSON(w, rpcRequest.ID, http.StatusBadRequest, err)
 		return
 	}
 
@@ -85,21 +85,21 @@ func (s HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 		bundlePayload := []jsonrpc.RPCSendBundle{}
 		if err := json.Unmarshal(*rpcRequest.Params, &bundlePayload); err != nil {
 			log.Errorf("failed to unmarshal mevBundle params: %v", err)
-			writeErrorJSON(w, http.StatusInternalServerError, err)
+			writeErrorJSON(w, rpcRequest.ID, http.StatusInternalServerError, err)
 			return
 		}
 
 		if len(bundlePayload) != 1 {
 			err := errors.New("received invalid number of mevBundle payload, must be 1 element")
 			log.Error(err)
-			writeErrorJSON(w, http.StatusBadRequest, err)
+			writeErrorJSON(w, rpcRequest.ID, http.StatusBadRequest, err)
 			return
 		}
 
 		// Flashbots and bloXroute used by default. See below
 		if !s.feedManager.accountModel.TierName.IsElite() {
 			accError := fmt.Errorf("EnterpriseElite account is required in order to send %s to %s", rpcRequest.Method, bxgateway.BloxrouteBuilderName)
-			writeErrorJSON(w, http.StatusInternalServerError, accError)
+			writeErrorJSON(w, rpcRequest.ID, http.StatusInternalServerError, accError)
 			log.Error(accError)
 			return
 		}
@@ -120,19 +120,18 @@ func (s HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		mevBundle, bundleHash, err := mevBundleFromRequest(&payload)
+		var result interface{}
+		if payload.UUID == "" {
+			result = GatewayBundleResponse{BundleHash: bundleHash}
+		}
 		if err != nil {
 			if errors.Is(err, errBlockedTxHashes) {
-				var result interface{}
-				if payload.UUID != "" {
-					result = GatewayBundleResponse{BundleHash: bundleHash}
-				}
-
-				writeJSON(w, http.StatusOK, map[string]interface{}{"Result": result})
+				writeJSON(w, rpcRequest.ID, http.StatusOK, result)
 				return
 			}
 
-			convertParamsError := errors.New("failed to parse params for blxr_submit_bundle")
-			writeErrorJSON(w, http.StatusBadRequest, convertParamsError)
+			convertParamsError := fmt.Errorf("failed to parse params for blxr_submit_bundle: %v", err)
+			writeErrorJSON(w, rpcRequest.ID, http.StatusBadRequest, convertParamsError)
 			return
 		}
 		mevBundle.SetNetworkNum(s.feedManager.networkNum)
@@ -143,18 +142,19 @@ func (s HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			err := fmt.Errorf("failed to process mevBundle message: %v", err)
 			log.Error(err)
-			writeErrorJSON(w, http.StatusInternalServerError, err)
+			writeErrorJSON(w, rpcRequest.ID, http.StatusInternalServerError, err)
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		writeJSON(w, rpcRequest.ID, http.StatusOK, result)
 	case jsonrpc.RPCBundleSubmission:
 		params := jsonrpc.RPCBundleSubmissionPayload{
-			Frontrunning: true,
+			BlockchainNetwork: bxgateway.Mainnet,
+			Frontrunning:      true,
 		}
 		if err := json.Unmarshal(*rpcRequest.Params, &params); err != nil {
 			log.Errorf("failed to unmarshal mevBundle params: %v", err)
-			writeErrorJSON(w, http.StatusInternalServerError, err)
+			writeErrorJSON(w, rpcRequest.ID, http.StatusInternalServerError, err)
 			return
 		}
 
@@ -169,26 +169,25 @@ func (s HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 		for mevBuilder := range params.MEVBuilders {
 			if strings.ToLower(mevBuilder) == bxgateway.BloxrouteBuilderName && !s.feedManager.accountModel.TierName.IsElite() {
 				accError := fmt.Errorf("EnterpriseElite account is required in order to send %s to %s", jsonrpc.RPCBundleSubmission, bxgateway.BloxrouteBuilderName)
-				writeErrorJSON(w, http.StatusInternalServerError, accError)
+				writeErrorJSON(w, rpcRequest.ID, http.StatusInternalServerError, accError)
 				log.Error(accError)
 				return
 			}
 		}
 
 		mevBundle, bundleHash, err := mevBundleFromRequest(&params)
+		var result interface{}
+		if params.UUID == "" {
+			result = GatewayBundleResponse{BundleHash: bundleHash}
+		}
 		if err != nil {
 			if errors.Is(err, errBlockedTxHashes) {
-				var result interface{}
-				if params.UUID != "" {
-					result = GatewayBundleResponse{BundleHash: bundleHash}
-				}
-
-				writeJSON(w, http.StatusOK, map[string]interface{}{"Result": result})
+				writeJSON(w, rpcRequest.ID, http.StatusOK, result)
 				return
 			}
 
-			convertParamsError := errors.New("failed to parse params for blxr_submit_bundle")
-			writeErrorJSON(w, http.StatusBadRequest, convertParamsError)
+			convertParamsError := fmt.Errorf("failed to parse params for blxr_submit_bundle: %v", err)
+			writeErrorJSON(w, rpcRequest.ID, http.StatusBadRequest, convertParamsError)
 			return
 		}
 
@@ -199,34 +198,52 @@ func (s HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 		if err := s.feedManager.node.HandleMsg(mevBundle, ws, connections.RunForeground); err != nil {
 			err := fmt.Errorf("failed to process mevBundle message: %v", err)
 			log.Error(err)
-			writeErrorJSON(w, http.StatusInternalServerError, err)
+			writeErrorJSON(w, rpcRequest.ID, http.StatusInternalServerError, err)
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		writeJSON(w, rpcRequest.ID, http.StatusOK, result)
 	default:
 		err := fmt.Errorf("got unsupported method name: %v", rpcRequest.Method)
-		writeErrorJSON(w, http.StatusNotFound, err)
+		writeErrorJSON(w, rpcRequest.ID, http.StatusNotFound, err)
 	}
 }
 
-func writeErrorJSON(w http.ResponseWriter, statusCode int, err error) {
-	writeJSON(w, statusCode, map[string]string{"error": err.Error()})
-}
+func writeErrorJSON(w http.ResponseWriter, id jsonrpc2.ID, statusCode int, err error) {
+	jsonrpcErr := jsonrpc2.Error{}
+	jsonrpcErr.SetError(err)
 
-func writeJSON(w http.ResponseWriter, resultHTTPCode int, jsonAnswer interface{}) {
-	if jsonAnswer == nil {
-		w.WriteHeader(resultHTTPCode)
-		return
+	resp := jsonrpc2.Response{
+		ID:    id,
+		Error: &jsonrpcErr,
 	}
 
-	payload, err := json.Marshal(jsonAnswer)
-	if err != nil {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		log.Errorf("error: failed to marshal json to render an error, error: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+}
+
+func writeJSON(w http.ResponseWriter, id jsonrpc2.ID, resultHTTPCode int, jsonAnswer interface{}) {
+	resp := &jsonrpc2.Response{
+		ID: id,
+	}
+	if err := resp.SetResult(jsonAnswer); err != nil {
+		log.Errorf("error: failed to marshal json to render an error, error: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resultHTTPCode)
-	_, _ = w.Write(payload)
+
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		log.Errorf("error: failed to marshal json to render an error, error: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 }

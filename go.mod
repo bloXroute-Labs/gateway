@@ -3,7 +3,7 @@ module github.com/bloXroute-Labs/gateway/v2
 go 1.19
 
 require (
-	github.com/bits-and-blooms/bloom/v3 v3.3.1
+	github.com/bits-and-blooms/bloom/v3 v3.5.0
 	github.com/bloXroute-Labs/upscale-client v0.0.0-20230502140536-89a19c5325cc
 	github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869
 	github.com/cenkalti/backoff/v4 v4.2.0
@@ -52,7 +52,7 @@ require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/benbjohnson/clock v1.3.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/bits-and-blooms/bitset v1.3.1 // indirect; ! do not upgrade to v1.7.0 (it has a huge performance issue)
+	github.com/bits-and-blooms/bitset v1.8.0 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.3.2 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect

@@ -30,19 +30,36 @@ func (p SendPriority) String() string {
 
 // Header represents the shared header of a bloxroute message
 type Header struct {
-	priority            *SendPriority
-	msgType             string
-	receiveTime         time.Time
-	processingStartTime time.Time
-	channelPosition     int
-	bufLen              int
+	priority                    *SendPriority
+	msgType                     string
+	receiveTime                 time.Time
+	receiveQueuePos             int
+	processingQueuePos          int
+	processingQueueWaitDuration time.Duration
+	receiveQueueWaitingDuration time.Duration
+	bufLen                      int
 }
 
-// SetMsgMetaData set msg metadata
-func (h *Header) SetMsgMetaData(receiveTime time.Time, processingStartTime time.Time, channelPosition int) {
+// SetReceiveTime set msg metadata
+func (h *Header) SetReceiveTime(receiveTime time.Time) {
 	h.receiveTime = receiveTime
-	h.processingStartTime = processingStartTime
-	h.channelPosition = channelPosition
+}
+
+// SetReceiveStats set receive msg metadata
+func (h *Header) SetReceiveStats(receiveChannelWaitingDuration time.Duration, channelPosition int) {
+	h.receiveQueuePos = channelPosition
+	h.receiveQueueWaitingDuration = receiveChannelWaitingDuration
+}
+
+// SetProcessingStats set processing msg metadata
+func (h *Header) SetProcessingStats(waitDuration time.Duration, channelPosition int) {
+	h.processingQueueWaitDuration = waitDuration
+	h.processingQueuePos = channelPosition
+}
+
+// WaitDuration total waiting duration
+func (h Header) WaitDuration() time.Duration {
+	return h.processingQueueWaitDuration + h.receiveQueueWaitingDuration
 }
 
 // ReceiveTime return receiveTime
@@ -50,14 +67,14 @@ func (h Header) ReceiveTime() time.Time {
 	return h.receiveTime
 }
 
-// ProcessingStartTime return processingStartTime
-func (h Header) ProcessingStartTime() time.Time {
-	return h.processingStartTime
+// NetworkChannelPosition return receiveQueuePos
+func (h Header) NetworkChannelPosition() int {
+	return h.receiveQueuePos
 }
 
-// ChannelPosition return channelPosition
-func (h Header) ChannelPosition() int {
-	return h.channelPosition
+// ProcessChannelPosition return processingQueuePos
+func (h Header) ProcessChannelPosition() int {
+	return h.processingQueuePos
 }
 
 // Pack serializes a Header into a buffer for sending on the wire

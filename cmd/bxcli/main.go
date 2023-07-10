@@ -36,7 +36,12 @@ func main() {
 						Name:     "include",
 						Required: false,
 					},
+					&cli.StringFlag{
+						Name:     "auth-header",
+						Required: true,
+					},
 				},
+				Before: checkEmptyProvidedHeader,
 				Action: cmdNewTXs,
 			},
 			{
@@ -51,7 +56,12 @@ func main() {
 						Name:     "include",
 						Required: false,
 					},
+					&cli.StringFlag{
+						Name:     "auth-header",
+						Required: true,
+					},
 				},
+				Before: checkEmptyProvidedHeader,
 				Action: cmdPendingTXs,
 			},
 			{
@@ -62,7 +72,12 @@ func main() {
 						Name:     "include",
 						Required: false,
 					},
+					&cli.StringFlag{
+						Name:     "auth-header",
+						Required: true,
+					},
 				},
+				Before: checkEmptyProvidedHeader,
 				Action: cmdNewBlocks,
 			},
 			{
@@ -73,7 +88,12 @@ func main() {
 						Name:     "include",
 						Required: false,
 					},
+					&cli.StringFlag{
+						Name:     "auth-header",
+						Required: true,
+					},
 				},
+				Before: checkEmptyProvidedHeader,
 				Action: cmdBdnBlocks,
 			},
 			{
@@ -84,7 +104,12 @@ func main() {
 						Name:     "transaction",
 						Required: true,
 					},
+					&cli.StringFlag{
+						Name:     "auth-header",
+						Required: true,
+					},
 				},
+				Before: checkEmptyProvidedHeader,
 				Action: cmdBlxrTX,
 			},
 			{
@@ -110,48 +135,88 @@ func main() {
 					&cli.BoolFlag{
 						Name: "node-validation",
 					},
+					&cli.StringFlag{
+						Name:     "auth-header",
+						Required: true,
+					},
 				},
+				Before: checkEmptyProvidedHeader,
 				Action: cmdBlxrBatchTX,
 			},
 			{
-				Name:   "getinfo",
-				Usage:  "query information on running instance",
-				Flags:  []cli.Flag{},
+				Name:  "getinfo",
+				Usage: "query information on running instance",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name: "auth-header",
+					},
+				},
+				Before: checkEmptyProvidedHeader,
 				Action: cmdGetInfo,
 			},
 			{
-				Name:   "listpeers",
-				Usage:  "list current connected peers",
-				Flags:  []cli.Flag{},
+				Name:  "listpeers",
+				Usage: "list current connected peers",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name: "auth-header",
+					},
+				},
+				Before: checkEmptyProvidedHeader,
 				Action: cmdListPeers,
 			},
 			{
-				Name:   "txservice",
-				Usage:  "query information related to the TxStore",
-				Flags:  []cli.Flag{},
+				Name:  "txservice",
+				Usage: "query information related to the TxStore",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name: "auth-header",
+					},
+				},
+				Before: checkEmptyProvidedHeader,
 				Action: cmdTxService,
 			},
 			{
-				Name:   "stop",
-				Flags:  []cli.Flag{},
+				Name: "stop",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "auth-header",
+						Required: true,
+					},
+				},
+				Before: checkEmptyProvidedHeader,
 				Action: cmdStop,
 			},
 			{
-				Name:   "version",
-				Usage:  "query information related to the TxService",
-				Flags:  []cli.Flag{},
+				Name:  "version",
+				Usage: "query information related to the TxService",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name: "auth-header",
+					},
+				},
+				Before: checkEmptyProvidedHeader,
 				Action: cmdVersion,
 			},
 			{
-				Name:   "status",
-				Usage:  "query gateway status",
-				Flags:  []cli.Flag{},
+				Name:  "status",
+				Usage: "query gateway status",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name: "auth-header"},
+				},
+				Before: checkEmptyProvidedHeader,
 				Action: cmdStatus,
 			},
 			{
-				Name:   "listsubscriptions",
-				Usage:  "query information related to the Subscriptions",
-				Flags:  []cli.Flag{},
+				Name:  "listsubscriptions",
+				Usage: "query information related to the Subscriptions",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name: "auth-header",
+					},
+				},
+				Before: checkEmptyProvidedHeader,
 				Action: cmdListSubscriptions,
 			},
 			{
@@ -170,7 +235,11 @@ func main() {
 						Name:     "enode",
 						Required: false,
 					},
+					&cli.StringFlag{
+						Name: "auth-header",
+					},
 				},
+				Before: checkEmptyProvidedHeader,
 				Action: cmdDisconnectInboundPeer,
 			},
 		},
@@ -189,11 +258,19 @@ func main() {
 	}
 }
 
+func checkEmptyProvidedHeader(ctx *cli.Context) error {
+	authHeader := ctx.String("auth-header")
+	if ctx.IsSet("auth-header") && authHeader == "" {
+		return fmt.Errorf("auth-header provided but is empty")
+	}
+	return nil
+}
+
 func cmdStop(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			return client.Stop(callCtx, &pb.StopRequest{})
+			return client.Stop(callCtx, &pb.StopRequest{AuthHeader: ctx.String("auth-header")})
 		},
 	)
 	if err != nil {
@@ -206,7 +283,7 @@ func cmdVersion(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			return client.Version(callCtx, &pb.VersionRequest{})
+			return client.Version(callCtx, &pb.VersionRequest{AuthHeader: ctx.String("auth-header")})
 		},
 	)
 	if err != nil {
@@ -219,7 +296,7 @@ func cmdNewTXs(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewStreamFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			stream, err := client.NewTxs(callCtx, &pb.TxsRequest{Filters: ctx.String("filters"), Includes: ctx.StringSlice("include")})
+			stream, err := client.NewTxs(callCtx, &pb.TxsRequest{Filters: ctx.String("filters"), Includes: ctx.StringSlice("include"), AuthHeader: ctx.String("auth-header")})
 			if err != nil {
 				return nil, err
 			}
@@ -249,7 +326,7 @@ func cmdPendingTXs(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			stream, err := client.PendingTxs(callCtx, &pb.TxsRequest{Filters: ctx.String("filters"), Includes: ctx.StringSlice("include")})
+			stream, err := client.PendingTxs(callCtx, &pb.TxsRequest{Filters: ctx.String("filters"), Includes: ctx.StringSlice("include"), AuthHeader: ctx.String("auth-header")})
 			if err != nil {
 				return nil, err
 			}
@@ -279,7 +356,7 @@ func cmdNewBlocks(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			stream, err := client.NewBlocks(callCtx, &pb.BlocksRequest{Includes: ctx.StringSlice("include")})
+			stream, err := client.NewBlocks(callCtx, &pb.BlocksRequest{Includes: ctx.StringSlice("include"), AuthHeader: ctx.String("auth-header")})
 			if err != nil {
 				return nil, err
 			}
@@ -309,7 +386,7 @@ func cmdBdnBlocks(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			stream, err := client.BdnBlocks(callCtx, &pb.BlocksRequest{Includes: ctx.StringSlice("include")})
+			stream, err := client.BdnBlocks(callCtx, &pb.BlocksRequest{Includes: ctx.StringSlice("include"), AuthHeader: ctx.String("auth-header")})
 			if err != nil {
 				return nil, err
 			}
@@ -339,7 +416,7 @@ func cmdBlxrTX(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			return client.BlxrTx(callCtx, &pb.BlxrTxRequest{Transaction: ctx.String("transaction")})
+			return client.BlxrTx(callCtx, &pb.BlxrTxRequest{Transaction: ctx.String("transaction"), AuthHeader: ctx.String("auth-header")})
 		},
 	)
 	if err != nil {
@@ -352,7 +429,7 @@ func cmdDisconnectInboundPeer(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			return client.DisconnectInboundPeer(callCtx, &pb.DisconnectInboundPeerRequest{PeerIp: ctx.String("ip"), PeerPort: ctx.Int64("port"), PublicKey: ctx.String("enode")})
+			return client.DisconnectInboundPeer(callCtx, &pb.DisconnectInboundPeerRequest{PeerIp: ctx.String("ip"), PeerPort: ctx.Int64("port"), PublicKey: ctx.String("enode"), AuthHeader: ctx.String("auth-header")})
 		},
 	)
 	if err != nil {
@@ -398,6 +475,7 @@ func cmdBlxrBatchTX(ctx *cli.Context) error {
 				Fallback:               int32(ctx.Int("fallback")),
 				NodeValidation:         ctx.Bool("node-validation"),
 				SendingTime:            time.Now().UnixNano(),
+				AuthHeader:             ctx.String("auth-header"),
 			})
 		},
 	)
@@ -422,7 +500,7 @@ func cmdListSubscriptions(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			return client.Subscriptions(callCtx, &pb.SubscriptionsRequest{})
+			return client.Subscriptions(callCtx, &pb.SubscriptionsRequest{AuthHeader: ctx.String("auth-header")})
 		},
 	)
 	if err != nil {
@@ -435,7 +513,7 @@ func cmdListPeers(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			return client.Peers(callCtx, &pb.PeersRequest{})
+			return client.Peers(callCtx, &pb.PeersRequest{AuthHeader: ctx.String("auth-header")})
 		},
 	)
 	if err != nil {
@@ -448,7 +526,7 @@ func cmdStatus(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			return client.Status(callCtx, &pb.StatusRequest{})
+			return client.Status(callCtx, &pb.StatusRequest{AuthHeader: ctx.String("auth-header")})
 		},
 	)
 	if err != nil {

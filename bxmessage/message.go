@@ -26,10 +26,11 @@ type BroadcastMessage interface {
 
 // MessageBytes struct for msg with data
 type MessageBytes struct {
-	raw                 []byte
-	receiveTime         time.Time
-	processingStartTime time.Time
-	channelPosition     int
+	raw          []byte
+	receiveTime  time.Time
+	channelPos   int
+	waitDuration time.Duration
+	insertTime   time.Time
 }
 
 // NewMessageBytes create new MessageBytes object
@@ -40,14 +41,20 @@ func NewMessageBytes(raw []byte, receiveTime time.Time) MessageBytes {
 	}
 }
 
-// SetProcessingTime set processingTime
-func (mb *MessageBytes) SetProcessingTime(processingTime time.Time) {
-	mb.processingStartTime = processingTime
+// SetNetworkChannelPositionAndInsertTime set channelPos and insertTime
+func (mb *MessageBytes) SetNetworkChannelPositionAndInsertTime(txsInChannel int, insertTime time.Time) {
+	mb.channelPos = txsInChannel
+	mb.insertTime = insertTime
 }
 
-// SetChannelPosition set channelPosition
-func (mb *MessageBytes) SetChannelPosition(txsInChannel int) {
-	mb.channelPosition = txsInChannel
+// SetWaitingDuration set insertTime
+func (mb *MessageBytes) SetWaitingDuration() {
+	mb.waitDuration = time.Since(mb.insertTime)
+}
+
+// WaitingDuration get insertTime
+func (mb MessageBytes) WaitingDuration() time.Duration {
+	return mb.waitDuration
 }
 
 // BxType parses the message type from a bx message
@@ -70,12 +77,7 @@ func (mb MessageBytes) ReceiveTime() time.Time {
 	return mb.receiveTime
 }
 
-// ProcessingStartTime return processingStartTime
-func (mb MessageBytes) ProcessingStartTime() time.Time {
-	return mb.processingStartTime
-}
-
-// ChannelPosition return channelPosition
+// ChannelPosition return receiveQueuePos
 func (mb MessageBytes) ChannelPosition() int {
-	return mb.channelPosition
+	return mb.channelPos
 }

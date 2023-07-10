@@ -79,6 +79,11 @@ func (s Sender) String() string {
 	return hex.EncodeToString(s[:])
 }
 
+// Bytes gets the string representation of the underlying Sender.
+func (s Sender) Bytes() []byte {
+	return s[:]
+}
+
 // EmptyAccountID represent no Account ID set
 const EmptyAccountID AccountID = ""
 

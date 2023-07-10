@@ -112,7 +112,8 @@ func (r *Relay) ProcessMessage(msgBytes bxmessage.MessageBytes) {
 	case bxmessage.TxType:
 		tx := &bxmessage.Tx{}
 		_ = tx.Unpack(msg, r.Protocol())
-		tx.SetMsgMetaData(msgBytes.ReceiveTime(), msgBytes.ProcessingStartTime(), msgBytes.ChannelPosition())
+		tx.SetReceiveTime(msgBytes.ReceiveTime())
+		tx.SetReceiveStats(msgBytes.WaitingDuration(), msgBytes.ChannelPosition())
 		_ = r.Node.HandleMsg(tx, r, connections.RunForeground)
 	case bxmessage.HelloType:
 		// if the running program is gw and the connected component is relay - we want to add the relay as an active peer to upscale
