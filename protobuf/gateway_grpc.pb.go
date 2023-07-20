@@ -32,6 +32,7 @@ type GatewayClient interface {
 	PendingTxs(ctx context.Context, in *TxsRequest, opts ...grpc.CallOption) (Gateway_PendingTxsClient, error)
 	NewBlocks(ctx context.Context, in *BlocksRequest, opts ...grpc.CallOption) (Gateway_NewBlocksClient, error)
 	BdnBlocks(ctx context.Context, in *BlocksRequest, opts ...grpc.CallOption) (Gateway_BdnBlocksClient, error)
+	EthOnBlock(ctx context.Context, in *EthOnBlockRequest, opts ...grpc.CallOption) (Gateway_EthOnBlockClient, error)
 }
 
 type gatewayClient struct {
@@ -260,6 +261,38 @@ func (x *gatewayBdnBlocksClient) Recv() (*BlocksReply, error) {
 	return m, nil
 }
 
+func (c *gatewayClient) EthOnBlock(ctx context.Context, in *EthOnBlockRequest, opts ...grpc.CallOption) (Gateway_EthOnBlockClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Gateway_ServiceDesc.Streams[4], "/gateway.Gateway/EthOnBlock", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &gatewayEthOnBlockClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Gateway_EthOnBlockClient interface {
+	Recv() (*EthOnBlockReply, error)
+	grpc.ClientStream
+}
+
+type gatewayEthOnBlockClient struct {
+	grpc.ClientStream
+}
+
+func (x *gatewayEthOnBlockClient) Recv() (*EthOnBlockReply, error) {
+	m := new(EthOnBlockReply)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // GatewayServer is the server API for Gateway service.
 // All implementations must embed UnimplementedGatewayServer
 // for forward compatibility
@@ -278,6 +311,7 @@ type GatewayServer interface {
 	PendingTxs(*TxsRequest, Gateway_PendingTxsServer) error
 	NewBlocks(*BlocksRequest, Gateway_NewBlocksServer) error
 	BdnBlocks(*BlocksRequest, Gateway_BdnBlocksServer) error
+	EthOnBlock(*EthOnBlockRequest, Gateway_EthOnBlockServer) error
 	mustEmbedUnimplementedGatewayServer()
 }
 
@@ -326,6 +360,9 @@ func (UnimplementedGatewayServer) NewBlocks(*BlocksRequest, Gateway_NewBlocksSer
 }
 func (UnimplementedGatewayServer) BdnBlocks(*BlocksRequest, Gateway_BdnBlocksServer) error {
 	return status.Errorf(codes.Unimplemented, "method BdnBlocks not implemented")
+}
+func (UnimplementedGatewayServer) EthOnBlock(*EthOnBlockRequest, Gateway_EthOnBlockServer) error {
+	return status.Errorf(codes.Unimplemented, "method EthOnBlock not implemented")
 }
 func (UnimplementedGatewayServer) mustEmbedUnimplementedGatewayServer() {}
 
@@ -604,6 +641,27 @@ func (x *gatewayBdnBlocksServer) Send(m *BlocksReply) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _Gateway_EthOnBlock_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(EthOnBlockRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(GatewayServer).EthOnBlock(m, &gatewayEthOnBlockServer{stream})
+}
+
+type Gateway_EthOnBlockServer interface {
+	Send(*EthOnBlockReply) error
+	grpc.ServerStream
+}
+
+type gatewayEthOnBlockServer struct {
+	grpc.ServerStream
+}
+
+func (x *gatewayEthOnBlockServer) Send(m *EthOnBlockReply) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 // Gateway_ServiceDesc is the grpc.ServiceDesc for Gateway service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -671,6 +729,11 @@ var Gateway_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "BdnBlocks",
 			Handler:       _Gateway_BdnBlocks_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "EthOnBlock",
+			Handler:       _Gateway_EthOnBlock_Handler,
 			ServerStreams: true,
 		},
 	},

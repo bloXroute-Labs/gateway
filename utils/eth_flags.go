@@ -40,7 +40,7 @@ var (
 	}
 	BeaconAPIUriFlag = &cli.StringFlag{
 		Name:     "beacon-api-uri",
-		Usage:    "Beacon API endpoints. Expected format: \"IP:PORT,IP:PORT,...\"",
+		Usage:    "Beacon API endpoints. Expected format: IP:PORT",
 		Required: false,
 	}
 	PrysmGRPCFlag = &cli.StringFlag{
@@ -51,8 +51,8 @@ var (
 		Name: "multi-node",
 		Usage: `comma separated list of nodes.
 	Each connection URI is divided by a plus sign, and it is permissible to omit websockets and beacon endpoint from any node.
-	Syntax: [enode[+eth-ws-uri],enr[+prysm://prysm-host:prysm-port],multiaddr[+prysm://prysm-host:prysm-port]]+
-	Example: enode://aaa...bbb@1.1.1.1:30303+ws://1.1.1.1:5456,enr://....+prysm://1.1.1.1:4000,multiaddr:/ip4/2.2.2.2/tcp/13000/p2p/...+prysm://2.2.2.2:4000`,
+	Syntax: [enode[+eth-ws-uri],enr[+prysm://prysm-host:prysm-port],multiaddr[+prysm://prysm-host:prysm-port],beacon-api://ip:port]
+	Example: enode://aaa...bbb@1.1.1.1:30303+ws://1.1.1.1:5456,enr://....+prysm://1.1.1.1:4000,multiaddr:/ip4/2.2.2.2/tcp/13000/p2p/...+prysm://2.2.2.2:4000,beacon-api://2.1.1.7:3500`,
 	}
 	GensisFilePath = &cli.StringFlag{
 		Name:   "genesis-path",

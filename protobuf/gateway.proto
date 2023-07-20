@@ -20,7 +20,26 @@ service Gateway {
   rpc PendingTxs (TxsRequest) returns (stream TxsReply){}
   rpc NewBlocks (BlocksRequest) returns (stream BlocksReply){}
   rpc BdnBlocks (BlocksRequest) returns (stream BlocksReply){}
+  rpc EthOnBlock (EthOnBlockRequest) returns (stream EthOnBlockReply){}
 }
+
+message CallParams {
+  map<string, string> params = 1;
+}
+
+message EthOnBlockRequest {
+  repeated string includes = 1;
+  repeated CallParams call_params = 2;
+  string auth_header = 3;
+}
+
+message EthOnBlockReply {
+  string name = 1;
+  string response = 2;
+  string blockHeight = 3;
+  string tag = 4;
+}
+
 
 message TxsRequest{
   string filters = 1;

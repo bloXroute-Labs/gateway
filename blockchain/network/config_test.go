@@ -17,8 +17,10 @@ var testWSPort = 2345
 
 func TestMultiEthWSURIParse(t *testing.T) {
 	input, enodes := generateMultiEthWSURIInput(3)
-	peerInfo, err := ParseMultiNode(input)
+	config := EthConfig{}
+	err := config.parseMultiNode(input)
 	assert.Nil(t, err)
+	peerInfo := config.StaticPeers
 	assert.Equal(t, len(peerInfo), 3)
 	for i, info := range peerInfo {
 		assert.True(t, enodes[i].Pubkey().Equal(info.Enode.Pubkey()))
@@ -46,6 +48,20 @@ func TestMultiNode(t *testing.T) {
 			Multinode: "multiaddr:/ip4/44.200.181.201/tcp/13000/p2p/16Uiu2HAm9VsYAuES1krVUZFQG8JmokMhxeRzvN1wMhB9jWeUouT8+prysm://1.1.1.1:1000",
 		},
 		{
+			Name:      "valid multi beacon api",
+			Multinode: "beacon-api://127.0.0.1:8080,beacon-api://8.8.8.8:8080",
+		},
+		{
+			Name:          "invalid beacon api endpoint",
+			Multinode:     "beacon-api://127.0.0.1:8080,beacon-api://127.0.1:8080",
+			ErrorContains: "invalid beacon-api argument after 1 comma: --beacon-api-uri: invalid IP address",
+		},
+		{
+			Name:          "duplicated beacon api endpoints",
+			Multinode:     "beacon-api://127.0.0.1:8080,beacon-api://127.0.0.1:8080",
+			ErrorContains: "duplicated beacon-api argument after 1 comma",
+		},
+		{
 			Name:          "reject multiaddr without TCP",
 			Multinode:     "multiaddr:/ip4/44.200.181.201/udp/13000/p2p/16Uiu2HAm9VsYAuES1krVUZFQG8JmokMhxeRzvN1wMhB9jWeUouT8",
 			ErrorContains: "invalid multiaddr argument after 0",
@@ -69,9 +85,10 @@ func TestMultiNode(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			peerInfo, err := ParseMultiNode(tc.Multinode)
+			config := EthConfig{}
+			err := config.parseMultiNode(tc.Multinode)
+			peerInfo := config.StaticPeers
 			if tc.ErrorContains != "" {
-				assert.Nil(t, peerInfo)
 				assert.ErrorContains(t, err, tc.ErrorContains)
 			} else {
 				assert.NotNil(t, peerInfo)

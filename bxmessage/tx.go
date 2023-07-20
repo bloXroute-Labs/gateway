@@ -10,7 +10,10 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
-const nanosInSecond = 1e9
+const (
+	nanosInSecond        = 1e9
+	invalidWalletAddress = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+)
 
 /*
    as of protocol version 25 (FullTxTimeStampProtocol):
@@ -80,7 +83,14 @@ func (m *Tx) Fallback() uint16 {
 
 // WalletIDs returns the wallet id for the next validator
 func (m *Tx) WalletIDs() []string {
-	return m.walletIDs
+	var walletIDs []string
+	for _, walletID := range m.walletIDs {
+		if walletID == invalidWalletAddress {
+			walletID = "0x"
+		}
+		walletIDs = append(walletIDs, walletID)
+	}
+	return walletIDs
 }
 
 // Timestamp indicates when the TxMessage was sent.
