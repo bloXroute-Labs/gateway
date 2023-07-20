@@ -16,6 +16,8 @@ import (
 	"google.golang.org/grpc/peer"
 )
 
+const maxTxsInSingleResponse = 50
+
 // GrpcHandler is an instance to handle gateway GRPC requests(part of requests)
 type GrpcHandler struct {
 	feedManager *FeedManager
@@ -85,6 +87,15 @@ func (g GrpcHandler) generateBlockReply(n *types.EthBlockNotification) *pb.Block
 	return blockReply
 }
 
+func generateEthOnBlockReply(n *types.OnBlockNotification) *pb.EthOnBlockReply {
+	return &pb.EthOnBlockReply{
+		Name:        n.Name,
+		Response:    n.Response,
+		BlockHeight: n.BlockHeight,
+		Tag:         n.Tag,
+	}
+}
+
 func makeTransaction(transaction types.NewTransactionNotification) *pb.Tx {
 	tx := &pb.Tx{
 		From:        transaction.Sender().Bytes(),
@@ -106,7 +117,23 @@ func (g *GrpcHandler) PendingTxs(req *pb.TxsRequest, stream pb.Gateway_PendingTx
 	return g.handleTransactions(req, stream, types.PendingTxsFeed, account)
 }
 
-func (g *GrpcHandler) handleTransactions(req *pb.TxsRequest, stream pb.Gateway_PendingTxsServer, feedType types.FeedType, account sdnmessage.Account) error {
+func processTx(clientReq *clientReq, notification types.Notification, multiTxsResponse *[]*pb.Tx, remoteAddress string, accountID types.AccountID, feedType types.FeedType) {
+	var transaction *types.NewTransactionNotification
+	switch feedType {
+	case types.NewTxsFeed:
+		transaction = (notification).(*types.NewTransactionNotification)
+	case types.PendingTxsFeed:
+		tx := (notification).(*types.PendingTransactionNotification)
+		transaction = &tx.NewTransactionNotification
+	}
+
+	txResult := filterAndInclude(clientReq, transaction, remoteAddress, accountID)
+	if txResult != nil {
+		*multiTxsResponse = append(*multiTxsResponse, makeTransaction(*transaction))
+	}
+}
+
+func (g *GrpcHandler) handleTransactions(req *pb.TxsRequest, stream pb.Gateway_NewTxsServer, feedType types.FeedType, account sdnmessage.Account) error {
 	var expr conditions.Expr
 	if req.GetFilters() != "" {
 		var err error
@@ -120,7 +147,12 @@ func (g *GrpcHandler) handleTransactions(req *pb.TxsRequest, stream pb.Gateway_P
 	if err != nil {
 		return errors.New("failed to subscribe to gRPC pendingTxs")
 	}
-	defer g.feedManager.Unsubscribe(sub.SubscriptionID, false, "")
+	defer func() {
+		err = g.feedManager.Unsubscribe(sub.SubscriptionID, false, "")
+		if err != nil {
+			log.Errorf("error when unsubscribed from grpc multi new tx feed, subscription id %v, err %v", sub.SubscriptionID, err)
+		}
+	}()
 
 	clientReq := &clientReq{includes: req.GetIncludes(), expr: expr, feed: feedType}
 
@@ -129,34 +161,20 @@ func (g *GrpcHandler) handleTransactions(req *pb.TxsRequest, stream pb.Gateway_P
 	if ok {
 		remoteAddress = streamPeer.Addr.String()
 	}
+	var txsResponse []*pb.Tx
+	for notification := range sub.FeedChan {
+		processTx(clientReq, notification, &txsResponse, remoteAddress, account.AccountID, feedType)
 
-	for {
-		select {
-		case notification, ok := <-sub.FeedChan:
-			if !ok {
-				return fmt.Errorf("error when reading new notification for gRPC %v", feedType)
+		if len(sub.FeedChan) == 0 || len(txsResponse) == maxTxsInSingleResponse {
+			err = stream.Send(&pb.TxsReply{Tx: txsResponse})
+			if err != nil {
+				return err
 			}
 
-			var transaction *types.NewTransactionNotification
-			switch feedType {
-			case types.NewTxsFeed:
-				transaction = (notification).(*types.NewTransactionNotification)
-			case types.PendingTxsFeed:
-				tx := (notification).(*types.PendingTransactionNotification)
-				transaction = &tx.NewTransactionNotification
-			}
-
-			txResult := filterAndInclude(clientReq, transaction, remoteAddress, account.AccountID)
-			if txResult != nil {
-				txsReply := &pb.TxsReply{Tx: []*pb.Tx{makeTransaction(*transaction)}}
-				err = stream.Send(txsReply)
-				if err != nil {
-					return err
-				}
-			}
-
+			txsResponse = txsResponse[:0]
 		}
 	}
+	return nil
 }
 
 // NewBlocks handler for stream of new blocks
@@ -167,6 +185,57 @@ func (g *GrpcHandler) NewBlocks(req *pb.BlocksRequest, stream pb.Gateway_NewBloc
 // BdnBlocks handler for stream of BDN blocks
 func (g *GrpcHandler) BdnBlocks(req *pb.BlocksRequest, stream pb.Gateway_BdnBlocksServer, account sdnmessage.Account) error {
 	return g.handleBlocks(req, stream, types.BDNBlocksFeed, account)
+}
+
+// EthOnBlock handler for stream of changes in the EVM state when a new block is mined
+func (g *GrpcHandler) EthOnBlock(req *pb.EthOnBlockRequest, stream pb.Gateway_EthOnBlockServer, account sdnmessage.Account) error {
+	sub, err := g.feedManager.Subscribe(types.OnBlockFeed, types.GRPCFeed, nil, account.TierName, account.AccountID, "", "", "", "", false)
+	if err != nil {
+		return errors.New("failed to subscribe to gRPC ethOnBlock")
+	}
+	defer func(feedManager *FeedManager, subscriptionID string, closeClientConnection bool, errMsg string) {
+		err = feedManager.Unsubscribe(subscriptionID, closeClientConnection, errMsg)
+		if err != nil {
+			return
+		}
+	}(g.feedManager, sub.SubscriptionID, false, "")
+
+	var includes []string
+	if len(req.GetIncludes()) == 0 {
+		includes = validOnBlockParams
+	} else {
+		includes = req.GetIncludes()
+	}
+
+	calls := make(map[string]*RPCCall)
+	for idx, callParams := range req.GetCallParams() {
+		if callParams == nil {
+			return fmt.Errorf("call-params cannot be nil")
+		}
+		err = fillCalls(g.feedManager, calls, idx, callParams.Params)
+		if err != nil {
+			return err
+		}
+	}
+
+	for {
+		notification, ok := <-sub.FeedChan
+		if !ok {
+			return fmt.Errorf("error when reading new block from gRPC ethOnBlock")
+		}
+
+		block := notification.(*types.EthBlockNotification)
+		sendEthOnBlockGrpcNotification := func(notification *types.OnBlockNotification) error {
+			ethOnBlockNotificationReply := notification.WithFields(includes).(*types.OnBlockNotification)
+			grpcEthOnBlockNotificationReply := generateEthOnBlockReply(ethOnBlockNotificationReply)
+			return stream.Send(grpcEthOnBlockNotificationReply)
+		}
+
+		err = handleEthOnBlock(g.feedManager, block, calls, sendEthOnBlockGrpcNotification)
+		if err != nil {
+			return err
+		}
+	}
 }
 
 func (g *GrpcHandler) handleBlocks(req *pb.BlocksRequest, stream pb.Gateway_BdnBlocksServer, feedType types.FeedType, account sdnmessage.Account) error {

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -13,8 +12,6 @@ import (
 	"path"
 	"syscall"
 
-	upscale_client "github.com/bloXroute-Labs/upscale-client"
-	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/urfave/cli/v2"
 
 	"github.com/bloXroute-Labs/gateway/v2"
@@ -170,48 +167,13 @@ func runGateway(c *cli.Context) error {
 	// create a set of recommended peers
 	recommendedPeers := make(map[string]struct{})
 
-	// init upscale client
-	server := os.Getenv("upscale_addr")
-	if server != "" {
-		// initialization of the upscale is done with the gw node id, because upscale accept only string
-		// with 64 chars, thus 0s are added to the beginning of the node id
-		// example: node id 12345e07-1234-1234-1234-464d308375df will be 000000000000000000000000000012345e07-1234-1234-1234-464d308375df
-		uErr := upscale_client.Init(fmt.Sprintf("%064s", string(sdn.NodeID())))
-		if uErr != nil {
-			log.Error("failed to init upscale client", "err", uErr)
-			return uErr
-		}
-
-		nrp := c.Int(utils.NumRecommendedPeers.Name)
-		if nrp != 0 {
-			rp := upscale_client.GetRecommendedPeers(int32(nrp))
-			for _, peer := range rp {
-				recommendedPeers[peer.Info.RemoteAddress] = struct{}{}
-
-				pp := hex.EncodeToString(peer.Info.PeerID.ID)
-
-				n, err := enode.Parse(enode.ValidSchemes, peer.Info.Enode)
-				if err != nil {
-					log.Errorf("failed to parse recommended peer's with ID %v and addr %v: %v", pp, peer.Info.RemoteAddress, err)
-					continue
-				}
-
-				log.Infof("adding recommended peer %s as a static peer with ID %s and address %s", peer.Info.Enode, pp, peer.Info.RemoteAddress)
-
-				ethConfig.StaticPeers = append(ethConfig.StaticPeers, network.PeerInfo{
-					Enode: n,
-				})
-			}
-		}
-	}
-
 	startupBeaconNode := bxConfig.GatewayMode.IsBDN() && len(ethConfig.BeaconNodes()) > 0
 	startupBlockchainClient := startupBeaconNode || len(ethConfig.StaticEnodes()) > 0 || bxConfig.EnableDynamicPeers // if beacon node running we need to receive txs also
 	startupPrysmClient := bxConfig.GatewayMode.IsBDN() && prysmAddr != ""
-	startupBeaconAPIClients := bxConfig.GatewayMode.IsBDN() && len(ethConfig.BeaconAPIEndpoints) > 0
+	startupBeaconAPIClients := bxConfig.GatewayMode.IsBDN() && len(ethConfig.BeaconAPIEndpoints()) > 0
 
 	var bridge blockchain.Bridge
-	if startupBlockchainClient || startupBeaconNode || startupPrysmClient {
+	if startupBlockchainClient || startupBeaconNode || startupPrysmClient || startupBeaconAPIClients {
 		bridge = blockchain.NewBxBridge(eth.Converter{}, startupBeaconNode)
 	} else {
 		bridge = blockchain.NewNoOpBridge(eth.Converter{})
@@ -276,12 +238,6 @@ func runGateway(c *cli.Context) error {
 		if err = blockchainServer.Start(); err != nil {
 			return err
 		}
-		if dynamicPeers > 0 {
-			log.Infof("starting upscale to manage %v dynamic peers", dynamicPeers)
-
-			// start upscale client
-			upscale_client.Run()
-		}
 	} else {
 		log.Infof("skipping starting blockchain client as no enodes have been provided")
 	}
@@ -318,7 +274,7 @@ func runGateway(c *cli.Context) error {
 	}
 
 	if startupBeaconAPIClients {
-		for _, endpoint := range ethConfig.BeaconAPIEndpoints {
+		for _, endpoint := range ethConfig.BeaconAPIEndpoints() {
 			beaconAPIClient := beacon.NewAPIClient(ctx, httpclient.Client(nil), ethConfig, bridge, endpoint, blockchainNetwork)
 			beaconAPIClient.Start()
 		}

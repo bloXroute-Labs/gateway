@@ -4,7 +4,6 @@ go 1.19
 
 require (
 	github.com/bits-and-blooms/bloom/v3 v3.5.0
-	github.com/bloXroute-Labs/upscale-client v0.0.0-20230502140536-89a19c5325cc
 	github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869
 	github.com/cenkalti/backoff/v4 v4.2.0
 	github.com/ethereum/go-ethereum v1.11.2
@@ -220,5 +219,5 @@ require (
 replace (
 	// Used in prysm which also has replace for this but for some reason go list which is used in some IDEs does not recognize semver before replace
 	github.com/MariusVanDerWijden/tx-fuzz => github.com/marcopolo/tx-fuzz v0.0.0-20220927011827-b5c461bc7cae
-	github.com/ethereum/go-ethereum => github.com/bloXroute-Labs/go-ethereum v1.11.5-upscale.1
+	github.com/ethereum/go-ethereum => github.com/ethereum/go-ethereum v1.11.5
 )

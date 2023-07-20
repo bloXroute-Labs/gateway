@@ -73,6 +73,11 @@ func NewMEVBundle(transaction []string, uuid string, blockNumber string, minTime
 	}, nil
 }
 
+// String returns a string representation of the MEVBundle
+func (m MEVBundle) String() string {
+	return fmt.Sprintf("bundle(hash: %s, blockNumber: %s, builders: %v, frontrunning: %t, txs: %d)", m.BundleHash, m.BlockNumber, m.MEVBuilders, m.Frontrunning, len(m.Transactions))
+}
+
 // SetHash sets the hash based on the fields in BundleSubmission
 func (m *MEVBundle) SetHash() {
 	buf := []byte{}

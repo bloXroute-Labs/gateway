@@ -7,9 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2"
@@ -45,7 +43,7 @@ type ClientHandler struct {
 	enableBlockchainRPC      bool
 	pendingTxsSourceFromNode *bool
 	log                      *log.Entry
-	authorize                func(accountID types.AccountID, secretHash string) (sdnmessage.Account, error)
+	authorize                func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool) (sdnmessage.Account, error)
 }
 
 // MultiTransactions - response for MultiTransactions subscription
@@ -129,30 +127,13 @@ type subscriptionOptions struct {
 	MultiTxs   bool                `json:"MultiTxs"`
 }
 
-// RPCCall represents customer call executed for onBlock feed
-type RPCCall struct {
-	commandMethod string
-	blockOffset   int
-	callName      string
-	callPayload   map[string]string
-	active        bool
-}
-
 var (
 	// ErrWSConnDelay amount of time to sleep before closing a bad connection. This is configured by tests to a shorted value
 	ErrWSConnDelay = 10 * time.Second
 )
 
-func newCall(name string) *RPCCall {
-	return &RPCCall{
-		callName:    name,
-		callPayload: make(map[string]string),
-		active:      true,
-	}
-}
-
 // NewClientHandler is a constructor for ClientHandler
-func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, httpServer *HTTPServer, enableBlockchainRPC bool, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), log *log.Entry, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string) (sdnmessage.Account, error)) ClientHandler {
+func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, httpServer *HTTPServer, enableBlockchainRPC bool, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), log *log.Entry, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool) (sdnmessage.Account, error)) ClientHandler {
 	return ClientHandler{
 		feedManager:              feedManager,
 		websocketServer:          websocketServer,
@@ -163,38 +144,6 @@ func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, ht
 		authorize:                authorize,
 		log:                      log,
 	}
-}
-
-func (c *RPCCall) validatePayload(method string, requiredFields []string) error {
-	for _, field := range requiredFields {
-		_, ok := c.callPayload[field]
-		if !ok {
-			return fmt.Errorf("expected %v element in request payload for %v", field, method)
-		}
-	}
-	return nil
-}
-
-func (c *RPCCall) string() string {
-	payloadBytes, err := json.Marshal(c.callPayload)
-	if err != nil {
-		log.Errorf("failed to convert eth call to string: %v", err)
-		return c.callName
-	}
-
-	return fmt.Sprintf("%+v", struct {
-		commandMethod string
-		blockOffset   int
-		callName      string
-		callPayload   string
-		active        bool
-	}{
-		commandMethod: c.commandMethod,
-		blockOffset:   c.blockOffset,
-		callName:      c.callName,
-		callPayload:   string(payloadBytes),
-		active:        c.active,
-	})
 }
 
 type rpcPingResponse struct {
@@ -262,7 +211,7 @@ type PayloadData struct {
 }
 
 // NewWSServer creates and returns a new websocket server managed by FeedManager
-func NewWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string) (sdnmessage.Account, error)) *http.Server {
+func NewWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool) (sdnmessage.Account, error)) *http.Server {
 	handler := http.NewServeMux()
 	wsHandler := func(responseWriter http.ResponseWriter, request *http.Request) {
 		// if enable client handler - skip authorization
@@ -292,7 +241,7 @@ func NewWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) 
 			default:
 				errorWithDelay(responseWriter, request, fmt.Errorf("missing authorization from method: %v", request.Method).Error())
 			}
-			connectionAccountModel, err = authorize(accountID, secretHash)
+			connectionAccountModel, err = authorize(accountID, secretHash, true)
 			if err != nil {
 				errorWithDelay(responseWriter, request, err.Error())
 				return
@@ -685,7 +634,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 					}
 				case types.TxReceiptsFeed:
 					block := notification.(*types.EthBlockNotification)
-					nodeWS, ok := h.getSyncedWSProvider(block.Source())
+					nodeWS, ok := h.FeedManager.getSyncedWSProvider(block.Source())
 					if !ok {
 						SendErrorMsg(ctx, jsonrpc.InvalidRequest, fmt.Sprintf("node ws connection is not available"), conn, req.ID)
 						return
@@ -725,52 +674,15 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 					h.log.Debugf("finished fetching transaction receipts for block %v, %v", block.BlockHash, block.Header.Number)
 				case types.OnBlockFeed:
 					block := notification.(*types.EthBlockNotification)
-					// check if block
-					if len(block.Transactions) > 0 {
-						nodeWS, ok := h.getSyncedWSProvider(block.Source())
-						if !ok {
-							return
-						}
-						blockHeightStr := block.Header.Number
-						hashStr := block.BlockHash.String()
-
-						var wg sync.WaitGroup
-						for _, c := range *request.calls {
-							wg.Add(1)
-							go func(call *RPCCall) {
-								defer wg.Done()
-								if !call.active {
-									return
-								}
-								tag := hexutil.EncodeUint64(block.Header.GetNumber() + uint64(call.blockOffset))
-								payload, err := h.FeedManager.nodeWSManager.ConstructRPCCallPayload(call.commandMethod, call.callPayload, tag)
-								if err != nil {
-									return
-								}
-								response, err := nodeWS.CallRPC(call.commandMethod, payload, blockchain.RPCOptions{RetryAttempts: bxgateway.MaxEthOnBlockCallRetries, RetryInterval: bxgateway.EthOnBlockCallRetrySleepInterval})
-								if err != nil {
-									h.log.Debugf("disabling failed onBlock call %v: %v", call.callName, err)
-									call.active = false
-									taskDisabledNotification := types.NewOnBlockNotification(bxgateway.TaskDisabledEvent, call.string(), blockHeightStr, tag, hashStr)
-									if h.sendNotification(ctx, subscriptionID, request, conn, taskDisabledNotification) != nil {
-										h.log.Errorf("failed to send TaskDisabledNotification for %v", call.callName)
-									}
-									return
-								}
-								onBlockNotification := types.NewOnBlockNotification(call.callName, response.(string), blockHeightStr, tag, hashStr)
-								if h.sendNotification(ctx, subscriptionID, request, conn, onBlockNotification) != nil {
-									return
-								}
-							}(c)
-						}
-						wg.Wait()
-						taskCompletedNotification := types.NewOnBlockNotification(bxgateway.TaskCompletedEvent, "", blockHeightStr, blockHeightStr, hashStr)
-						if h.sendNotification(ctx, subscriptionID, request, conn, taskCompletedNotification) != nil {
-							h.log.Errorf("failed to send TaskCompletedEvent on block %v", blockHeightStr)
-							return
-						}
+					sendEthOnBlockWsNotification := func(notification *types.OnBlockNotification) error {
+						return h.sendNotification(ctx, subscriptionID, request, conn, notification)
 					}
-					h.log.Debugf("finished executing onBlock for block %v, %v", block.BlockHash, block.Header.Number)
+
+					err = handleEthOnBlock(h.FeedManager, block, *request.calls, sendEthOnBlockWsNotification)
+					if err != nil {
+						SendErrorMsg(ctx, jsonrpc.InvalidRequest, err.Error(), conn, req.ID)
+						return
+					}
 				}
 			}
 		}
@@ -1355,17 +1267,6 @@ func (h *handlerObj) handleMEVBundle(ctx context.Context, conn *jsonrpc2.Conn, r
 	}
 }
 
-func (h *handlerObj) getSyncedWSProvider(preferredProviderEndpoint *types.NodeEndpoint) (blockchain.WSProvider, bool) {
-	if !h.FeedManager.nodeWSManager.Synced() {
-		return nil, false
-	}
-	nodeWS, ok := h.FeedManager.nodeWSManager.Provider(preferredProviderEndpoint)
-	if !ok || nodeWS.SyncStatus() != blockchain.Synced {
-		nodeWS, ok = h.FeedManager.nodeWSManager.SyncedProvider()
-	}
-	return nodeWS, ok
-}
-
 // sendNotification - build a response according to client request and notify client
 func (h *handlerObj) sendNotification(ctx context.Context, subscriptionID string, clientReq *clientReq, conn *jsonrpc2.Conn, notification types.Notification) error {
 	response := BlockResponse{
@@ -1578,48 +1479,10 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 			if callParams == nil {
 				return nil, fmt.Errorf("call-params cannot be nil")
 			}
-			call := newCall(strconv.Itoa(idx))
-			for param, value := range callParams {
-				switch param {
-				case "method":
-					isValidMethod := utils.Exists(value, h.FeedManager.nodeWSManager.ValidRPCCallMethods())
-					if !isValidMethod {
-						return nil, fmt.Errorf("invalid method %v provided. Supported methods: %v", value, h.FeedManager.nodeWSManager.ValidRPCCallMethods())
-					}
-					call.commandMethod = value
-				case "tag":
-					if value == "latest" {
-						call.blockOffset = 0
-						break
-					}
-					blockOffset, err := strconv.Atoi(value)
-					if err != nil || blockOffset > 0 {
-						return nil, fmt.Errorf("invalid value %v provided for tag. Supported values: latest, 0 or a negative number", value)
-					}
-					call.blockOffset = blockOffset
-				case "name":
-					_, nameExists := calls[value]
-					if nameExists {
-						return nil, fmt.Errorf("unique name must be provided for each call: call %v already exists", value)
-					}
-					call.callName = value
-				default:
-					isValidPayloadField := utils.Exists(param, h.FeedManager.nodeWSManager.ValidRPCCallPayloadFields())
-					if !isValidPayloadField {
-						return nil, fmt.Errorf("invalid payload field %v provided. Supported fields: %v", param, h.FeedManager.nodeWSManager.ValidRPCCallPayloadFields())
-					}
-					call.callPayload[param] = value
-				}
-			}
-			requiredFields, ok := h.FeedManager.nodeWSManager.RequiredPayloadFieldsForRPCMethod(call.commandMethod)
-			if !ok {
-				return nil, fmt.Errorf("unexpectedly, unable to find required fields for method %v", call.commandMethod)
-			}
-			err = call.validatePayload(call.commandMethod, requiredFields)
+			err = fillCalls(h.FeedManager, calls, idx, callParams)
 			if err != nil {
 				return nil, err
 			}
-			calls[call.callName] = call
 		}
 	}
 

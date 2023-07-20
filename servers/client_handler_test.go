@@ -75,7 +75,7 @@ var accountIDToAccountModel = map[types.AccountID]sdnmessage.Account{
 	},
 }
 
-func mockAuthorize(accountID types.AccountID, _ string) (sdnmessage.Account, error) {
+func mockAuthorize(accountID types.AccountID, _ string, _ bool) (sdnmessage.Account, error) {
 	return getMockCustomerAccountModel(accountID)
 }
 

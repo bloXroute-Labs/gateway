@@ -2,15 +2,22 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/config"
+	"github.com/bloXroute-Labs/gateway/v2/connections"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/rpc"
+	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -37,11 +44,10 @@ func main() {
 						Required: false,
 					},
 					&cli.StringFlag{
-						Name:     "auth-header",
-						Required: true,
+						Name: "auth-header",
 					},
 				},
-				Before: checkEmptyProvidedHeader,
+				Before: beforeBxCli,
 				Action: cmdNewTXs,
 			},
 			{
@@ -57,11 +63,10 @@ func main() {
 						Required: false,
 					},
 					&cli.StringFlag{
-						Name:     "auth-header",
-						Required: true,
+						Name: "auth-header",
 					},
 				},
-				Before: checkEmptyProvidedHeader,
+				Before: beforeBxCli,
 				Action: cmdPendingTXs,
 			},
 			{
@@ -73,11 +78,10 @@ func main() {
 						Required: false,
 					},
 					&cli.StringFlag{
-						Name:     "auth-header",
-						Required: true,
+						Name: "auth-header",
 					},
 				},
-				Before: checkEmptyProvidedHeader,
+				Before: beforeBxCli,
 				Action: cmdNewBlocks,
 			},
 			{
@@ -89,12 +93,31 @@ func main() {
 						Required: false,
 					},
 					&cli.StringFlag{
-						Name:     "auth-header",
-						Required: true,
+						Name: "auth-header",
 					},
 				},
-				Before: checkEmptyProvidedHeader,
+				Before: beforeBxCli,
 				Action: cmdBdnBlocks,
+			},
+			{
+				Name:  "ethOnBlock",
+				Usage: "provides a stream of changes in the EVM state when a new block is mined",
+				Flags: []cli.Flag{
+					&cli.StringSliceFlag{
+						Name:     "include",
+						Required: false,
+					},
+					&cli.GenericFlag{
+						Name:     "call-params",
+						Value:    &types.CallParamSliceFlag{},
+						Required: true,
+					},
+					&cli.StringFlag{
+						Name: "auth-header",
+					},
+				},
+				Before: beforeBxCli,
+				Action: cmdEthOnBlock,
 			},
 			{
 				Name:  "blxrtx",
@@ -105,11 +128,10 @@ func main() {
 						Required: true,
 					},
 					&cli.StringFlag{
-						Name:     "auth-header",
-						Required: true,
+						Name: "auth-header",
 					},
 				},
-				Before: checkEmptyProvidedHeader,
+				Before: beforeBxCli,
 				Action: cmdBlxrTX,
 			},
 			{
@@ -136,11 +158,10 @@ func main() {
 						Name: "node-validation",
 					},
 					&cli.StringFlag{
-						Name:     "auth-header",
-						Required: true,
+						Name: "auth-header",
 					},
 				},
-				Before: checkEmptyProvidedHeader,
+				Before: beforeBxCli,
 				Action: cmdBlxrBatchTX,
 			},
 			{
@@ -151,7 +172,7 @@ func main() {
 						Name: "auth-header",
 					},
 				},
-				Before: checkEmptyProvidedHeader,
+				Before: beforeBxCli,
 				Action: cmdGetInfo,
 			},
 			{
@@ -162,7 +183,7 @@ func main() {
 						Name: "auth-header",
 					},
 				},
-				Before: checkEmptyProvidedHeader,
+				Before: beforeBxCli,
 				Action: cmdListPeers,
 			},
 			{
@@ -173,18 +194,17 @@ func main() {
 						Name: "auth-header",
 					},
 				},
-				Before: checkEmptyProvidedHeader,
+				Before: beforeBxCli,
 				Action: cmdTxService,
 			},
 			{
 				Name: "stop",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
-						Name:     "auth-header",
-						Required: true,
+						Name: "auth-header",
 					},
 				},
-				Before: checkEmptyProvidedHeader,
+				Before: beforeBxCli,
 				Action: cmdStop,
 			},
 			{
@@ -195,7 +215,7 @@ func main() {
 						Name: "auth-header",
 					},
 				},
-				Before: checkEmptyProvidedHeader,
+				Before: beforeBxCli,
 				Action: cmdVersion,
 			},
 			{
@@ -205,7 +225,7 @@ func main() {
 					&cli.StringFlag{
 						Name: "auth-header"},
 				},
-				Before: checkEmptyProvidedHeader,
+				Before: beforeBxCli,
 				Action: cmdStatus,
 			},
 			{
@@ -216,7 +236,7 @@ func main() {
 						Name: "auth-header",
 					},
 				},
-				Before: checkEmptyProvidedHeader,
+				Before: beforeBxCli,
 				Action: cmdListSubscriptions,
 			},
 			{
@@ -239,7 +259,7 @@ func main() {
 						Name: "auth-header",
 					},
 				},
-				Before: checkEmptyProvidedHeader,
+				Before: beforeBxCli,
 				Action: cmdDisconnectInboundPeer,
 			},
 		},
@@ -258,12 +278,121 @@ func main() {
 	}
 }
 
-func checkEmptyProvidedHeader(ctx *cli.Context) error {
+func beforeBxCli(ctx *cli.Context) error {
 	authHeader := ctx.String("auth-header")
 	if ctx.IsSet("auth-header") && authHeader == "" {
 		return fmt.Errorf("auth-header provided but is empty")
 	}
+
+	if ctx.String("auth-header") == "" {
+		header, err := extractHeaderFromCerts()
+		if err != nil {
+			return fmt.Errorf("failed to extract header from gateway's certs. Please provide one instead by using the auth-header flag, error: %v", err)
+		}
+		err = ctx.Set("auth-header", header)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func extractHeaderFromCerts() (string, error) {
+	gatewayFlags, err := readGatewayArgs()
+	if err != nil {
+		return "", fmt.Errorf("failed to read gateway's flags, %v", err)
+	}
+
+	env, ok := gatewayFlags[utils.EnvFlag.Name]
+	if !ok {
+		env = utils.EnvFlag.Value
+	}
+
+	gatewayEnv, err := config.NewEnv(env)
+	if err != nil {
+		return "", err
+	}
+
+	dataDir, ok := gatewayFlags[utils.DataDirFlag.Name]
+	if ok {
+		gatewayEnv.DataDir = dataDir
+	}
+	registrationCertDir, ok := gatewayFlags[utils.RegistrationCertDirFlag.Name]
+	if ok {
+		gatewayEnv.RegistrationCertDir = registrationCertDir
+	}
+	sdnURL, ok := gatewayFlags[utils.SDNURLFlag.Name]
+	if ok {
+		gatewayEnv.SDNURL = sdnURL
+	}
+
+	nodeType, ok := gatewayFlags[utils.NodeTypeFlag.Name]
+	if !ok {
+		nodeType = utils.NodeTypeFlag.Value
+	}
+	port, ok := gatewayFlags[utils.PortFlag.Name]
+	if !ok {
+		port = strconv.Itoa(utils.PortFlag.Value)
+	}
+	gatewayEnv.DataDir = path.Join(gatewayEnv.DataDir, env, port)
+
+	privateCertDir := path.Join(gatewayEnv.DataDir, "ssl")
+	privateCertFile, privateKeyFile, registrationOnlyCertFile, registrationOnlyKeyFile := utils.GetCertDir(gatewayEnv.RegistrationCertDir, privateCertDir, nodeType)
+	sslCerts := utils.NewSSLCertsFromFiles(privateCertFile, privateKeyFile, registrationOnlyCertFile, registrationOnlyKeyFile)
+
+	// IP is set to dummy because we don't care about nodeModel, and we want to avoid the call to determine it
+	sdn := connections.NewSDNHTTP(&sslCerts, gatewayEnv.SDNURL, sdnmessage.NodeModel{ExternalIP: "dummy"}, gatewayEnv.DataDir)
+
+	accountID, err := sslCerts.GetAccountID()
+	if err != nil {
+		return "", err
+	}
+	accountModel, err := sdn.FetchCustomerAccountModel(accountID)
+	if err != nil {
+		return "", err
+	}
+
+	accountIDAndHash := fmt.Sprintf("%s:%s", accountModel.AccountID, accountModel.SecretHash)
+	return base64.StdEncoding.EncodeToString([]byte(accountIDAndHash)), nil
+}
+
+func readGatewayArgs() (map[string]string, error) {
+	psCmd := exec.Command("ps", "-ef")
+	psOutput, err := psCmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read running processes")
+	}
+
+	grepCmd := exec.Command("grep", " gateway ")
+	grepCmd.Stdin = strings.NewReader(string(psOutput))
+
+	grepOutput, err := grepCmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read gateway processes")
+	}
+
+	lines := strings.Split(string(grepOutput), "\n")
+	lines = removeEmptyLines(lines)
+
+	if len(lines) > 1 {
+		return nil, fmt.Errorf("more than two gateway processes are running")
+	}
+
+	if len(lines) < 1 {
+		return nil, fmt.Errorf("no gateway processes are running")
+	}
+
+	return utils.ExtractArgsToMap(lines[0]), nil
+}
+
+func removeEmptyLines(s []string) []string {
+	var result []string
+	for _, str := range s {
+		if strings.TrimSpace(str) != "" {
+			result = append(result, str)
+		}
+	}
+	return result
 }
 
 func cmdStop(ctx *cli.Context) error {
@@ -407,6 +536,44 @@ func cmdBdnBlocks(ctx *cli.Context) error {
 	)
 	if err != nil {
 		return fmt.Errorf("err subscribing to bdnBlocks: %v", err)
+	}
+
+	return nil
+}
+
+func cmdEthOnBlock(ctx *cli.Context) error {
+	err := rpc.GatewayConsoleCall(
+		config.NewGRPCFromCLI(ctx),
+		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
+			callParams, ok := ctx.Generic("call-params").(*types.CallParamSliceFlag)
+			if !ok {
+				return nil, fmt.Errorf("call-params argument has wrong format")
+			}
+			stream, err := client.EthOnBlock(callCtx, &pb.EthOnBlockRequest{
+				Includes:   ctx.StringSlice("include"),
+				CallParams: callParams.Values,
+				AuthHeader: ctx.String("auth-header"),
+			})
+			if err != nil {
+				return nil, err
+			}
+			for {
+				event, err := stream.Recv()
+				if err == io.EOF {
+					fmt.Println("ethOnBlock event error EOF: ", err)
+					break
+				}
+				if err != nil {
+					fmt.Println("ethOnBlock event error in recv: ", err)
+					break
+				}
+				fmt.Println(event)
+			}
+			return nil, nil
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("err subscribing to ethOnBlock: %v", err)
 	}
 
 	return nil

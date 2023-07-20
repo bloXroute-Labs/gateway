@@ -532,9 +532,10 @@ func (n *Node) subscribeAll(digest [4]byte) error {
 		return err
 	}
 
-	if err := n.subscribe(digest, p2p.AggregateAndProofSubnetTopicFormat, dontCare); err != nil {
-		return err
-	}
+	// Lighthouse penalizes for not publishing this topic if subscribed
+	// if err := n.subscribe(digest, p2p.AggregateAndProofSubnetTopicFormat, dontCare); err != nil {
+	// 	return err
+	// }
 
 	if err := n.subscribe(digest, p2p.ProposerSlashingSubnetTopicFormat, dontCare); err != nil {
 		return err

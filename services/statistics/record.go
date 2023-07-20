@@ -44,6 +44,25 @@ type gatewayBlockRecord struct {
 	BeaconBlockHash   string           `json:"beacon_block_hash,omitempty"`
 }
 
+type bundleRecord struct {
+	EventSubjectID   string           `json:"event_subject_id"`
+	EventName        string           `json:"event_name"`
+	AccountID        types.AccountID  `json:"account_id"`
+	NodeID           types.NodeID     `json:"node_id"`
+	StartDateTime    string           `json:"start_date_time"`
+	EndDateTime      string           `json:"end_date_time"`
+	NetworkNum       types.NetworkNum `json:"network_num"`
+	MEVBuilderNames  []string         `json:"mev_builder_names"`
+	FrontRunning     bool             `json:"frontrunning"`
+	UUID             string           `json:"uuid"`
+	BlockNumber      uint64           `json:"block_number"`
+	MinTimestamp     int              `json:"min_timestamp"`
+	MaxTimestamp     int              `json:"max_timestamp"`
+	ExtraData        bundleExtraData  `json:"extra_data,omitempty"`
+	SentPeers        int              `json:"sent_peers,omitempty"`
+	SentGatewayPeers int              `json:"gateway_peers,omitempty"`
+}
+
 type ethBlockContent struct {
 	BlockHash  string           `json:"block_hash"`
 	NetworkNum types.NetworkNum `json:"network_num"`
@@ -53,6 +72,10 @@ type ethBlockContent struct {
 }
 
 type blockExtraData struct {
+	MoreInfo string `json:"more_info,omitempty"`
+}
+
+type bundleExtraData struct {
 	MoreInfo string `json:"more_info,omitempty"`
 }
 

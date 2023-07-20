@@ -39,6 +39,10 @@ type Stats interface {
 		sentPeers int, startTime time.Time, sentGatewayPeers int, originalSize int, compressSize int, shortIDsCount int, txsCount int, recoveredTxsCount int, block *types.BxBlock)
 	LogSubscribeStats(subscriptionID string, accountID types.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
 		ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string, feedProject string)
+	AddBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum,
+		mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int, sentPeers int, sentGatewayPeers int)
+	AddGatewayBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum,
+		mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int)
 	LogUnsubscribeStats(subscriptionID string, feedName types.FeedType, networkNum types.NetworkNum, accountID types.AccountID, tierName sdnmessage.AccountTier)
 }
 
@@ -54,6 +58,14 @@ func (NoStats) AddBlockEvent(name string, source connections.Conn, blockHash, be
 // AddGatewayBlockEvent does nothing
 func (NoStats) AddGatewayBlockEvent(name string, source connections.Conn, blockHash, beaconBlockHash types.SHA256Hash, networkNum types.NetworkNum,
 	sentPeers int, startTime time.Time, sentGatewayPeers int, originalSize int, compressSize int, shortIDsCount int, txsCount int, recoveredTxsCount int, block *types.BxBlock) {
+}
+
+// AddBundleEvent does nothing
+func (NoStats) AddBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum, mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int, sentPeers int, sentGatewayPeers int) {
+}
+
+// AddGatewayBundleEvent does nothing
+func (NoStats) AddGatewayBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum, mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int) {
 }
 
 // AddTxsByShortIDsEvent does nothing
@@ -217,6 +229,67 @@ func (s FluentdStats) addBlockContent(name string, networkNum types.NetworkNum, 
 	}
 
 	s.LogToFluentD(record, now, "network_content.block.stats")
+}
+
+// AddBundleEvent generates a fluentd STATS event
+// Includes sent peers and sent gateway peers
+func (s FluentdStats) AddBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum, mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int, sentPeers int, sentGatewayPeers int) {
+	now := time.Now()
+
+	record := Record{
+		Type: "Bundle",
+		Data: bundleRecord{
+			EventSubjectID:  bundleHash,
+			EventName:       name,
+			AccountID:       source.GetAccountID(),
+			NodeID:          s.NodeID,
+			StartDateTime:   startTime.Format(DateFormat),
+			EndDateTime:     now.Format(DateFormat),
+			NetworkNum:      networkNum,
+			MEVBuilderNames: mevBuilderNames,
+			FrontRunning:    frontrunning,
+			UUID:            uuid,
+			BlockNumber:     targetBlockNumber,
+			MinTimestamp:    minTimestamp,
+			MaxTimestamp:    maxTimestamp,
+			ExtraData: bundleExtraData{
+				MoreInfo: fmt.Sprintf("source: %v", source),
+			},
+			SentPeers:        sentPeers,
+			SentGatewayPeers: sentGatewayPeers,
+		},
+	}
+
+	s.LogToFluentD(record, time.Now(), "stats.bundles.events.p")
+}
+
+// AddGatewayBundleEvent generates a fluentd STATS event
+func (s FluentdStats) AddGatewayBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum, mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int) {
+	now := time.Now()
+
+	record := Record{
+		Type: "GatewayBundle",
+		Data: bundleRecord{
+			EventSubjectID:  bundleHash,
+			EventName:       name,
+			AccountID:       source.GetAccountID(),
+			NodeID:          s.NodeID,
+			StartDateTime:   startTime.Format(DateFormat),
+			EndDateTime:     now.Format(DateFormat),
+			NetworkNum:      networkNum,
+			MEVBuilderNames: mevBuilderNames,
+			FrontRunning:    frontrunning,
+			UUID:            uuid,
+			BlockNumber:     targetBlockNumber,
+			MinTimestamp:    minTimestamp,
+			MaxTimestamp:    maxTimestamp,
+			ExtraData: bundleExtraData{
+				MoreInfo: fmt.Sprintf("source: %v", source),
+			},
+		},
+	}
+
+	s.LogToFluentD(record, time.Now(), "stats.gateway.bundles.events.p")
 }
 
 // NewStats is used to create transaction STATS logger

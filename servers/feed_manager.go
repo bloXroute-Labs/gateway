@@ -419,3 +419,14 @@ func (f *FeedManager) LockPendingNextValidatorTxs() {
 func (f *FeedManager) UnlockPendingNextValidatorTxs() {
 	f.pendingBSCNextValidatorTxsMapLock.Unlock()
 }
+
+func (f *FeedManager) getSyncedWSProvider(preferredProviderEndpoint *types.NodeEndpoint) (blockchain.WSProvider, bool) {
+	if !f.nodeWSManager.Synced() {
+		return nil, false
+	}
+	nodeWS, ok := f.nodeWSManager.Provider(preferredProviderEndpoint)
+	if !ok || nodeWS.SyncStatus() != blockchain.Synced {
+		nodeWS, ok = f.nodeWSManager.SyncedProvider()
+	}
+	return nodeWS, ok
+}

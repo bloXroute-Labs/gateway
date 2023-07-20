@@ -113,10 +113,6 @@ github.com/bits-and-blooms/bitset v1.8.0 h1:FD+XqgOZDUxxZ8hzoBFuV9+cGWY9CslN6d5M
 github.com/bits-and-blooms/bitset v1.8.0/go.mod h1:7hO7Gc7Pp1vODcmWvKMRA9BNmbv6a/7QIWpPxHddWR8=
 github.com/bits-and-blooms/bloom/v3 v3.5.0 h1:AKDvi1V3xJCmSR6QhcBfHbCN4Vf8FfxeWkMNQfmAGhY=
 github.com/bits-and-blooms/bloom/v3 v3.5.0/go.mod h1:Y8vrn7nk1tPIlmLtW2ZPV+W7StdVMor6bC1xgpjMZFs=
-github.com/bloXroute-Labs/go-ethereum v1.11.5-upscale.1 h1:UtcrLzNFAEj+HjIccWgziavxIZPPWmwBRLmRKO+kiMo=
-github.com/bloXroute-Labs/go-ethereum v1.11.5-upscale.1/go.mod h1:ctmCBnsAHv+OBLxNg1hOjY66JKgrv+jIJvLaBLwRRd8=
-github.com/bloXroute-Labs/upscale-client v0.0.0-20230502140536-89a19c5325cc h1:iUZFLJUUPFA63YvzWbqugzR+92v0skgtypmBfb40jaU=
-github.com/bloXroute-Labs/upscale-client v0.0.0-20230502140536-89a19c5325cc/go.mod h1:SmxjUyTyTMQOz/UbYum5Yi/+dqfYwKTCaaqs/AohxdU=
 github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869 h1:DDGfHa7BWjL4YnC6+E63dPcxHo2sUxDIu8g3QgEJdRY=
 github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869/go.mod h1:Ekp36dRnpXw/yCqJaO+ZrUyxD+3VXMFFr56k5XYrpB4=
 github.com/bradfitz/go-smtpd v0.0.0-20170404230938-deb6d6237625/go.mod h1:HYsPBTaaSFSlLx/70C2HPIMNZpVV8+vt/A+FMnYP11g=
@@ -222,6 +218,8 @@ github.com/envoyproxy/go-control-plane v0.9.4/go.mod h1:6rpuAdCZL397s3pYoYcLgu1m
 github.com/envoyproxy/go-control-plane v0.9.9-0.20210217033140-668b12f5399d/go.mod h1:cXg6YxExXjJnVBQHBLXeUAgxn2UodCpnH306RInaBQk=
 github.com/envoyproxy/protoc-gen-validate v0.1.0/go.mod h1:iSmxcyjqTsJpI2R4NaDN7+kN2VEUnK/pcBlmesArF7c=
 github.com/etcd-io/bbolt v1.3.3/go.mod h1:ZF2nL25h33cCyBtcyWeZ2/I3HQOfTP+0PIEvHjkjCrw=
+github.com/ethereum/go-ethereum v1.11.5 h1:3M1uan+LAUvdn+7wCEFrcMM4LJTeuxDrPTg/f31a5QQ=
+github.com/ethereum/go-ethereum v1.11.5/go.mod h1:it7x0DWnTDMfVFdXcU6Ti4KEFQynLHVRarcSlPr0HBo=
 github.com/evalphobia/logrus_fluent v0.5.4 h1:G4BSBTm7+L+oanWfFtA/A5Y3pvL2OMxviczyZPYO5xc=
 github.com/evalphobia/logrus_fluent v0.5.4/go.mod h1:hasyj+CXm3BDP1YhFk/rnTcjlegyqvkokV9A25cQsaA=
 github.com/evanphx/json-patch v4.2.0+incompatible/go.mod h1:50XU6AFN0ol/bzJsmQLiYLvXMP4fmwYFNcr97nuDLSk=
