@@ -87,6 +87,52 @@ func (g GrpcHandler) generateBlockReply(n *types.EthBlockNotification) *pb.Block
 	return blockReply
 }
 
+func generateTxReceiptReply(n *types.TxReceiptNotification) *pb.TxReceiptsReply {
+	txReceiptsReply := &pb.TxReceiptsReply{
+		BlocKHash:         n.Receipt.BlockHash,
+		BlockNumber:       n.Receipt.BlockNumber,
+		ContractAddress:   interfaceToString(n.Receipt.ContractAddress),
+		CumulativeGasUsed: n.Receipt.CumulativeGasUsed,
+		EffectiveGasUsed:  n.Receipt.EffectiveGasPrice,
+		From:              interfaceToString(n.Receipt.From),
+		GasUsed:           n.Receipt.GasUsed,
+		LogsBloom:         n.Receipt.LogsBloom,
+		Status:            n.Receipt.Status,
+		To:                interfaceToString(n.Receipt.To),
+		TransactionHash:   n.Receipt.TransactionHash,
+		TransactionIndex:  n.Receipt.TransactionIndex,
+		Type:              n.Receipt.TxType,
+		TxsCount:          n.Receipt.TxsCount,
+	}
+
+	for _, receiptLog := range n.Receipt.Logs {
+		receiptLogMap, ok := receiptLog.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		txReceiptsReply.Logs = append(txReceiptsReply.Logs, &pb.TxLogs{
+			Address: interfaceToString(receiptLogMap["address"]),
+			Topics: func(topics []string) []string {
+				var stringTopics []string
+				for _, topic := range topics {
+					stringTopics = append(stringTopics, topic)
+				}
+				return stringTopics
+			}(interfaceToStringArray(receiptLogMap["topics"])),
+			Data:             interfaceToString(receiptLogMap["data"]),
+			BlockNumber:      interfaceToString(receiptLogMap["blockNumber"]),
+			TransactionHash:  interfaceToString(receiptLogMap["transactionHash"]),
+			TransactionIndex: interfaceToString(receiptLogMap["transactionIndex"]),
+			BlockHash:        interfaceToString(receiptLogMap["blockHash"]),
+			LogIndex:         interfaceToString(receiptLogMap["logIndex"]),
+			Removed:          interfaceToBool(receiptLogMap["removed"]),
+		})
+	}
+
+	return txReceiptsReply
+}
+
 func generateEthOnBlockReply(n *types.OnBlockNotification) *pb.EthOnBlockReply {
 	return &pb.EthOnBlockReply{
 		Name:        n.Name,
@@ -238,6 +284,46 @@ func (g *GrpcHandler) EthOnBlock(req *pb.EthOnBlockRequest, stream pb.Gateway_Et
 	}
 }
 
+// TxReceipts handler for stream of all transaction receipts in each newly mined block
+func (g *GrpcHandler) TxReceipts(req *pb.TxReceiptsRequest, stream pb.Gateway_TxReceiptsServer, account sdnmessage.Account) error {
+	sub, err := g.feedManager.Subscribe(types.TxReceiptsFeed, types.GRPCFeed, nil, account.TierName, account.AccountID, "", "", "", "", false)
+	if err != nil {
+		return errors.New("failed to subscribe to gRPC txReceipts")
+	}
+	defer func(feedManager *FeedManager, subscriptionID string, closeClientConnection bool, errMsg string) {
+		err = feedManager.Unsubscribe(subscriptionID, closeClientConnection, errMsg)
+		if err != nil {
+			return
+		}
+	}(g.feedManager, sub.SubscriptionID, false, "")
+
+	var includes []string
+	if len(req.GetIncludes()) == 0 {
+		includes = validTxReceiptParams
+	} else {
+		includes = req.GetIncludes()
+	}
+
+	for {
+		notification, ok := <-sub.FeedChan
+		if !ok {
+			return fmt.Errorf("error when reading new block from gRPC txReceipts")
+		}
+
+		block := notification.(*types.EthBlockNotification)
+		sendTxReceiptsGrpcNotification := func(notification *types.TxReceiptNotification) error {
+			txReceiptsNotificationReply := notification.WithFields(includes).(*types.TxReceiptNotification)
+			grpcTxReceiptsNotificationReply := generateTxReceiptReply(txReceiptsNotificationReply)
+			return stream.Send(grpcTxReceiptsNotificationReply)
+		}
+
+		err = handleTxReceipts(g.feedManager, block, sendTxReceiptsGrpcNotification)
+		if err != nil {
+			return err
+		}
+	}
+}
+
 func (g *GrpcHandler) handleBlocks(req *pb.BlocksRequest, stream pb.Gateway_BdnBlocksServer, feedType types.FeedType, account sdnmessage.Account) error {
 	sub, err := g.feedManager.Subscribe(feedType, types.GRPCFeed, nil, account.TierName, account.AccountID, "", "", "", "", false)
 	if err != nil {
@@ -269,4 +355,25 @@ func (g *GrpcHandler) handleBlocks(req *pb.BlocksRequest, stream pb.Gateway_BdnB
 			}
 		}
 	}
+}
+
+func interfaceToString(value interface{}) string {
+	if stringValue, ok := value.(string); ok {
+		return stringValue
+	}
+	return ""
+}
+
+func interfaceToStringArray(value interface{}) []string {
+	if stringArray, ok := value.([]string); ok {
+		return stringArray
+	}
+	return []string{}
+}
+
+func interfaceToBool(value interface{}) bool {
+	if boolValue, ok := value.(bool); ok {
+		return boolValue
+	}
+	return false
 }

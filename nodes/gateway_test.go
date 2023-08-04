@@ -1246,6 +1246,20 @@ func TestGateway_ConnectionStatus(t *testing.T) {
 	require.True(t, g.bdnStats.NodeStats()["123.45.6.78 1234"].IsConnected)
 }
 
+func TestGateway_ShortIDs(t *testing.T) {
+	_, g := setup(t, 1)
+	_, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0)
+
+	g.TxStore.Add(txMessage.Hash(), txMessage.Content(), 100, txMessage.GetNetworkNum(), false, txMessage.Flags(), g.clock.Now(), chainID, types.EmptySender)
+
+	txHashes := [][]byte{types.EmptyHash.Bytes(), txMessage.Hash().Bytes()}
+	rsp, err := g.ShortIDs(context.Background(), &pb.TxHashListRequest{TxHashes: txHashes})
+	require.NoError(t, err)
+	require.Equal(t, 2, len(rsp.GetShortIDs()))
+	require.Equal(t, uint32(0), rsp.GetShortIDs()[0])
+	require.Equal(t, uint32(100), rsp.GetShortIDs()[1])
+}
+
 func createPeerData(timeNodeConnected string) ([]*types.NodeEndpoint, map[string]*bxmessage.BdnPerformanceStatsData) {
 	endpoints := []*types.NodeEndpoint{
 		{

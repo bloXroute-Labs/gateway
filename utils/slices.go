@@ -15,6 +15,17 @@ func Exists[K comparable](field K, slice []K) bool {
 	return false
 }
 
+// Filter - filters a slice based on a predicate
+func Filter[K any](slice []K, f func(K) bool) []K {
+	var filtered []K
+	for _, element := range slice {
+		if f(element) {
+			filtered = append(filtered, element)
+		}
+	}
+	return filtered
+}
+
 // RemoveItemFromList is a helper function for remove a tx of a tx slice
 func RemoveItemFromList(itemList []string, item string) ([]string, error) {
 	if len(itemList) == 0 {

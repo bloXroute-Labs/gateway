@@ -3,6 +3,7 @@ package beacon
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -26,7 +27,6 @@ var (
 	bridge            = &blockchain.BxBridge{}
 	url               = "localhost:4000"
 	blockchainNetwork = "Test"
-	client            = NewAPIClient(ctx, httpclient.Client(nil), config, bridge, url, blockchainNetwork)
 	blockID           = "0x70e5aa3c449a179f78a5f68bdebb06b10ddde13963914bb27f7115c142843c45"
 	file              *os.File
 	blockData         []byte
@@ -70,18 +70,41 @@ func init() {
 }
 
 func TestNewAPIClient(t *testing.T) {
-	client := NewAPIClient(ctx, nil, config, bridge, url, blockchainNetwork)
+	// Initialize httpmock
+	httpClient := httpclient.Client(nil)
+	httpmock.ActivateNonDefault(httpClient)
+	defer httpmock.DeactivateAndReset()
+	// Mock the getBeaconNodeClientVersion function
+	version := "mocked-version"
+	httpmock.RegisterResponder(http.MethodGet, fmt.Sprintf("http://%s/eth/v1/node/version", url),
+		func(req *http.Request) (*http.Response, error) {
+			return httpmock.NewStringResponse(http.StatusOK, `{"data":{"version":"mocked-version"}}`), nil
+		},
+	)
 
+	client, err := NewAPIClient(ctx, httpClient, config, bridge, url, blockchainNetwork)
+
+	assert.Nil(t, err)
 	assert.Equal(t, ctx, client.ctx)
 	assert.Equal(t, url, client.URL)
 	assert.Equal(t, bridge, client.bridge)
 	assert.Equal(t, config, client.config)
+	assert.Equal(t, version, client.version)
 }
 func TestAPIClient_requestBlock(t *testing.T) {
+	// Initialize httpmock
 	httpClient := httpclient.Client(nil)
 	httpmock.ActivateNonDefault(httpClient)
 	defer httpmock.DeactivateAndReset()
-	client := NewAPIClient(ctx, httpClient, config, bridge, url, blockchainNetwork)
+	// Mock the clientVersion function
+	httpmock.RegisterResponder(http.MethodGet, fmt.Sprintf("http://%s/eth/v1/node/version", url),
+		func(req *http.Request) (*http.Response, error) {
+			return httpmock.NewStringResponse(http.StatusOK, `{"data":{"version":"mocked-version"}}`), nil
+		},
+	)
+
+	client, err := NewAPIClient(ctx, httpClient, config, bridge, url, blockchainNetwork)
+	assert.Nil(t, err)
 	tests := []struct {
 		name        string
 		version     string
@@ -123,15 +146,24 @@ func TestAPIClient_requestBlock(t *testing.T) {
 }
 
 func TestAPIClient_hashOfBlock(t *testing.T) {
+	// Initialize httpmock
 	httpClient := httpclient.Client(nil)
 	httpmock.ActivateNonDefault(httpClient)
 	defer httpmock.DeactivateAndReset()
-	client := NewAPIClient(ctx, httpClient, config, bridge, url, blockchainNetwork)
+	// Mock the getBeaconNodeClientVersion function
+	httpmock.RegisterResponder(http.MethodGet, fmt.Sprintf("http://%s/eth/v1/node/version", url),
+		func(req *http.Request) (*http.Response, error) {
+			return httpmock.NewStringResponse(http.StatusOK, `{"data":{"version":"mocked-version"}}`), nil
+		},
+	)
+
+	client, err := NewAPIClient(ctx, httpClient, config, bridge, url, blockchainNetwork)
+	assert.Nil(t, err)
 	respHeaders := http.Header{}
 	respHeaders.Add("Eth-Consensus-Version", "capella")
 	httpmock.RegisterResponder("GET", "http://"+client.URL+"/eth/v2/beacon/blocks/"+blockID,
 		httpmock.ResponderFromResponse(&http.Response{
-			StatusCode: 200,
+			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(bytes.NewReader(blockData)),
 			Header:     respHeaders,
 		}),
@@ -181,6 +213,23 @@ func TestAPIClient_hashOfBlock(t *testing.T) {
 }
 
 func TestAPIClient_processResponse(t *testing.T) {
+	// Initialize httpmock
+	httpClient := httpclient.Client(nil)
+	httpmock.ActivateNonDefault(httpClient)
+	defer httpmock.DeactivateAndReset()
+
+	// Mock the getBeaconNodeClientVersion function
+	httpmock.RegisterResponder(http.MethodGet, fmt.Sprintf("http://%s/eth/v1/node/version", url),
+		func(req *http.Request) (*http.Response, error) {
+			return httpmock.NewStringResponse(http.StatusOK, `{"data":{"version":"mocked-version"}}`), nil
+		},
+	)
+
+	// Initialize Beacon API client
+	client, err := NewAPIClient(ctx, httpClient, config, bridge, url, blockchainNetwork)
+
+	assert.Nil(t, err)
+
 	version := "capella"
 
 	tests := []struct {
@@ -211,5 +260,60 @@ func TestAPIClient_processResponse(t *testing.T) {
 				return
 			}
 		})
+	}
+}
+
+func TestAPIClient_broadcastBlock(t *testing.T) {
+	// Initialize httpmock
+	httpClient := httpclient.Client(nil)
+	httpmock.ActivateNonDefault(httpClient)
+	defer httpmock.DeactivateAndReset()
+
+	// Mock the getBeaconNodeClientVersion function
+	httpmock.RegisterResponder(http.MethodGet, fmt.Sprintf("http://%s/eth/v1/node/version", url),
+		func(req *http.Request) (*http.Response, error) {
+			return httpmock.NewStringResponse(http.StatusOK, `{"data":{"version":"mocked-version"}}`), nil
+		},
+	)
+
+	// Initialize Beacon API client
+	client, err := NewAPIClient(ctx, httpClient, config, bridge, url, blockchainNetwork)
+	assert.Nil(t, err)
+
+	// Test Case 1: Successful broadcast ssz
+	block := validBlock
+	mockRawBlock, _ := validBlock.MarshalSSZ()
+
+	httpmock.RegisterResponder(http.MethodPost, fmt.Sprintf("http://%s/eth/v1/beacon/blocks", url),
+		func(req *http.Request) (*http.Response, error) {
+			if req.Header.Get("Content-Type") != "application/octet-stream" {
+				t.Errorf("Expected content type to be 'application/octet-stream', but got '%s'", req.Header.Get("Content-Type"))
+			}
+
+			reqBody, _ := io.ReadAll(req.Body)
+			if !bytes.Equal(reqBody, mockRawBlock) {
+				t.Errorf("Expected request body:\n%s\nBut got:\n%s", mockRawBlock, reqBody)
+			}
+
+			return httpmock.NewStringResponse(http.StatusOK, ""), nil
+		},
+	)
+
+	err = client.BroadcastBlock(block)
+	if err != nil {
+		t.Errorf("Expected no error, but got: %v", err)
+	}
+
+	// Test Case 2: Failed broadcast
+	httpmock.Reset()
+	httpmock.RegisterResponder(http.MethodPost, fmt.Sprintf("http://%s/eth/v1/beacon/blocks", url),
+		func(req *http.Request) (*http.Response, error) {
+			return httpmock.NewStringResponse(http.StatusServiceUnavailable, `{"code":503,"message":"Service Unavailable"}`), nil
+		},
+	)
+
+	err = client.BroadcastBlock(block)
+	if err == nil {
+		t.Error("Expected an error, but got none")
 	}
 }

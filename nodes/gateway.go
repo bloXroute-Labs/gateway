@@ -7,7 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"math/big"
 	"net/http"
@@ -26,6 +26,7 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/pkg/errors"
 	"github.com/prysmaticlabs/prysm/v4/consensus-types/interfaces"
 	"github.com/sirupsen/logrus"
@@ -101,6 +102,8 @@ type gateway struct {
 	mevClient           *http.Client
 	mevBundleDispatcher *bundle.Dispatcher
 
+	bscValidatorClient *http.Client
+
 	bscTxClient      *http.Client
 	gatewayPeers     string
 	gatewayPublicKey string
@@ -124,6 +127,17 @@ type gateway struct {
 	grpcHandler   *servers.GrpcHandler
 	txsQueue      services.MessageQueue
 	txsOrderQueue services.MessageQueue
+}
+
+type proposedBlockArgs struct {
+	MEVRelay      string          `json:"mevRelay,omitempty"`
+	BlockNumber   rpc.BlockNumber `json:"blockNumber"`
+	PrevBlockHash common.Hash     `json:"prevBlockHash"`
+	BlockReward   *big.Int        `json:"blockReward"`
+	GasLimit      uint64          `json:"gasLimit"`
+	GasUsed       uint64          `json:"gasUsed"`
+	Payload       []hexutil.Bytes `json:"payload"`
+	UnReverted    []int           `json:"unReverted"`
 }
 
 // GeneratePeers generate string peers separated by coma
@@ -2069,6 +2083,138 @@ func (g *gateway) EthOnBlock(req *pb.EthOnBlockRequest, stream pb.Gateway_EthOnB
 	return g.grpcHandler.EthOnBlock(req, stream, g.sdn.AccountModel())
 }
 
+func (g *gateway) ShortIDs(_ context.Context, req *pb.TxHashListRequest) (*pb.ShortIDListReply, error) {
+	err := g.validateAuthHeader(req.AuthHeader, false, false)
+	if err != nil {
+		return nil, err
+	}
+
+	result := pb.ShortIDListReply{
+		ShortIDs: make([]uint32, len(req.GetTxHashes())),
+	}
+
+	for i, txHashBytes := range req.GetTxHashes() {
+		txHash, err := types.NewSHA256Hash(txHashBytes)
+		if err != nil {
+			log.Errorf("txhash from builder is not correct position %v, txhash %v err %v", i, hex.EncodeToString(txHashBytes), err)
+			continue
+		}
+		tx, exists := g.TxStore.Get(txHash)
+		if exists && len(tx.ShortIDs()) > 0 {
+			result.ShortIDs[i] = uint32(tx.ShortIDs()[0])
+		}
+	}
+	return &result, nil
+}
+
+func (g *gateway) ProposedBlock(ctx context.Context, req *pb.ProposedBlockRequest) (*pb.ProposedBlockReply, error) {
+	err := g.validateAuthHeader(req.AuthHeader, false, false)
+	if err != nil {
+		return nil, err
+	}
+
+	blockReward, ok := new(big.Int).SetString(req.BlockReward, 10)
+	if !ok {
+		return nil, errors.New("failed converting blockReward")
+	}
+	proposedBlock := []proposedBlockArgs{
+		{
+			MEVRelay:      "bloXroute",
+			BlockNumber:   rpc.BlockNumber(req.BlockNumber),
+			PrevBlockHash: common.HexToHash(req.PrevBlockHash),
+			BlockReward:   blockReward,
+			GasLimit:      req.GasLimit,
+			GasUsed:       req.GasUsed,
+			Payload:       make([]hexutil.Bytes, 0, len(req.GetPayload())),
+		},
+	}
+
+	var txStoreTx *types.BxTransaction
+	for _, proposedBlockTx := range req.GetPayload() {
+		if proposedBlockTx.GetShortID() == 0 {
+			proposedBlock[0].Payload = append(proposedBlock[0].Payload, proposedBlockTx.GetRawData())
+		} else {
+			txStoreTx, err = g.TxStore.GetTxByShortID(types.ShortID(proposedBlockTx.GetShortID()))
+			if err != nil {
+				return nil, errors.New("failed decompressing")
+			}
+			proposedBlock[0].Payload = append(proposedBlock[0].Payload, hexutil.Bytes(txStoreTx.Content()))
+		}
+	}
+	if g.bscValidatorClient == nil {
+		g.bscValidatorClient = &http.Client{
+			Transport: &http.Transport{
+				MaxConnsPerHost:     10,
+				MaxIdleConnsPerHost: 10,
+				MaxIdleConns:        10,
+				IdleConnTimeout:     0 * time.Second,
+			},
+			Timeout: 60 * time.Second,
+		}
+	}
+
+	params, err := json.Marshal(proposedBlock)
+	if err != nil {
+		log.Errorf("error serializing ProposedBlock params %v, params %+v", err, proposedBlock)
+		return nil, fmt.Errorf("failed serializing request param, %v", err)
+	}
+
+	httpReqJSON := jsonrpc2.Request{
+		Method: fmt.Sprintf("%v_proposedBlock", req.Namespace),
+		Params: (*json.RawMessage)(&params),
+	}
+
+	reqBody, err := httpReqJSON.MarshalJSON()
+	if err != nil {
+		log.Errorf("error serializing ProposedBlock request %v, message %+v", err, httpReqJSON)
+		return nil, fmt.Errorf("failed serializing request message, %v", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, req.ValidatorHttpAddress, bytes.NewReader(reqBody))
+	if err != nil {
+		log.Errorf("error preparing the httpRequest of ProposedBlock %v, message %v", err, string(reqBody))
+		return nil, fmt.Errorf("error preparing httpRequest, %v", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := g.bscValidatorClient.Do(httpReq)
+	if err != nil {
+		log.Errorf("error sending ProposedBlock %v, message %v", err, string(reqBody))
+		return nil, fmt.Errorf("failed sending message to validator, %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Errorf("failed to read validator response for ProposedBlock %v, message, %v", err, string(reqBody))
+		return nil, fmt.Errorf("failed to read response, %v", err)
+	}
+	var jsonResp jsonrpc2.Response
+	err = json.Unmarshal(body, &jsonResp)
+	if err != nil {
+		log.Errorf("failed to send compress ProposedBlock to %v, error when serializing response, %v", req.ValidatorHttpAddress, err)
+		return nil, fmt.Errorf("failed to serializing response, %v", err)
+	}
+	if jsonResp.Error != nil {
+		log.Errorf("validator returned error for ProposedBlock %v, message %v", jsonResp.Error.Error(), string(reqBody))
+		return nil, fmt.Errorf("error from validator, %v", jsonResp.Error.Message)
+	}
+
+	log.Infof("validator response to ProposedBlock %v - %v", resp.Status, string(body))
+	return &pb.ProposedBlockReply{
+		ValidatorReply:     string(body),
+		ValidatorReplyTime: g.clock.Now().UnixMilli(),
+	}, nil
+}
+
+func (g *gateway) TxReceipts(req *pb.TxReceiptsRequest, stream pb.Gateway_TxReceiptsServer) error {
+	err := g.validateAuthHeader(req.AuthHeader, true, true)
+	if err != nil {
+		return err
+	}
+	return g.grpcHandler.TxReceipts(req, stream, g.sdn.AccountModel())
+}
+
 func (g *gateway) sendStatsOnInterval(interval time.Duration) {
 	ticker := g.clock.Ticker(interval)
 	for {
@@ -2206,7 +2352,7 @@ func forwardBSCTx(conn *http.Client, txHash string, tx string, endpoint string, 
 		return
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Errorf("failed to read response from %v , %v, tx hash %v", endpoint, err, txHash)
 		return

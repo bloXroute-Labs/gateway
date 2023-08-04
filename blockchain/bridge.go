@@ -275,7 +275,7 @@ func (b BxBridge) SendBlockToNode(block *types.BxBlock) error {
 			return ErrChannelFull
 		}
 	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella:
-		// No listener, `b.beaconBlock` is true if the gateway started with a beacon P2P node
+		// No listener, `b.beaconBlock` is true if the gateway started with a beacon P2P node or Beacon API
 		if !b.beaconBlock {
 			return nil
 		}
