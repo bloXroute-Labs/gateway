@@ -12,6 +12,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"golang.org/x/sync/errgroup"
 )
 
 // RPCCall represents customer call executed for onBlock feed
@@ -167,5 +168,47 @@ func handleEthOnBlock(feedManager *FeedManager, block *types.EthBlockNotificatio
 		}
 	}
 	log.Debugf("finished executing onBlock for block %v, %v", block.BlockHash, block.Header.Number)
+	return nil
+}
+
+func handleTxReceipts(feedManager *FeedManager, block *types.EthBlockNotification, sendNotification func(notification *types.TxReceiptNotification) error) error {
+	nodeWS, ok := feedManager.getSyncedWSProvider(block.Source())
+	if !ok {
+		log.Errorf("node ws connection is not available")
+		return fmt.Errorf("node ws connection is not available")
+	}
+
+	g := new(errgroup.Group)
+	for _, t := range block.Transactions {
+		tx := t
+		g.Go(func() error {
+			hash := tx["hash"]
+			responseTxReceipt, err := nodeWS.FetchTransactionReceipt([]interface{}{hash}, blockchain.RPCOptions{RetryAttempts: bxgateway.MaxEthTxReceiptCallRetries, RetryInterval: bxgateway.EthTxReceiptCallRetrySleepInterval})
+			if err != nil || responseTxReceipt == nil {
+				log.Debugf("failed to fetch transaction receipt for %v in block %v: %v", hash, block.BlockHash, err)
+				return err
+			}
+			responseBlock, err := nodeWS.FetchBlock([]interface{}{responseTxReceipt.(map[string]interface{})["blockNumber"], false}, blockchain.RPCOptions{RetryAttempts: bxgateway.MaxEthOnBlockCallRetries, RetryInterval: bxgateway.EthOnBlockCallRetrySleepInterval})
+			var txsCount int
+			if err == nil && responseBlock != nil {
+				transactions, exist := responseBlock.(map[string]interface{})["transactions"]
+				txsCount = len(transactions.([]interface{}))
+				if !exist {
+					return fmt.Errorf("transactions field doesn't exist when query previous epoch block")
+				}
+			}
+
+			txReceiptNotification := types.NewTxReceiptNotification(responseTxReceipt.(map[string]interface{}), fmt.Sprintf("0x%x", txsCount))
+			if err = sendNotification(txReceiptNotification); err != nil {
+				log.Errorf("failed to send tx receipt for %v err %v", hash, err)
+				return err
+			}
+			return err
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil
+	}
+	log.Debugf("finished fetching transaction receipts for block %v, %v", block.BlockHash, block.Header.Number)
 	return nil
 }

@@ -174,7 +174,7 @@ func runGateway(c *cli.Context) error {
 
 	var bridge blockchain.Bridge
 	if startupBlockchainClient || startupBeaconNode || startupPrysmClient || startupBeaconAPIClients {
-		bridge = blockchain.NewBxBridge(eth.Converter{}, startupBeaconNode)
+		bridge = blockchain.NewBxBridge(eth.Converter{}, startupBeaconNode || startupBeaconAPIClients)
 	} else {
 		bridge = blockchain.NewNoOpBridge(eth.Converter{})
 	}
@@ -243,6 +243,7 @@ func runGateway(c *cli.Context) error {
 	}
 
 	var beaconNode *beacon.Node
+
 	if startupBeaconNode {
 		var genesisPath string
 		localGenesisFile := path.Join(dataDir, "genesis.ssz")
@@ -257,7 +258,7 @@ func runGateway(c *cli.Context) error {
 		}
 		log.Info("connecting to beacon node using ", genesisPath)
 
-		beaconNode, err := beacon.NewNode(ctx, c.String(utils.BlockchainNetworkFlag.Name), ethConfig, localGenesisFile, bridge)
+		beaconNode, err = beacon.NewNode(ctx, c.String(utils.BlockchainNetworkFlag.Name), ethConfig, localGenesisFile, bridge)
 		if err != nil {
 			return err
 		}
@@ -267,17 +268,26 @@ func runGateway(c *cli.Context) error {
 		}
 	}
 
+	beaconAPIClients := make([]*beacon.APIClient, 0)
+	if startupBeaconAPIClients {
+		for _, endpoint := range ethConfig.BeaconAPIEndpoints() {
+			client, err := beacon.NewAPIClient(ctx, httpclient.Client(nil), ethConfig, bridge, endpoint, blockchainNetwork)
+			if err != nil {
+				return fmt.Errorf("error creating new beacon api client: %v", err)
+			}
+			client.Start()
+			beaconAPIClients = append(beaconAPIClients, client)
+		}
+	}
+
+	if startupBeaconNode || startupBeaconAPIClients {
+		go beacon.HandleBDNBlocksBridge(ctx, bridge, beaconNode, beaconAPIClients)
+	}
+
 	var prysmClient *beacon.PrysmClient
 	if startupPrysmClient {
 		prysmClient = beacon.NewPrysmClient(ctx, ethConfig, prysmAddr, bridge, prysmEndpoint)
 		prysmClient.Start()
-	}
-
-	if startupBeaconAPIClients {
-		for _, endpoint := range ethConfig.BeaconAPIEndpoints() {
-			beaconAPIClient := beacon.NewAPIClient(ctx, httpclient.Client(nil), ethConfig, bridge, endpoint, blockchainNetwork)
-			beaconAPIClient.Start()
-		}
 	}
 
 	<-sigc

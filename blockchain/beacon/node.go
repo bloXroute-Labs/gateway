@@ -356,7 +356,6 @@ func (n *Node) Start() error {
 	n.log.Infof("Starting P2P beacon node peer ID: p2p/%v", n.host.ID())
 
 	go n.ensurePeerConnections()
-	go n.handleBDNBridge()
 	go n.sendStatusRequests()
 
 	if err := n.scheduleCapellaForkUpdate(); err != nil {
@@ -693,26 +692,6 @@ func (n *Node) broadcast(topic string, msg proto.Message) error {
 	}
 
 	return pbTopic.topic.Publish(n.ctx, buf.Bytes())
-}
-
-func (n *Node) handleBDNBridge() {
-	for {
-		select {
-		case bdnBlock := <-n.bridge.ReceiveBeaconBlockFromBDN():
-			beaconBlock, err := n.bridge.BlockBDNtoBlockchain(bdnBlock)
-			if err != nil {
-				n.log.Errorf("could not convert BDN block to beacon block: %v", err)
-				continue
-			}
-
-			if err := n.BroadcastBlock(beaconBlock.(interfaces.ReadOnlySignedBeaconBlock)); err != nil {
-				n.log.Errorf("could not broadcast block: %v", err)
-				continue
-			}
-		case <-n.ctx.Done():
-			return
-		}
-	}
 }
 
 func (n *Node) addPeers() error {

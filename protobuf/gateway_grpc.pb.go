@@ -33,6 +33,9 @@ type GatewayClient interface {
 	NewBlocks(ctx context.Context, in *BlocksRequest, opts ...grpc.CallOption) (Gateway_NewBlocksClient, error)
 	BdnBlocks(ctx context.Context, in *BlocksRequest, opts ...grpc.CallOption) (Gateway_BdnBlocksClient, error)
 	EthOnBlock(ctx context.Context, in *EthOnBlockRequest, opts ...grpc.CallOption) (Gateway_EthOnBlockClient, error)
+	TxReceipts(ctx context.Context, in *TxReceiptsRequest, opts ...grpc.CallOption) (Gateway_TxReceiptsClient, error)
+	ShortIDs(ctx context.Context, in *TxHashListRequest, opts ...grpc.CallOption) (*ShortIDListReply, error)
+	ProposedBlock(ctx context.Context, in *ProposedBlockRequest, opts ...grpc.CallOption) (*ProposedBlockReply, error)
 }
 
 type gatewayClient struct {
@@ -293,6 +296,56 @@ func (x *gatewayEthOnBlockClient) Recv() (*EthOnBlockReply, error) {
 	return m, nil
 }
 
+func (c *gatewayClient) TxReceipts(ctx context.Context, in *TxReceiptsRequest, opts ...grpc.CallOption) (Gateway_TxReceiptsClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Gateway_ServiceDesc.Streams[5], "/gateway.Gateway/TxReceipts", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &gatewayTxReceiptsClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Gateway_TxReceiptsClient interface {
+	Recv() (*TxReceiptsReply, error)
+	grpc.ClientStream
+}
+
+type gatewayTxReceiptsClient struct {
+	grpc.ClientStream
+}
+
+func (x *gatewayTxReceiptsClient) Recv() (*TxReceiptsReply, error) {
+	m := new(TxReceiptsReply)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *gatewayClient) ShortIDs(ctx context.Context, in *TxHashListRequest, opts ...grpc.CallOption) (*ShortIDListReply, error) {
+	out := new(ShortIDListReply)
+	err := c.cc.Invoke(ctx, "/gateway.Gateway/ShortIDs", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayClient) ProposedBlock(ctx context.Context, in *ProposedBlockRequest, opts ...grpc.CallOption) (*ProposedBlockReply, error) {
+	out := new(ProposedBlockReply)
+	err := c.cc.Invoke(ctx, "/gateway.Gateway/ProposedBlock", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GatewayServer is the server API for Gateway service.
 // All implementations must embed UnimplementedGatewayServer
 // for forward compatibility
@@ -312,6 +365,9 @@ type GatewayServer interface {
 	NewBlocks(*BlocksRequest, Gateway_NewBlocksServer) error
 	BdnBlocks(*BlocksRequest, Gateway_BdnBlocksServer) error
 	EthOnBlock(*EthOnBlockRequest, Gateway_EthOnBlockServer) error
+	TxReceipts(*TxReceiptsRequest, Gateway_TxReceiptsServer) error
+	ShortIDs(context.Context, *TxHashListRequest) (*ShortIDListReply, error)
+	ProposedBlock(context.Context, *ProposedBlockRequest) (*ProposedBlockReply, error)
 	mustEmbedUnimplementedGatewayServer()
 }
 
@@ -363,6 +419,15 @@ func (UnimplementedGatewayServer) BdnBlocks(*BlocksRequest, Gateway_BdnBlocksSer
 }
 func (UnimplementedGatewayServer) EthOnBlock(*EthOnBlockRequest, Gateway_EthOnBlockServer) error {
 	return status.Errorf(codes.Unimplemented, "method EthOnBlock not implemented")
+}
+func (UnimplementedGatewayServer) TxReceipts(*TxReceiptsRequest, Gateway_TxReceiptsServer) error {
+	return status.Errorf(codes.Unimplemented, "method TxReceipts not implemented")
+}
+func (UnimplementedGatewayServer) ShortIDs(context.Context, *TxHashListRequest) (*ShortIDListReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ShortIDs not implemented")
+}
+func (UnimplementedGatewayServer) ProposedBlock(context.Context, *ProposedBlockRequest) (*ProposedBlockReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ProposedBlock not implemented")
 }
 func (UnimplementedGatewayServer) mustEmbedUnimplementedGatewayServer() {}
 
@@ -662,6 +727,63 @@ func (x *gatewayEthOnBlockServer) Send(m *EthOnBlockReply) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _Gateway_TxReceipts_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(TxReceiptsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(GatewayServer).TxReceipts(m, &gatewayTxReceiptsServer{stream})
+}
+
+type Gateway_TxReceiptsServer interface {
+	Send(*TxReceiptsReply) error
+	grpc.ServerStream
+}
+
+type gatewayTxReceiptsServer struct {
+	grpc.ServerStream
+}
+
+func (x *gatewayTxReceiptsServer) Send(m *TxReceiptsReply) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _Gateway_ShortIDs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TxHashListRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServer).ShortIDs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/gateway.Gateway/ShortIDs",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServer).ShortIDs(ctx, req.(*TxHashListRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Gateway_ProposedBlock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProposedBlockRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServer).ProposedBlock(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/gateway.Gateway/ProposedBlock",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServer).ProposedBlock(ctx, req.(*ProposedBlockRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Gateway_ServiceDesc is the grpc.ServiceDesc for Gateway service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -709,6 +831,14 @@ var Gateway_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "DisconnectInboundPeer",
 			Handler:    _Gateway_DisconnectInboundPeer_Handler,
 		},
+		{
+			MethodName: "ShortIDs",
+			Handler:    _Gateway_ShortIDs_Handler,
+		},
+		{
+			MethodName: "ProposedBlock",
+			Handler:    _Gateway_ProposedBlock_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -734,6 +864,11 @@ var Gateway_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "EthOnBlock",
 			Handler:       _Gateway_EthOnBlock_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "TxReceipts",
+			Handler:       _Gateway_TxReceipts_Handler,
 			ServerStreams: true,
 		},
 	},

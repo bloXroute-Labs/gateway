@@ -1,6 +1,7 @@
 package beacon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -25,6 +26,24 @@ import (
 	"github.com/r3labs/sse"
 )
 
+// For the lighthouse client, we make different block encoding for now
+// (JSON instead of SSZ), cause it doesn't support the SZZ.
+const lighthouse = "lighthouse"
+
+type nodeVersionResponse struct {
+	Data struct {
+		Version string `json:"version"`
+	} `json:"data"`
+}
+
+// Used Beacon API routes
+const (
+	requestBlockRoute         = "http://%s/eth/v2/beacon/blocks/%s"
+	requestClientVersionRoute = "http://%s/eth/v1/node/version"
+	subscribeBlockEventRoute  = "http://%s/eth/v1/events?topics=head"
+	broadcastBlockRoute       = "http://%s/eth/v1/beacon/blocks"
+)
+
 // APIClient represents the client for subscribing to the Beacon API event stream.
 type APIClient struct {
 	URL          string
@@ -34,29 +53,92 @@ type APIClient struct {
 	clock        utils.Clock
 	ctx          context.Context
 	httpClient   *http.Client
-	nodeEndpoint types.NodeEndpoint
+	nodeEndpoint *types.NodeEndpoint
+	version      string
+	blockEncoder consensusBlockEncoder
 }
 
 // NewAPIClient creates a new APIClient with the specified URL.
-func NewAPIClient(ctx context.Context, httpClient *http.Client, config *network.EthConfig, bridge blockchain.Bridge, url, blockchainNetwork string) *APIClient {
+func NewAPIClient(ctx context.Context, httpClient *http.Client, config *network.EthConfig, bridge blockchain.Bridge, url, blockchainNetwork string) (*APIClient, error) {
 	log := log.WithFields(log.Fields{
 		"connType":   "beaconApi",
 		"remoteAddr": url,
 	})
 
-	return &APIClient{
-		ctx:          ctx,
-		URL:          url,
-		log:          log,
-		bridge:       bridge,
-		config:       config,
-		clock:        utils.RealClock{},
-		httpClient:   httpClient,
-		nodeEndpoint: createBeaconAPIEndpoint(url, blockchainNetwork),
+	client := &APIClient{
+		ctx:        ctx,
+		URL:        url,
+		log:        log,
+		bridge:     bridge,
+		config:     config,
+		clock:      utils.RealClock{},
+		httpClient: httpClient,
 	}
+
+	var err error
+
+	client.nodeEndpoint, err = client.createAPIEndpoint(url, blockchainNetwork)
+	if err != nil {
+		return nil, fmt.Errorf("error creating Beacon API endpoint: %v", err)
+	}
+
+	client.version, err = client.clientVersion()
+
+	if err != nil {
+		return nil, fmt.Errorf("error retreiving beacon client version: %v", err)
+	}
+
+	if strings.Contains(client.version, lighthouse) {
+		client.blockEncoder = newJSONConsensusBlockEncoder()
+	} else {
+		client.blockEncoder = newSSZConsensusBlockEncoder()
+	}
+
+	return client, nil
 }
 
-const requestBlockRoute = "http://%s/eth/v2/beacon/blocks/%s"
+func (c *APIClient) createAPIEndpoint(url, blockchainNetwork string) (*types.NodeEndpoint, error) {
+	urlSplitted := strings.Split(url, ":")
+	port, err := strconv.Atoi(urlSplitted[1])
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve endpoint port: %v", err)
+	}
+
+	return &types.NodeEndpoint{
+		IP:                urlSplitted[0],
+		Port:              port,
+		PublicKey:         "BeaconAPI",
+		IsBeacon:          true,
+		BlockchainNetwork: blockchainNetwork,
+		Name:              "BeaconAPI",
+		ConnectedAt:       time.Now().Format(time.RFC3339),
+	}, nil
+}
+
+func (c *APIClient) clientVersion() (string, error) {
+	uri := fmt.Sprintf(requestClientVersionRoute, c.URL)
+
+	req, err := http.NewRequestWithContext(c.ctx, http.MethodGet, uri, nil)
+	if err != nil {
+		return "", fmt.Errorf("error in creating request")
+	}
+	req.Header.Set("accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("error sending the request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var nodeVersionBody nodeVersionResponse
+	err = json.NewDecoder(resp.Body).Decode(&nodeVersionBody)
+	if err != nil {
+		return "", fmt.Errorf("error in decoding the request body: %v", err)
+	}
+
+	return strings.ToLower(nodeVersionBody.Data.Version), nil
+}
 
 func (c *APIClient) requestBlock(hash string) (interfaces.ReadOnlySignedBeaconBlock, error) {
 	uri := fmt.Sprintf(requestBlockRoute, c.URL, hash)
@@ -123,21 +205,6 @@ func (c *APIClient) processResponse(respBodyRaw []byte, v, hash string) (interfa
 	return blocks.NewSignedBeaconBlock(rawBlock)
 }
 
-func createBeaconAPIEndpoint(url, blockchainNetwork string) types.NodeEndpoint {
-	urlSplitted := strings.Split(url, ":")
-	port, _ := strconv.Atoi(urlSplitted[1])
-
-	return types.NodeEndpoint{
-		IP:                urlSplitted[0],
-		Port:              port,
-		PublicKey:         "none",
-		IsBeacon:          true,
-		BlockchainNetwork: blockchainNetwork,
-		Name:              "Beacon API",
-		ConnectedAt:       time.Now().Format(time.RFC3339),
-	}
-}
-
 type headEventData struct {
 	Slot  uint64 `json:"slot,string"`
 	Block string `json:"block"`
@@ -151,7 +218,7 @@ func (c *APIClient) Start() {
 
 // subscribeToEvents sets up a subscription to server-sent events from the beacon chain API.
 func (c *APIClient) subscribeToEvents() {
-	eventsURL := c.eventsURL()
+	eventsURL := fmt.Sprintf(subscribeBlockEventRoute, c.URL)
 	client := sse.NewClient(eventsURL)
 	for {
 		c.log.Info("subscribing to head events ", eventsURL)
@@ -165,13 +232,6 @@ func (c *APIClient) subscribeToEvents() {
 		}
 		time.Sleep(10 * time.Second)
 	}
-}
-
-// eventsURL returns the URL for the beacon chain API's server-sent events.
-const subscribeBlockEventRoute = "http://%s/eth/v1/events?topics=head"
-
-func (c *APIClient) eventsURL() string {
-	return fmt.Sprintf(subscribeBlockEventRoute, c.URL)
 }
 
 // eventHandler returns a function to handle server-sent events.
@@ -201,7 +261,7 @@ func (c *APIClient) eventHandler() func(msg *sse.Event) {
 			return
 		}
 
-		if err := sendBlockToBDN(c.clock, c.log, block, c.bridge, c.nodeEndpoint); err != nil {
+		if err := sendBlockToBDN(c.clock, c.log, block, c.bridge, *c.nodeEndpoint); err != nil {
 			c.log.Errorf("could not proccess beacon block[slot=%d,hash=%s] to eth: %v", block.Block().Slot(), blockHash, err)
 			return
 		}
@@ -229,4 +289,44 @@ func (c *APIClient) hashOfBlock(block interfaces.ReadOnlySignedBeaconBlock) (str
 // isOldBlock checks whether a beacon block is too old to be processed.
 func (c *APIClient) isOldBlock(block interfaces.ReadOnlySignedBeaconBlock) bool {
 	return block.Block().Slot() <= currentSlot(c.config.GenesisTime)-prysmTypes.Slot(c.config.IgnoreSlotCount)
+}
+
+// BroadcastBlock sends the block in octet-stream format to the beacon API endpoint
+func (c *APIClient) BroadcastBlock(block interfaces.ReadOnlySignedBeaconBlock) error {
+	uri := fmt.Sprintf(broadcastBlockRoute, c.URL)
+
+	rawBlock, err := c.blockEncoder.encodeBlock(block)
+	if err != nil {
+		return fmt.Errorf("failed to prepare block: %v", err)
+	}
+
+	req, err := http.NewRequestWithContext(c.ctx, http.MethodPost, uri, bytes.NewReader(rawBlock))
+	if err != nil {
+		return fmt.Errorf("failed to create new request: %v", err)
+	}
+
+	req.Header.Set("Eth-Consensus-Version", version.String(block.Version()))
+	req.Header.Set("Content-Type", c.blockEncoder.contentType())
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// http.StatusAccepted == 202
+	// {"code":202,"message":"The block failed validation, but was successfully broadcast anyway. It was not integrated into the beacon node's database."}"
+	//
+	// This message on the node side means "Ignoring already known beacon payload"
+	// So it's don't need to drop any error in this case
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to read response body: %v", err)
+		}
+		return fmt.Errorf("broadcasting block failed with status code %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
 }

@@ -9,7 +9,7 @@ const nullAddressStr = "0x"
 // TxReceiptNotification - represents a transaction receipt feed entry
 // to avoid deserializing/reserializing the message from Ethereum RPC, no conversion work is done
 type TxReceiptNotification struct {
-	receipt txReceipt
+	Receipt txReceipt
 }
 
 type txReceipt struct {
@@ -36,83 +36,83 @@ func NewTxReceiptNotification(txReceipt map[string]interface{}, txsCount string)
 
 	blockHash, ok := txReceipt["blockHash"]
 	if ok {
-		txReceiptNotification.receipt.BlockHash = blockHash.(string)
+		txReceiptNotification.Receipt.BlockHash = blockHash.(string)
 	}
 
 	blockNumber, ok := txReceipt["blockNumber"]
 	if ok {
-		txReceiptNotification.receipt.BlockNumber = blockNumber.(string)
+		txReceiptNotification.Receipt.BlockNumber = blockNumber.(string)
 	}
 
 	contractAddress, ok := txReceipt["contractAddress"]
 	if ok {
-		txReceiptNotification.receipt.ContractAddress = contractAddress
+		txReceiptNotification.Receipt.ContractAddress = contractAddress
 	}
 
 	cumulativeGasUsed, ok := txReceipt["cumulativeGasUsed"]
 	if ok {
-		txReceiptNotification.receipt.CumulativeGasUsed = cumulativeGasUsed.(string)
+		txReceiptNotification.Receipt.CumulativeGasUsed = cumulativeGasUsed.(string)
 	}
 
 	effectiveGasPrice, ok := txReceipt["effectiveGasPrice"]
 	if ok {
-		txReceiptNotification.receipt.EffectiveGasPrice = effectiveGasPrice.(string)
+		txReceiptNotification.Receipt.EffectiveGasPrice = effectiveGasPrice.(string)
 	}
 
 	from, ok := txReceipt["from"]
 	if ok {
-		txReceiptNotification.receipt.From = from
+		txReceiptNotification.Receipt.From = from
 	}
 
 	gasUsed, ok := txReceipt["gasUsed"]
 	if ok {
-		txReceiptNotification.receipt.GasUsed = gasUsed.(string)
+		txReceiptNotification.Receipt.GasUsed = gasUsed.(string)
 	}
 
 	logs, ok := txReceipt["logs"]
 	if ok {
-		txReceiptNotification.receipt.Logs = logs.([]interface{})
+		txReceiptNotification.Receipt.Logs = logs.([]interface{})
 	}
 
 	logsBloom, ok := txReceipt["logsBloom"]
 	if ok {
-		txReceiptNotification.receipt.LogsBloom = logsBloom.(string)
+		txReceiptNotification.Receipt.LogsBloom = logsBloom.(string)
 	}
 
 	status, ok := txReceipt["status"]
 	if ok {
-		txReceiptNotification.receipt.Status = status.(string)
+		txReceiptNotification.Receipt.Status = status.(string)
 	}
 
 	to, ok := txReceipt["to"]
 	if ok {
-		txReceiptNotification.receipt.To = to
+		txReceiptNotification.Receipt.To = to
 	}
 
 	transactionHash, ok := txReceipt["transactionHash"]
 	if ok {
-		txReceiptNotification.receipt.TransactionHash = transactionHash.(string)
+		txReceiptNotification.Receipt.TransactionHash = transactionHash.(string)
 	}
 
 	transactionIndex, ok := txReceipt["transactionIndex"]
 	if ok {
-		txReceiptNotification.receipt.TransactionIndex = transactionIndex.(string)
+		txReceiptNotification.Receipt.TransactionIndex = transactionIndex.(string)
 	}
 
 	txType, ok := txReceipt["type"]
 	if ok {
-		txReceiptNotification.receipt.TxType = txType.(string)
+		txReceiptNotification.Receipt.TxType = txType.(string)
 	}
 
-	txReceiptNotification.receipt.TxsCount = txsCount
+	txReceiptNotification.Receipt.TxsCount = txsCount
 
 	return &txReceiptNotification
 }
 
 // MarshalJSON formats txReceiptNotification, including nil "to" field if requested
 func (r *TxReceiptNotification) MarshalJSON() ([]byte, error) {
-	marshalled, err := json.Marshal(r.receipt)
-	if r.receipt.To != nullAddressStr {
+	marshalled, err := json.Marshal(r.Receipt)
+	if r.Receipt.To != nullAddressStr {
 		return marshalled, err
 	}
 	var mapWithNilToField map[string]interface{}
@@ -127,38 +127,38 @@ func (r *TxReceiptNotification) WithFields(fields []string) Notification {
 	for _, param := range fields {
 		switch param {
 		case "block_hash":
-			txReceiptNotification.receipt.BlockHash = r.receipt.BlockHash
+			txReceiptNotification.Receipt.BlockHash = r.Receipt.BlockHash
 		case "block_number":
-			txReceiptNotification.receipt.BlockNumber = r.receipt.BlockNumber
+			txReceiptNotification.Receipt.BlockNumber = r.Receipt.BlockNumber
 		case "contract_address":
-			txReceiptNotification.receipt.ContractAddress = r.receipt.ContractAddress
+			txReceiptNotification.Receipt.ContractAddress = r.Receipt.ContractAddress
 		case "cumulative_gas_used":
-			txReceiptNotification.receipt.CumulativeGasUsed = r.receipt.CumulativeGasUsed
+			txReceiptNotification.Receipt.CumulativeGasUsed = r.Receipt.CumulativeGasUsed
 		case "effective_gas_price":
-			txReceiptNotification.receipt.EffectiveGasPrice = r.receipt.EffectiveGasPrice
+			txReceiptNotification.Receipt.EffectiveGasPrice = r.Receipt.EffectiveGasPrice
 		case "from":
-			txReceiptNotification.receipt.From = r.receipt.From
+			txReceiptNotification.Receipt.From = r.Receipt.From
 		case "gas_used":
-			txReceiptNotification.receipt.GasUsed = r.receipt.GasUsed
+			txReceiptNotification.Receipt.GasUsed = r.Receipt.GasUsed
 		case "logs":
-			txReceiptNotification.receipt.Logs = r.receipt.Logs
+			txReceiptNotification.Receipt.Logs = r.Receipt.Logs
 		case "logs_bloom":
-			txReceiptNotification.receipt.LogsBloom = r.receipt.LogsBloom
+			txReceiptNotification.Receipt.LogsBloom = r.Receipt.LogsBloom
 		case "status":
-			txReceiptNotification.receipt.Status = r.receipt.Status
+			txReceiptNotification.Receipt.Status = r.Receipt.Status
 		case "to":
-			txReceiptNotification.receipt.To = r.receipt.To
-			if r.receipt.To == nil {
-				txReceiptNotification.receipt.To = nullAddressStr
+			txReceiptNotification.Receipt.To = r.Receipt.To
+			if r.Receipt.To == nil {
+				txReceiptNotification.Receipt.To = nullAddressStr
 			}
 		case "transaction_hash":
-			txReceiptNotification.receipt.TransactionHash = r.receipt.TransactionHash
+			txReceiptNotification.Receipt.TransactionHash = r.Receipt.TransactionHash
 		case "transaction_index":
-			txReceiptNotification.receipt.TransactionIndex = r.receipt.TransactionIndex
+			txReceiptNotification.Receipt.TransactionIndex = r.Receipt.TransactionIndex
 		case "type":
-			txReceiptNotification.receipt.TxType = r.receipt.TxType
+			txReceiptNotification.Receipt.TxType = r.Receipt.TxType
 		case "txs_count":
-			txReceiptNotification.receipt.TxsCount = r.receipt.TxsCount
+			txReceiptNotification.Receipt.TxsCount = r.Receipt.TxsCount
 		}
 	}
 	return &txReceiptNotification
@@ -176,7 +176,7 @@ func (r *TxReceiptNotification) LocalRegion() bool {
 
 // GetHash -
 func (r *TxReceiptNotification) GetHash() string {
-	return r.receipt.BlockHash
+	return r.Receipt.BlockHash
 }
 
 // NotificationType - feed name

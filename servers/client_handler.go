@@ -31,7 +31,6 @@ import (
 	"github.com/sourcegraph/jsonrpc2"
 	websocketjsonrpc2 "github.com/sourcegraph/jsonrpc2/websocket"
 	"github.com/zhouzhuojie/conditions"
-	"golang.org/x/sync/errgroup"
 )
 
 // ClientHandler is a struct for gateway client handler object
@@ -240,6 +239,7 @@ func NewWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) 
 				}
 			default:
 				errorWithDelay(responseWriter, request, fmt.Errorf("missing authorization from method: %v", request.Method).Error())
+				return
 			}
 			connectionAccountModel, err = authorize(accountID, secretHash, true)
 			if err != nil {
@@ -634,44 +634,14 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 					}
 				case types.TxReceiptsFeed:
 					block := notification.(*types.EthBlockNotification)
-					nodeWS, ok := h.FeedManager.getSyncedWSProvider(block.Source())
-					if !ok {
-						SendErrorMsg(ctx, jsonrpc.InvalidRequest, fmt.Sprintf("node ws connection is not available"), conn, req.ID)
+					sendTxReceiptsNotification := func(notification *types.TxReceiptNotification) error {
+						return h.sendNotification(ctx, subscriptionID, request, conn, notification)
+					}
+					err = handleTxReceipts(h.FeedManager, block, sendTxReceiptsNotification)
+					if err != nil {
+						SendErrorMsg(ctx, jsonrpc.InvalidRequest, err.Error(), conn, req.ID)
 						return
 					}
-
-					g := new(errgroup.Group)
-					for _, t := range block.Transactions {
-						tx := t
-						g.Go(func() error {
-							hash := tx["hash"]
-							responseTxReceipt, err := nodeWS.FetchTransactionReceipt([]interface{}{hash}, blockchain.RPCOptions{RetryAttempts: bxgateway.MaxEthTxReceiptCallRetries, RetryInterval: bxgateway.EthTxReceiptCallRetrySleepInterval})
-							if err != nil || responseTxReceipt == nil {
-								h.log.Debugf("failed to fetch transaction receipt for %v in block %v: %v", hash, block.BlockHash, err)
-								return err
-							}
-							responseBlock, err := nodeWS.FetchBlock([]interface{}{responseTxReceipt.(map[string]interface{})["blockNumber"], false}, blockchain.RPCOptions{RetryAttempts: bxgateway.MaxEthOnBlockCallRetries, RetryInterval: bxgateway.EthOnBlockCallRetrySleepInterval})
-							var txsCount int
-							if err == nil && responseBlock != nil {
-								transactions, exist := responseBlock.(map[string]interface{})["transactions"]
-								txsCount = len(transactions.([]interface{}))
-								if !exist {
-									return errors.New("transactions field doesn't exist when query previous epoch block")
-								}
-							}
-
-							txReceiptNotification := types.NewTxReceiptNotification(responseTxReceipt.(map[string]interface{}), fmt.Sprintf("0x%x", txsCount))
-							if err = h.sendNotification(ctx, subscriptionID, request, conn, txReceiptNotification); err != nil {
-								h.log.Errorf("failed to send tx receipt for %v err %v", hash, err)
-								return err
-							}
-							return err
-						})
-					}
-					if err := g.Wait(); err != nil {
-						return
-					}
-					h.log.Debugf("finished fetching transaction receipts for block %v, %v", block.BlockHash, block.Header.Number)
 				case types.OnBlockFeed:
 					block := notification.(*types.EthBlockNotification)
 					sendEthOnBlockWsNotification := func(notification *types.OnBlockNotification) error {

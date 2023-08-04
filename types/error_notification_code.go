@@ -16,5 +16,5 @@ var CodeToReason = map[ErrorNotificationCode]string{
 	ErrorNotificationCodeNotAuthorized:       "%v",
 	ErrorNotificationCodeForbiddenByFirewall: "%v",
 	ErrorNotificationUnsupportedCode:         "%v",
-	ErrorNotificationDisabledTimeout:         "closing disabled connection",
+	ErrorNotificationDisabledTimeout:         "closing disabled connection %v",
 }

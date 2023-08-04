@@ -120,6 +120,21 @@ func main() {
 				Action: cmdEthOnBlock,
 			},
 			{
+				Name:  "txReceipts",
+				Usage: "provides a stream of all transaction receipts in each newly mined block",
+				Flags: []cli.Flag{
+					&cli.StringSliceFlag{
+						Name:     "include",
+						Required: false,
+					},
+					&cli.StringFlag{
+						Name: "auth-header",
+					},
+				},
+				Before: beforeBxCli,
+				Action: cmdTxReceipts,
+			},
+			{
 				Name:  "blxrtx",
 				Usage: "send paid transaction",
 				Flags: []cli.Flag{
@@ -262,6 +277,21 @@ func main() {
 				Before: beforeBxCli,
 				Action: cmdDisconnectInboundPeer,
 			},
+			{
+				Name:  "shortids",
+				Usage: "return shortIDs to txhashs",
+				Flags: []cli.Flag{
+					&cli.StringSliceFlag{
+						Name:     "transaction-hashes",
+						Required: true,
+					},
+					&cli.StringFlag{
+						Name: "auth-header",
+					},
+				},
+				Before: beforeBxCli,
+				Action: cmdShortIDs,
+			},
 		},
 		Flags: []cli.Flag{
 			utils.GRPCHostFlag,
@@ -363,7 +393,7 @@ func readGatewayArgs() (map[string]string, error) {
 		return nil, fmt.Errorf("failed to read running processes")
 	}
 
-	grepCmd := exec.Command("grep", " gateway ")
+	grepCmd := exec.Command("grep", "[ /]gateway ")
 	grepCmd.Stdin = strings.NewReader(string(psOutput))
 
 	grepOutput, err := grepCmd.Output()
@@ -579,6 +609,36 @@ func cmdEthOnBlock(ctx *cli.Context) error {
 	return nil
 }
 
+func cmdTxReceipts(ctx *cli.Context) error {
+	err := rpc.GatewayConsoleCall(
+		config.NewGRPCFromCLI(ctx),
+		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
+			stream, err := client.TxReceipts(callCtx, &pb.TxReceiptsRequest{Includes: ctx.StringSlice("include"), AuthHeader: ctx.String("auth-header")})
+			if err != nil {
+				return nil, err
+			}
+			for {
+				txReceipt, err := stream.Recv()
+				if err == io.EOF {
+					fmt.Println("txReceipts error EOF: ", err)
+					break
+				}
+				if err != nil {
+					fmt.Println("txReceipts error in recv: ", err)
+					break
+				}
+				fmt.Println(txReceipt)
+			}
+			return nil, nil
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("err subscribing to txReceipts: %v", err)
+	}
+
+	return nil
+}
+
 func cmdBlxrTX(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
@@ -699,5 +759,31 @@ func cmdStatus(ctx *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("could not get status: %v", err)
 	}
+	return nil
+}
+
+func cmdShortIDs(ctx *cli.Context) error {
+	transactions := ctx.StringSlice("transaction-hashes")
+	txHashes := make([][]byte, len(transactions))
+	for i, txHashString := range transactions {
+		hash, err := types.NewSHA256HashFromString(txHashString)
+		if err != nil {
+			return fmt.Errorf("fail to convert text %v in position %v to hash, err %v", txHashString, i, err)
+		}
+		txHashes[i] = hash.Bytes()
+	}
+	err := rpc.GatewayConsoleCall(
+		config.NewGRPCFromCLI(ctx),
+		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
+			return client.ShortIDs(callCtx, &pb.TxHashListRequest{
+				TxHashes:   txHashes,
+				AuthHeader: ctx.String("auth-header"),
+			})
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("err getting list of shortIDs: %v", err)
+	}
+
 	return nil
 }

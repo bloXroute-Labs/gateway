@@ -156,6 +156,7 @@ require (
 	github.com/prometheus/client_model v0.3.0 // indirect
 	github.com/prometheus/common v0.39.0 // indirect
 	github.com/prometheus/procfs v0.9.0 // indirect
+	github.com/prometheus/prom2json v1.3.0 // indirect
 	github.com/prysmaticlabs/gohashtree v0.0.2-alpha // indirect
 	github.com/prysmaticlabs/prombbolt v0.0.0-20210126082820-9b7adba6db7c // indirect
 	github.com/quic-go/qpack v0.4.0 // indirect
@@ -176,7 +177,9 @@ require (
 	github.com/tinylib/msgp v1.1.5 // indirect
 	github.com/tklauser/go-sysconf v0.3.11 // indirect
 	github.com/tklauser/numcpus v0.6.0 // indirect
+	github.com/trailofbits/go-mutexasserts v0.0.0-20200708152505-19999e7d3cef // indirect
 	github.com/uber/jaeger-client-go v2.25.0+incompatible // indirect
+	github.com/wealdtech/go-bytesutil v1.1.1 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	github.com/yusufpapurcu/wmi v1.2.2 // indirect
 	go.etcd.io/bbolt v1.3.5 // indirect
@@ -221,3 +224,6 @@ replace (
 	github.com/MariusVanDerWijden/tx-fuzz => github.com/marcopolo/tx-fuzz v0.0.0-20220927011827-b5c461bc7cae
 	github.com/ethereum/go-ethereum => github.com/ethereum/go-ethereum v1.11.5
 )
+
+// See https://github.com/prysmaticlabs/grpc-gateway/issues/2
+replace github.com/grpc-ecosystem/grpc-gateway/v2 => github.com/prysmaticlabs/grpc-gateway/v2 v2.3.1-0.20230315201114-09284ba20446
