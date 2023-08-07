@@ -2200,7 +2200,6 @@ func (g *gateway) ProposedBlock(ctx context.Context, req *pb.ProposedBlockReques
 		return nil, fmt.Errorf("error from validator, %v", jsonResp.Error.Message)
 	}
 
-	log.Infof("validator response to ProposedBlock %v - %v", resp.Status, string(body))
 	return &pb.ProposedBlockReply{
 		ValidatorReply:     string(body),
 		ValidatorReplyTime: g.clock.Now().UnixMilli(),
