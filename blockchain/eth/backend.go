@@ -654,27 +654,45 @@ type ExtraData struct {
 
 // UnmarshalJSON is used for deserialize BSC block extra data
 func (ed *ExtraData) UnmarshalJSON(b []byte) error {
-	// the first 32 bytes and the last 65 byte of the extra data field are not interested, https://github.com/ethereum/EIPs/blob/master/EIPS/eip-225.md
-	// 33rd bytes marks the length of total validator list, each validator is 68 bytes ( 20 bytes + 48 bytes padding)
+	addressLength := 20
+	bLSPublicKeyLength := 48
+
+	// follow order in extra field, from Luban upgrade, https://github.com/bnb-chain/bsc/commit/c208d28a68c414541cfaf2651b7cff725d2d3221
+	// |---Extra Vanity---|---Validators Number and Validators Bytes (or Empty)---|---Vote Attestation (or Empty)---|---Extra Seal---|
+	extraVanityLength := 32  // Fixed number of extra-data prefix bytes reserved for signer vanity
+	validatorNumberSize := 1 // Fixed number of extra prefix bytes reserved for validator number after Luban
+	validatorBytesLength := addressLength + bLSPublicKeyLength
+	extraSealLength := 65 // Fixed number of extra-data suffix bytes reserved for signer seal
 
 	// 32 + 65 + 1
 	if len(b) < 98 {
 		return errors.New("wrong extra data, too small")
 	}
 
-	validatorNum := int(b[32])
-	validatorListBytes := b[33 : len(b)-65]
-	if len(validatorListBytes) != 68*validatorNum {
-		return errors.New("wrong extra data format, validator list is not aligned")
+	data := b[extraVanityLength : len(b)-extraSealLength]
+	dataLength := len(data)
+
+	// parse Validators and Vote Attestation
+	if dataLength > 0 {
+		// parse Validators
+		if data[0] != '\xf8' { // rlp format of attestation begin with 'f8'
+			validatorNum := int(data[0])
+			validatorBytesTotalLength := validatorNumberSize + validatorNum*validatorBytesLength
+			if dataLength < validatorBytesTotalLength {
+				return fmt.Errorf("parse validators failed, validator list is not aligned")
+			}
+
+			validatorList := make([]string, 0, validatorNum)
+			data = data[validatorNumberSize:]
+			for i := 0; i < validatorNum; i++ {
+				validatorAddr := ethcommon.BytesToAddress(data[i*validatorBytesLength : i*validatorBytesLength+ethcommon.AddressLength])
+				validatorList = append(validatorList, validatorAddr.String())
+			}
+
+			ed.ValidatorList = validatorList
+		}
 	}
 
-	validatorList := make([]string, 0, validatorNum)
-	for i := 0; i < validatorNum; i++ {
-		validatorAddr := ethcommon.BytesToAddress(validatorListBytes[i*68 : i*68+20])
-		validatorList = append(validatorList, validatorAddr.String())
-	}
-
-	ed.ValidatorList = validatorList
 	return nil
 }
 
