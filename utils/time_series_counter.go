@@ -10,23 +10,48 @@ type entry struct {
 	ts      time.Time
 }
 
-// TimeSeriesCounter tracks the number of occurrences of an event in the last amount of time with the provided fidelity.
-// For example, with duration=60m and fidelity=1m, TimeSeriesCounter will guarantee a count of the number of events
-// that happened between 60-61m ago.
+// TimeSeriesCounter tracks the number of occurrences of an event in the
+// last duration of time with the provided timeFrame by keeping last
+// duration/timeFrame entries. Each entry is just an infinite counter
+// of the occurring event. Entry is being incremented during the timeFrame
+// period of time, after the timeFrame passes it appends a new entry
+// which counter is incremented.
+//
+// For example:
+// With duration of 5m and timeFrame of 1m TimeSeriesCounter keeps
+// 5m/1m = 5 (duration/timeFrame) entries.
+//
+// It starts from creating 1 entry which incremented by calling Track() func:
+// |___|
+//
+// Which eventually gets to the point where max (5) entries exist:
+// |_7_|_2_|_9_|_4_|_7_|
+// At this point Count() is equal to 7+2+9+4+7 = 29
+//
+// After the time overflows the duration of 5m it removes the oldest entry and
+// appends a new one which counter is now being incremented during the next
+// timerFrame (1m):
+// |_2_|_9_|_4_|_7_|___|
+// At this point Count() is equal to 2+9+4+7+0 = 22
+//
+// This means that there is a point in time were two subsequent calls to Count()
+// with very small delay return different results (29 and 22). So the smaller
+// timerFrame relatively to duration the more entries it creates and the
+// more precise results with less deviation it provides.
 type TimeSeriesCounter struct {
 	mu           sync.RWMutex
 	clock        Clock
 	duration     time.Duration
-	fidelity     time.Duration
+	timeFrame    time.Duration
 	entriesCount int
 	entries      []entry
 	total        int
 }
 
 // NewTimeSeriesCounter initializes a new time series tracker for the previous duration with the provided fidelity.
-func NewTimeSeriesCounter(clock Clock, duration time.Duration, fidelity time.Duration) *TimeSeriesCounter {
-	entriesCount := duration / fidelity
-	if entriesCount*fidelity != duration {
+func NewTimeSeriesCounter(clock Clock, duration time.Duration, timeFrame time.Duration) *TimeSeriesCounter {
+	entriesCount := duration / timeFrame
+	if entriesCount*timeFrame != duration {
 		panic("cannot create a time series counter with a fractional entry count")
 	}
 
@@ -36,7 +61,7 @@ func NewTimeSeriesCounter(clock Clock, duration time.Duration, fidelity time.Dur
 	return &TimeSeriesCounter{
 		clock:        clock,
 		duration:     duration,
-		fidelity:     fidelity,
+		timeFrame:    timeFrame,
 		entriesCount: int(entriesCount),
 		entries:      entries,
 		total:        0,
@@ -118,16 +143,16 @@ func (ts *TimeSeriesCounter) fillSpaces(now time.Time) {
 	}
 
 	elapsed := now.Sub(lastEntry.ts)
-	emptyIntervalCount := int(elapsed / ts.fidelity)
+	emptyIntervalCount := int(elapsed / ts.timeFrame)
 
 	for i := 1; i <= emptyIntervalCount; i++ {
-		ts.entries = append(ts.entries, entry{0, lastEntry.ts.Add(time.Duration(i) * ts.fidelity)})
+		ts.entries = append(ts.entries, entry{0, lastEntry.ts.Add(time.Duration(i) * ts.timeFrame)})
 	}
 
 	// check if need to add one more bucket for rounding
 	lastEntry, _ = ts.lastEntry()
-	if now.Sub(lastEntry.ts) > ts.fidelity {
-		ts.entries = append(ts.entries, entry{0, lastEntry.ts.Add(ts.fidelity)})
+	if now.Sub(lastEntry.ts) > ts.timeFrame {
+		ts.entries = append(ts.entries, entry{0, lastEntry.ts.Add(ts.timeFrame)})
 	}
 }
 

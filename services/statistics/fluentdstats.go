@@ -40,9 +40,9 @@ type Stats interface {
 	LogSubscribeStats(subscriptionID string, accountID types.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
 		ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string, feedProject string)
 	AddBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum,
-		mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int, sentPeers int, sentGatewayPeers int)
+		mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int, bundlePrice int64, enforcePayout bool, sentPeers int, sentGatewayPeers int)
 	AddGatewayBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum,
-		mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int)
+		mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int, bundlePrice int64, enforcePayout bool)
 	LogUnsubscribeStats(subscriptionID string, feedName types.FeedType, networkNum types.NetworkNum, accountID types.AccountID, tierName sdnmessage.AccountTier)
 }
 
@@ -61,11 +61,11 @@ func (NoStats) AddGatewayBlockEvent(name string, source connections.Conn, blockH
 }
 
 // AddBundleEvent does nothing
-func (NoStats) AddBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum, mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int, sentPeers int, sentGatewayPeers int) {
+func (NoStats) AddBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum, mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int, bundlePrice int64, enforcePayout bool, sentPeers int, sentGatewayPeers int) {
 }
 
 // AddGatewayBundleEvent does nothing
-func (NoStats) AddGatewayBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum, mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int) {
+func (NoStats) AddGatewayBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum, mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int, bundlePrice int64, enforcePayout bool) {
 }
 
 // AddTxsByShortIDsEvent does nothing
@@ -233,7 +233,7 @@ func (s FluentdStats) addBlockContent(name string, networkNum types.NetworkNum, 
 
 // AddBundleEvent generates a fluentd STATS event
 // Includes sent peers and sent gateway peers
-func (s FluentdStats) AddBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum, mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int, sentPeers int, sentGatewayPeers int) {
+func (s FluentdStats) AddBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum, mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int, bundlePrice int64, enforcePayout bool, sentPeers int, sentGatewayPeers int) {
 	now := time.Now()
 
 	record := Record{
@@ -252,6 +252,8 @@ func (s FluentdStats) AddBundleEvent(name string, source connections.Conn, start
 			BlockNumber:     targetBlockNumber,
 			MinTimestamp:    minTimestamp,
 			MaxTimestamp:    maxTimestamp,
+			BundlePrice:     bundlePrice,
+			EnforcePayout:   enforcePayout,
 			ExtraData: bundleExtraData{
 				MoreInfo: fmt.Sprintf("source: %v", source),
 			},
@@ -264,7 +266,7 @@ func (s FluentdStats) AddBundleEvent(name string, source connections.Conn, start
 }
 
 // AddGatewayBundleEvent generates a fluentd STATS event
-func (s FluentdStats) AddGatewayBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum, mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int) {
+func (s FluentdStats) AddGatewayBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum, mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int, bundlePrice int64, enforcePayout bool) {
 	now := time.Now()
 
 	record := Record{
@@ -283,6 +285,8 @@ func (s FluentdStats) AddGatewayBundleEvent(name string, source connections.Conn
 			BlockNumber:     targetBlockNumber,
 			MinTimestamp:    minTimestamp,
 			MaxTimestamp:    maxTimestamp,
+			BundlePrice:     bundlePrice,
+			EnforcePayout:   enforcePayout,
 			ExtraData: bundleExtraData{
 				MoreInfo: fmt.Sprintf("source: %v", source),
 			},

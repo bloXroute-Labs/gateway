@@ -196,6 +196,8 @@ func mevBundleFromRequest(payload *jsonrpc.RPCBundleSubmissionPayload) (*bxmessa
 		payload.Frontrunning,
 		payload.MEVBuilders,
 		parsedBundle.bundleHash,
+		payload.BundlePrice,
+		payload.EnforcePayout,
 	)
 	if err != nil {
 		// Validated before, should not happen

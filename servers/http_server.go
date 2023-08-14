@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
@@ -84,23 +83,12 @@ func (s HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 	case jsonrpc.RPCEthSendBundle, jsonrpc.RPCEthSendMegaBundle:
 		bundlePayload := []jsonrpc.RPCSendBundle{}
 		if err := json.Unmarshal(*rpcRequest.Params, &bundlePayload); err != nil {
-			log.Errorf("failed to unmarshal mevBundle params: %v", err)
-			writeErrorJSON(w, rpcRequest.ID, http.StatusInternalServerError, err)
+			writeErrorJSON(w, rpcRequest.ID, http.StatusBadRequest, fmt.Errorf("failed to unmarshal mev bundle params: %v", err))
 			return
 		}
 
 		if len(bundlePayload) != 1 {
-			err := errors.New("received invalid number of mevBundle payload, must be 1 element")
-			log.Error(err)
-			writeErrorJSON(w, rpcRequest.ID, http.StatusBadRequest, err)
-			return
-		}
-
-		// Flashbots and bloXroute used by default. See below
-		if !s.feedManager.accountModel.TierName.IsElite() {
-			accError := fmt.Errorf("EnterpriseElite account is required in order to send %s to %s", rpcRequest.Method, bxgateway.BloxrouteBuilderName)
-			writeErrorJSON(w, rpcRequest.ID, http.StatusInternalServerError, accError)
-			log.Error(accError)
+			writeErrorJSON(w, rpcRequest.ID, http.StatusBadRequest, errors.New("received invalid number of mev bundle payload, must be 1 element"))
 			return
 		}
 
@@ -117,6 +105,8 @@ func (s HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 			MaxTimestamp:    bundlePayload[0].MaxTimestamp,
 			RevertingHashes: bundlePayload[0].RevertingTxHashes,
 			UUID:            bundlePayload[0].UUID,
+			BundlePrice:     bundlePayload[0].BundlePrice,
+			EnforcePayout:   bundlePayload[0].EnforcePayout,
 		}
 
 		mevBundle, bundleHash, err := mevBundleFromRequest(&payload)
@@ -130,19 +120,23 @@ func (s HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			convertParamsError := fmt.Errorf("failed to parse params for blxr_submit_bundle: %v", err)
-			writeErrorJSON(w, rpcRequest.ID, http.StatusBadRequest, convertParamsError)
+			writeErrorJSON(w, rpcRequest.ID, http.StatusBadRequest, err)
 			return
 		}
 		mevBundle.SetNetworkNum(s.feedManager.networkNum)
 
+		if !s.feedManager.accountModel.TierName.IsElite() {
+			log.Tracef("%s rejected for non EnterpriseElite account %v tier %v", mevBundle, s.feedManager.accountModel.AccountID, s.feedManager.accountModel.TierName)
+			writeErrorJSON(w, rpcRequest.ID, http.StatusForbidden, errors.New("EnterpriseElite account is required in order to send bundle"))
+			return
+		}
+
 		ws := connections.NewRPCConn(s.feedManager.accountModel.AccountID, r.RemoteAddr, s.feedManager.networkNum, utils.Websocket)
 
-		err = s.feedManager.node.HandleMsg(mevBundle, ws, connections.RunForeground)
-		if err != nil {
-			err := fmt.Errorf("failed to process mevBundle message: %v", err)
-			log.Error(err)
-			writeErrorJSON(w, rpcRequest.ID, http.StatusInternalServerError, err)
+		if err = s.feedManager.node.HandleMsg(mevBundle, ws, connections.RunForeground); err != nil {
+			// err here is not possible right now but anyway we don't want expose reason of internal error to the client
+			log.Errorf("failed to process %s: %v", mevBundle, err)
+			writeErrorJSON(w, rpcRequest.ID, http.StatusInternalServerError, nil)
 			return
 		}
 
@@ -166,15 +160,6 @@ func (s HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		for mevBuilder := range params.MEVBuilders {
-			if strings.ToLower(mevBuilder) == bxgateway.BloxrouteBuilderName && !s.feedManager.accountModel.TierName.IsElite() {
-				accError := fmt.Errorf("EnterpriseElite account is required in order to send %s to %s", jsonrpc.RPCBundleSubmission, bxgateway.BloxrouteBuilderName)
-				writeErrorJSON(w, rpcRequest.ID, http.StatusInternalServerError, accError)
-				log.Error(accError)
-				return
-			}
-		}
-
 		mevBundle, bundleHash, err := mevBundleFromRequest(&params)
 		var result interface{}
 		if params.UUID == "" {
@@ -190,15 +175,20 @@ func (s HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 			writeErrorJSON(w, rpcRequest.ID, http.StatusBadRequest, convertParamsError)
 			return
 		}
-
 		mevBundle.SetNetworkNum(s.feedManager.networkNum)
+
+		if !s.feedManager.accountModel.TierName.IsElite() {
+			log.Tracef("%s rejected for non EnterpriseElite account %v tier %v", mevBundle, s.feedManager.accountModel.AccountID, s.feedManager.accountModel.TierName)
+			writeErrorJSON(w, rpcRequest.ID, http.StatusForbidden, errors.New("EnterpriseElite account is required in order to send bundle"))
+			return
+		}
 
 		ws := connections.NewRPCConn(s.feedManager.accountModel.AccountID, r.RemoteAddr, s.feedManager.networkNum, utils.Websocket)
 
 		if err := s.feedManager.node.HandleMsg(mevBundle, ws, connections.RunForeground); err != nil {
-			err := fmt.Errorf("failed to process mevBundle message: %v", err)
-			log.Error(err)
-			writeErrorJSON(w, rpcRequest.ID, http.StatusInternalServerError, err)
+			// err here is not possible right now but anyway we don't want expose reason of internal error to the client
+			log.Errorf("failed to process %s: %v", mevBundle, err)
+			writeErrorJSON(w, rpcRequest.ID, http.StatusInternalServerError, nil)
 			return
 		}
 

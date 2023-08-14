@@ -122,6 +122,8 @@ type RPCBundleSubmissionPayload struct {
 	MaxTimestamp            int               `json:"max_timestamp"`
 	RevertingHashes         []string          `json:"reverting_hashes"`
 	UUID                    string            `json:"uuid"`
+	BundlePrice             int64             `json:"bundlePrice,omitempty"` // in wei
+	EnforcePayout           bool              `json:"enforcePayout,omitempty"`
 	OriginalSenderAccountID string            `json:"original_sender_account_id"`
 }
 
@@ -177,6 +179,8 @@ type RPCSendBundle struct {
 	MaxTimestamp      int      `json:"maxTimestamp"`
 	RevertingTxHashes []string `json:"revertingTxHashes"`
 	Frontrunning      bool     `json:"frontrunning,omitempty"`
+	BundlePrice       int64    `json:"bundlePrice,omitempty"` // in wei
+	EnforcePayout     bool     `json:"enforcePayout,omitempty"`
 }
 
 // RPCCancelBundlePayload custom json-rpc required to cancel flashbots bundle

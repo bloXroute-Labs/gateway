@@ -124,6 +124,8 @@ func (d *Dispatcher) bundleJSON(bundle *bxmessage.MEVBundle) ([]byte, error) {
 			MinTimestamp:      bundle.MinTimestamp,
 			MaxTimestamp:      bundle.MaxTimestamp,
 			RevertingTxHashes: bundle.RevertingHashes,
+			BundlePrice:       bundle.BundlePrice,
+			EnforcePayout:     bundle.EnforcePayout,
 		},
 	}
 

@@ -113,7 +113,20 @@ func (m *MEVSearcher) ToMEVBundle() (*MEVBundle, error) {
 		revertingTxHashes[i] = params[0].RevertingTxHashes[i].String()
 	}
 
-	mevBundle, err := NewMEVBundle(txs, params[0].UUID, params[0].BlockNumber, int(params[0].MinTimestamp), int(params[0].MaxTimestamp), revertingTxHashes, m.Frontrunning, MEVBundleBuilders(m.Auth()), fmt.Sprintf("0x%x", bundleHash.Sum(nil)))
+	mevBundle, err := NewMEVBundle(
+		txs,
+		params[0].UUID,
+		params[0].BlockNumber,
+		int(params[0].MinTimestamp),
+		int(params[0].MaxTimestamp),
+		revertingTxHashes,
+		m.Frontrunning,
+		MEVBundleBuilders(m.Auth()),
+		fmt.Sprintf("0x%x", bundleHash.Sum(nil)),
+		// new fields are not supported for MEVSearcher
+		0,
+		false,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create mevBundle: %v", err)
 	}

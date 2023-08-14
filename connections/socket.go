@@ -80,5 +80,18 @@ func (t TLS) Close(reason string) error {
 
 // Equals compares two connection IDs
 func (t TLS) Equals(s Socket) bool {
-	return t == s
+	if s == nil {
+		return false
+	}
+
+	tl, ok := s.(*TLS)
+	if !ok {
+		return false
+	}
+
+	if tl == nil {
+		return false
+	}
+
+	return t == *tl
 }

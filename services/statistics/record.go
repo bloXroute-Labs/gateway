@@ -59,6 +59,8 @@ type bundleRecord struct {
 	MinTimestamp     int              `json:"min_timestamp"`
 	MaxTimestamp     int              `json:"max_timestamp"`
 	ExtraData        bundleExtraData  `json:"extra_data,omitempty"`
+	BundlePrice      int64            `json:"bundlePrice,omitempty"` // in wei
+	EnforcePayout    bool             `json:"enforcePayout,omitempty"`
 	SentPeers        int              `json:"sent_peers,omitempty"`
 	SentGatewayPeers int              `json:"gateway_peers,omitempty"`
 }

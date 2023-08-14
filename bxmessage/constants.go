@@ -86,7 +86,10 @@ const EmptyProtocol = 0
 const MinProtocol = 19
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
-const CurrentProtocol = BundlesOverBDNProtocol
+const CurrentProtocol = BundlesOverBDNPayoutProtocol
+
+// BundlesOverBDNPayoutProtocol is the minimum protocol version that supports bundles over BDN with payout
+const BundlesOverBDNPayoutProtocol = 38
 
 // BundlesOverBDNProtocol is the minimum protocol version that supports bundles over BDN
 const BundlesOverBDNProtocol = 37
