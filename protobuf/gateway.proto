@@ -224,6 +224,8 @@ message Peer {
   RateSnapshot unpaid_tx_throughput = 23;
   string trusted = 24;
   repeated string mev_builders = 25;
+  int64 new_txs = 26;
+  int64 already_seen_txs = 27;
 }
 
 message PeersReply {

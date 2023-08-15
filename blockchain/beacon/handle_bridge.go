@@ -59,8 +59,6 @@ func HandleBDNBlocksBridge(ctx context.Context, b blockchain.Bridge, n *Node, be
 		case <-ctx.Done():
 			log.Infof("ending handleBDNBlocksBridge")
 			return
-		default:
-			continue
 		}
 	}
 }

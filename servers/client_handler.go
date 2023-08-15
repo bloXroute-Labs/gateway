@@ -1189,15 +1189,6 @@ func (h *handlerObj) handleMEVBundle(ctx context.Context, conn *jsonrpc2.Conn, r
 		}
 	}
 
-	for mevBuilder := range params.MEVBuilders {
-		if strings.ToLower(mevBuilder) == bxgateway.BloxrouteBuilderName && !h.connectionAccount.TierName.IsElite() {
-			accError := fmt.Sprintf("EnterpriseElite account is required in order to send %s to %s", jsonrpc.RPCBundleSubmission, bxgateway.BloxrouteBuilderName)
-			h.log.Warnf(accError)
-			SendErrorMsg(ctx, jsonrpc2.CodeInternalError, accError, conn, req.ID)
-			return
-		}
-	}
-
 	mevBundle, bundleHash, err := mevBundleFromRequest(params)
 	var result interface{}
 	if params.UUID == "" {
@@ -1207,7 +1198,6 @@ func (h *handlerObj) handleMEVBundle(ctx context.Context, conn *jsonrpc2.Conn, r
 		if errors.Is(err, errBlockedTxHashes) {
 			if err := reply(ctx, conn, req.ID, result); err != nil {
 				h.log.Errorf(err.Error())
-				return
 			}
 			return
 		}
@@ -1216,6 +1206,12 @@ func (h *handlerObj) handleMEVBundle(ctx context.Context, conn *jsonrpc2.Conn, r
 		return
 	}
 	mevBundle.SetNetworkNum(h.FeedManager.networkNum)
+
+	if !h.connectionAccount.TierName.IsElite() {
+		h.log.Tracef("%s rejected for non EnterpriseElite account %v tier %v", mevBundle, h.connectionAccount.AccountID, h.connectionAccount.TierName)
+		SendErrorMsg(ctx, jsonrpc2.CodeInvalidRequest, "EnterpriseElite account is required in order to send bundle", conn, req.ID)
+		return
+	}
 
 	var ws connections.RPCConn
 	if h.connectionAccount.AccountID == types.BloxrouteAccountID {
@@ -1226,8 +1222,9 @@ func (h *handlerObj) handleMEVBundle(ctx context.Context, conn *jsonrpc2.Conn, r
 	}
 
 	if err := h.FeedManager.node.HandleMsg(mevBundle, ws, connections.RunForeground); err != nil {
-		h.log.Errorf("failed to process mevBundle message: %v", err)
-		SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
+		// err here is not possible right now but anyway we don't want expose reason of internal error to the client
+		h.log.Errorf("failed to process %s: %v", mevBundle, err)
+		SendErrorMsg(ctx, jsonrpc2.CodeInternalError, "", conn, req.ID)
 		return
 	}
 
