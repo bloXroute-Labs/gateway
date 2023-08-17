@@ -30,7 +30,7 @@ func NewGrpcHandler(feedManager *FeedManager) *GrpcHandler {
 	}
 }
 
-func (GrpcHandler) decodeHex(data string) []byte {
+func (*GrpcHandler) decodeHex(data string) []byte {
 	hexBytes, err := hex.DecodeString(strings.TrimPrefix(data, "0x"))
 	if err != nil {
 		log.Errorf("Error decoding hexadecimal string: %v", err)
@@ -39,7 +39,7 @@ func (GrpcHandler) decodeHex(data string) []byte {
 	return hexBytes
 }
 
-func (GrpcHandler) generateBlockReplyHeader(h *types.Header) *pb.BlockHeader {
+func (*GrpcHandler) generateBlockReplyHeader(h *types.Header) *pb.BlockHeader {
 	blockReplyHeader := pb.BlockHeader{}
 	blockReplyHeader.ParentHash = h.ParentHash.String()
 	blockReplyHeader.Sha3Uncles = h.Sha3Uncles.String()
@@ -64,7 +64,7 @@ func (GrpcHandler) generateBlockReplyHeader(h *types.Header) *pb.BlockHeader {
 	return &blockReplyHeader
 }
 
-func (g GrpcHandler) generateBlockReply(n *types.EthBlockNotification) *pb.BlocksReply {
+func (g *GrpcHandler) generateBlockReply(n *types.EthBlockNotification) *pb.BlocksReply {
 	blockReply := &pb.BlocksReply{}
 	blockReply.Hash = n.BlockHash.String()
 	blockReply.Header = g.generateBlockReplyHeader(n.Header)
@@ -189,7 +189,19 @@ func (g *GrpcHandler) handleTransactions(req *pb.TxsRequest, stream pb.Gateway_N
 		}
 	}
 
-	sub, err := g.feedManager.Subscribe(feedType, types.GRPCFeed, nil, account.TierName, account.AccountID, "", req.GetFilters(), "", "", false)
+	ci := types.ClientInfo{
+		AccountID: account.AccountID,
+		Tier:      string(account.TierName),
+		MetaInfo:  types.SDKMetaFromContext(stream.Context()),
+	}
+	if p, ok := peer.FromContext(stream.Context()); ok {
+		ci.RemoteAddress = p.Addr.String()
+	}
+	ro := types.ReqOptions{
+		Filters: req.GetFilters(),
+	}
+
+	sub, err := g.feedManager.Subscribe(feedType, types.GRPCFeed, nil, ci, ro, false)
 	if err != nil {
 		return errors.New("failed to subscribe to gRPC pendingTxs")
 	}
@@ -202,14 +214,9 @@ func (g *GrpcHandler) handleTransactions(req *pb.TxsRequest, stream pb.Gateway_N
 
 	clientReq := &clientReq{includes: req.GetIncludes(), expr: expr, feed: feedType}
 
-	remoteAddress := "grpc"
-	streamPeer, ok := peer.FromContext(stream.Context())
-	if ok {
-		remoteAddress = streamPeer.Addr.String()
-	}
 	var txsResponse []*pb.Tx
 	for notification := range sub.FeedChan {
-		processTx(clientReq, notification, &txsResponse, remoteAddress, account.AccountID, feedType)
+		processTx(clientReq, notification, &txsResponse, ci.RemoteAddress, account.AccountID, feedType)
 
 		if len(sub.FeedChan) == 0 || len(txsResponse) == maxTxsInSingleResponse {
 			err = stream.Send(&pb.TxsReply{Tx: txsResponse})
@@ -235,7 +242,17 @@ func (g *GrpcHandler) BdnBlocks(req *pb.BlocksRequest, stream pb.Gateway_BdnBloc
 
 // EthOnBlock handler for stream of changes in the EVM state when a new block is mined
 func (g *GrpcHandler) EthOnBlock(req *pb.EthOnBlockRequest, stream pb.Gateway_EthOnBlockServer, account sdnmessage.Account) error {
-	sub, err := g.feedManager.Subscribe(types.OnBlockFeed, types.GRPCFeed, nil, account.TierName, account.AccountID, "", "", "", "", false)
+	ci := types.ClientInfo{
+		AccountID: account.AccountID,
+		Tier:      string(account.TierName),
+		MetaInfo:  types.SDKMetaFromContext(stream.Context()),
+	}
+
+	if p, ok := peer.FromContext(stream.Context()); ok {
+		ci.RemoteAddress = p.Addr.String()
+	}
+
+	sub, err := g.feedManager.Subscribe(types.OnBlockFeed, types.GRPCFeed, nil, ci, types.ReqOptions{}, false)
 	if err != nil {
 		return errors.New("failed to subscribe to gRPC ethOnBlock")
 	}
@@ -286,7 +303,12 @@ func (g *GrpcHandler) EthOnBlock(req *pb.EthOnBlockRequest, stream pb.Gateway_Et
 
 // TxReceipts handler for stream of all transaction receipts in each newly mined block
 func (g *GrpcHandler) TxReceipts(req *pb.TxReceiptsRequest, stream pb.Gateway_TxReceiptsServer, account sdnmessage.Account) error {
-	sub, err := g.feedManager.Subscribe(types.TxReceiptsFeed, types.GRPCFeed, nil, account.TierName, account.AccountID, "", "", "", "", false)
+	ci := types.ClientInfo{
+		AccountID: account.AccountID,
+		Tier:      string(account.TierName),
+		MetaInfo:  types.SDKMetaFromContext(stream.Context()),
+	}
+	sub, err := g.feedManager.Subscribe(types.TxReceiptsFeed, types.GRPCFeed, nil, ci, types.ReqOptions{}, false)
 	if err != nil {
 		return errors.New("failed to subscribe to gRPC txReceipts")
 	}
@@ -325,7 +347,17 @@ func (g *GrpcHandler) TxReceipts(req *pb.TxReceiptsRequest, stream pb.Gateway_Tx
 }
 
 func (g *GrpcHandler) handleBlocks(req *pb.BlocksRequest, stream pb.Gateway_BdnBlocksServer, feedType types.FeedType, account sdnmessage.Account) error {
-	sub, err := g.feedManager.Subscribe(feedType, types.GRPCFeed, nil, account.TierName, account.AccountID, "", "", "", "", false)
+	ci := types.ClientInfo{
+		AccountID: account.AccountID,
+		Tier:      string(account.TierName),
+		MetaInfo:  types.SDKMetaFromContext(stream.Context()),
+	}
+
+	if p, ok := peer.FromContext(stream.Context()); ok {
+		ci.RemoteAddress = p.Addr.String()
+	}
+
+	sub, err := g.feedManager.Subscribe(feedType, types.GRPCFeed, nil, ci, types.ReqOptions{}, false)
 	if err != nil {
 		return errors.New("failed to subscribe to gRPC bdnBlocks")
 	}

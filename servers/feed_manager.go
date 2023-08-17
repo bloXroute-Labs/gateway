@@ -29,17 +29,13 @@ const (
 
 // ClientSubscription contains client subscription feed and connection
 type ClientSubscription struct {
+	types.ClientInfo
+	types.ReqOptions
 	feed               chan types.Notification
 	feedType           types.FeedType
 	feedConnectionType types.FeedConnectionType
 	connection         *jsonrpc2.Conn
-	tier               sdnmessage.AccountTier
 	network            types.NetworkNum
-	accountID          types.AccountID
-	remoteAddress      string
-	filters            string
-	includes           string
-	project            string
 	timeOpenedFeed     time.Time
 	messagesSent       uint64
 	errMsgChan         chan string
@@ -134,7 +130,7 @@ func (f *FeedManager) Start() error {
 
 func (f *FeedManager) checkForDuplicateFeed(clientSubscription *ClientSubscription, remoteAddress string) error {
 	// feeds check should not be tested for customer running local gateway
-	if clientSubscription.accountID == f.accountModel.AccountID {
+	if clientSubscription.AccountID == f.accountModel.AccountID {
 		return nil
 	}
 
@@ -142,14 +138,14 @@ func (f *FeedManager) checkForDuplicateFeed(clientSubscription *ClientSubscripti
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 	for k, v := range f.idToClientSubscription {
-		if v.accountID == clientSubscription.accountID {
+		if v.AccountID == clientSubscription.AccountID {
 			if v.feedType == clientSubscription.feedType &&
 				v.network == clientSubscription.network &&
-				v.includes == clientSubscription.includes &&
-				v.filters == clientSubscription.filters &&
-				v.project == clientSubscription.project &&
-				strings.HasPrefix(v.remoteAddress, remoteIP) {
-				return fmt.Errorf("duplicate feed request - account %v tier %v ip %v previous subscription ID %v", clientSubscription.accountID, clientSubscription.tier, remoteAddress, k)
+				v.Includes == clientSubscription.Includes &&
+				v.Filters == clientSubscription.Filters &&
+				v.Project == clientSubscription.Project &&
+				strings.HasPrefix(v.RemoteAddress, remoteIP) {
+				return fmt.Errorf("duplicate feed request - account %v tier %v ip %v previous subscription ID %v", clientSubscription.AccountID, clientSubscription.Tier, remoteAddress, k)
 			}
 		}
 	}
@@ -157,34 +153,32 @@ func (f *FeedManager) checkForDuplicateFeed(clientSubscription *ClientSubscripti
 }
 
 // Subscribe - subscribe a client to a desired feed
-func (f *FeedManager) Subscribe(feedName types.FeedType, feedConnectionType types.FeedConnectionType, conn *jsonrpc2.Conn, accountTier sdnmessage.AccountTier, accountID types.AccountID, remoteAddress string, filters string, includes string, project string, ethSubscribe bool) (*ClientSubscriptionHandlingInfo, error) {
+func (f *FeedManager) Subscribe(feedName types.FeedType, feedConnectionType types.FeedConnectionType,
+	conn *jsonrpc2.Conn, ci types.ClientInfo, ro types.ReqOptions, ethSubscribe bool) (*ClientSubscriptionHandlingInfo, error) {
+
 	id := f.subscriptionServices.GenerateSubscriptionID(ethSubscribe)
 	clientSubscription := ClientSubscription{
 		feed:               make(chan types.Notification, bxgateway.BxNotificationChannelSize),
 		feedType:           feedName,
 		feedConnectionType: feedConnectionType,
 		connection:         conn,
-		tier:               accountTier,
 		network:            f.networkNum,
-		accountID:          accountID,
-		remoteAddress:      remoteAddress,
-		includes:           includes,
-		filters:            filters,
-		project:            project,
 		timeOpenedFeed:     time.Now(),
 		errMsgChan:         make(chan string, 1),
+		ClientInfo:         ci,
+		ReqOptions:         ro,
 	}
 
-	if err := f.checkForDuplicateFeed(&clientSubscription, remoteAddress); err != nil {
+	if err := f.checkForDuplicateFeed(&clientSubscription, ci.RemoteAddress); err != nil {
 		f.log.Error(err)
 		return nil, err
 	}
 
 	subscriptionModel := sdnmessage.SubscriptionModel{
 		SubscriptionID: id,
-		SubscriberIP:   strings.Split(remoteAddress, ":")[0],
+		SubscriberIP:   strings.Split(ci.RemoteAddress, ":")[0],
 		NodeID:         string(f.nodeID),
-		AccountID:      accountID,
+		AccountID:      ci.AccountID,
 		NetworkNum:     f.networkNum,
 		FeedType:       feedName,
 	}
@@ -199,7 +193,7 @@ func (f *FeedManager) Subscribe(feedName types.FeedType, feedConnectionType type
 	f.idToClientSubscription[id] = clientSubscription
 	f.lock.Unlock()
 
-	f.log.Infof("%v subscribed to %v id %v with includes [%v] and filter [%v]", remoteAddress, feedName, id, includes, filters)
+	f.log.Infof("%v subscribed to %v id %v with includes [%v] and filter [%v]", ci.RemoteAddress, feedName, id, ro.Includes, ro.Filters)
 
 	handlingInfo := ClientSubscriptionHandlingInfo{
 		SubscriptionID:     id,
@@ -210,7 +204,7 @@ func (f *FeedManager) Subscribe(feedName types.FeedType, feedConnectionType type
 	return &handlingInfo, nil
 }
 
-// Unsubscribe    - unsubscribe a client from feed and optionally closes the corresponding client ws connection
+// Unsubscribe - unsubscribe a client from feed and optionally closes the corresponding client ws connection
 func (f *FeedManager) Unsubscribe(subscriptionID string, closeClientConnection bool, errMsg string) error {
 	f.lock.Lock()
 	defer f.lock.Unlock()
@@ -221,7 +215,7 @@ func (f *FeedManager) Unsubscribe(subscriptionID string, closeClientConnection b
 		return fmt.Errorf("subscription %v was not found", subscriptionID)
 	}
 
-	f.log.Infof("unsubscribing %v from %v, closing the connection: %v", subscriptionID, clientSub.remoteAddress, closeClientConnection)
+	f.log.Infof("unsubscribing %v from %v, closing the connection: %v", subscriptionID, clientSub.RemoteAddress, closeClientConnection)
 
 	if errMsg != "" {
 		clientSub.errMsgChan <- errMsg
@@ -229,20 +223,33 @@ func (f *FeedManager) Unsubscribe(subscriptionID string, closeClientConnection b
 
 	subscription := sdnmessage.SubscriptionModel{
 		SubscriptionID: subscriptionID,
-		SubscriberIP:   strings.Split(clientSub.remoteAddress, ":")[0],
+		SubscriberIP:   strings.Split(clientSub.RemoteAddress, ":")[0],
 		NodeID:         string(f.nodeID),
-		AccountID:      clientSub.accountID,
+		AccountID:      clientSub.AccountID,
 		NetworkNum:     clientSub.network,
 		FeedType:       clientSub.feedType,
 	}
 	f.subscriptionServices.SendUnsubscribeNotification(&subscription)
 
+	// the gRPC feeds are logged by the interceptor
+	if clientSub.MetaInfo[types.SDKVersionHeaderKey] != "" {
+		f.stats.LogSDKInfo(
+			clientSub.MetaInfo[types.SDKBlockchainHeaderKey],
+			string(clientSub.feedType),
+			clientSub.MetaInfo[types.SDKCodeLanguageHeaderKey],
+			clientSub.MetaInfo[types.SDKVersionHeaderKey],
+			types.WebSocketFeed,
+			clientSub.timeOpenedFeed,
+			time.Now(),
+		)
+	}
+
 	f.stats.LogUnsubscribeStats(
 		subscriptionID,
 		clientSub.feedType,
 		f.networkNum,
-		clientSub.accountID,
-		clientSub.tier)
+		clientSub.AccountID,
+		sdnmessage.AccountTier(clientSub.Tier))
 	close(clientSub.feed)
 	delete(f.idToClientSubscription, subscriptionID)
 	if closeClientConnection && clientSub.connection != nil {
@@ -343,13 +350,13 @@ func (f *FeedManager) GetGrpcSubscriptionReply() *pb.SubscriptionsReply {
 	defer f.lock.RUnlock()
 	for _, clientData := range f.idToClientSubscription {
 		subscribe := &pb.Subscription{
-			AccountId:    string(clientData.accountID),
-			Tier:         string(clientData.tier),
+			AccountId:    string(clientData.AccountID),
+			Tier:         clientData.Tier,
 			FeedName:     string(clientData.feedType),
 			Network:      uint32(clientData.network),
-			RemoteAddr:   clientData.remoteAddress,
-			Include:      clientData.includes,
-			Filter:       clientData.filters,
+			RemoteAddr:   clientData.RemoteAddress,
+			Include:      clientData.Includes,
+			Filter:       clientData.Filters,
 			Age:          uint64(time.Since(clientData.timeOpenedFeed).Seconds()),
 			MessagesSent: clientData.messagesSent,
 		}
@@ -364,7 +371,7 @@ func (f *FeedManager) GetNumberOfSubscriptionsForAccount(account types.AccountID
 	defer f.lock.RUnlock()
 	numberOfSubscriptions := 0
 	for _, clientSub := range f.idToClientSubscription {
-		if clientSub.accountID == account {
+		if clientSub.AccountID == account {
 			numberOfSubscriptions++
 		}
 	}
@@ -377,7 +384,7 @@ func (f *FeedManager) GetFeedsForAccount(account types.AccountID) []types.FeedTy
 	defer f.lock.RUnlock()
 	subscriptions := make([]types.FeedType, 0)
 	for _, clientSub := range f.idToClientSubscription {
-		if clientSub.accountID == account {
+		if clientSub.AccountID == account {
 			subscriptions = append(subscriptions, clientSub.feedType)
 		}
 	}
@@ -393,9 +400,9 @@ func (f *FeedManager) GetAllSubscriptions() []sdnmessage.SubscriptionModel {
 	for id, sub := range f.idToClientSubscription {
 		subscriptionModel := sdnmessage.SubscriptionModel{
 			SubscriptionID: id,
-			SubscriberIP:   strings.Split(sub.remoteAddress, ":")[0],
+			SubscriberIP:   strings.Split(sub.RemoteAddress, ":")[0],
 			NodeID:         string(f.nodeID),
-			AccountID:      sub.accountID,
+			AccountID:      sub.AccountID,
 			NetworkNum:     sub.network,
 			FeedType:       sub.feedType,
 		}

@@ -135,3 +135,13 @@ type unsubscribeRecord struct {
 	AccountID      types.AccountID        `json:"account_id"`
 	Tier           sdnmessage.AccountTier `json:"tier"`
 }
+
+type sdkInfoRecord struct {
+	Blockchain string `json:"blockchain"`
+	Method     string `json:"method"`
+	Feed       string `json:"feed"`
+	SourceCode string `json:"source_code"`
+	Version    string `json:"version"`
+	Start      string `json:"start"`
+	End        string `json:"end"`
+}

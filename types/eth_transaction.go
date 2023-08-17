@@ -90,12 +90,12 @@ func NewEthTransaction(h SHA256Hash, rawEthTx *ethtypes.Transaction, sender Send
 }
 
 // Type provides the transaction type
-func (et EthTransaction) Type() uint8 {
+func (et *EthTransaction) Type() uint8 {
 	return et.tx.Type()
 }
 
 // Hash provides the transaction hash
-func (et EthTransaction) Hash() SHA256Hash {
+func (et *EthTransaction) Hash() SHA256Hash {
 	var hash SHA256Hash
 	var err error
 	if et.tx != nil {
@@ -198,12 +198,12 @@ func ethTransactionFromBytes(h SHA256Hash, tc TxContent, sender Sender) (*EthTra
 }
 
 // EffectiveGasFeeCap returns a common "gas fee cap" that can be used for all types of transactions
-func (et EthTransaction) EffectiveGasFeeCap() *big.Int {
+func (et *EthTransaction) EffectiveGasFeeCap() *big.Int {
 	return et.GasFeeCap
 }
 
 // EffectiveGasTipCap returns a common "gas tip cap" that can be used for all types of transactions
-func (et EthTransaction) EffectiveGasTipCap() *big.Int {
+func (et *EthTransaction) EffectiveGasTipCap() *big.Int {
 	return et.GasTipCap
 }
 

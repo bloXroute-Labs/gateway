@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
@@ -54,8 +55,8 @@ type APIClient struct {
 	ctx          context.Context
 	httpClient   *http.Client
 	nodeEndpoint *types.NodeEndpoint
-	version      string
 	blockEncoder consensusBlockEncoder
+	initilized   atomic.Bool
 }
 
 // NewAPIClient creates a new APIClient with the specified URL.
@@ -66,13 +67,14 @@ func NewAPIClient(ctx context.Context, httpClient *http.Client, config *network.
 	})
 
 	client := &APIClient{
-		ctx:        ctx,
-		URL:        url,
-		log:        log,
-		bridge:     bridge,
-		config:     config,
-		clock:      utils.RealClock{},
-		httpClient: httpClient,
+		ctx:          ctx,
+		URL:          url,
+		log:          log,
+		bridge:       bridge,
+		config:       config,
+		clock:        utils.RealClock{},
+		httpClient:   httpClient,
+		blockEncoder: nil,
 	}
 
 	var err error
@@ -80,18 +82,6 @@ func NewAPIClient(ctx context.Context, httpClient *http.Client, config *network.
 	client.nodeEndpoint, err = client.createAPIEndpoint(url, blockchainNetwork)
 	if err != nil {
 		return nil, fmt.Errorf("error creating Beacon API endpoint: %v", err)
-	}
-
-	client.version, err = client.clientVersion()
-
-	if err != nil {
-		return nil, fmt.Errorf("error retreiving beacon client version: %v", err)
-	}
-
-	if strings.Contains(client.version, lighthouse) {
-		client.blockEncoder = newJSONConsensusBlockEncoder()
-	} else {
-		client.blockEncoder = newSSZConsensusBlockEncoder()
 	}
 
 	return client, nil
@@ -116,7 +106,7 @@ func (c *APIClient) createAPIEndpoint(url, blockchainNetwork string) (*types.Nod
 	}, nil
 }
 
-func (c *APIClient) clientVersion() (string, error) {
+func (c *APIClient) requestClientVersion() (string, error) {
 	uri := fmt.Sprintf(requestClientVersionRoute, c.URL)
 
 	req, err := http.NewRequestWithContext(c.ctx, http.MethodGet, uri, nil)
@@ -211,9 +201,39 @@ type headEventData struct {
 	State string `json:"state"`
 }
 
+// Trying to request client version until success.
+// Until then, don't process anything that related to this
+// client connection.
+func (c *APIClient) requestClientVersionUntilSuccess() {
+	var version string
+	var err error
+
+	for {
+		version, err = c.requestClientVersion()
+		if err == nil {
+			c.log.Infof("Received beacon client verion: %s", version)
+			break
+		}
+
+		c.log.Errorf("Error retrieving beacon client version: %v", err)
+		time.Sleep(time.Second * 10) // Wait before retrying
+	}
+
+	if strings.Contains(version, lighthouse) {
+		c.blockEncoder = newJSONConsensusBlockEncoder()
+	} else {
+		c.blockEncoder = newSSZConsensusBlockEncoder()
+	}
+
+	c.initilized.Store(true)
+}
+
 // Start listens for events from the Beacon API event stream.
 func (c *APIClient) Start() {
-	go c.subscribeToEvents()
+	go func() {
+		c.requestClientVersionUntilSuccess()
+		c.subscribeToEvents()
+	}()
 }
 
 // subscribeToEvents sets up a subscription to server-sent events from the beacon chain API.
@@ -230,6 +250,7 @@ func (c *APIClient) subscribeToEvents() {
 		} else {
 			c.log.Warnf("APIClient SubscribeRaw ended, reconnecting: %v", c.URL)
 		}
+
 		time.Sleep(10 * time.Second)
 	}
 }
@@ -293,6 +314,10 @@ func (c *APIClient) isOldBlock(block interfaces.ReadOnlySignedBeaconBlock) bool 
 
 // BroadcastBlock sends the block in octet-stream format to the beacon API endpoint
 func (c *APIClient) BroadcastBlock(block interfaces.ReadOnlySignedBeaconBlock) error {
+	if !c.initilized.Load() {
+		return fmt.Errorf("unknown client version")
+	}
+
 	uri := fmt.Sprintf(broadcastBlockRoute, c.URL)
 
 	rawBlock, err := c.blockEncoder.encodeBlock(block)

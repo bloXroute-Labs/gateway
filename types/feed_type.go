@@ -29,6 +29,13 @@ const (
 	BDNBeaconBlocksFeed FeedType = "bdnBeaconBlocks"
 )
 
+// RPCStreamToFeedType maps gRPC stream to feed type
+var RPCStreamToFeedType = map[string]FeedType{
+	"/gateway.Gateway/NewTxs":    NewTxsFeed,
+	"/gateway.Gateway/NewBlocks": NewBlocksFeed,
+	"/gateway.Gateway/BdnBlocks": BDNBlocksFeed,
+}
+
 // Exists - checks if a field exists in feedType list
 func Exists(field FeedType, slice []FeedType) bool {
 	for _, valid := range slice {

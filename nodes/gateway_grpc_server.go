@@ -5,11 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"time"
 
+	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/rpc"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 const (
@@ -66,6 +70,7 @@ func (ggs *gatewayGRPCServer) run() {
 		grpc.WriteBufferSize(bufferSize),
 		grpc.InitialConnWindowSize(windowSize),
 		grpc.UnaryInterceptor(ggs.authenticate),
+		grpc.ChainUnaryInterceptor(ggs.authenticate, ggs.reqSDKStats),
 	}
 
 	ggs.server = grpc.NewServer(serverOptions...)
@@ -89,4 +94,39 @@ func (ggs *gatewayGRPCServer) authenticate(ctx context.Context, req interface{},
 		}
 	}
 	return handler(ctx, req)
+}
+
+func (ggs *gatewayGRPCServer) reqSDKStats(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	start := time.Now()
+
+	resp, err := handler(ctx, req)
+
+	if ok && len(md.Get(types.SDKVersionHeaderKey)) > 0 {
+		method := string(jsonrpc.RPCMethodToRPCRequestType[info.FullMethod])
+		if method == "" {
+			// in case the method is not mapped
+			method = info.FullMethod
+		}
+		go ggs.sdkStat(md, method, start)
+	}
+
+	return resp, err
+}
+
+func (ggs *gatewayGRPCServer) sdkStat(md metadata.MD, method string, start time.Time) {
+	var blockchain, sourceCode, version string
+
+	if blockchainHeader := md.Get(types.SDKBlockchainHeaderKey); len(blockchainHeader) > 0 {
+		blockchain = blockchainHeader[0]
+	}
+	if sourceCodeHeader := md.Get(types.SDKCodeLanguageHeaderKey); len(sourceCodeHeader) > 0 {
+		sourceCode = sourceCodeHeader[0]
+	}
+	if sdkVersionHeader := md.Get(types.SDKVersionHeaderKey); len(sdkVersionHeader) > 0 {
+		version = sdkVersionHeader[0]
+	}
+
+	// blockchain, method, feed, sourceCode string, start, end time.Time, count int
+	ggs.gateway.stats.LogSDKInfo(blockchain, method, sourceCode, version, types.GRPCFeed, start, time.Now())
 }
