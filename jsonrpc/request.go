@@ -43,6 +43,11 @@ const (
 	RPCEthCancelBundle   RPCRequestType = "eth_cancelBundle"
 )
 
+// RPCMethodToRPCRequestType maps gRPC methods to RPCRequestType
+var RPCMethodToRPCRequestType = map[string]RPCRequestType{
+	"/gateway.Gateway/BlxrTx": RPCTx,
+}
+
 // RPCTxPayload is the payload of blxr_tx requests
 type RPCTxPayload struct {
 	Transaction             string         `json:"transaction"`

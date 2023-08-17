@@ -11,3 +11,18 @@ type SubscriptionResponse struct {
 		Result       interface{} `json:"result"`
 	} `json:"params"`
 }
+
+// ClientInfo contains info about account and some meta info
+type ClientInfo struct {
+	RemoteAddress string
+	Tier          string
+	AccountID     AccountID
+	MetaInfo      map[string]string
+}
+
+// ReqOptions contains options for REQUEST
+type ReqOptions struct {
+	Filters  string
+	Includes string
+	Project  string
+}

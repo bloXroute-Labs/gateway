@@ -26,7 +26,7 @@ func (q *SerialPeerQueue) AddPeer(peerID types.NodeID, callback MessageQueueCall
 		return
 	}
 
-	newMessageQueue := NewMsgQueue(1, bxgateway.TXQueueChannelSize, callback)
+	newMessageQueue := NewMsgQueue(1, bxgateway.ParallelQueueChannelSize, callback)
 	q.queues.Store(peerID, newMessageQueue)
 }
 

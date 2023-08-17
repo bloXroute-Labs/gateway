@@ -253,7 +253,8 @@ type Account struct {
 	SolanaDexAPIRateLimit   BDNQuotaService `json:"solana_dex_api_rate_limit"`
 	SolanaDexAPIStreamLimit BDNQuotaService `json:"solana_dex_api_stream_limit"`
 
-	TwammStreaming BDNFeedService `json:"twamm_streaming"`
+	TwammStreaming         BDNFeedService `json:"twamm_streaming"`
+	PrivateOrdersStreaming BDNFeedService `json:"private_orders_streaming"`
 }
 
 // Validate verifies the response that the response from bxapi is well understood

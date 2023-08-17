@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
@@ -74,22 +75,15 @@ func TestNewAPIClient(t *testing.T) {
 	httpClient := httpclient.Client(nil)
 	httpmock.ActivateNonDefault(httpClient)
 	defer httpmock.DeactivateAndReset()
-	// Mock the getBeaconNodeClientVersion function
-	version := "mocked-version"
-	httpmock.RegisterResponder(http.MethodGet, fmt.Sprintf("http://%s/eth/v1/node/version", url),
-		func(req *http.Request) (*http.Response, error) {
-			return httpmock.NewStringResponse(http.StatusOK, `{"data":{"version":"mocked-version"}}`), nil
-		},
-	)
 
 	client, err := NewAPIClient(ctx, httpClient, config, bridge, url, blockchainNetwork)
 
+	time.Sleep(time.Second)
 	assert.Nil(t, err)
 	assert.Equal(t, ctx, client.ctx)
 	assert.Equal(t, url, client.URL)
 	assert.Equal(t, bridge, client.bridge)
 	assert.Equal(t, config, client.config)
-	assert.Equal(t, version, client.version)
 }
 func TestAPIClient_requestBlock(t *testing.T) {
 	// Initialize httpmock
@@ -279,7 +273,8 @@ func TestAPIClient_broadcastBlock(t *testing.T) {
 	// Initialize Beacon API client
 	client, err := NewAPIClient(ctx, httpClient, config, bridge, url, blockchainNetwork)
 	assert.Nil(t, err)
-
+	client.Start()
+	time.Sleep(time.Second)
 	// Test Case 1: Successful broadcast ssz
 	block := validBlock
 	mockRawBlock, _ := validBlock.MarshalSSZ()

@@ -41,17 +41,17 @@ func HandleBDNBlocksBridge(ctx context.Context, b blockchain.Bridge, n *Node, be
 			}
 
 			if broadcastBeaconAPI {
-				for i := range beaconAPIClients {
+				for _, client := range beaconAPIClients {
 					wg.Add(1)
 
-					go func(index int) {
+					go func(client *APIClient) {
 						defer wg.Done()
-						if err := beaconAPIClients[index].BroadcastBlock(castedBlock); err != nil {
-							log.Errorf("could not broadcast block to beacon api endpoint %s, block hash: %v, err %v", beaconAPIClients[index].URL, bdnBlock.Hash(), err)
+						if err := client.BroadcastBlock(castedBlock); err != nil {
+							log.Errorf("could not broadcast block to beacon API endpoint %s, block hash: %v, err %v", client.URL, bdnBlock.Hash(), err)
 						} else {
-							log.Tracef("broadcasted block to blockchain: beaconApi:%v, block_hash: %v", beaconAPIClients[index].URL, bdnBlock.Hash())
+							log.Tracef("broadcasted block to blockchain: beacon API :%v, block_hash: %v", client.URL, bdnBlock.Hash())
 						}
-					}(i)
+					}(client)
 				}
 			}
 

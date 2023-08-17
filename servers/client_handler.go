@@ -17,6 +17,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
@@ -103,6 +104,8 @@ type handlerObj struct {
 	pendingTxsSourceFromNode *bool
 	log                      *log.Entry
 	ethSubscribeIDToChanMap  map[string]chan bool
+	headers                  map[string]string
+	stats                    statistics.Stats
 }
 
 type clientReq struct {
@@ -281,7 +284,7 @@ func errorWithDelay(w http.ResponseWriter, r *http.Request, msg string) {
 
 // handleWsClientConnection - when new http connection is made we get here upgrade to ws, and start handling
 func handleWSClientConnection(feedManager *FeedManager, w http.ResponseWriter, r *http.Request, accountModel sdnmessage.Account, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool, pendingTxsSourceFromNode *bool) {
-	log.Debugf("New web-socket connection from %v", r.RemoteAddr)
+	log.Debugf("new web-socket connection from %v", r.RemoteAddr)
 	connection, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Errorf("error upgrading HTTP server connection to the WebSocket protocol - %v", err.Error())
@@ -304,10 +307,12 @@ func handleWSClientConnection(feedManager *FeedManager, w http.ResponseWriter, r
 		pendingTxsSourceFromNode: pendingTxsSourceFromNode,
 		log:                      logger,
 		ethSubscribeIDToChanMap:  make(map[string]chan bool),
+		headers:                  types.SDKMetaFromHeaders(r.Header),
+		stats:                    feedManager.stats,
 	}
 
-	asynHhandler := jsonrpc2.AsyncHandler(handler)
-	_ = jsonrpc2.NewConn(r.Context(), websocketjsonrpc2.NewObjectStream(connection), asynHhandler)
+	asyncHandler := jsonrpc2.AsyncHandler(handler)
+	_ = jsonrpc2.NewConn(r.Context(), websocketjsonrpc2.NewObjectStream(connection), asyncHandler)
 }
 
 func (ch *ClientHandler) runWSServer() {
@@ -532,8 +537,27 @@ func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan types.
 func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
 	start := time.Now()
 	defer func() {
+		if jsonrpc.RPCRequestType(req.Method) != jsonrpc.RPCSubscribe && len(h.headers[types.SDKVersionHeaderKey]) > 0 {
+			h.stats.LogSDKInfo(
+				h.headers[types.SDKBlockchainHeaderKey],
+				req.Method,
+				h.headers[types.SDKCodeLanguageHeaderKey],
+				h.headers[types.SDKVersionHeaderKey],
+				types.WebSocketFeed,
+				start,
+				time.Now(),
+			)
+		}
 		h.log.Debugf("websocket handling for method %v ended. Duration %v", jsonrpc.RPCRequestType(req.Method), time.Since(start))
 	}()
+
+	ci := types.ClientInfo{
+		RemoteAddress: h.remoteAddress,
+		AccountID:     h.connectionAccount.AccountID,
+		Tier:          string(h.connectionAccount.TierName),
+		MetaInfo:      h.headers,
+	}
+
 	switch jsonrpc.RPCRequestType(req.Method) {
 	case jsonrpc.RPCSubscribe:
 		request, err := h.createClientReq(req)
@@ -565,8 +589,11 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		if request.expr != nil {
 			filters = request.expr.String()
 		}
-		sub, errSubscribe := h.FeedManager.Subscribe(request.feed, types.WebSocketFeed, conn, h.connectionAccount.TierName, h.connectionAccount.AccountID, h.remoteAddress, filters, strings.Join(request.includes, ","), "", false)
-
+		ro := types.ReqOptions{
+			Filters:  filters,
+			Includes: strings.Join(request.includes, ","),
+		}
+		sub, errSubscribe := h.FeedManager.Subscribe(request.feed, types.WebSocketFeed, conn, ci, ro, false)
 		if errSubscribe != nil {
 			SendErrorMsg(ctx, jsonrpc.InvalidParams, errSubscribe.Error(), conn, req.ID)
 			return
@@ -987,10 +1014,12 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 				request.feed = feed
 				request.includes = []string{"tx_hash"}
 
+				ro := types.ReqOptions{
+					Includes: strings.Join(request.includes, ","),
+				}
 				// since we are replacing newPendingTransactions with newTxs/pendingTx, any existing newTxs/pendingTxs suppose to make newPendingTransactions a duplicate subscription.
 				// But this is used only in external gateway where gateway account id is the same with request account id, so this is avoided
-				sub, errSubscribe := h.FeedManager.Subscribe(request.feed, types.WebSocketFeed, conn, h.connectionAccount.TierName, h.connectionAccount.AccountID, h.remoteAddress, "", strings.Join(request.includes, ","), "", true)
-
+				sub, errSubscribe := h.FeedManager.Subscribe(request.feed, types.WebSocketFeed, conn, ci, ro, true)
 				if errSubscribe != nil {
 					SendErrorMsg(ctx, jsonrpc.InvalidParams, errSubscribe.Error(), conn, req.ID)
 					return
@@ -1037,11 +1066,12 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 				request := &clientReq{}
 				request.feed = types.NewBlocksFeed
 				request.includes = []string{"header", "hash", "tx_contents.nonce"}
-
+				ro := types.ReqOptions{
+					Includes: strings.Join(request.includes, ","),
+				}
 				// since we are replacing newPendingTransactions with newTxs/pendingTx, any existing newTxs/pendingTxs suppose to make newPendingTransactions a duplicate subscription.
 				// But this is used only in external gateway where gateway account id is the same with request account id, so this is avoided
-				sub, errSubscribe := h.FeedManager.Subscribe(request.feed, types.WebSocketFeed, conn, h.connectionAccount.TierName, h.connectionAccount.AccountID, h.remoteAddress, "", strings.Join(request.includes, ","), "", true)
-
+				sub, errSubscribe := h.FeedManager.Subscribe(request.feed, types.WebSocketFeed, conn, ci, ro, true)
 				if errSubscribe != nil {
 					SendErrorMsg(ctx, jsonrpc.InvalidParams, errSubscribe.Error(), conn, req.ID)
 					return
@@ -1129,7 +1159,6 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 					}
 				}
 			}
-
 		case jsonrpc.RPCEthUnsubscribe:
 			if len(rpcParams) != 1 {
 				err := fmt.Errorf("unable to process eth_unsubscribe RPC request: expected only 1 param, given %v", len(rpcParams))
@@ -1159,7 +1188,6 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 				SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
 				return
 			}
-
 		default:
 			response, nodeErr := ws.CallRPC(req.Method, rpcParams, blockchain.DefaultRPCOptions)
 			if nodeErr != nil {

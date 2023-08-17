@@ -44,6 +44,7 @@ type Stats interface {
 	AddGatewayBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum,
 		mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int, bundlePrice int64, enforcePayout bool)
 	LogUnsubscribeStats(subscriptionID string, feedName types.FeedType, networkNum types.NetworkNum, accountID types.AccountID, tierName sdnmessage.AccountTier)
+	LogSDKInfo(blockchain, method, sourceCode, version string, feed types.FeedConnectionType, start, end time.Time)
 }
 
 // NoStats is used to generate empty stats
@@ -81,6 +82,10 @@ func (NoStats) LogSubscribeStats(subscriptionID string, accountID types.AccountI
 
 // LogUnsubscribeStats does nothing
 func (NoStats) LogUnsubscribeStats(subscriptionID string, feedName types.FeedType, networkNum types.NetworkNum, accountID types.AccountID, tierName sdnmessage.AccountTier) {
+}
+
+// LogSDKInfo does nothing
+func (NoStats) LogSDKInfo(_, _, _, _ string, _ types.FeedConnectionType, _, _ time.Time) {
 }
 
 // FluentdStats struct that represents fluentd stats info
@@ -409,4 +414,19 @@ func (s FluentdStats) LogUnsubscribeStats(subscriptionID string, feedName types.
 		Tier:           tierName,
 	}
 	s.LogToFluentD(record, now, "stats.subscriptions.events")
+}
+
+// LogSDKInfo generates a fluentd STATS event
+func (s FluentdStats) LogSDKInfo(blockchain, method, sourceCode, version string, feed types.FeedConnectionType, start, end time.Time) {
+	now := time.Now()
+	record := sdkInfoRecord{
+		Blockchain: blockchain,
+		Method:     method,
+		Feed:       string(feed),
+		SourceCode: sourceCode,
+		Version:    version,
+		Start:      start.Format(DateFormat),
+		End:        end.Format(DateFormat),
+	}
+	s.LogToFluentD(record, now, "stats.sdk.events")
 }

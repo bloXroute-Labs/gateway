@@ -228,8 +228,8 @@ func NewGateway(parent context.Context, bxConfig *config.Bx, bridge blockchain.B
 
 	// set empty default stats, Run function will override it
 	g.stats = statistics.NewStats(false, "127.0.0.1", "", nil, false)
-	g.txsQueue = services.NewMsgQueue(runtime.NumCPU()*2, bxgateway.TXQueueChannelSize, g.msgAdapter)
-	g.txsOrderQueue = services.NewMsgQueue(1, bxgateway.TXQueueChannelSize, g.msgAdapter)
+	g.txsQueue = services.NewMsgQueue(runtime.NumCPU()*2, bxgateway.ParallelQueueChannelSize, g.msgAdapter)
+	g.txsOrderQueue = services.NewMsgQueue(1, bxgateway.ParallelQueueChannelSize, g.msgAdapter)
 
 	return g, nil
 }
@@ -904,16 +904,15 @@ func (g *gateway) notifyBlockFeeds(bxBlock *types.BxBlock, nodeSource *connectio
 				notification.SetNotificationType(types.NewBeaconBlocksFeed)
 				g.notify(notification)
 			}
-		} else {
-			// Beacon sends both blocks, no reason to convert twice
-			ethBlock, err := eth.BeaconBlockToEthBlock(b)
-			if err != nil {
-				return err
-			}
+		}
 
-			if err := notifyEthBlockFeeds(ethBlock, nodeSource, info, isBlockchainBlock); err != nil {
-				return err
-			}
+		ethBlock, err := eth.BeaconBlockToEthBlock(b)
+		if err != nil {
+			return err
+		}
+
+		if err := notifyEthBlockFeeds(ethBlock, nodeSource, info, isBlockchainBlock); err != nil {
+			return err
 		}
 	case *eth.BlockInfo:
 		if err := notifyEthBlockFeeds(b.Block, nodeSource, info, isBlockchainBlock); err != nil {
@@ -1428,6 +1427,11 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 					}
 
 					time.AfterFunc(frontRunProtectionDelay, func() {
+						if source.GetNetworkNum() == bxgateway.BSCMainnetNum && (tx.Flags().IsNextValidator() || tx.Flags().IsValidatorsOnly()) {
+							log.Debugf("not sending tx %v to p2p node for bsc semiprivate tx", txResult.Transaction.Hash())
+							return
+						}
+
 						err := g.bridge.SendTransactionsFromBDN(txsToDeliverToNodes)
 						if err != nil {
 							log.Errorf("failed to send transaction %v from BDN to bridge - %v", txResult.Transaction.Hash(), err)

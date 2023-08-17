@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
@@ -31,27 +30,9 @@ func sendBlockToBDN(clock utils.Clock, log *logger.Entry, block interfaces.ReadO
 		return fmt.Errorf("could not send block to gateway: %v", err)
 	}
 
-	ethBlock, err := eth.BeaconBlockToEthBlock(block)
-	if err != nil {
-		return fmt.Errorf("could not convert block to eth block: %v", err)
-	}
-
-	bdnEthBlock, err := bridge.BlockBlockchainToBDN(ethBlock)
-	if err != nil {
-		return fmt.Errorf("could not convert eth block: %v", err)
-	}
-
-	if err := bridge.SendBlockToBDN(bdnEthBlock, endpoint); err != nil {
-		return fmt.Errorf("could not send block %v to gateway: %v", ethBlock.Hash(), err)
-	}
-
 	clock.AfterFunc(confirmationDelay, func() {
 		if err := bridge.SendConfirmedBlockToGateway(bdnBeaconBlock, endpoint); err != nil {
 			log.Errorf("could not send beacon block confirmation to gateway: %v", err)
-		}
-
-		if err := bridge.SendConfirmedBlockToGateway(bdnEthBlock, endpoint); err != nil {
-			log.Errorf("could not send eth block confirmation %v to gateway: %v", ethBlock, err)
 		}
 	})
 

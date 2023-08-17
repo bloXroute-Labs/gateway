@@ -67,7 +67,7 @@ func NewHandler(parent context.Context, config *network.EthConfig, chain *Chain,
 }
 
 // handleFeeds processes the heads and txhashes feeds. exit with false on feed error and true when done
-func (h *Handler) handleFeeds(wsCtx context.Context, nodeWS blockchain.WSProvider, newHeadsRespCh chan *ethtypes.Header, nptResponseCh chan ethcommon.Hash, nhSub *rpc.ClientSubscription, nptSub *rpc.ClientSubscription) bool {
+func (h *Handler) handleFeeds(wsCtx context.Context, nodeWS blockchain.WSProvider, newHeadsRespCh chan *ethtypes.Header, newPendingTxsRespCh chan ethcommon.Hash, newHeadsErrCh <-chan error, newPendingTxsErrCh <-chan error) bool {
 	activeFeeds := false
 	activeFeedsCheckTicker := time.NewTicker(time.Second * 10)
 	defer func() {
@@ -79,16 +79,16 @@ func (h *Handler) handleFeeds(wsCtx context.Context, nodeWS blockchain.WSProvide
 		case <-wsCtx.Done():
 			nodeWS.Log().Debugf("Stopping handleFeeds ctx Done process %v", utils.GetGID())
 			return true
-		case err := <-nhSub.Err():
+		case err := <-newHeadsErrCh:
 			nodeWS.Log().Errorf("failed to get notification from newHeads: %v  process %v", err, utils.GetGID())
 			return false
 		case newHeader := <-newHeadsRespCh:
 			nodeWS.Log().Tracef("received header for block %v (height %v)", newHeader.Hash(), newHeader.Number)
 			h.confirmBlockFromWS(newHeader.Hash(), newHeader.Number, nodeWS.BlockchainPeer().(*Peer))
-		case err := <-nptSub.Err():
+		case err := <-newPendingTxsErrCh:
 			nodeWS.Log().Errorf("failed to get notification from newPendingTransactions: %v  process %v", err, utils.GetGID())
 			return false
-		case newPendingTx := <-nptResponseCh:
+		case newPendingTx := <-newPendingTxsRespCh:
 			activeFeeds = true
 			txHash, err := types.NewSHA256Hash(newPendingTx[:])
 			hashes := types.SHA256HashList{txHash}
@@ -96,7 +96,7 @@ func (h *Handler) handleFeeds(wsCtx context.Context, nodeWS blockchain.WSProvide
 			morePendingTxs := true
 			for morePendingTxs && len(hashes) < bxgateway.MaxAnnouncementFromNode {
 				select {
-				case newPendingTx = <-nptResponseCh:
+				case newPendingTx = <-newPendingTxsRespCh:
 					txHash, err = types.NewSHA256Hash(newPendingTx[:])
 					if err != nil {
 						nodeWS.Log().Errorf("got an error from NewSHA256Hash for %v - %v", newPendingTx, err)
@@ -127,8 +127,11 @@ func (h *Handler) handleFeeds(wsCtx context.Context, nodeWS blockchain.WSProvide
 
 // runEthSub is running as a go routine. Can sleep if needed
 func (h *Handler) runEthSub(wsCtx context.Context, nodeWS blockchain.WSProvider) {
-	newHeadsRespCh := make(chan *ethtypes.Header)
-	nptResponseCh := make(chan ethcommon.Hash)
+	var newPendingTxsRespCh chan ethcommon.Hash
+	var newPendingTxsErrCh <-chan error
+
+	var newHeadsRespCh chan *ethtypes.Header
+	var newHeadsErrCh <-chan error
 
 	nodeWS.Log().Debugf("starting runEthSub... process %v", utils.GetGID())
 	defer nodeWS.Log().Debugf("runEthSub ends process %v", utils.GetGID())
@@ -136,21 +139,31 @@ func (h *Handler) runEthSub(wsCtx context.Context, nodeWS blockchain.WSProvider)
 	for {
 		nodeWS.Dial()
 
-		nhSub, err := nodeWS.Subscribe(newHeadsRespCh, "newHeads")
-		if err != nil {
-			nodeWS.Log().Errorf("unable to subscribe to newHeads - %v process %v", err, utils.GetGID())
-			nodeWS.Close()
-			continue
+		// In Ethereum PoS consensus layer is responsible for blocks and confirmations even though heads are still avaliable from websocket of execution layer
+		// eth.Chain clean is not working well because it has no blocks
+		if h.config.Network != network.EthMainnetChainID {
+			newHeadsRespCh = make(chan *ethtypes.Header)
+
+			newHeadsSub, err := nodeWS.Subscribe(newHeadsRespCh, "newHeads")
+			if err != nil {
+				nodeWS.Log().Errorf("unable to subscribe to newHeads - %v process %v", err, utils.GetGID())
+				nodeWS.Close()
+				continue
+			}
+
+			newHeadsErrCh = newHeadsSub.Sub.(*rpc.ClientSubscription).Err()
 		}
 
-		nptSub, err := nodeWS.Subscribe(nptResponseCh, "newPendingTransactions")
+		newPendingTxsRespCh = make(chan ethcommon.Hash)
+		newPendingTxsSub, err := nodeWS.Subscribe(newPendingTxsRespCh, "newPendingTransactions")
 		if err != nil {
 			nodeWS.Log().Errorf("unable to subscribe to newPendingTransactions - %v  process %v", err, utils.GetGID())
 			nodeWS.Close()
 			continue
 		}
+		newPendingTxsErrCh = newPendingTxsSub.Sub.(*rpc.ClientSubscription).Err()
 
-		done := h.handleFeeds(wsCtx, nodeWS, newHeadsRespCh, nptResponseCh, nhSub.Sub.(*rpc.ClientSubscription), nptSub.Sub.(*rpc.ClientSubscription))
+		done := h.handleFeeds(wsCtx, nodeWS, newHeadsRespCh, newPendingTxsRespCh, newHeadsErrCh, newPendingTxsErrCh)
 		if done {
 			return
 		}

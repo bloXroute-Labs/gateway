@@ -698,7 +698,7 @@ func TestGateway_HandleBlockFromBlockchain(t *testing.T) {
 	}()
 
 	g.BxConfig.WebsocketEnabled = true
-	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, sdnmessage.ATierEnterprise, "", "", "", "", "", false)
+	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
 	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 	var count int32
 	var wg sync.WaitGroup
@@ -754,7 +754,7 @@ func TestGateway_HandleBlockFromInboundBlockchain(t *testing.T) {
 	}()
 
 	g.BxConfig.WebsocketEnabled = true
-	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, sdnmessage.ATierEnterprise, "", "", "", "", "", false)
+	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
 	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 	var count int32
 	var wg sync.WaitGroup
@@ -854,7 +854,7 @@ func TestGateway_HandleBlockFromBlockchain_TwoRelays(t *testing.T) {
 
 func TestGateway_HandleBlockFromRelay(t *testing.T) {
 	bridge, g := setup(t, 1)
-	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "", false)
+	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
 	_, relayConn1 := addRelayConn(g)
 	mockTLS2, _ := addRelayConn(g)
 
@@ -900,7 +900,7 @@ func TestGateway_HandleBlockFromRelay(t *testing.T) {
 
 func TestGateway_HandleBeaconBlockFromRelay(t *testing.T) {
 	bridge, g := setup(t, 1)
-	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "", false)
+	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
 	_, relayConn1 := addRelayConn(g)
 	mockTLS2, _ := addRelayConn(g)
 
@@ -1001,7 +1001,7 @@ func TestGateway_HandleBeaconBlockFromRelay(t *testing.T) {
 
 func TestGateway_ValidateHeightBDNBlocksWithNode(t *testing.T) {
 	bridge, g := setup(t, 1)
-	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "", false)
+	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
 	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 	g.BxConfig.WebsocketEnabled = true
 
@@ -1071,7 +1071,7 @@ func TestGateway_BlockFeedIfSubscribeOnly(t *testing.T) {
 	heightFromNode := 0
 	expectNoFeedNotification(t, bridge, g, true, heightFromNode, heightFromNode, 0)
 
-	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "", false)
+	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
 	heightFromNode = 10
 	expectFeedNotification(t, bridge, g, true, heightFromNode, heightFromNode, 0)
 
@@ -1079,7 +1079,7 @@ func TestGateway_BlockFeedIfSubscribeOnly(t *testing.T) {
 
 func TestGateway_ValidateHeightBDNBlocksWithoutNode(t *testing.T) {
 	bridge, g := setup(t, 1)
-	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, sdnmessage.AccountTier(sdnmessage.ATierEnterprise), types.AccountID(""), "", "", "", "", false)
+	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
 	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 	g.BxConfig.WebsocketEnabled = true
 	g.blockchainPeers = []types.NodeEndpoint{}
