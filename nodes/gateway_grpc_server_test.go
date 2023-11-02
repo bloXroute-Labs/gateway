@@ -2,10 +2,13 @@ package nodes
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"runtime"
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
@@ -14,14 +17,38 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/rpc"
+	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/servers"
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
+	mock_connections "github.com/bloXroute-Labs/gateway/v2/test/sdnhttpmock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/version"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/assert"
+)
+
+const (
+	testGatewayAccountID      = "user"
+	testGatewaySecretHash     = "password"
+	testTierName              = sdnmessage.ATierUltra
+	testGatewayUserAuthHeader = "dXNlcjpwYXNzd29yZA==" // encoded testGatewayAccountID and testGatewaySecretHash
+	testDifferentAccountID    = "user2"
+	testDifferentSecretHash   = "password2"
+	testDifferentAuthHeader   = "dXNlcjI6cGFzc3dvcmQy" // encoded testDifferentAccountId and testDifferentSecretHash
+	testWrongAuthHeader       = "dXNlcjM6cGFzc3dvcmQz" // encoded user3 and password3
+
+)
+
+var (
+	testAccountModel = sdnmessage.Account{
+		AccountInfo: sdnmessage.AccountInfo{
+			AccountID: types.AccountID(testGatewayAccountID),
+			TierName:  testGatewaySecretHash,
+		},
+		SecretHash: testGatewaySecretHash,
+	}
 )
 
 func spawnGRPCServer(t *testing.T, port int, user string, password string) (*gateway, blockchain.Bridge, *gatewayGRPCServer) {
@@ -37,7 +64,7 @@ func spawnGRPCServer(t *testing.T, port int, user string, password string) (*gat
 	// small sleep for goroutine to start
 	time.Sleep(1 * time.Millisecond)
 
-	return g, bridge, &s
+	return g, bridge, s
 }
 
 func TestGatewayGRPCServerNoAuth(t *testing.T) {
@@ -51,37 +78,161 @@ func TestGatewayGRPCServerNoAuth(t *testing.T) {
 		return client.Version(ctx, &pb.VersionRequest{})
 	})
 
-	assert.Nil(t, err)
+	require.Nil(t, err)
 
 	versionReply, ok := res.(*pb.VersionReply)
-	assert.True(t, ok)
-	assert.Equal(t, version.BuildVersion, versionReply.GetVersion())
+	require.True(t, ok)
+	require.Equal(t, version.BuildVersion, versionReply.GetVersion())
 }
 
 func TestGatewayGRPCServerAuth(t *testing.T) {
 	port := test.NextTestPort()
 
-	_, _, s := spawnGRPCServer(t, port, "user", "password")
+	g, _, s := spawnGRPCServer(t, port, testGatewayAccountID, testGatewaySecretHash)
 	defer s.Stop()
 
-	authorizedClientConfig := config.NewGRPC("127.0.0.1", port, "user", "password")
+	ctl := gomock.NewController(t)
+	mockedSdn := mock_connections.NewMockSDNHTTP(ctl)
+	g.sdn = mockedSdn
+	mockedSdn.EXPECT().AccountModel().Return(testAccountModel).AnyTimes()
+
+	authorizedClientConfig := config.NewGRPC("127.0.0.1", port, testGatewayAccountID, testGatewaySecretHash)
 	res, err := rpc.GatewayCall(authorizedClientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
 		return client.Version(ctx, &pb.VersionRequest{})
 	})
 
-	assert.Nil(t, err)
+	require.Nil(t, err)
 
 	versionReply, ok := res.(*pb.VersionReply)
-	assert.True(t, ok)
-	assert.Equal(t, version.BuildVersion, versionReply.GetVersion())
+	require.True(t, ok)
+	require.Equal(t, version.BuildVersion, versionReply.GetVersion())
 
 	unauthorizedClientConfig := config.NewGRPC("127.0.0.1", port, "user", "wrongpassword")
 	res, err = rpc.GatewayCall(unauthorizedClientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
 		return client.Version(ctx, &pb.VersionRequest{})
 	})
 
-	assert.Nil(t, res)
-	assert.NotNil(t, err)
+	require.NotNil(t, err)
+}
+
+func TestGatewayGRPCGatewayUserHeaderAuth(t *testing.T) {
+	port := test.NextTestPort()
+
+	g, _, s := spawnGRPCServer(t, port, "", "")
+	defer s.Stop()
+
+	ctl := gomock.NewController(t)
+	mockedSdn := mock_connections.NewMockSDNHTTP(ctl)
+	g.sdn = mockedSdn
+
+	// there is no need to mock FetchCustomerAccountModel because
+	// it's called only when not gateway user header auth is used
+
+	// account model it's a gateway account
+	mockedSdn.EXPECT().AccountModel().Return(testAccountModel).AnyTimes()
+
+	res, err := rpc.GatewayCall(&config.GRPC{Host: "127.0.0.1", Port: port, AuthEnabled: true, EncodedAuthSet: true, EncodedAuth: testGatewayUserAuthHeader, Timeout: 1 * time.Second}, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
+		return client.Version(ctx, &pb.VersionRequest{})
+	})
+
+	require.Nil(t, err)
+
+	versionReply, ok := res.(*pb.VersionReply)
+	require.True(t, ok)
+	require.Equal(t, version.BuildVersion, versionReply.GetVersion())
+}
+
+func TestGatewayGRPCNotGatewayUserHeaderAuth(t *testing.T) {
+	port := test.NextTestPort()
+
+	g, _, s := spawnGRPCServer(t, port, "", "")
+	defer s.Stop()
+
+	ctl := gomock.NewController(t)
+	mockedSdn := mock_connections.NewMockSDNHTTP(ctl)
+
+	fetchCustomerAccountModel := sdnmessage.Account{
+		AccountInfo: sdnmessage.AccountInfo{
+			AccountID: types.AccountID(testDifferentAccountID),
+			TierName:  sdnmessage.ATierUltra,
+		},
+		SecretHash: testDifferentSecretHash,
+	}
+	mockedSdn.EXPECT().FetchCustomerAccountModel(gomock.Any()).Return(fetchCustomerAccountModel, nil).AnyTimes()
+	// account model it's a gateway account
+	mockedSdn.EXPECT().AccountModel().Return(testAccountModel).AnyTimes()
+	g.sdn = mockedSdn
+
+	res, err := rpc.GatewayCall(&config.GRPC{Host: "127.0.0.1", Port: port, AuthEnabled: true, EncodedAuthSet: true, EncodedAuth: testDifferentAuthHeader, Timeout: 1 * time.Second}, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
+		return client.Version(ctx, &pb.VersionRequest{})
+	})
+
+	require.Nil(t, err)
+
+	versionReply, ok := res.(*pb.VersionReply)
+	require.True(t, ok)
+	require.Equal(t, version.BuildVersion, versionReply.GetVersion())
+}
+
+func TestInternalGatewayUnauthorizedAccess(t *testing.T) {
+
+	port := test.NextTestPort()
+
+	g, _, s := spawnGRPCServer(t, port, "", "")
+	defer s.Stop()
+
+	ctl := gomock.NewController(t)
+
+	accountModel := sdnmessage.Account{
+		AccountInfo: sdnmessage.AccountInfo{
+			AccountID: types.AccountID("account_id"),
+			TierName:  "testTierName",
+		},
+		SecretHash: "account_id_pass",
+	}
+
+	fetchCustomerAccountModel := sdnmessage.Account{
+		AccountInfo: sdnmessage.AccountInfo{
+			AccountID: types.AccountID("undefined_user"),
+			TierName:  sdnmessage.ATierUltra,
+		},
+		SecretHash: "undefined_user_pass",
+	}
+
+	mockedSdn := mock_connections.NewMockSDNHTTP(ctl)
+	g.sdn = mockedSdn
+
+	mockedSdn.EXPECT().FetchCustomerAccountModel(gomock.Any()).Return(fetchCustomerAccountModel, fmt.Errorf("error %v", http.StatusNotFound)).AnyTimes()
+	mockedSdn.EXPECT().AccountModel().Return(accountModel).AnyTimes()
+
+	authorizedClientConfig := config.NewGRPC("127.0.0.1", port, "user", "password")
+
+	_, err := rpc.GatewayCall(authorizedClientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
+		return client.Version(ctx, &pb.VersionRequest{AuthHeader: "dXNlcjM6cGFzc3dvcmQz"})
+	})
+
+	require.NotNil(t, err)
+
+	mockedSdn = mock_connections.NewMockSDNHTTP(ctl)
+	g.sdn = mockedSdn
+
+	mockedSdn.EXPECT().FetchCustomerAccountModel(gomock.Any()).Return(fetchCustomerAccountModel, fmt.Errorf("error %v", http.StatusUnauthorized)).AnyTimes()
+	mockedSdn.EXPECT().AccountModel().Return(accountModel).AnyTimes()
+	_, err = rpc.GatewayCall(authorizedClientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
+		return client.Version(ctx, &pb.VersionRequest{AuthHeader: "dXNlcjM6cGFzc3dvcmQz"})
+	})
+
+	require.NotNil(t, err)
+
+	mockedSdn = mock_connections.NewMockSDNHTTP(ctl)
+	g.sdn = mockedSdn
+	mockedSdn.EXPECT().FetchCustomerAccountModel(gomock.Any()).Return(fetchCustomerAccountModel, fmt.Errorf("error %v", http.StatusBadRequest)).AnyTimes()
+	mockedSdn.EXPECT().AccountModel().Return(accountModel).AnyTimes()
+	_, err = rpc.GatewayCall(authorizedClientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
+		return client.Version(ctx, &pb.VersionRequest{AuthHeader: "dXNlcjM6cGFzc3dvcmQz"})
+	})
+
+	require.NotNil(t, err)
 }
 
 func TestGatewayGRPCServerPeers(t *testing.T) {
@@ -123,7 +274,7 @@ func TestGatewayGRPCNewTxs(t *testing.T) {
 	defer s.Stop()
 	g.BxConfig.WebsocketEnabled = true
 
-	_ = g.feedManager.Start()
+	go g.feedManager.Start(context.Background())
 
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
 
@@ -160,11 +311,11 @@ func TestGatewayGRPCPendingTxs(t *testing.T) {
 	g.BxConfig.WebsocketEnabled = true
 
 	go func() {
-		err := g.handleBridgeMessages()
+		err := g.handleBridgeMessages(context.Background())
 		assert.Nil(t, err)
 	}()
 
-	_ = g.feedManager.Start()
+	go g.feedManager.Start(context.Background())
 
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
 
@@ -196,11 +347,11 @@ func TestGatewayGRPCNewBlocks(t *testing.T) {
 	g.BxConfig.SendConfirmation = true
 
 	go func() {
-		err := g.handleBridgeMessages()
+		err := g.handleBridgeMessages(context.Background())
 		assert.Nil(t, err)
 	}()
 
-	_ = g.feedManager.Start()
+	go g.feedManager.Start(context.Background())
 
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
 
@@ -239,15 +390,14 @@ func TestGatewayGRPCBdnBlocks(t *testing.T) {
 	txStore, bp := newBP()
 
 	go func() {
-		err := g.handleBridgeMessages()
+		err := g.handleBridgeMessages(context.Background())
 		require.NoError(t, err)
 	}()
 
-	err := g.feedManager.Start()
-	require.NoError(t, err)
+	go g.feedManager.Start(context.Background())
 
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
-	err = rpc.GatewayConsoleCall(clientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
+	err := rpc.GatewayConsoleCall(clientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
 		res, err := client.BdnBlocks(ctx, &pb.BlocksRequest{AuthHeader: "Og=="})
 		require.NoError(t, err)
 

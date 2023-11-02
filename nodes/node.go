@@ -10,6 +10,7 @@ import (
 // Node represents the basic node interface
 type Node interface {
 	Run() error
+	Close() error
 }
 
 // Abstract represents a basic bloxroute node interface

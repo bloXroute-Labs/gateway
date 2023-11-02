@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 
@@ -18,11 +19,19 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/utils/ptr"
 )
 
-// SprintSize represent size of sprint for polygon bor module
-const SprintSize = uint64(16)
+const (
+	// SprintSize represent size of sprint for polygon bor module
+	SprintSize = uint64(16)
 
-// SprintSizeHeimdall represent size of sprint for polygon heimdall module
-const SprintSizeHeimdall = SprintSize * 4
+	// SprintSizeHeimdall represent size of sprint for polygon heimdall module
+	SprintSizeHeimdall = SprintSize * 4
+
+	// average sprint time
+	heimdallNextEndpointInterval = 2 * 16 * time.Second
+
+	// interval for updating sprint map
+	heimdallUpdateSprintInterval = time.Hour
+)
 
 var errQuerySnapshot = errors.New("failed to query blockchain node for snapshot")
 
@@ -39,8 +48,6 @@ type SprintManager struct {
 
 	spanner Spanner
 
-	syncCh chan struct{}
-
 	sprintMap map[uint64]string
 }
 
@@ -56,8 +63,6 @@ func NewSprintManager(ctx context.Context, wsManager *blockchain.WSManager, span
 		state: atomic.NewPointer(ptr.New(stateIdle)),
 
 		sprintMap: make(map[uint64]string),
-
-		syncCh: make(chan struct{}),
 	}
 }
 
@@ -158,7 +163,7 @@ func (m *SprintManager) Run() error {
 	}
 
 	m.state.Store(ptr.New(stateBooting))
-
+	log.Debugf("sprint manager bootstrapping")
 	if err := m.bootstrap(); err != nil {
 		m.state.Store(ptr.New(stateIdle))
 
@@ -172,7 +177,7 @@ func (m *SprintManager) Run() error {
 	}
 
 	m.state.Store(ptr.New(stateRunning))
-
+	log.Debugf("sprint manager successful bootstrapped")
 	go func() {
 		for {
 			select {
@@ -181,14 +186,24 @@ func (m *SprintManager) Run() error {
 
 				return
 			case <-m.spanner.GetSpanNotificationCh():
+				log.Debugf("processing span notification")
 				if err := m.updateSprintMapFromLatest(); err != nil {
 					log.Warnf("failed to update validators for the latest span: %v", err)
-				}
-			case <-m.syncCh:
-				if err := m.updateSprintMapFromLatest(); err != nil {
-					log.Warnf("failed to update validators for the latest span: %v", err)
+					time.Sleep(heimdallNextEndpointInterval)
+					m.spanner.SendSpanNotification()
+				} else {
+					log.Info("successfully updated validators for the latest span")
 				}
 			}
+		}
+	}()
+
+	go func() {
+		for {
+			if *m.state.Load() == stateRunning {
+				m.spanner.SendSpanNotification()
+			}
+			time.Sleep(heimdallUpdateSprintInterval)
 		}
 	}()
 
@@ -231,10 +246,7 @@ func (m *SprintManager) FutureValidators(header *ethtypes.Header) [2]*types.Futu
 		if header.Difficulty.Uint64() == spanInfo.Difficulty() {
 			log.Debugf("invalid future validator prediction detected: predicted(%s) actual(%s)", validator, strings.ToLower(signer.String()))
 
-			select {
-			default:
-			case m.syncCh <- struct{}{}:
-			}
+			m.spanner.SendSpanNotification()
 
 			return validatorInfo
 		}

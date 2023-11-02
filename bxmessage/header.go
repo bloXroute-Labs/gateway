@@ -37,7 +37,6 @@ type Header struct {
 	processingQueuePos          int
 	processingQueueWaitDuration time.Duration
 	receiveQueueWaitingDuration time.Duration
-	bufLen                      int
 }
 
 // SetReceiveTime set msg metadata
@@ -88,15 +87,9 @@ func (h *Header) Pack(buf *[]byte, msgType string) {
 	(*buf)[len(*buf)-ControlByteLen] = ValidControlByte
 }
 
-// BufLen return msg len
-func (h Header) BufLen() int {
-	return h.bufLen
-}
-
 // Unpack deserializes a Header from a buffer
 func (h *Header) Unpack(buf []byte, _ Protocol) error {
 	h.msgType = string(bytes.Trim(buf[TypeOffset:TypeOffset+TypeLength], NullByte))
-	h.bufLen = len(buf)
 	return nil
 }
 

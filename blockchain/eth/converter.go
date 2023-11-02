@@ -29,9 +29,7 @@ type Converter struct{}
 
 // TransactionBDNToBlockchain convert a BDN transaction to an Ethereum one
 func (c Converter) TransactionBDNToBlockchain(transaction *types.BxTransaction) (interface{}, error) {
-	var ethTransaction ethtypes.Transaction
-	err := rlp.DecodeBytes(transaction.Content(), &ethTransaction)
-	return &ethTransaction, err
+	return TransactionBDNToBlockchain(transaction)
 }
 
 // TransactionBlockchainToBDN converts an Ethereum transaction to a BDN transaction
@@ -296,7 +294,7 @@ func (c Converter) beaconBlockBDNtoBlockchain(block *types.BxBlock) (interfaces.
 	case types.BxBlockTypeBeaconCapella:
 		b := new(ethpb.SignedBeaconBlockCapella)
 		if err := b.UnmarshalSSZ(block.Trailer); err != nil {
-			return nil, fmt.Errorf("could not convert block %v body to blockchain format:%v", block.Hash(), err)
+			return nil, fmt.Errorf("could not convert block %v body to blockchain format: %v", block.Hash(), err)
 		}
 
 		txs := make([][]byte, 0, len(block.Txs))

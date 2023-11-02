@@ -13,8 +13,14 @@ import (
 	"github.com/zhouzhuojie/conditions"
 )
 
+var (
+	operators        = []string{"=", ">", "<", "!=", ">=", "<=", "in"}
+	operands         = []string{"and", "or"}
+	availableFilters = []string{"gas", "gas_price", "value", "to", "from", "method_id", "type", "chain_id", "max_fee_per_gas", "max_priority_fee_per_gas"}
+)
+
 func createFiltersExpression(filters string) (conditions.Expr, error) {
-	_, expr, err := ParseFilter(filters)
+	_, expr, err := parseFilter(filters)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing Filters: %v", err)
 	}
@@ -22,7 +28,7 @@ func createFiltersExpression(filters string) (conditions.Expr, error) {
 		return nil, nil
 	}
 
-	err = EvaluateFilters(expr)
+	err = evaluateFilters(expr)
 	if err != nil {
 		return nil, fmt.Errorf("error evaluated Filters: %v", err)
 	}
@@ -31,15 +37,15 @@ func createFiltersExpression(filters string) (conditions.Expr, error) {
 	return expr, nil
 }
 
-// EvaluateFilters - evaluating if the Filters provided by the user are ok
-func EvaluateFilters(expr conditions.Expr) error {
+// evaluateFilters - evaluating if the Filters provided by the user are ok
+func evaluateFilters(expr conditions.Expr) error {
 	// Evaluate if we should send the tx
 	_, err := conditions.Evaluate(expr, types.EmptyFilteredTransactionMap)
 	return err
 }
 
-// ParseFilter parsing the filter
-func ParseFilter(filters string) (string, conditions.Expr, error) {
+// parseFilter parsing the filter
+func parseFilter(filters string) (string, conditions.Expr, error) {
 	// if the filters values are go-type filters, for example: {value}, parse the filters
 	// if not go-type, convert it to go-type filters
 	if strings.Contains(filters, "{") {
@@ -110,24 +116,26 @@ func ParseFilter(filters string) (string, conditions.Expr, error) {
 
 	p := conditions.NewParser(strings.NewReader(strings.ToLower(strings.Replace(newFilterString.String(), "'", "\"", -1))))
 	expr, err := p.Parse()
-
-	if err == nil {
-		isEmptyValue := filtersHasEmptyValue(expr.String())
-		if isEmptyValue != nil {
-			return "", nil, errors.New("filter is empty")
-		}
+	if err != nil {
+		return "", nil, err
 	}
 
-	return newFilterString.String(), expr, err
+	err = filtersHasEmptyValue(expr.String())
+	if err != nil {
+		return "", nil, err
+	}
+
+	return newFilterString.String(), expr, nil
 }
 
+var rex = regexp.MustCompile(`\(([^)]+)\)`)
+
 func filtersHasEmptyValue(rawFilters string) error {
-	rex := regexp.MustCompile(`\(([^)]+)\)`)
 	out := rex.FindAllStringSubmatch(rawFilters, -1)
 	for _, i := range out {
 		for _, filter := range availableFilters {
 			if i[1] == filter || filter == rawFilters {
-				return fmt.Errorf("%v", i[1])
+				return fmt.Errorf("filter is empty: %v", i[1])
 			}
 		}
 	}

@@ -217,6 +217,18 @@ type BDNFeedService struct {
 	Feed       FeedProperties `json:"feed"`
 }
 
+// BundleProperties represent bundle properties for a specific network
+type BundleProperties struct {
+	TxsLenPrices map[string]float64 `json:"txs_len_prices"`
+	TxsLenLimit  int                `json:"txs_len_limit"`
+}
+
+// BDNBundlesService is a placeholder for service model configs
+type BDNBundlesService struct {
+	ExpireDate string                      `json:"expire_date"`
+	Networks   map[string]BundleProperties `json:"networks"`
+}
+
 // BDNPrivateRelayService is a placeholder for service model configs
 type BDNPrivateRelayService interface{}
 
@@ -247,6 +259,7 @@ type Account struct {
 	// txs allowed per 5s
 	UnpaidTransactionBurstLimit BDNQuotaService `json:"unpaid_tx_burst_limit"`
 	PaidTransactionBurstLimit   BDNQuotaService `json:"paid_tx_burst_limit"`
+	VIPBuildersAllowed          BDNQuotaService `json:"vip_builders"`
 
 	BoostMEVSearcher BDNBasicService `json:"boost_mevsearcher"`
 
@@ -255,6 +268,8 @@ type Account struct {
 
 	TwammStreaming         BDNFeedService `json:"twamm_streaming"`
 	PrivateOrdersStreaming BDNFeedService `json:"private_orders_streaming"`
+
+	Bundles BDNBundlesService `json:"bundles"`
 }
 
 // Validate verifies the response that the response from bxapi is well understood
@@ -472,5 +487,26 @@ func GetDefaultEliteAccount(now time.Time) Account {
 			},
 		},
 		SecretHash: "",
+		Bundles: BDNBundlesService{
+			ExpireDate: now.AddDate(0, 0, 1).Format("2006-01-02"),
+			Networks: map[string]BundleProperties{
+				bxgateway.BSCTestnet: {
+					TxsLenPrices: map[string]float64{
+						"1":      0.0,
+						"2":      0.0,
+						"higher": 0.002,
+					},
+					TxsLenLimit: 30,
+				},
+				bxgateway.BSCMainnet: {
+					TxsLenPrices: map[string]float64{
+						"1":      0.0,
+						"2":      0.0,
+						"higher": 0.002,
+					},
+					TxsLenLimit: 30,
+				},
+			},
+		},
 	}
 }

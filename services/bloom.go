@@ -4,11 +4,11 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bits-and-blooms/bloom/v3"
@@ -22,6 +22,7 @@ const (
 	previousBloomFileName         = "previous.bloom"
 	counterBloomFileName          = "counter.bloom"
 	bloomFalsePositiveProbability = 1e-6
+	bloomFilterQueueSize          = 10000
 )
 
 // BloomFilter interface
@@ -57,13 +58,17 @@ type bloomFilter struct {
 	storeInterval time.Duration
 	clock         utils.Clock
 	datadir       string
-	counter       uint32
+	counter       atomic.Uint32
+	queue         chan []byte
+	stopConsume   chan struct{}
 }
 
 // NewBloomFilter constructor for BloomFilter
 func NewBloomFilter(ctx context.Context, clock utils.Clock, storeInterval time.Duration, datadir string, capacity uint32) (BloomFilter, error) {
-	var err error
+	return newBloomFilter(ctx, clock, storeInterval, datadir, capacity)
+}
 
+func newBloomFilter(ctx context.Context, clock utils.Clock, storeInterval time.Duration, datadir string, capacity uint32) (*bloomFilter, error) {
 	bf := &bloomFilter{
 		ctx:           ctx,
 		mx:            &sync.RWMutex{},
@@ -73,28 +78,32 @@ func NewBloomFilter(ctx context.Context, clock utils.Clock, storeInterval time.D
 		storeInterval: storeInterval,
 		clock:         clock,
 		datadir:       datadir,
-		counter:       0,
+		counter:       atomic.Uint32{},
+		queue:         make(chan []byte, bloomFilterQueueSize),
+		stopConsume:   make(chan struct{}),
 	}
 
-	bf.current, bf.previous, bf.counter, err = bf.newBfPair()
+	var err error
+	var counter uint32
+	bf.current, bf.previous, counter, err = bf.newBfPair()
 	if err != nil {
 		return nil, err
 	}
 
+	bf.counter.Store(counter)
+
 	go bf.storeOnDiskWorker()
+	go bf.consumeWorker()
+
 	return bf, nil
 }
 
 // Add value to bloom filter
 func (b *bloomFilter) Add(val []byte) {
-	b.mx.Lock()
-	b.current.Add(val)
-	b.counter++
-	b.mx.Unlock()
-
-	// perform switch if needed
-	if b.counter >= b.capacity {
-		b.maybeSwitchFilters()
+	select {
+	case b.queue <- val:
+	default:
+		log.Warn("BloomFilter queue is full during persisting cache, dropping value")
 	}
 }
 
@@ -116,11 +125,6 @@ func (b *bloomFilter) Check(val []byte) bool {
 	b.mx.RLock()
 	prevTestResul := b.previous.Test(val)
 	b.mx.RUnlock()
-
-	// 4. perform switch if needed
-	if b.counter >= b.capacity {
-		b.maybeSwitchFilters()
-	}
 
 	return prevTestResul
 }
@@ -144,32 +148,32 @@ func (b *bloomFilter) storeOnDiskWorker() {
 }
 
 func (b *bloomFilter) maybeSwitchFilters() {
-	// callers should check if size is bigger than capacity,
-	// but we need to double-check size while under the write-lock
-	// to avoid multiple goroutines performing filters switch
-	if b.counter < b.capacity {
+	if !b.counter.CompareAndSwap(b.capacity, 0) {
 		return
 	}
 
 	startTime := time.Now()
+
 	b.mx.Lock()
-	previousCopyBits := make([]uint64, len(b.current.BitSet().Bytes()))
-	copy(b.current.BitSet().Bytes(), previousCopyBits)
-	previousCopyM := b.current.Cap()
-	previousCopyK := b.current.K()
 	b.previous = b.current
 	b.current = b.newEmptyBf()
-	b.counter = 0
 	b.mx.Unlock()
-	lockDuration := time.Now().Sub(startTime).Milliseconds()
 
-	previousCopy := bloom.FromWithM(previousCopyBits, previousCopyM, previousCopyK)
-	bloomPath := b.storePath()
-	bytes, _ := writeBloomToFile(previousCopy, path.Join(bloomPath, previousBloomFileName))
-	totalDuration := time.Now().Sub(startTime).Milliseconds()
+	lockDuration := time.Since(startTime)
 
-	log.Debugf("BloomFilter switched filters, %v bytes saved lock duration %v ms, total duration %v ms", bytes, lockDuration, totalDuration)
+	// do not block consumer while writting on disk
+	go func() {
+		// No writes to previous filter so we can omit read lock
+		bytes, err := writeBloomToFile(b.previous, path.Join(b.storePath(), previousBloomFileName))
+		if err != nil {
+			log.Errorf("BloomFilter failed to write previous bloom filter to file - %v", err)
+			return
+		}
 
+		totalDuration := time.Since(startTime)
+
+		log.Infof("BloomFilter switched filters, %v bytes saved lock duration %v ms, total duration %v ms", bytes, lockDuration.Milliseconds(), totalDuration.Milliseconds())
+	}()
 }
 
 // newBfPair tries to read current and previous bloom filter from disk,
@@ -227,32 +231,58 @@ func (b *bloomFilter) newBfPair() (curr, prev *bloom.BloomFilter, counter uint32
 
 func (b *bloomFilter) storeOnDisk() error {
 	startTime := time.Now()
-	b.mx.RLock()
-	currentCopyBits := make([]uint64, len(b.current.BitSet().Bytes()))
-	copy(currentCopyBits, b.current.BitSet().Bytes())
-	currentCopyM := b.current.Cap()
-	currentCopyK := b.current.K()
-	currentCounter := b.counter
-	b.mx.RUnlock()
-	lockDuration := time.Now().Sub(startTime).Milliseconds()
 
-	currentCopy := bloom.FromWithM(currentCopyBits, currentCopyM, currentCopyK)
+	// Mutex works in FIFO order which means write lock in consume worker will lock read lock in Check func
+	// so let's pause adding new hashes in order to not locking Check.
+	// This would not work if you have multiple consume workers.
+	b.stopConsume <- struct{}{}
+	<-b.stopConsume
+
+	// Lock here is not neccecary because we already stopped adding new hashes
+	currentCounter := b.counter.Load()
+	currentCopy := bloom.FromWithM(b.current.BitSet().Clone().Bytes(), b.current.Cap(), b.current.K())
+
+	b.stopConsume <- struct{}{}
+
+	// notify queue worker to start adding new values
+	copyDuration := time.Since(startTime)
+
 	bloomPath := b.storePath()
-
 	bytes, err := writeBloomToFile(currentCopy, path.Join(bloomPath, currentBloomFileName))
 	if err != nil {
 		return err
 	}
 
-	err = writeCounterToFile(currentCounter, path.Join(bloomPath, counterBloomFileName))
-	if err != nil {
+	if err := writeCounterToFile(currentCounter, path.Join(bloomPath, counterBloomFileName)); err != nil {
 		return err
 	}
-	totalDuration := time.Now().Sub(startTime).Milliseconds()
 
-	log.Infof("BloomFilter store cache current counter %v, bytes %v, lock duration %v ms, total duration %v ms", b.counter, bytes, lockDuration, totalDuration)
+	totalDuration := time.Since(startTime)
+
+	log.Infof("BloomFilter store cache current counter %v, bytes %v, copy duration %v ms, total duration %v ms", b.counter.Load(), bytes, copyDuration.Milliseconds(), totalDuration.Milliseconds())
 
 	return nil
+}
+
+func (b *bloomFilter) consumeWorker() {
+	for {
+		select {
+		case val := <-b.queue:
+			b.counter.Add(1)
+
+			b.mx.Lock()
+			b.current.Add(val)
+			b.mx.Unlock()
+
+			// it uses lock inside to control locking granularly
+			b.maybeSwitchFilters()
+		case <-b.stopConsume:
+			b.stopConsume <- struct{}{}
+			<-b.stopConsume
+		case <-b.ctx.Done():
+			return
+		}
+	}
 }
 
 func (b *bloomFilter) storePath() string {
@@ -264,15 +294,16 @@ func (b *bloomFilter) newEmptyBf() *bloom.BloomFilter {
 }
 
 func readCounterFromFile(path string) (uint32, error) {
-	c, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return 0, err
 	}
-	line := string(c)
-	counter, err := strconv.ParseInt(line, 10, 32)
+
+	counter, err := strconv.ParseUint(string(data), 10, 32)
 	if err != nil {
 		return 0, err
 	}
+
 	return uint32(counter), nil
 }
 
@@ -283,14 +314,15 @@ func readBloomFromFile(path string) (*bloom.BloomFilter, int64, error) {
 		return nil, readBytes, err
 	}
 
-	defer func() { _ = f.Close() }()
-
 	bf := bloom.New(0, 0)
-
 	dataReader := bufio.NewReader(f)
 	readBytes, err = bf.ReadFrom(dataReader)
 	if err != nil {
 		return nil, readBytes, fmt.Errorf("read bloom filter from file %s: %w", path, err)
+	}
+
+	if err := f.Close(); err != nil {
+		return nil, readBytes, fmt.Errorf("close bloom filter file %s: %w", path, err)
 	}
 
 	return bf, readBytes, nil
@@ -318,8 +350,7 @@ func writeBloomToFile(bf *bloom.BloomFilter, path string) (int64, error) {
 		return savedBytes, err
 	}
 
-	err = f.Close()
-	if err != nil {
+	if err := f.Close(); err != nil {
 		return savedBytes, fmt.Errorf("close bloom filter file %s: %w", path, err)
 	}
 
@@ -327,20 +358,19 @@ func writeBloomToFile(bf *bloom.BloomFilter, path string) (int64, error) {
 }
 
 func writeCounterToFile(counter uint32, path string) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		log.Errorf("BloomFilter failed to create counter file - %v", err)
 		return nil
 	}
-	dataWriter := bufio.NewWriter(file)
-	if _, err = dataWriter.WriteString(fmt.Sprint(counter)); err != nil {
+
+	if _, err := f.WriteString(fmt.Sprintf("%d", counter)); err != nil {
 		return err
 	}
-	if err = dataWriter.Flush(); err != nil {
-		return err
+
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close bloom filter counter file %s: %w", path, err)
 	}
-	if err = file.Close(); err != nil {
-		return err
-	}
+
 	return nil
 }

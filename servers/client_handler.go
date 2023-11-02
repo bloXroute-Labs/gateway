@@ -3,7 +3,6 @@ package servers
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -17,22 +16,24 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
 	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/gorilla/websocket"
-	uuid "github.com/satori/go.uuid"
 	"github.com/sourcegraph/jsonrpc2"
 	websocketjsonrpc2 "github.com/sourcegraph/jsonrpc2/websocket"
 	"github.com/zhouzhuojie/conditions"
+	"golang.org/x/sync/errgroup"
 )
+
+// ErrWSConnDelay amount of time to sleep before closing a bad connection. This is configured by tests to a shorted value
+var ErrWSConnDelay = 10 * time.Second
+
+var upgrader = websocket.Upgrader{}
 
 // ClientHandler is a struct for gateway client handler object
 type ClientHandler struct {
@@ -46,97 +47,9 @@ type ClientHandler struct {
 	authorize                func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool) (sdnmessage.Account, error)
 }
 
-// MultiTransactions - response for MultiTransactions subscription
-type MultiTransactions struct {
-	Subscription string     `json:"subscription"`
-	Result       []TxResult `json:"result"`
-}
-
-// TxResponse - response of the jsonrpc params
-type TxResponse struct {
-	Subscription string   `json:"subscription"`
-	Result       TxResult `json:"result"`
-}
-
-// EthSubscribeTxResponse - response of the jsonrpc params
-type EthSubscribeTxResponse struct {
-	Subscription string `json:"subscription"`
-	Result       string `json:"result"`
-}
-
-// EthSubscribeFeedResponse - response of the jsonrpc params
-type EthSubscribeFeedResponse struct {
-	Subscription string      `json:"subscription"`
-	Result       interface{} `json:"result"`
-}
-
-// TxResult - request of jsonrpc params
-type TxResult struct {
-	TxHash      *string     `json:"txHash,omitempty"`
-	TxContents  interface{} `json:"txContents,omitempty"`
-	LocalRegion *bool       `json:"localRegion,omitempty"`
-	Time        *string     `json:"time,omitempty"`
-	RawTx       *string     `json:"rawTx,omitempty"`
-}
-
-// TxResultWithEthTx - request of jsonrpc params with an eth type transaction
-type TxResultWithEthTx struct {
-	TxHash      *string               `json:"txHash,omitempty"`
-	TxContents  *ethtypes.Transaction `json:"txContents,omitempty"`
-	LocalRegion *bool                 `json:"localRegion,omitempty"`
-	Time        *string               `json:"time,omitempty"`
-	RawTx       *string               `json:"rawTx,omitempty"`
-}
-
-// BlockResponse - response of the jsonrpc params
-type BlockResponse struct {
-	Subscription string             `json:"subscription"`
-	Result       types.Notification `json:"result"`
-}
-
-type handlerObj struct {
-	FeedManager              *FeedManager
-	ClientReq                *clientReq
-	remoteAddress            string
-	connectionAccount        sdnmessage.Account
-	getQuotaUsage            func(accountID string) (*connections.QuotaResponseBody, error)
-	enableBlockchainRPC      bool
-	pendingTxsSourceFromNode *bool
-	log                      *log.Entry
-	ethSubscribeIDToChanMap  map[string]chan bool
-	headers                  map[string]string
-	stats                    statistics.Stats
-}
-
-type clientReq struct {
-	includes []string
-	feed     types.FeedType
-	expr     conditions.Expr
-	calls    *map[string]*RPCCall
-	MultiTxs bool
-}
-
-type subscriptionRequest struct {
-	feed    types.FeedType
-	options subscriptionOptions
-}
-
-// subscriptionOptions includes subscription options
-type subscriptionOptions struct {
-	Include    []string            `json:"Include"`
-	Filters    string              `json:"Filters"`
-	CallParams []map[string]string `json:"Call-Params"`
-	MultiTxs   bool                `json:"MultiTxs"`
-}
-
-var (
-	// ErrWSConnDelay amount of time to sleep before closing a bad connection. This is configured by tests to a shorted value
-	ErrWSConnDelay = 10 * time.Second
-)
-
 // NewClientHandler is a constructor for ClientHandler
-func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, httpServer *HTTPServer, enableBlockchainRPC bool, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), log *log.Entry, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool) (sdnmessage.Account, error)) ClientHandler {
-	return ClientHandler{
+func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, httpServer *HTTPServer, enableBlockchainRPC bool, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), log *log.Entry, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool) (sdnmessage.Account, error)) *ClientHandler {
+	return &ClientHandler{
 		feedManager:              feedManager,
 		websocketServer:          websocketServer,
 		httpServer:               httpServer,
@@ -148,72 +61,81 @@ func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, ht
 	}
 }
 
-type rpcPingResponse struct {
-	Pong string `json:"pong"`
+// ManageWSServer manage the ws connection of the blockchain node
+func (ch *ClientHandler) ManageWSServer(ctx context.Context, activeManagement bool) error {
+	if activeManagement {
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case syncStatus := <-ch.feedManager.nodeWSManager.ReceiveNodeSyncStatusUpdate():
+				if syncStatus == blockchain.Unsynced {
+					ch.shutdownWSServer()
+					ch.feedManager.subscriptionServices.SendSubscriptionResetNotification(make([]sdnmessage.SubscriptionModel, 0))
+				} else {
+					go ch.runWSServer()
+				}
+			}
+		}
+	} else {
+		g := &errgroup.Group{}
+		g.Go(func() error {
+			return ch.runWSServer()
+		})
+		for {
+			select {
+			case <-ctx.Done():
+				return g.Wait()
+			case <-ch.feedManager.nodeWSManager.ReceiveNodeSyncStatusUpdate():
+				// consume update
+			}
+		}
+	}
 }
 
-type rpcTxResponse struct {
-	TxHash string `json:"txHash"`
+// ManageHTTPServer runs http server for the gateway client handler
+func (ch *ClientHandler) ManageHTTPServer() error {
+	return ch.httpServer.Start()
 }
 
-type rpcBatchTxResponse struct {
-	TxHashes []string `json:"txHashes"`
+// Stop stops the servers
+func (ch *ClientHandler) Stop() error {
+	ch.shutdownWSServer()
+	return ch.httpServer.Stop()
 }
 
-var upgrader = websocket.Upgrader{}
+func (ch *ClientHandler) runWSServer() error {
+	ch.websocketServer = newWSServer(ch.feedManager, ch.getQuotaUsage, ch.enableBlockchainRPC, ch.pendingTxsSourceFromNode, ch.authorize)
+	ch.log.Infof("starting websockets RPC server at: %v", ch.websocketServer.Addr)
+	var err error
+	if ch.feedManager.cfg.WebsocketTLSEnabled {
+		ch.websocketServer.TLSConfig = &tls.Config{
+			ClientAuth: tls.RequestClientCert,
+		}
+		err = ch.websocketServer.ListenAndServeTLS(ch.feedManager.certFile, ch.feedManager.keyFile)
+	} else {
+		err = ch.websocketServer.ListenAndServe()
+	}
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("websockets RPC server failed to start: %v", err)
+	}
 
-var txContentFields = []string{"tx_contents.nonce", "tx_contents.tx_hash",
-	"tx_contents.gas_price", "tx_contents.gas", "tx_contents.to", "tx_contents.value", "tx_contents.input",
-	"tx_contents.v", "tx_contents.r", "tx_contents.s", "tx_contents.from", "tx_contents.type", "tx_contents.access_list",
-	"tx_contents.chain_id", "tx_contents.max_priority_fee_per_gas", "tx_contents.max_fee_per_gas"}
+	ch.log.Info("websockets RPC server has been closed")
 
-var validTxParams = append(txContentFields, "tx_contents", "tx_hash", "local_region", "time", "raw_tx")
-
-var validBlockParams = append(txContentFields, "hash", "header", "transactions", "uncles", "future_validator_info")
-
-var validOnBlockParams = []string{"name", "response", "block_height", "tag"}
-
-var validBeaconBlockParams = []string{"hash", "header", "slot", "body"}
-
-var validTxReceiptParams = []string{"block_hash", "block_number", "contract_address",
-	"cumulative_gas_used", "effective_gas_price", "from", "gas_used", "logs", "logs_bloom",
-	"status", "to", "transaction_hash", "transaction_index", "type", "txs_count"}
-
-var validParams = map[types.FeedType][]string{
-	types.NewTxsFeed:     validTxParams,
-	types.BDNBlocksFeed:  validBlockParams,
-	types.NewBlocksFeed:  validBlockParams,
-	types.PendingTxsFeed: validTxParams,
-	types.OnBlockFeed:    validOnBlockParams,
-	types.TxReceiptsFeed: validTxReceiptParams,
-
-	// Beacon
-	types.NewBeaconBlocksFeed: validBeaconBlockParams,
-	types.BDNBeaconBlocksFeed: validBeaconBlockParams,
+	return nil
 }
 
-var defaultTxParams = append(txContentFields, "tx_hash", "local_region", "time")
-
-var availableFilters = []string{"gas", "gas_price", "value", "to", "from", "method_id", "type", "chain_id", "max_fee_per_gas", "max_priority_fee_per_gas"}
-
-var operators = []string{"=", ">", "<", "!=", ">=", "<=", "in"}
-var operands = []string{"and", "or"}
-
-var availableFeeds = []types.FeedType{types.NewTxsFeed, types.NewBlocksFeed, types.BDNBlocksFeed, types.PendingTxsFeed, types.OnBlockFeed, types.TxReceiptsFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed}
-
-// PayloadData - Struct that corresponds to the structure of mevSearcher payload
-type PayloadData struct {
-	UUID            string   `json:"uuid,omitempty"`
-	Transactions    []string `json:"txs,omitempty"`
-	BlockNumber     string   `json:"blockNumber,omitempty"`
-	MinTimestamp    int      `json:"minTimestamp,omitempty"`
-	MaxTimestamp    int      `json:"maxTimestamp,omitempty"`
-	RevertingHashes []string `json:"revertingTxHashes,omitempty"`
-	Frontrunning    bool     `json:"frontrunning,omitempty"`
+func (ch *ClientHandler) shutdownWSServer() {
+	ch.log.Infof("shutting down websocket server")
+	ch.feedManager.CloseAllClientConnections()
+	err := ch.websocketServer.Shutdown(ch.feedManager.context)
+	if err != nil {
+		ch.log.Errorf("encountered error shutting down websocket server %v: %v", ch.feedManager.cfg.WebsocketPort, err)
+	}
 }
 
-// NewWSServer creates and returns a new websocket server managed by FeedManager
-func NewWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool) (sdnmessage.Account, error)) *http.Server {
+// newWSServer creates and returns a new websocket server managed by FeedManager
+func newWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool) (sdnmessage.Account, error)) *http.Server {
 	handler := http.NewServeMux()
 	wsHandler := func(responseWriter http.ResponseWriter, request *http.Request) {
 		// if enable client handler - skip authorization
@@ -269,19 +191,6 @@ func NewWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) 
 	return &server
 }
 
-func errorWithDelay(w http.ResponseWriter, r *http.Request, msg string) {
-	// sleep for 10 seconds to prevent the client (bot) to reissue the same requests in a loop
-	c, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Errorf("error replying with delay to request from RemoteAddr %v - %v", r.RemoteAddr, err.Error())
-		time.Sleep(ErrWSConnDelay)
-		return
-	}
-	_ = c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, msg))
-	time.Sleep(ErrWSConnDelay)
-	c.Close()
-}
-
 // handleWsClientConnection - when new http connection is made we get here upgrade to ws, and start handling
 func handleWSClientConnection(feedManager *FeedManager, w http.ResponseWriter, r *http.Request, accountModel sdnmessage.Account, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool, pendingTxsSourceFromNode *bool) {
 	log.Debugf("new web-socket connection from %v", r.RemoteAddr)
@@ -315,62 +224,17 @@ func handleWSClientConnection(feedManager *FeedManager, w http.ResponseWriter, r
 	_ = jsonrpc2.NewConn(r.Context(), websocketjsonrpc2.NewObjectStream(connection), asyncHandler)
 }
 
-func (ch *ClientHandler) runWSServer() {
-	ch.websocketServer = NewWSServer(ch.feedManager, ch.getQuotaUsage, ch.enableBlockchainRPC, ch.pendingTxsSourceFromNode, ch.authorize)
-	ch.log.Infof("starting websockets RPC server at: %v", ch.websocketServer.Addr)
-	var err error
-	if ch.feedManager.cfg.WebsocketTLSEnabled {
-		ch.websocketServer.TLSConfig = &tls.Config{
-			ClientAuth: tls.RequestClientCert,
-		}
-		err = ch.websocketServer.ListenAndServeTLS(ch.feedManager.certFile, ch.feedManager.keyFile)
-	} else {
-		err = ch.websocketServer.ListenAndServe()
-	}
+func errorWithDelay(w http.ResponseWriter, r *http.Request, msg string) {
+	// sleep for 10 seconds to prevent the client (bot) to reissue the same requests in a loop
+	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		ch.log.Warnf("websockets RPC server is closed: %v", err)
+		log.Errorf("error replying with delay to request from RemoteAddr %v: %v", r.RemoteAddr, err.Error())
+		time.Sleep(ErrWSConnDelay)
+		return
 	}
-}
-
-func (ch *ClientHandler) shutdownWSServer() {
-	ch.log.Infof("shutting down websocket server")
-	ch.feedManager.CloseAllClientConnections()
-	err := ch.websocketServer.Shutdown(ch.feedManager.context)
-	if err != nil {
-		ch.log.Errorf("encountered error shutting down websocket server %v: %v", ch.feedManager.cfg.WebsocketPort, err)
-	}
-}
-
-// ManageWSServer manage the ws connection of the blockchain node
-func (ch *ClientHandler) ManageWSServer(activeManagement bool) {
-	if activeManagement {
-		for {
-			select {
-			case syncStatus := <-ch.feedManager.nodeWSManager.ReceiveNodeSyncStatusUpdate():
-				if syncStatus == blockchain.Unsynced {
-					ch.shutdownWSServer()
-					ch.feedManager.subscriptionServices.SendSubscriptionResetNotification(make([]sdnmessage.SubscriptionModel, 0))
-				} else {
-					go ch.runWSServer()
-				}
-			}
-		}
-	} else {
-		go ch.runWSServer()
-		for {
-			select {
-			case <-ch.feedManager.nodeWSManager.ReceiveNodeSyncStatusUpdate():
-				// consume update
-			}
-		}
-	}
-}
-
-// ManageHTTPServer runs http server for the gateway client handler
-func (ch *ClientHandler) ManageHTTPServer(ctx context.Context) {
-	ch.httpServer.Start()
-	<-ctx.Done()
-	ch.httpServer.Stop()
+	_ = c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, msg))
+	time.Sleep(ErrWSConnDelay)
+	c.Close()
 }
 
 // SendErrorMsg formats and sends an RPC error message back to the client
@@ -385,32 +249,6 @@ func SendErrorMsg(ctx context.Context, code jsonrpc.RPCErrorCode, data string, c
 		// TODO: move this to caller and add identifying information
 		log.Errorf("could not respond to client with error message: %v", err)
 	}
-}
-
-func reply(ctx context.Context, conn *jsonrpc2.Conn, ID jsonrpc2.ID, result interface{}) error {
-	if err := conn.Reply(ctx, ID, result); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (h *handlerObj) validateFeed(feedName types.FeedType, feedStreaming sdnmessage.BDNFeedService, includes []string, filters []string) error {
-	expireDateTime, _ := time.Parse(bxgateway.TimeDateLayoutISO, feedStreaming.ExpireDate)
-	if time.Now().UTC().After(expireDateTime) {
-		return fmt.Errorf("%v is not allowed or date has been expired", feedName)
-	}
-	if feedStreaming.Feed.AllowFiltering && utils.Exists("all", feedStreaming.Feed.AvailableFields) {
-		return nil
-	}
-	for _, include := range includes {
-		if !utils.Exists(include, feedStreaming.Feed.AvailableFields) {
-			return fmt.Errorf("including %v: %v is not allowed", feedName, include)
-		}
-	}
-	if !feedStreaming.Feed.AllowFiltering && len(filters) > 0 {
-		return fmt.Errorf("filtering in %v is not allowed", feedName)
-	}
-	return nil
 }
 
 func filterAndInclude(clientReq *clientReq, tx *types.NewTransactionNotification, remoteAddress string, accountID types.AccountID) *TxResult {
@@ -462,1082 +300,8 @@ func filterAndInclude(clientReq *clientReq, tx *types.NewTransactionNotification
 	return &response
 }
 
-func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan types.Notification, subscriptionID string, clientReq *clientReq, conn *jsonrpc2.Conn, req *jsonrpc2.Request, feedName types.FeedType) error {
-	for {
-		select {
-		case <-conn.DisconnectNotify():
-			return nil
-		case notification, ok := <-feedChan:
-			continueProcessing := true
-			multiTxsResponse := MultiTransactions{Subscription: subscriptionID}
-			if !ok {
-				if h.FeedManager.SubscriptionExists(subscriptionID) {
-					SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
-				}
-				return errors.New("error when reading new notification")
-			}
-			switch feedName {
-			case types.NewTxsFeed:
-				tx := (notification).(*types.NewTransactionNotification)
-				response := filterAndInclude(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
-				if response != nil {
-					multiTxsResponse.Result = append(multiTxsResponse.Result, *response)
-				}
-			case types.PendingTxsFeed:
-				tx := (notification).(*types.PendingTransactionNotification)
-				response := filterAndInclude(clientReq, &tx.NewTransactionNotification, h.remoteAddress, h.connectionAccount.AccountID)
-				if response != nil {
-					multiTxsResponse.Result = append(multiTxsResponse.Result, *response)
-				}
-			}
-			for continueProcessing {
-				select {
-				case <-conn.DisconnectNotify():
-					return nil
-				case notification, ok := <-feedChan:
-					if !ok {
-						if h.FeedManager.SubscriptionExists(subscriptionID) {
-							SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
-						}
-						return errors.New("error when reading new notification")
-					}
-					switch feedName {
-					case types.NewTxsFeed:
-						tx := (notification).(*types.NewTransactionNotification)
-						response := filterAndInclude(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
-						if response != nil {
-							multiTxsResponse.Result = append(multiTxsResponse.Result, *response)
-						}
-					case types.PendingTxsFeed:
-						tx := (notification).(*types.PendingTransactionNotification)
-						response := filterAndInclude(clientReq, &tx.NewTransactionNotification, h.remoteAddress, h.connectionAccount.AccountID)
-						if response != nil {
-							multiTxsResponse.Result = append(multiTxsResponse.Result, *response)
-						}
-					}
-					if len(multiTxsResponse.Result) >= 50 {
-						continueProcessing = false
-					}
-				default:
-					continueProcessing = false
-				}
-			}
-			if len(multiTxsResponse.Result) > 0 {
-				err := conn.Notify(ctx, "subscribe", multiTxsResponse)
-				if err != nil {
-					h.log.Errorf("error notify to subscriptionID: %v : %v ", subscriptionID, err.Error())
-					return err
-				}
-			}
-		}
-	}
-}
-
-// Handle - handling client request
-func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
-	start := time.Now()
-	defer func() {
-		if jsonrpc.RPCRequestType(req.Method) != jsonrpc.RPCSubscribe && len(h.headers[types.SDKVersionHeaderKey]) > 0 {
-			h.stats.LogSDKInfo(
-				h.headers[types.SDKBlockchainHeaderKey],
-				req.Method,
-				h.headers[types.SDKCodeLanguageHeaderKey],
-				h.headers[types.SDKVersionHeaderKey],
-				types.WebSocketFeed,
-				start,
-				time.Now(),
-			)
-		}
-		h.log.Debugf("websocket handling for method %v ended. Duration %v", jsonrpc.RPCRequestType(req.Method), time.Since(start))
-	}()
-
-	ci := types.ClientInfo{
-		RemoteAddress: h.remoteAddress,
-		AccountID:     h.connectionAccount.AccountID,
-		Tier:          string(h.connectionAccount.TierName),
-		MetaInfo:      h.headers,
-	}
-
-	switch jsonrpc.RPCRequestType(req.Method) {
-	case jsonrpc.RPCSubscribe:
-		request, err := h.createClientReq(req)
-		if err != nil {
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
-			return
-		}
-		feedName := request.feed
-		if len(h.FeedManager.nodeWSManager.Providers()) == 0 {
-			switch request.feed {
-			case types.NewTxsFeed:
-			case types.BDNBlocksFeed:
-			case types.NewBeaconBlocksFeed:
-			case types.BDNBeaconBlocksFeed:
-			case types.NewBlocksFeed:
-				// Blocks in consensus come not from websocket
-				if h.FeedManager.networkNum == bxgateway.RopstenNum || h.FeedManager.networkNum == bxgateway.GoerliNum || h.FeedManager.networkNum == bxgateway.MainnetNum {
-					break
-				}
-
-				fallthrough
-			default:
-				errMsg := fmt.Sprintf("%v feed requires a websockets endpoint to be specifed via either --eth-ws-uri or --multi-node startup parameter", feedName)
-				SendErrorMsg(ctx, jsonrpc.InvalidParams, errMsg, conn, req.ID)
-				return
-			}
-		}
-		var filters string
-		if request.expr != nil {
-			filters = request.expr.String()
-		}
-		ro := types.ReqOptions{
-			Filters:  filters,
-			Includes: strings.Join(request.includes, ","),
-		}
-		sub, errSubscribe := h.FeedManager.Subscribe(request.feed, types.WebSocketFeed, conn, ci, ro, false)
-		if errSubscribe != nil {
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, errSubscribe.Error(), conn, req.ID)
-			return
-		}
-		subscriptionID := sub.SubscriptionID
-
-		defer h.FeedManager.Unsubscribe(subscriptionID, false, "")
-		if err = reply(ctx, conn, req.ID, subscriptionID); err != nil {
-			h.log.Errorf("error reply to %v with subscriptionID: %v : %v ", h.remoteAddress, subscriptionID, err)
-			SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
-			return
-		}
-		h.FeedManager.stats.LogSubscribeStats(subscriptionID,
-			h.connectionAccount.AccountID,
-			feedName,
-			h.connectionAccount.TierName,
-			h.remoteAddress,
-			h.FeedManager.networkNum,
-			request.includes,
-			filters,
-			"")
-
-		if request.MultiTxs {
-			if feedName != types.NewTxsFeed && feedName != types.PendingTxsFeed {
-				SendErrorMsg(ctx, jsonrpc.InvalidParams, "multi tx support only in new txs or pending txs", conn, req.ID)
-				log.Debugf("multi tx support only in new txs or pending txs, subscription id %v, account id %v, remote addr %v", subscriptionID, h.connectionAccount.AccountID, h.remoteAddress)
-				return
-			}
-			err := h.subscribeMultiTxs(ctx, sub.FeedChan, subscriptionID, request, conn, req, feedName)
-			if err != nil {
-				log.Errorf("error while processing %v (%v) with multi tx argument, %v", feedName, subscriptionID, err)
-				return
-			}
-		}
-
-		for {
-			select {
-			case <-conn.DisconnectNotify():
-				return
-			case errMsg := <-sub.ErrMsgChan:
-				SendErrorMsg(ctx, jsonrpc.InvalidParams, errMsg, conn, req.ID)
-				return
-			case notification, ok := <-(sub.FeedChan):
-				if !ok {
-					if h.FeedManager.SubscriptionExists(subscriptionID) {
-						SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
-					}
-					return
-				}
-
-				switch feedName {
-				case types.NewTxsFeed:
-					tx := (notification).(*types.NewTransactionNotification)
-					if h.sendTxNotification(ctx, subscriptionID, request, conn, tx) != nil {
-						return
-					}
-				case types.PendingTxsFeed:
-					tx := (notification).(*types.PendingTransactionNotification)
-					if h.sendTxNotification(ctx, subscriptionID, request, conn, &tx.NewTransactionNotification) != nil {
-						return
-					}
-				case types.BDNBlocksFeed, types.NewBlocksFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed:
-					if h.sendNotification(ctx, subscriptionID, request, conn, notification) != nil {
-						return
-					}
-				case types.TxReceiptsFeed:
-					block := notification.(*types.EthBlockNotification)
-					sendTxReceiptsNotification := func(notification *types.TxReceiptNotification) error {
-						return h.sendNotification(ctx, subscriptionID, request, conn, notification)
-					}
-					err = handleTxReceipts(h.FeedManager, block, sendTxReceiptsNotification)
-					if err != nil {
-						SendErrorMsg(ctx, jsonrpc.InvalidRequest, err.Error(), conn, req.ID)
-						return
-					}
-				case types.OnBlockFeed:
-					block := notification.(*types.EthBlockNotification)
-					sendEthOnBlockWsNotification := func(notification *types.OnBlockNotification) error {
-						return h.sendNotification(ctx, subscriptionID, request, conn, notification)
-					}
-
-					err = handleEthOnBlock(h.FeedManager, block, *request.calls, sendEthOnBlockWsNotification)
-					if err != nil {
-						SendErrorMsg(ctx, jsonrpc.InvalidRequest, err.Error(), conn, req.ID)
-						return
-					}
-				}
-			}
-		}
-	case jsonrpc.RPCUnsubscribe:
-		var params []string
-		if req.Params == nil {
-			err := fmt.Errorf("params is missing in the request")
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
-			return
-		}
-		_ = json.Unmarshal(*req.Params, &params)
-		if len(params) != 1 {
-			err := fmt.Errorf("params %v with incorrect length", params)
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
-			return
-		}
-		uid := params[0]
-		if err := h.FeedManager.Unsubscribe(uid, false, ""); err != nil {
-			h.log.Infof("subscription id %v was not found", uid)
-			if err := reply(ctx, conn, req.ID, "false"); err != nil {
-				h.log.Errorf("error reply to %v on unsubscription on subscriptionID: %v : %v ", h.remoteAddress, uid, err)
-				SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
-				return
-			}
-		}
-		if err := reply(ctx, conn, req.ID, "true"); err != nil {
-			h.log.Errorf("error reply to %v on unsubscription on subscriptionID: %v : %v ", h.remoteAddress, uid, err)
-			SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
-			return
-		}
-	case jsonrpc.RPCTx:
-		if h.FeedManager.accountModel.AccountID != h.connectionAccount.AccountID {
-			err := fmt.Errorf("blxr_tx is not allowed when account authentication is different from the node account")
-			if h.FeedManager.accountModel.AccountID == types.BloxrouteAccountID {
-				h.log.Infof("received a tx from user account %v, remoteAddr %v, %v", h.connectionAccount.AccountID, h.remoteAddress, err)
-			} else {
-				h.log.Errorf("%v. account auth: %v, node account: %v ", err, h.connectionAccount.AccountID, h.FeedManager.accountModel.AccountID)
-				SendErrorMsg(ctx, jsonrpc.InvalidRequest, err.Error(), conn, req.ID)
-			}
-			return
-		}
-		if req.Params == nil {
-			err := fmt.Errorf("params is missing in the request")
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
-			return
-		}
-		var params jsonrpc.RPCTxPayload
-		err := json.Unmarshal(*req.Params, &params)
-		if err != nil {
-			h.log.Errorf("unmarshal req.Params error - %v", err.Error())
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
-			return
-		}
-
-		// if user tried to send transaction directly to the internal gateway, return error
-		if h.FeedManager.accountModel.AccountID == types.BloxrouteAccountID && types.AccountID(params.OriginalSenderAccountID) == types.EmptyAccountID {
-			h.log.Errorf("cannot send transaction to internal gateway directly")
-			SendErrorMsg(ctx, jsonrpc.InvalidRequest, "failed to send transaction", conn, req.ID)
-			return
-		}
-
-		var ws connections.RPCConn
-		if h.connectionAccount.AccountID == types.BloxrouteAccountID {
-			// Tx sent from cloud services, need to update account ID of the connection to be the origin sender
-			ws = connections.NewRPCConn(types.AccountID(params.OriginalSenderAccountID), h.remoteAddress, h.FeedManager.networkNum, utils.CloudAPI)
-		} else {
-			ws = connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.FeedManager.networkNum, utils.Websocket)
-		}
-
-		txHash, ok := h.handleSingleTransaction(ctx, conn, req.ID, params.Transaction, ws, params.ValidatorsOnly, true, params.NextValidator, params.Fallback, h.FeedManager.nextValidatorMap, h.FeedManager.validatorStatusMap, params.NodeValidation, params.FrontRunningProtection)
-		if !ok {
-			return
-		}
-
-		response := rpcTxResponse{
-			TxHash: txHash,
-		}
-
-		if err = reply(ctx, conn, req.ID, response); err != nil {
-			h.log.Errorf("%v reply error - %v", jsonrpc.RPCTx, err)
-			return
-		}
-		h.log.Infof("blxr_tx: Hash - 0x%v", response.TxHash)
-	case jsonrpc.RPCBatchTx:
-		var txHashes []string
-		if h.FeedManager.accountModel.AccountID != h.connectionAccount.AccountID {
-			err := fmt.Errorf("blxr_batch_tx is not allowed when account authentication is different from the node account")
-			h.log.Errorf("%v. account auth: %v, node account: %v ", err, h.connectionAccount.AccountID, h.FeedManager.accountModel.AccountID)
-			return
-		}
-		if req.Params == nil {
-			err := fmt.Errorf("params is missing in the request")
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
-			return
-		}
-		var params jsonrpc.RPCBatchTxPayload
-		err := json.Unmarshal(*req.Params, &params)
-		if err != nil {
-			h.log.Errorf("unmarshal req.Params error - %v", err.Error())
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
-			return
-		}
-
-		var ws connections.RPCConn
-		if h.connectionAccount.AccountID == types.BloxrouteAccountID {
-			// Tx sent from cloud services, need to update account ID of the connection to be the origin sender
-			ws = connections.NewRPCConn(types.AccountID(params.OriginalSenderAccountID), h.remoteAddress, h.FeedManager.networkNum, utils.CloudAPI)
-		} else {
-			ws = connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.FeedManager.networkNum, utils.Websocket)
-		}
-
-		for _, transaction := range params.Transactions {
-			txHash, ok := h.handleSingleTransaction(ctx, conn, req.ID, transaction, ws, params.ValidatorsOnly, false, false, 0, nil, nil, false, false)
-			if !ok {
-				continue
-			}
-			txHashes = append(txHashes, txHash)
-		}
-
-		if len(txHashes) == 0 {
-			err = fmt.Errorf("all transactions are invalid")
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
-			return
-		}
-
-		response := rpcBatchTxResponse{
-			TxHashes: txHashes,
-		}
-
-		if err = reply(ctx, conn, req.ID, response); err != nil {
-			h.log.Errorf("%v reply error - %v", jsonrpc.RPCBatchTx, err)
-			return
-		}
-		h.log.Infof("blxr_batch_tx: Hashes - %v", response.TxHashes)
-	case jsonrpc.RPCPing:
-		response := rpcPingResponse{
-			Pong: time.Now().UTC().Format(bxgateway.MicroSecTimeFormat),
-		}
-		if err := reply(ctx, conn, req.ID, response); err != nil {
-			h.log.Errorf("%v reply error - %v", jsonrpc.RPCPing, err)
-		}
-	case jsonrpc.RPCQuotaUsage:
-		accountID := fmt.Sprint(h.connectionAccount.AccountID)
-		quotaRes, err := h.getQuotaUsage(accountID)
-		if err != nil {
-			sendErr := fmt.Errorf("failed to fetch quota usage: %v", err)
-			SendErrorMsg(ctx, jsonrpc.MethodNotFound, sendErr.Error(), conn, req.ID)
-			return
-		}
-		if err = reply(ctx, conn, req.ID, quotaRes); err != nil {
-			h.log.Errorf("%v reply error - %v", jsonrpc.RPCQuotaUsage, err)
-		}
-	case jsonrpc.RPCMEVSearcher:
-		// Handler is deprecated and will be removed in the future
-		if h.FeedManager.accountModel.AccountID != h.connectionAccount.AccountID {
-			err := fmt.Errorf("blxr_mev_searcher is not allowed when account authentication is different from the node account")
-			h.log.Errorf("%v. account auth: %v, node account: %v ", err, h.connectionAccount.AccountID, h.FeedManager.accountModel.AccountID)
-			SendErrorMsg(ctx, jsonrpc.AccountIDError, err.Error(), conn, req.ID)
-			return
-		}
-
-		if req.Params == nil {
-			paramsErr := "failed to unmarshal req.Params for mevSearcher, params not found"
-			h.log.Error(paramsErr)
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, paramsErr, conn, req.ID)
-			return
-		}
-
-		// Defaults
-		params := jsonrpc.RPCMEVSearcherPayload{
-			BlockchainNetwork: bxgateway.Mainnet,
-			Frontrunning:      true,
-		}
-		if err := json.Unmarshal(*req.Params, &params); err != nil {
-			h.log.Errorf("failed to unmarshal req.Params for mevSearcher, error: %v", err.Error())
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
-			return
-		}
-
-		if len(params.Payload) != 1 {
-			payloadErr := "received invalid number of mevSearcher payload, must be 1 element"
-			h.log.Errorf(payloadErr)
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, payloadErr, conn, req.ID)
-			return
-		}
-
-		mevBundleParams := &jsonrpc.RPCBundleSubmissionPayload{
-			BlockchainNetwork: params.BlockchainNetwork,
-			MEVBuilders:       params.MEVBuilders,
-			Frontrunning:      params.Frontrunning,
-			Transaction:       params.Payload[0].Txs,
-			BlockNumber:       params.Payload[0].BlockNumber,
-			MinTimestamp:      params.Payload[0].MinTimestamp,
-			MaxTimestamp:      params.Payload[0].MaxTimestamp,
-			RevertingHashes:   params.Payload[0].RevertingTxHashes,
-			UUID:              params.Payload[0].UUID,
-		}
-
-		h.handleMEVBundle(ctx, conn, req, mevBundleParams)
-	case jsonrpc.RPCBundleSubmission:
-		if h.FeedManager.accountModel.AccountID != h.connectionAccount.AccountID {
-			err := fmt.Errorf("blxr_submit_bundle is not allowed when account authentication is different from the node account")
-			h.log.Errorf("%v. account auth: %v, node account: %v ", err, h.connectionAccount.AccountID, h.FeedManager.accountModel.AccountID)
-			SendErrorMsg(ctx, jsonrpc.AccountIDError, err.Error(), conn, req.ID)
-			return
-		}
-
-		if req.Params == nil {
-			err := fmt.Errorf("params is missing in the request")
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
-			return
-		}
-
-		// Defaults
-		params := jsonrpc.RPCBundleSubmissionPayload{
-			BlockchainNetwork: bxgateway.Mainnet,
-			Frontrunning:      true,
-		}
-
-		if err := json.Unmarshal(*req.Params, &params); err != nil {
-			h.log.Errorf("failed to unmarshal req.Params for mevBundle, error: %v", err.Error())
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
-			return
-		}
-
-		h.handleMEVBundle(ctx, conn, req, &params)
-	case jsonrpc.RPCChangeNewPendingTxFromNode:
-		if h.FeedManager.accountModel.AccountID != h.connectionAccount.AccountID {
-			err := fmt.Errorf("new_pending_txs_source_from_node is not allowed when account authentication is different from the node account")
-			h.log.Errorf("%v. account auth: %v, node account: %v ", err, h.connectionAccount.AccountID, h.FeedManager.accountModel.AccountID)
-			SendErrorMsg(ctx, jsonrpc.AccountIDError, err.Error(), conn, req.ID)
-			return
-		}
-
-		var update bool
-		if err := json.Unmarshal(*req.Params, &update); err != nil {
-			h.log.Errorf("failed to unmarshal req.Params for the %v request, error: %v", jsonrpc.RPCChangeNewPendingTxFromNode, err.Error())
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
-			return
-		}
-
-		log.Infof("received %v request, changing it from %v to %v ", jsonrpc.RPCChangeNewPendingTxFromNode, *h.pendingTxsSourceFromNode, update)
-		*h.pendingTxsSourceFromNode = update
-		if err := reply(ctx, conn, req.ID, "succeed"); err != nil {
-			h.log.Errorf("%v reply error - %v", req.Method, err)
-			return
-		}
-
-	default:
-		if !h.enableBlockchainRPC {
-			err := fmt.Errorf("got unsupported method name: %v", req.Method)
-			SendErrorMsg(ctx, jsonrpc.MethodNotFound, err.Error(), conn, req.ID)
-			return
-		}
-		ws, synced := h.FeedManager.nodeWSManager.SyncedProvider()
-		if !synced {
-			err := fmt.Errorf("your blockchain node is either not synced or the gateway does not have an active websocket connection to the node - request %v was not sent in order to prevent errors", req.Method)
-			SendErrorMsg(ctx, jsonrpc.MethodNotFound, err.Error(), conn, req.ID)
-			return
-		}
-
-		// only unmarshal params if they are present in the request
-		var rpcParams []interface{}
-		if req.Params != nil {
-			err := json.Unmarshal(*req.Params, &rpcParams)
-			if err != nil {
-				err = fmt.Errorf("unable to forward RPC request %v to node, failed to unmarshal params %v: %v", req.Method, req.Params, err)
-				SendErrorMsg(ctx, jsonrpc.InvalidRequest, err.Error(), conn, req.ID)
-				return
-			}
-		}
-
-		switch jsonrpc.RPCRequestType(req.Method) {
-		case jsonrpc.RPCEthSendRawTransaction:
-			if len(rpcParams) != 1 {
-				err := fmt.Errorf("unable to process eth_sendRawTransaction RPC request: expected 1 param, given %v", len(rpcParams))
-				SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
-				return
-			}
-			rawTxParam := rpcParams[0]
-			var rawTxStr string
-			switch rawTxParam.(type) {
-			case string:
-				rawTxStr = rawTxParam.(string)
-				if len(rawTxStr) < 3 {
-					err := fmt.Errorf("unable to process eth_sendRawTransaction RPC request: raw transaction string is too short")
-					SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
-					return
-				}
-				if rawTxStr[0:2] != "0x" {
-					err := fmt.Errorf("unable to process eth_sendRawTransaction RPC request: expected raw transaction string to begin with '0x'")
-					SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
-					return
-				}
-				rawTxStr = rawTxStr[2:]
-			default:
-				err := fmt.Errorf("unable to process eth_sendRawTransaction RPC request: param must be a raw transaction string")
-				SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
-				return
-			}
-			reqWS := connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.FeedManager.networkNum, utils.Websocket)
-			txHash, ok := h.handleSingleTransaction(ctx, conn, req.ID, rawTxStr, reqWS, false, true, false, 0, nil, nil, false, false)
-			if !ok {
-				err := fmt.Errorf("unable to process eth_sendRawTransaction RPC request")
-				SendErrorMsg(ctx, jsonrpc.InvalidRequest, err.Error(), conn, req.ID)
-				return
-			}
-
-			if err := reply(ctx, conn, req.ID, "0x"+txHash); err != nil {
-				h.log.Errorf("%v reply error - %v", req.Method, err)
-				return
-			}
-		case jsonrpc.RPCEthSubscribe:
-			if len(rpcParams) < 1 || len(rpcParams) > 2 {
-				err := fmt.Errorf("unable to process eth_subscribe RPC request: expected at least 1 param but no more than 2, given %v", len(rpcParams))
-				SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
-				return
-			}
-
-			feedType := rpcParams[0].(string)
-			switch feedType {
-			case "newPendingTransactions":
-				var feed types.FeedType
-				var err error
-				if *h.pendingTxsSourceFromNode {
-					feed = types.PendingTxsFeed
-				} else {
-					feed = types.NewTxsFeed
-				}
-
-				request := &clientReq{}
-				request.feed = feed
-				request.includes = []string{"tx_hash"}
-
-				ro := types.ReqOptions{
-					Includes: strings.Join(request.includes, ","),
-				}
-				// since we are replacing newPendingTransactions with newTxs/pendingTx, any existing newTxs/pendingTxs suppose to make newPendingTransactions a duplicate subscription.
-				// But this is used only in external gateway where gateway account id is the same with request account id, so this is avoided
-				sub, errSubscribe := h.FeedManager.Subscribe(request.feed, types.WebSocketFeed, conn, ci, ro, true)
-				if errSubscribe != nil {
-					SendErrorMsg(ctx, jsonrpc.InvalidParams, errSubscribe.Error(), conn, req.ID)
-					return
-				}
-
-				subscriptionID := sub.SubscriptionID
-				defer h.FeedManager.Unsubscribe(subscriptionID, false, "")
-				if err = reply(ctx, conn, req.ID, subscriptionID); err != nil {
-					h.log.Errorf("error reply to %v with subscriptionID: %v : %v ", h.remoteAddress, subscriptionID, err)
-					SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
-					return
-				}
-
-				for {
-					select {
-					case <-conn.DisconnectNotify():
-						return
-					case errMsg := <-sub.ErrMsgChan:
-						SendErrorMsg(ctx, jsonrpc.InvalidParams, errMsg, conn, req.ID)
-						return
-					case notification, ok := <-sub.FeedChan:
-						if !ok {
-							if h.FeedManager.SubscriptionExists(subscriptionID) {
-								SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
-							}
-							return
-						}
-
-						switch request.feed {
-						case types.NewTxsFeed:
-							tx := (notification).(*types.NewTransactionNotification)
-							if h.sendTxNotificationEthFormat(ctx, subscriptionID, request, conn, tx) != nil {
-								return
-							}
-						case types.PendingTxsFeed:
-							tx := (notification).(*types.PendingTransactionNotification)
-							if h.sendTxNotificationEthFormat(ctx, subscriptionID, request, conn, &tx.NewTransactionNotification) != nil {
-								return
-							}
-						}
-					}
-				}
-			case "newHeads":
-				request := &clientReq{}
-				request.feed = types.NewBlocksFeed
-				request.includes = []string{"header", "hash", "tx_contents.nonce"}
-				ro := types.ReqOptions{
-					Includes: strings.Join(request.includes, ","),
-				}
-				// since we are replacing newPendingTransactions with newTxs/pendingTx, any existing newTxs/pendingTxs suppose to make newPendingTransactions a duplicate subscription.
-				// But this is used only in external gateway where gateway account id is the same with request account id, so this is avoided
-				sub, errSubscribe := h.FeedManager.Subscribe(request.feed, types.WebSocketFeed, conn, ci, ro, true)
-				if errSubscribe != nil {
-					SendErrorMsg(ctx, jsonrpc.InvalidParams, errSubscribe.Error(), conn, req.ID)
-					return
-				}
-
-				subscriptionID := sub.SubscriptionID
-				defer h.FeedManager.Unsubscribe(subscriptionID, false, "")
-				if err := reply(ctx, conn, req.ID, subscriptionID); err != nil {
-					h.log.Errorf("error reply to %v with subscriptionID: %v : %v ", h.remoteAddress, subscriptionID, err)
-					SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
-					return
-				}
-
-				for {
-					select {
-					case <-conn.DisconnectNotify():
-						return
-					case errMsg := <-sub.ErrMsgChan:
-						SendErrorMsg(ctx, jsonrpc.InvalidParams, errMsg, conn, req.ID)
-						return
-					case notification, ok := <-sub.FeedChan:
-						if !ok {
-							if h.FeedManager.SubscriptionExists(subscriptionID) {
-								SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
-							}
-							return
-						}
-						bxBlock := (notification).(*types.EthBlockNotification)
-						NewHeadsBlock := types.NewHeadsBlockFromEthBlockNotification(bxBlock)
-						if h.sendNotification(ctx, subscriptionID, request, conn, NewHeadsBlock) != nil {
-							return
-						}
-					}
-				}
-			default:
-				var err error
-				var sub *blockchain.Subscription
-				subscribeChan := make(chan interface{})
-				if len(rpcParams) > 1 {
-					sub, err = ws.Subscribe(subscribeChan, feedType, rpcParams[1])
-				} else {
-					sub, err = ws.Subscribe(subscribeChan, feedType)
-				}
-
-				if err != nil {
-					SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
-					return
-				}
-
-				subscription := sub.Sub.(*rpc.ClientSubscription)
-				defer subscription.Unsubscribe()
-				sid, err := utils.GenerateU128()
-				if err != nil {
-					log.Errorf("can't generate u128 subscription ID, %v", err.Error())
-					SendErrorMsg(ctx, jsonrpc.InternalError, fmt.Sprintf("can't assign subscriptionID for %v request", feedType), conn, req.ID)
-					return
-				}
-
-				cancelChan := make(chan bool, 1)
-				h.ethSubscribeIDToChanMap[sid] = cancelChan
-				defer delete(h.ethSubscribeIDToChanMap, sid)
-
-				if err := reply(ctx, conn, req.ID, sid); err != nil {
-					h.log.Errorf("error reply to %v with subscriptionID: %v : %v ", h.remoteAddress, sid, err)
-					SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
-					return
-				}
-
-				for {
-					select {
-					case <-cancelChan:
-						return
-					case <-conn.DisconnectNotify():
-						return
-					case err := <-subscription.Err():
-						log.Errorf("failed to subscribe to eth_subscribe %v, %v", feedType, err.Error())
-						SendErrorMsg(ctx, jsonrpc.InternalError, fmt.Sprintf("failed to subscribe to eth_subscribe %v, %v", feedType, err.Error()), conn, req.ID)
-						return
-					case response := <-subscribeChan:
-						err := h.sendEthSubscribeNotification(ctx, sid, conn, response)
-						if err != nil {
-							h.log.Errorf("%v reply error - %v", req.Method, err)
-							return
-						}
-					}
-				}
-			}
-		case jsonrpc.RPCEthUnsubscribe:
-			if len(rpcParams) != 1 {
-				err := fmt.Errorf("unable to process eth_unsubscribe RPC request: expected only 1 param, given %v", len(rpcParams))
-				SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
-				return
-			}
-
-			sid := rpcParams[0].(string)
-			cancel, exit := h.ethSubscribeIDToChanMap[sid]
-			if !exit {
-				// unsubscribe with feed manager
-				if err := h.FeedManager.Unsubscribe(sid, false, ""); err != nil {
-					h.log.Infof("subscription id %v was not found", sid)
-					if err := reply(ctx, conn, req.ID, "false"); err != nil {
-						h.log.Errorf("error reply to %v on unsubscription on subscriptionID: %v : %v ", h.remoteAddress, sid, err)
-						SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
-					}
-					return
-				}
-			} else {
-				// unsubscribe by finding generated sid, and send signal to cancel chan
-				cancel <- true
-			}
-
-			if err := reply(ctx, conn, req.ID, "true"); err != nil {
-				h.log.Errorf("error reply to %v on unsubscription on subscriptionID: %v : %v ", h.remoteAddress, sid, err)
-				SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, req.ID)
-				return
-			}
-		default:
-			response, nodeErr := ws.CallRPC(req.Method, rpcParams, blockchain.DefaultRPCOptions)
-			if nodeErr != nil {
-				replyErr := reply(ctx, conn, req.ID, nodeErr)
-				if replyErr != nil {
-					h.log.Errorf("%v reply error - %v", req.Method, replyErr)
-					return
-				}
-				return
-			}
-
-			err := reply(ctx, conn, req.ID, response)
-			if err != nil {
-				h.log.Errorf("%v reply error - %v", req.Method, err)
-				return
-			}
-		}
-	}
-}
-
-func (h *handlerObj) handleMEVBundle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request, params *jsonrpc.RPCBundleSubmissionPayload) {
-	// If MEVBuilders request parameter is empty, only send to default builders.
-	if len(params.MEVBuilders) == 0 {
-		params.MEVBuilders = map[string]string{
-			bxgateway.BloxrouteBuilderName: "",
-			bxgateway.FlashbotsBuilderName: "",
-		}
-	}
-
-	mevBundle, bundleHash, err := mevBundleFromRequest(params)
-	var result interface{}
-	if params.UUID == "" {
-		result = GatewayBundleResponse{BundleHash: bundleHash}
-	}
-	if err != nil {
-		if errors.Is(err, errBlockedTxHashes) {
-			if err := reply(ctx, conn, req.ID, result); err != nil {
-				h.log.Errorf(err.Error())
-			}
-			return
-		}
-
-		SendErrorMsg(ctx, jsonrpc2.CodeInvalidParams, err.Error(), conn, req.ID)
-		return
-	}
-	mevBundle.SetNetworkNum(h.FeedManager.networkNum)
-
-	if !h.connectionAccount.TierName.IsElite() {
-		h.log.Tracef("%s rejected for non EnterpriseElite account %v tier %v", mevBundle, h.connectionAccount.AccountID, h.connectionAccount.TierName)
-		SendErrorMsg(ctx, jsonrpc2.CodeInvalidRequest, "EnterpriseElite account is required in order to send bundle", conn, req.ID)
-		return
-	}
-
-	var ws connections.RPCConn
-	if h.connectionAccount.AccountID == types.BloxrouteAccountID {
-		// Bundle sent from cloud services, need to update account ID of the connection to be the origin sender
-		ws = connections.NewRPCConn(types.AccountID(params.OriginalSenderAccountID), h.remoteAddress, h.FeedManager.networkNum, utils.CloudAPI)
-	} else {
-		ws = connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.FeedManager.networkNum, utils.Websocket)
-	}
-
-	if err := h.FeedManager.node.HandleMsg(mevBundle, ws, connections.RunForeground); err != nil {
-		// err here is not possible right now but anyway we don't want expose reason of internal error to the client
-		h.log.Errorf("failed to process %s: %v", mevBundle, err)
-		SendErrorMsg(ctx, jsonrpc2.CodeInternalError, "", conn, req.ID)
-		return
-	}
-
-	if err := reply(ctx, conn, req.ID, result); err != nil {
-		h.log.Errorf("%v error: %v", jsonrpc.RPCBundleSubmission, err)
-		return
-	}
-}
-
-// sendNotification - build a response according to client request and notify client
-func (h *handlerObj) sendNotification(ctx context.Context, subscriptionID string, clientReq *clientReq, conn *jsonrpc2.Conn, notification types.Notification) error {
-	response := BlockResponse{
-		Subscription: subscriptionID,
-	}
-	content := notification.WithFields(clientReq.includes)
-	response.Result = content
-	err := conn.Notify(ctx, "subscribe", response)
-	if err != nil {
-		h.log.Errorf("error reply to subscriptionID: %v : %v ", subscriptionID, err.Error())
-		return err
-	}
-	return nil
-}
-
-// sendTxNotification - build a response according to client request and notify client
-func (h *handlerObj) sendTxNotification(ctx context.Context, subscriptionID string, clientReq *clientReq, conn *jsonrpc2.Conn, tx *types.NewTransactionNotification) error {
-	result := filterAndInclude(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
-	if result == nil {
-		return nil
-	}
-	response := TxResponse{
-		Subscription: subscriptionID,
-		Result:       *result,
-	}
-
-	err := conn.Notify(ctx, "subscribe", response)
-	if err != nil {
-		h.log.Errorf("error notify to subscriptionID: %v : %v ", subscriptionID, err.Error())
-		return err
-	}
-
-	return nil
-}
-
-// sendTxNotificationEthSubscribeFormat - build a response according to client request and notify client
-func (h *handlerObj) sendTxNotificationEthFormat(ctx context.Context, subscriptionID string, clientReq *clientReq, conn *jsonrpc2.Conn, tx *types.NewTransactionNotification) error {
-	result := filterAndInclude(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
-	if result == nil {
-		return nil
-	}
-	response := EthSubscribeTxResponse{
-		Subscription: subscriptionID,
-		Result:       tx.GetHash(),
-	}
-
-	err := conn.Notify(ctx, string(jsonrpc.RPCEthSubscribe), response)
-	if err != nil {
-		h.log.Errorf("error notify to subscriptionID: %v : %v ", subscriptionID, err.Error())
-		return err
-	}
-
-	return nil
-}
-
-// sendTxNotificationEthSubscribeFormat - build a response according to client request and notify client
-func (h *handlerObj) sendEthSubscribeNotification(ctx context.Context, subscriptionID string, conn *jsonrpc2.Conn, payload interface{}) error {
-	response := EthSubscribeFeedResponse{
-		Subscription: subscriptionID,
-		Result:       payload,
-	}
-
-	err := conn.Notify(ctx, string(jsonrpc.RPCEthSubscribe), response)
-	if err != nil {
-		h.log.Errorf("error notify to subscriptionID: %v, %v ", subscriptionID, err.Error())
-		return err
-	}
-
-	return nil
-}
-
-func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) {
-	if req.Params == nil {
-		return nil, fmt.Errorf("invalid json request: params is a required field")
-	}
-	request := subscriptionRequest{}
-	var rpcParams []json.RawMessage
-	err := json.Unmarshal(*req.Params, &rpcParams)
-	if err != nil {
-		return nil, err
-	}
-	if len(rpcParams) < 2 {
-		h.log.Debugf("invalid param from request id: %v. method: %v. params: %s. remote address: %v account id: %v.",
-			req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID)
-		return nil, fmt.Errorf("number of params must be at least length 2. requested params: %s", *req.Params)
-	}
-	err = json.Unmarshal(rpcParams[0], &request.feed)
-	if err != nil {
-		return nil, err
-	}
-	if !types.Exists(request.feed, availableFeeds) {
-		h.log.Debugf("invalid param from request id: %v. method: %v. params: %s. remote address: %v account id: %v",
-			req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID)
-		return nil, fmt.Errorf("got unsupported feed name %v. possible feeds are %v", request.feed, availableFeeds)
-	}
-	if h.connectionAccount.AccountID != h.FeedManager.accountModel.AccountID &&
-		(request.feed == types.OnBlockFeed || request.feed == types.TxReceiptsFeed) {
-		err = fmt.Errorf("%v feed is not available via cloud services. %v feed is only supported on gateways", request.feed, request.feed)
-		h.log.Errorf("%v. caller account ID: %v, node account ID: %v ", err, h.connectionAccount.AccountID, h.FeedManager.accountModel.AccountID)
-		return nil, err
-	}
-
-	err = json.Unmarshal(rpcParams[1], &request.options)
-	if err != nil {
-		return nil, err
-	}
-	if request.options.Include == nil {
-		h.log.Debugf("invalid param from request id: %v. method: %v. params: %s. remote address: %v account id: %v.",
-			req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID)
-		return nil, fmt.Errorf("got unsupported params %v", string(rpcParams[1]))
-	}
-	var requestedFields []string
-	if len(request.options.Include) == 0 {
-		switch request.feed {
-		case types.BDNBlocksFeed, types.NewBlocksFeed, types.BDNBeaconBlocksFeed, types.NewBeaconBlocksFeed:
-			requestedFields = validBlockParams
-		case types.NewTxsFeed:
-			requestedFields = defaultTxParams
-		case types.PendingTxsFeed:
-			requestedFields = defaultTxParams
-		case types.OnBlockFeed:
-			requestedFields = validParams[types.OnBlockFeed]
-		case types.TxReceiptsFeed:
-			requestedFields = validParams[types.TxReceiptsFeed]
-		}
-	}
-	for _, param := range request.options.Include {
-		switch request.feed {
-		case types.BDNBlocksFeed:
-			if !utils.Exists(param, validParams[types.BDNBlocksFeed]) {
-				return nil, fmt.Errorf("got unsupported param %v", param)
-			}
-		case types.NewBlocksFeed:
-			if !utils.Exists(param, validParams[types.NewBlocksFeed]) {
-				return nil, fmt.Errorf("got unsupported param %v", param)
-			}
-		case types.BDNBeaconBlocksFeed:
-			if !utils.Exists(param, validParams[types.BDNBeaconBlocksFeed]) {
-				return nil, fmt.Errorf("got unsupported param %v", param)
-			}
-		case types.NewBeaconBlocksFeed:
-			if !utils.Exists(param, validParams[types.NewBeaconBlocksFeed]) {
-				return nil, fmt.Errorf("got unsupported param %v", param)
-			}
-		case types.NewTxsFeed:
-			if !utils.Exists(param, validTxParams) {
-				return nil, fmt.Errorf("got unsupported param %v", param)
-			}
-		case types.PendingTxsFeed:
-			if !utils.Exists(param, validTxParams) {
-				return nil, fmt.Errorf("got unsupported param %v", param)
-			}
-		case types.OnBlockFeed:
-			if !utils.Exists(param, validParams[types.OnBlockFeed]) {
-				return nil, fmt.Errorf("got unsupported param %v", param)
-			}
-		case types.TxReceiptsFeed:
-			if !utils.Exists(param, validParams[types.TxReceiptsFeed]) {
-				return nil, fmt.Errorf("got unsupported param %v", param)
-			}
-		}
-		if param == "tx_contents" {
-			requestedFields = append(requestedFields, txContentFields...)
-		}
-		requestedFields = append(requestedFields, param)
-	}
-	request.options.Include = requestedFields
-
-	var expr conditions.Expr
-	if request.options.Filters != "" {
-		expr, err = createFiltersExpression(request.options.Filters)
-		if err != nil {
-			h.log.Debugf("error when creating filters. request id: %v. method: %v. params: %s. remote address: %v account id: %v error - %v",
-				req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID, err.Error())
-			return nil, fmt.Errorf("error creating Filters- %v", err.Error())
-		}
-
-		if expr != nil {
-			h.log.Infof("GetTxContentAndFilters string - %s, GetTxContentAndFilters args - %s", expr, expr.Args())
-		}
-	}
-
-	// check if valid feed
-	var filters []string
-	if expr != nil {
-		filters = expr.Args()
-	}
-
-	feedStreaming := sdnmessage.BDNFeedService{}
-	switch request.feed {
-	case types.NewTxsFeed:
-		feedStreaming = h.connectionAccount.NewTransactionStreaming
-	case types.PendingTxsFeed:
-		feedStreaming = h.connectionAccount.PendingTransactionStreaming
-	case types.BDNBlocksFeed, types.NewBlocksFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed:
-		feedStreaming = h.connectionAccount.NewBlockStreaming
-	case types.OnBlockFeed:
-		feedStreaming = h.connectionAccount.OnBlockFeed
-	case types.TxReceiptsFeed:
-		feedStreaming = h.connectionAccount.TransactionReceiptFeed
-	}
-	err = h.validateFeed(request.feed, feedStreaming, request.options.Include, filters)
-	if err != nil {
-		return nil, err
-	}
-
-	calls := make(map[string]*RPCCall)
-	if request.feed == types.OnBlockFeed {
-		for idx, callParams := range request.options.CallParams {
-			if callParams == nil {
-				return nil, fmt.Errorf("call-params cannot be nil")
-			}
-			err = fillCalls(h.FeedManager, calls, idx, callParams)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	clientRequest := &clientReq{}
-	clientRequest.includes = request.options.Include
-	clientRequest.feed = request.feed
-	clientRequest.expr = expr
-	clientRequest.MultiTxs = request.options.MultiTxs
-	clientRequest.calls = &calls
-	return clientRequest, nil
-}
-
-func (h *handlerObj) handleSingleTransaction(ctx context.Context, conn *jsonrpc2.Conn, reqID jsonrpc2.ID, transaction string, ws connections.Conn, validatorsOnly bool, sendError bool, nextValidator bool, fallback uint16, nextValidatorMap *orderedmap.OrderedMap, validatorStatusMap *syncmap.SyncMap[string, bool], nodeValidationRequested bool, frontRunningProtection bool) (string, bool) {
-	h.FeedManager.LockPendingNextValidatorTxs()
-
-	txContent, err := types.DecodeHex(transaction)
-	if err != nil {
-		SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, reqID)
-		return "", false
-	}
-	tx, pendingReevaluation, err := ValidateTxFromExternalSource(transaction, txContent, validatorsOnly, h.FeedManager.chainID, nextValidator, fallback, nextValidatorMap, validatorStatusMap, h.FeedManager.networkNum, ws.GetAccountID(), nodeValidationRequested, h.FeedManager.nodeWSManager, ws, h.FeedManager.pendingBSCNextValidatorTxHashToInfo, frontRunningProtection)
-	h.FeedManager.UnlockPendingNextValidatorTxs()
-	if err != nil && sendError {
-		SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, reqID)
-		return "", false
-	}
-
-	if !pendingReevaluation {
-		// call the Handler. Don't invoke in a go routine
-		err = h.FeedManager.node.HandleMsg(tx, ws, connections.RunForeground)
-		if err != nil {
-			log.Errorf("failed to handle single transaction: %v", err)
-			return "", false
-		}
-	} else if fallback != 0 {
-		// BSC first validator was not accessible and fallback > BSCBlockTime
-		// in case fallback time is up before next validator is evaluated, send tx as normal tx at fallback time
-		// (tx with fallback less than BSCBlockTime are not marked as pending)
-		time.AfterFunc(time.Duration(uint64(fallback)*bxgateway.MillisecondsToNanosecondsMultiplier), func() {
-			h.FeedManager.LockPendingNextValidatorTxs()
-			defer h.FeedManager.UnlockPendingNextValidatorTxs()
-			if _, exists := h.FeedManager.pendingBSCNextValidatorTxHashToInfo[tx.Hash().String()]; exists {
-				delete(h.FeedManager.pendingBSCNextValidatorTxHashToInfo, tx.Hash().String())
-				log.Infof("sending next validator tx %v because fallback time reached", tx.Hash().String())
-
-				tx.RemoveFlags(types.TFNextValidator)
-				tx.SetFallback(0)
-				err = h.FeedManager.node.HandleMsg(tx, ws, connections.RunForeground)
-				if err != nil {
-					log.Errorf("failed to send pending next validator tx %v at fallback time: %v", tx.Hash().String(), err)
-				}
-			}
-		})
-	}
-
-	return tx.Hash().String(), true
-}
-
-// ValidateTxFromExternalSource validate transaction from external source (ws / grpc), return bool indicates if tx is pending reevaluation
-func ValidateTxFromExternalSource(transaction string, txBytes []byte, validatorsOnly bool, gatewayChainID types.NetworkID, nextValidator bool, fallback uint16, nextValidatorMap *orderedmap.OrderedMap, validatorStatusMap *syncmap.SyncMap[string, bool], networkNum types.NetworkNum, accountID types.AccountID, nodeValidationRequested bool, wsManager blockchain.WSManager, source connections.Conn, pendingBSCNextValidatorTxHashToInfo map[string]PendingNextValidatorTxInfo, frontRunningProtection bool) (*bxmessage.Tx, bool, error) {
+// validateTxFromExternalSource validate transaction from external source (ws / grpc), return bool indicates if tx is pending reevaluation
+func validateTxFromExternalSource(transaction string, txBytes []byte, validatorsOnly bool, gatewayChainID types.NetworkID, nextValidator bool, fallback uint16, nextValidatorMap *orderedmap.OrderedMap, validatorStatusMap *syncmap.SyncMap[string, bool], networkNum types.NetworkNum, accountID types.AccountID, nodeValidationRequested bool, wsManager blockchain.WSManager, source connections.Conn, pendingBSCNextValidatorTxHashToInfo map[string]PendingNextValidatorTxInfo, frontRunningProtection bool) (*bxmessage.Tx, bool, error) {
 	// Ethereum's transactions encoding for RPC interfaces is slightly different from the RLP encoded format, so decode + re-encode the transaction for consistency.
 	// Specifically, note `UnmarshalBinary` should be used for RPC interfaces, and rlp.DecodeBytes should be used for the wire protocol.
 	var ethTx ethtypes.Transaction
@@ -1614,15 +378,6 @@ func ValidateTxFromExternalSource(transaction string, txBytes []byte, validators
 	return tx, false, nil
 }
 
-type sendBundleArgs struct {
-	Txs               []hexutil.Bytes `json:"txs"`
-	UUID              string          `json:"uuid,omitempty"`
-	BlockNumber       string          `json:"blockNumber"`
-	MinTimestamp      uint64          `json:"minTimestamp"`
-	MaxTimestamp      uint64          `json:"maxTimestamp"`
-	RevertingTxHashes []common.Hash   `json:"revertingTxHashes"`
-}
-
 // ProcessNextValidatorTx - sets next validator wallets if accessible and returns bool indicating if tx is pending reevaluation due to inaccessible first validator for BSC
 func ProcessNextValidatorTx(tx *bxmessage.Tx, fallback uint16, nextValidatorMap *orderedmap.OrderedMap, validatorStatusMap *syncmap.SyncMap[string, bool], networkNum types.NetworkNum, source connections.Conn, pendingBSCNextValidatorTxHashToInfo map[string]PendingNextValidatorTxInfo) (bool, error) {
 	if networkNum != bxgateway.BSCMainnetNum && networkNum != bxgateway.PolygonMainnetNum {
@@ -1682,35 +437,4 @@ func ProcessNextValidatorTx(tx *bxmessage.Tx, fallback uint16, nextValidatorMap 
 	}
 
 	return false, nil
-}
-
-func (s *sendBundleArgs) validate() error {
-	if len(s.Txs) == 0 && s.UUID == "" {
-		return errors.New("bundle missing txs")
-	}
-
-	if s.BlockNumber == "" {
-		return errors.New("bundle missing blockNumber")
-	}
-
-	for _, encodedTx := range s.Txs {
-		tx := new(ethtypes.Transaction)
-		if err := tx.UnmarshalBinary(encodedTx); err != nil {
-			return err
-		}
-	}
-
-	if s.UUID != "" {
-		_, err := uuid.FromString(s.UUID)
-		if err != nil {
-			return fmt.Errorf("invalid UUID, %v", err)
-		}
-	}
-
-	_, err := hexutil.DecodeUint64(s.BlockNumber)
-	if err != nil {
-		return fmt.Errorf("blockNumber must be hex, %v", err)
-	}
-
-	return nil
 }

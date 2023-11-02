@@ -41,7 +41,6 @@ func TestMEVBundle(t *testing.T) {
 	assert.NoError(t, err)
 
 	m.msgType = MEVBundleType
-	m.bufLen = len(b)
 
 	assert.Equal(t, m, m2)
 }
@@ -78,7 +77,6 @@ func TestMEVBundlePayoutBackCompatibility(t *testing.T) {
 	assert.NoError(t, err)
 
 	m.msgType = MEVBundleType
-	m.bufLen = len(b)
 
 	// There is precision loss due to using float64 for timestamp
 	assert.Less(t, m.PerformanceTimestamp.Sub(m2.PerformanceTimestamp), time.Millisecond)

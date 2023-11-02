@@ -16,6 +16,9 @@ const (
 
 	// SDKCodeLanguageHeaderKey is the header key for the programming language SDK code is written in
 	SDKCodeLanguageHeaderKey = "X-BloXroute-Code-Language"
+
+	// OriginalSenderAccountIDHeaderKey is the header key for the account ID which sent the request through cloud services
+	OriginalSenderAccountIDHeaderKey = "X-BloXroute-Original-Sender-Account-ID"
 )
 
 // SDKMetaFromHeaders converts HTTP SDK headers to a meta map

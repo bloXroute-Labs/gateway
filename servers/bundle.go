@@ -42,8 +42,7 @@ type RawTransactionGroupData struct {
 func ParseRawTransaction(tx string) (*ethtypes.Transaction, error) {
 	txBytes, err := types.DecodeHex(tx)
 	if err != nil {
-		err = fmt.Errorf("invalid hex string: %w", err)
-		return nil, err
+		return nil, fmt.Errorf("invalid hex string: %w", err)
 	}
 
 	var ethTx ethtypes.Transaction

@@ -12,7 +12,7 @@ import (
 
 func TestTxs_PackUnpack(t *testing.T) {
 	txs := Txs{
-		Header: Header{msgType: TransactionsType, bufLen: 355},
+		Header: Header{msgType: TransactionsType},
 		items: []TxsItem{
 			{
 				Hash:    types.GenerateSHA256Hash(),

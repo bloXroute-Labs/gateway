@@ -57,7 +57,9 @@ func NewTx(hash types.SHA256Hash, content []byte, networkNum types.NetworkNum, f
 	tx.SetContent(content)
 	tx.SetHash(hash)
 	tx.SetTimestamp(clock.Now())
-	tx.walletIDs = make([]string, 2, 2)
+	if flags.IsNextValidator() {
+		tx.walletIDs = make([]string, 2)
+	}
 	return tx
 }
 
@@ -137,6 +139,9 @@ func (m *Tx) SetWalletID(index int, id string) {
 	if index >= 2 {
 		return
 	}
+	if m.walletIDs == nil {
+		m.walletIDs = make([]string, 2)
+	}
 	m.walletIDs[index] = id
 }
 
@@ -166,7 +171,9 @@ func (m *Tx) ClearInternalAttributes() {
 	// not reset timestamp. Gateways use it to see if transaction is old or not
 	m.sourceID = [SourceIDLen]byte{}
 	m.accountID = [AccountIDLen]byte{}
-	m.walletIDs = make([]string, 2, 2)
+	if m.flags.IsNextValidator() {
+		m.walletIDs = make([]string, 2)
+	}
 
 	m.flags &= ^types.TFEnterpriseSender
 	m.flags &= ^types.TFEliteSender
@@ -222,7 +229,9 @@ func (m *Tx) CleanClone() Tx {
 		content:         m.content,
 		quota:           m.quota,
 		sender:          m.sender,
-		walletIDs:       make([]string, 2, 2),
+	}
+	if tx.flags.IsNextValidator() {
+		tx.walletIDs = make([]string, 2)
 	}
 	tx.ClearInternalAttributes()
 	return tx
@@ -246,7 +255,7 @@ func (m Tx) Clone() *Tx {
 
 // Pack serializes a Tx into a buffer for sending
 func (m Tx) Pack(protocol Protocol) ([]byte, error) {
-	bufLen := m.size(protocol)
+	bufLen := m.Size(protocol)
 	buf := make([]byte, bufLen)
 	m.BroadcastHeader.Pack(&buf, TxType, protocol)
 	offset := BroadcastHeaderLen
@@ -364,8 +373,8 @@ func (m *Tx) Unpack(buf []byte, protocol Protocol) error {
 
 	switch {
 	case protocol >= NextValidatorMultipleProtocol:
-		m.walletIDs = make([]string, 2, 2)
 		if m.flags.IsNextValidator() {
+			m.walletIDs = make([]string, 2)
 			if err := checkBufSize(&buf, offset, types.UInt16Len+types.WalletIDLen+types.WalletIDLen); err != nil {
 				return err
 			}
@@ -377,8 +386,8 @@ func (m *Tx) Unpack(buf []byte, protocol Protocol) error {
 			}
 		}
 	case protocol >= NextValidatorProtocol:
-		m.walletIDs = make([]string, 2, 2)
 		if m.flags.IsNextValidator() {
+			m.walletIDs = make([]string, 2)
 			if err := checkBufSize(&buf, offset, types.UInt16Len+types.WalletIDLen); err != nil {
 				return err
 			}
@@ -442,7 +451,8 @@ func decodeTimestamp(timestamp uint32) int64 {
 	return result
 }
 
-func (m *Tx) size(protocol Protocol) uint32 {
+// Size return size of tx
+func (m *Tx) Size(protocol Protocol) uint32 {
 	switch {
 	case protocol < 19:
 		return 0

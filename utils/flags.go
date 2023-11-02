@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"time"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/urfave/cli/v2"
 )
@@ -361,9 +363,10 @@ var (
 		Name:  "polygon-source-endpoint",
 		Usage: "websocket endpoint for Polygon mainnet go-gateway",
 	}
-	PolygonMainnetHeimdallEndpoint = &cli.StringFlag{
-		Name:  "polygon-heimdall-endpoint",
-		Usage: "tcp endpoint for Polygon mainnet heimdall server",
+	PolygonMainnetHeimdallEndpoints = &cli.StringFlag{
+		Name:    "polygon-heimdall-endpoints",
+		Aliases: []string{"polygon-heimdall-endpoint"},
+		Usage:   "tcp endpoints for Polygon mainnet heimdall server",
 	}
 	MEVRelayURL = &cli.StringFlag{
 		Name:  "mev-relay-url",
@@ -466,5 +469,26 @@ var (
 		Name:  "bsc-bundle-min-avg-gas-fee",
 		Usage: "provide the minimum gwei gas fee needed for a BSC bundle",
 		Value: 3,
+	}
+	DatabaseFlag = &cli.StringFlag{
+		Name:     "dbdsn",
+		Usage:    "Database DSN string <username:password@tcp(dns:port)/schema>",
+		Required: true,
+	}
+	BloxrouteAccountsFlag = &cli.StringFlag{
+		Name:  "bloxroute-accounts",
+		Usage: "enable detailed bundle trace response for these accounts",
+	}
+	BlocksToCacheWhileProposing = &cli.IntFlag{
+		Name:   "blocks-to-cache-while-proposing",
+		Usage:  "number of blocks to cache while proposing for statistics",
+		Hidden: true,
+		Value:  3,
+	}
+	ProposingInterval = &cli.DurationFlag{
+		Name:   "proposing-interval",
+		Usage:  "interval between proposing blocks after the last block is proposed",
+		Hidden: true,
+		Value:  50 * time.Millisecond,
 	}
 )

@@ -55,6 +55,7 @@ func (*GrpcHandler) generateBlockReplyHeader(h *types.Header) *pb.BlockHeader {
 	blockReplyHeader.Timestamp = h.Timestamp
 	blockReplyHeader.ExtraData = h.ExtraData
 	blockReplyHeader.MixHash = h.MixHash.String()
+	blockReplyHeader.Nonce = h.Nonce
 	if h.WithdrawalsHash != nil {
 		blockReplyHeader.WithdrawalsRoot = h.WithdrawalsHash.String()
 	}
@@ -66,8 +67,12 @@ func (*GrpcHandler) generateBlockReplyHeader(h *types.Header) *pb.BlockHeader {
 
 func (g *GrpcHandler) generateBlockReply(n *types.EthBlockNotification) *pb.BlocksReply {
 	blockReply := &pb.BlocksReply{}
-	blockReply.Hash = n.BlockHash.String()
-	blockReply.Header = g.generateBlockReplyHeader(n.Header)
+	if n.BlockHash != nil {
+		blockReply.Hash = n.BlockHash.String()
+	}
+	if n.Header != nil {
+		blockReply.Header = g.generateBlockReplyHeader(n.Header)
+	}
 	for _, vi := range n.ValidatorInfo {
 		blockReply.FutureValidatorInfo = append(blockReply.FutureValidatorInfo, &pb.FutureValidatorInfo{
 			BlockHeight: strconv.FormatUint(vi.BlockHeight, 10),
@@ -205,20 +210,15 @@ func (g *GrpcHandler) handleTransactions(req *pb.TxsRequest, stream pb.Gateway_N
 	if err != nil {
 		return errors.New("failed to subscribe to gRPC pendingTxs")
 	}
-	defer func() {
-		err = g.feedManager.Unsubscribe(sub.SubscriptionID, false, "")
-		if err != nil {
-			log.Errorf("error when unsubscribed from grpc multi new tx feed, subscription id %v, err %v", sub.SubscriptionID, err)
-		}
-	}()
+	defer g.feedManager.Unsubscribe(sub.SubscriptionID, false, "")
 
-	clientReq := &clientReq{includes: req.GetIncludes(), expr: expr, feed: feedType}
+	clReq := &clientReq{includes: req.GetIncludes(), expr: expr, feed: feedType}
 
 	var txsResponse []*pb.Tx
 	for notification := range sub.FeedChan {
-		processTx(clientReq, notification, &txsResponse, ci.RemoteAddress, account.AccountID, feedType)
+		processTx(clReq, notification, &txsResponse, ci.RemoteAddress, account.AccountID, feedType)
 
-		if len(sub.FeedChan) == 0 || len(txsResponse) == maxTxsInSingleResponse {
+		if (len(sub.FeedChan) == 0 || len(txsResponse) == maxTxsInSingleResponse) && len(txsResponse) > 0 {
 			err = stream.Send(&pb.TxsReply{Tx: txsResponse})
 			if err != nil {
 				return err
@@ -256,12 +256,8 @@ func (g *GrpcHandler) EthOnBlock(req *pb.EthOnBlockRequest, stream pb.Gateway_Et
 	if err != nil {
 		return errors.New("failed to subscribe to gRPC ethOnBlock")
 	}
-	defer func(feedManager *FeedManager, subscriptionID string, closeClientConnection bool, errMsg string) {
-		err = feedManager.Unsubscribe(subscriptionID, closeClientConnection, errMsg)
-		if err != nil {
-			return
-		}
-	}(g.feedManager, sub.SubscriptionID, false, "")
+
+	defer g.feedManager.Unsubscribe(sub.SubscriptionID, false, "")
 
 	var includes []string
 	if len(req.GetIncludes()) == 0 {
@@ -312,12 +308,8 @@ func (g *GrpcHandler) TxReceipts(req *pb.TxReceiptsRequest, stream pb.Gateway_Tx
 	if err != nil {
 		return errors.New("failed to subscribe to gRPC txReceipts")
 	}
-	defer func(feedManager *FeedManager, subscriptionID string, closeClientConnection bool, errMsg string) {
-		err = feedManager.Unsubscribe(subscriptionID, closeClientConnection, errMsg)
-		if err != nil {
-			return
-		}
-	}(g.feedManager, sub.SubscriptionID, false, "")
+
+	defer g.feedManager.Unsubscribe(sub.SubscriptionID, false, "")
 
 	var includes []string
 	if len(req.GetIncludes()) == 0 {

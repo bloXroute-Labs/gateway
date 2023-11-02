@@ -77,15 +77,15 @@ func TestFilter(t *testing.T) {
 
 	for pythonFormat, expectedGoFormat := range pythonFiltersToGoFilters {
 		s.Filters = pythonFormat
-		goFormatResult, exp, err := ParseFilter(s.Filters)
+		goFormatResult, exp, err := parseFilter(s.Filters)
 		assert.Equal(t, strings.ToLower(expectedGoFormat), strings.ToLower(goFormatResult))
 		assert.Nil(t, err)
-		assert.Nil(t, EvaluateFilters(exp))
+		assert.Nil(t, evaluateFilters(exp))
 	}
 
 	for _, invalidFilters := range invalidPythonFilters {
 		s.Filters = invalidFilters
-		_, _, err := ParseFilter(s.Filters)
+		_, _, err := parseFilter(s.Filters)
 		assert.NotNil(t, err)
 	}
 }

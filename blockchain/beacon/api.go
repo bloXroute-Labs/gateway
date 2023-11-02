@@ -79,7 +79,7 @@ func NewAPIClient(ctx context.Context, httpClient *http.Client, config *network.
 
 	var err error
 
-	client.nodeEndpoint, err = client.createAPIEndpoint(url, blockchainNetwork)
+	client.nodeEndpoint, err = CreateAPIEndpoint(url, blockchainNetwork)
 	if err != nil {
 		return nil, fmt.Errorf("error creating Beacon API endpoint: %v", err)
 	}
@@ -87,7 +87,8 @@ func NewAPIClient(ctx context.Context, httpClient *http.Client, config *network.
 	return client, nil
 }
 
-func (c *APIClient) createAPIEndpoint(url, blockchainNetwork string) (*types.NodeEndpoint, error) {
+// CreateAPIEndpoint creates NodeEndpoint object from uri:port string of beacon API endpoint
+func CreateAPIEndpoint(url, blockchainNetwork string) (*types.NodeEndpoint, error) {
 	urlSplitted := strings.Split(url, ":")
 	port, err := strconv.Atoi(urlSplitted[1])
 

@@ -1,7 +1,6 @@
 package services
 
 import (
-	"encoding/hex"
 	"fmt"
 	"runtime/debug"
 	"sort"
@@ -189,18 +188,10 @@ func (t *BxTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID 
 
 	bxTransaction := types.NewBxTransaction(hash, networkNum, flags, timestamp)
 
-	_, exists := t.hashToContent.LoadOrStore(hashStr, bxTransaction)
-
-	if result.NewTx = !exists; !result.NewTx {
-		tx, exists := t.hashToContent.Load(hashStr)
-		if !exists {
-			log.Warnf("couldn't Get an existing transaction %v, network %v, flags %v, shortID %v, content %v",
-				hash, networkNum, flags, shortID, hex.EncodeToString(content[:]))
-			result.Transaction = bxTransaction
-			result.DebugData = "Transaction deleted by other GO routine"
-			return result
-		}
+	if tx, exists := t.hashToContent.LoadOrStore(hashStr, bxTransaction); exists {
 		bxTransaction = tx
+	} else {
+		result.NewTx = true
 	}
 
 	// make sure we are the only process that makes changes to the transaction

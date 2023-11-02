@@ -19,6 +19,7 @@ import (
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/polygon/bor/valset"
+	cs "github.com/bloXroute-Labs/gateway/v2/utils/cycledslice"
 	"github.com/bloXroute-Labs/gateway/v2/utils/ptr"
 )
 
@@ -68,6 +69,7 @@ type Spanner interface {
 	GetSpanByID(spanID uint64) (*SpanInfo, error)
 	GetSpanForHeight(height uint64) (*SpanInfo, error)
 	GetSpanNotificationCh() <-chan struct{}
+	SendSpanNotification()
 }
 
 // HeimdallSpanner basic client for processing heimdall spans.
@@ -85,11 +87,11 @@ type HeimdallSpanner struct {
 	spanUpdateCh chan *SpanInfo
 	spanNotifyCh chan struct{}
 
-	endpoint string
+	endpoints *cs.CycledSlice[string]
 }
 
 // NewHeimdallSpanner creates a new HeimdallSpanner.
-func NewHeimdallSpanner(ctx context.Context, endpoint string) *HeimdallSpanner {
+func NewHeimdallSpanner(ctx context.Context, endpointsArg string) *HeimdallSpanner {
 	return &HeimdallSpanner{
 		ctx: ctx,
 
@@ -104,12 +106,20 @@ func NewHeimdallSpanner(ctx context.Context, endpoint string) *HeimdallSpanner {
 		spanUpdateCh: make(chan *SpanInfo, 2),
 		spanNotifyCh: make(chan struct{}, 1),
 
-		endpoint: strings.TrimSuffix(endpoint, "/"),
+		endpoints: cs.NewCycledSlice(strings.Split(strings.TrimSuffix(endpointsArg, "/"), ",")),
 	}
 }
 
 // GetSpanNotificationCh returns notification channel.
 func (h *HeimdallSpanner) GetSpanNotificationCh() <-chan struct{} { return h.spanNotifyCh }
+
+// SendSpanNotification sends notification to the channel.
+func (h *HeimdallSpanner) SendSpanNotification() {
+	select {
+	default:
+	case h.spanNotifyCh <- struct{}{}:
+	}
+}
 
 func (h *HeimdallSpanner) bootstrap() error {
 	err := h.ctx.Err()
@@ -141,6 +151,7 @@ func (h *HeimdallSpanner) Run() error {
 
 	h.state.Store(ptr.New(stateBooting))
 
+	log.Debugf("heimdall spanner bootstrapping")
 	if err := h.bootstrap(); err != nil {
 		h.state.Store(ptr.New(stateIdle))
 
@@ -149,6 +160,7 @@ func (h *HeimdallSpanner) Run() error {
 
 	h.state.Store(ptr.New(stateRunning))
 
+	log.Debugf("heimdall spanner successful bootstrapped")
 	go func() {
 		backOff := backoff.WithContext(Retry(), h.ctx)
 
@@ -195,12 +207,7 @@ func (h *HeimdallSpanner) updateSpanMap(spanInfo *SpanInfo) error {
 		}
 	}
 
-	defer func() {
-		select {
-		default:
-		case h.spanNotifyCh <- struct{}{}:
-		}
-	}()
+	defer h.SendSpanNotification()
 
 	// adding of new value
 	h.spanMap.Store(spanInfo.SpanID, spanInfo)
@@ -233,12 +240,7 @@ func (h *HeimdallSpanner) GetLatestSpan() (*SpanInfo, error) {
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(h.ctx, http.MethodGet, fmt.Sprintf(endpointLatestSpanFmt, h.endpoint), nil)
-	if err != nil {
-		return nil, errors.WithMessage(err, "failed to create request for fetching of latest span")
-	}
-
-	return h.doSpanRequest(req)
+	return h.requestSpanFromEndpoint(fmt.Sprintf(endpointLatestSpanFmt, h.endpoints.Current()))
 }
 
 // GetSpanByID returns cpan by ID.
@@ -258,16 +260,26 @@ func (h *HeimdallSpanner) GetSpanByID(spanID uint64) (*SpanInfo, error) {
 		return &spanCopy, nil
 	}
 
-	req, err := http.NewRequestWithContext(h.ctx, http.MethodGet, fmt.Sprintf(endpointSpanIDFmt, h.endpoint, spanID), nil)
+	return h.requestSpanFromEndpoint(fmt.Sprintf(endpointSpanIDFmt, h.endpoints.Current(), spanID))
+}
+
+func (h *HeimdallSpanner) requestSpanFromEndpoint(endpoint string) (*SpanInfo, error) {
+	req, err := http.NewRequestWithContext(h.ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed to create request for fetching of span by id")
 	}
 
-	return h.doSpanRequest(req)
+	span, err := h.doSpanRequest(req)
+	if err != nil {
+		log.Warnf("failed to request span from endpoint %s, trying next...", h.endpoints.Current())
+		h.endpoints.Next()
+		return nil, err
+	}
+	return span, nil
 }
 
 func (h *HeimdallSpanner) doSpanRequest(req *http.Request) (*SpanInfo, error) {
-	if h.endpoint == "" {
+	if h.endpoints == nil {
 		return nil, errBadHeimdallEndpoint
 	}
 

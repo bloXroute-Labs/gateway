@@ -21,6 +21,7 @@ const (
 // supportedProtocols is the map of networks to devp2p protocols supported by this client
 var supportedProtocols = map[uint64][]uint{
 	network.BSCMainnetChainID:     {ETH65, eth.ETH66},
+	network.BSCTestnetChainID:     {ETH65, eth.ETH66},
 	network.PolygonMainnetChainID: {ETH65, eth.ETH66},
 	network.EthMainnetChainID:     {eth.ETH66, eth.ETH67, eth.ETH68},
 	network.GoerliChainID:         {eth.ETH66, eth.ETH67, eth.ETH68},

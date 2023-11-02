@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -20,6 +22,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/urfave/cli/v2"
@@ -35,6 +38,11 @@ func main() {
 				Name:  "newTxs",
 				Usage: "provides a stream of new txs",
 				Flags: []cli.Flag{
+					utils.GRPCHostFlag,
+					utils.GRPCPortFlag,
+					utils.GRPCUserFlag,
+					utils.GRPCPasswordFlag,
+					utils.GRPCAuthFlag,
 					&cli.StringFlag{
 						Name:     "filters",
 						Required: false,
@@ -42,9 +50,6 @@ func main() {
 					&cli.StringSliceFlag{
 						Name:     "include",
 						Required: false,
-					},
-					&cli.StringFlag{
-						Name: "auth-header",
 					},
 				},
 				Before: beforeBxCli,
@@ -142,6 +147,21 @@ func main() {
 						Name:     "transaction",
 						Required: true,
 					},
+					&cli.BoolFlag{
+						Name: "validators-only",
+					},
+					&cli.BoolFlag{
+						Name: "next-validator",
+					},
+					&cli.IntFlag{
+						Name: "fallback",
+					},
+					&cli.BoolFlag{
+						Name: "node-validation",
+					},
+					&cli.BoolFlag{
+						Name: "front-running-protection",
+					},
 					&cli.StringFlag{
 						Name: "auth-header",
 					},
@@ -158,9 +178,6 @@ func main() {
 						Required: true,
 					},
 					&cli.BoolFlag{
-						Name: "nonce-monitoring",
-					},
-					&cli.BoolFlag{
 						Name: "next-validator",
 					},
 					&cli.BoolFlag{
@@ -171,6 +188,9 @@ func main() {
 					},
 					&cli.BoolFlag{
 						Name: "node-validation",
+					},
+					&cli.BoolFlag{
+						Name: "front-running-protection",
 					},
 					&cli.StringFlag{
 						Name: "auth-header",
@@ -429,7 +449,7 @@ func cmdStop(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			return client.Stop(callCtx, &pb.StopRequest{AuthHeader: ctx.String("auth-header")})
+			return client.Stop(callCtx, &pb.StopRequest{})
 		},
 	)
 	if err != nil {
@@ -442,7 +462,7 @@ func cmdVersion(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			return client.Version(callCtx, &pb.VersionRequest{AuthHeader: ctx.String("auth-header")})
+			return client.Version(callCtx, &pb.VersionRequest{})
 		},
 	)
 	if err != nil {
@@ -452,26 +472,101 @@ func cmdVersion(ctx *cli.Context) error {
 }
 
 func cmdNewTXs(ctx *cli.Context) error {
-	err := rpc.GatewayConsoleCall(
-		config.NewStreamFromCLI(ctx),
-		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			stream, err := client.NewTxs(callCtx, &pb.TxsRequest{Filters: ctx.String("filters"), Includes: ctx.StringSlice("include"), AuthHeader: ctx.String("auth-header")})
+	type txContent struct {
+		From     string `json:"from"`
+		Gas      string `json:"gas"`
+		GasPrice string `json:"gasPrice"`
+		Hash     string `json:"hash"`
+		Input    string `json:"input"`
+		Nonce    string `json:"nonce"`
+		Value    string `json:"value"`
+		V        string `json:"v"`
+		R        string `json:"r"`
+		S        string `json:"s"`
+		Type     string `json:"type"`
+		To       string `json:"to"`
+	}
+
+	type txReply struct {
+		TxHash      string    `json:"txHash"`
+		TxContents  txContent `json:"txContents"`
+		LocalRegion bool      `json:"localRegion"`
+	}
+
+	parseResponse := func(message *pb.TxsReply) ([]txReply, error) {
+		transactions := []txReply{}
+		for _, tx := range message.Tx {
+			rawTx := tx.RawTx
+
+			var ethTx ethtypes.Transaction
+			err := ethTx.UnmarshalBinary(rawTx)
 			if err != nil {
 				return nil, err
 			}
-			for {
-				tx, err := stream.Recv()
-				if err == io.EOF {
-					fmt.Println("newTxs error EOF: ", err)
-					break
-				}
-				if err != nil {
-					fmt.Println("newTxs error in recv: ", err)
-					break
-				}
-				fmt.Println(tx)
+
+			v, r, s := ethTx.RawSignatureValues()
+			hash := strings.ToLower(ethTx.Hash().String())
+
+			from := hex.EncodeToString(tx.From)
+			if !strings.HasPrefix(from, "0x") {
+				from = "0x" + from
 			}
-			return nil, nil
+
+			txContent := txContent{
+				From:     from,
+				Gas:      hexutil.EncodeUint64(ethTx.Gas()),
+				GasPrice: hexutil.EncodeBig(ethTx.GasPrice()),
+				Hash:     hash,
+				Input:    strings.ToLower(hexutil.Encode(ethTx.Data())),
+				Nonce:    strings.ToLower(hexutil.EncodeUint64(ethTx.Nonce())),
+				Value:    hexutil.EncodeBig(ethTx.Value()),
+				V:        hexutil.EncodeBig(v),
+				R:        hexutil.EncodeBig(r),
+				S:        hexutil.EncodeBig(s),
+				Type:     hexutil.EncodeUint64(uint64(ethTx.Type())),
+				To:       strings.ToLower(ethTx.To().Hex()),
+			}
+
+			reply := txReply{
+				TxHash:      hash,
+				TxContents:  txContent,
+				LocalRegion: tx.LocalRegion,
+			}
+
+			transactions = append(transactions, reply)
+		}
+
+		return transactions, nil
+	}
+
+	err := rpc.GatewayConsoleCall(
+		config.NewStreamFromCLI(ctx),
+		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
+			stream, err := client.NewTxs(callCtx, &pb.TxsRequest{Filters: ctx.String("filters"), Includes: ctx.StringSlice("include")})
+			if err != nil {
+				return nil, err
+			}
+			defer func() {
+				err := stream.CloseSend()
+				if err != nil {
+					fmt.Printf("failed to close stream: %v", err)
+				}
+			}()
+
+			for {
+				transactions, err := stream.Recv()
+				if err != nil {
+					return nil, err
+				}
+
+				reply, err := parseResponse(transactions)
+				if err != nil {
+					return nil, err
+				}
+
+				bytes, _ := json.MarshalIndent(reply, "", "    ")
+				fmt.Println(string(bytes))
+			}
 		},
 	)
 	if err != nil {
@@ -485,7 +580,7 @@ func cmdPendingTXs(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			stream, err := client.PendingTxs(callCtx, &pb.TxsRequest{Filters: ctx.String("filters"), Includes: ctx.StringSlice("include"), AuthHeader: ctx.String("auth-header")})
+			stream, err := client.PendingTxs(callCtx, &pb.TxsRequest{Filters: ctx.String("filters"), Includes: ctx.StringSlice("include")})
 			if err != nil {
 				return nil, err
 			}
@@ -515,7 +610,7 @@ func cmdNewBlocks(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			stream, err := client.NewBlocks(callCtx, &pb.BlocksRequest{Includes: ctx.StringSlice("include"), AuthHeader: ctx.String("auth-header")})
+			stream, err := client.NewBlocks(callCtx, &pb.BlocksRequest{Includes: ctx.StringSlice("include")})
 			if err != nil {
 				return nil, err
 			}
@@ -545,7 +640,7 @@ func cmdBdnBlocks(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			stream, err := client.BdnBlocks(callCtx, &pb.BlocksRequest{Includes: ctx.StringSlice("include"), AuthHeader: ctx.String("auth-header")})
+			stream, err := client.BdnBlocks(callCtx, &pb.BlocksRequest{Includes: ctx.StringSlice("include")})
 			if err != nil {
 				return nil, err
 			}
@@ -582,7 +677,6 @@ func cmdEthOnBlock(ctx *cli.Context) error {
 			stream, err := client.EthOnBlock(callCtx, &pb.EthOnBlockRequest{
 				Includes:   ctx.StringSlice("include"),
 				CallParams: callParams.Values,
-				AuthHeader: ctx.String("auth-header"),
 			})
 			if err != nil {
 				return nil, err
@@ -613,7 +707,7 @@ func cmdTxReceipts(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			stream, err := client.TxReceipts(callCtx, &pb.TxReceiptsRequest{Includes: ctx.StringSlice("include"), AuthHeader: ctx.String("auth-header")})
+			stream, err := client.TxReceipts(callCtx, &pb.TxReceiptsRequest{Includes: ctx.StringSlice("include")})
 			if err != nil {
 				return nil, err
 			}
@@ -643,7 +737,16 @@ func cmdBlxrTX(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			return client.BlxrTx(callCtx, &pb.BlxrTxRequest{Transaction: ctx.String("transaction"), AuthHeader: ctx.String("auth-header")})
+			return client.BlxrTx(callCtx,
+				&pb.BlxrTxRequest{
+					Transaction:            ctx.String("transaction"),
+					ValidatorsOnly:         ctx.Bool("validators-only"),
+					NextValidator:          ctx.Bool("next-validator"),
+					Fallback:               int32(ctx.Int("fallback")),
+					NodeValidation:         ctx.Bool("node-validation"),
+					FrontrunningProtection: ctx.Bool("front-running-protection"),
+				},
+			)
 		},
 	)
 	if err != nil {
@@ -656,7 +759,7 @@ func cmdDisconnectInboundPeer(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			return client.DisconnectInboundPeer(callCtx, &pb.DisconnectInboundPeerRequest{PeerIp: ctx.String("ip"), PeerPort: ctx.Int64("port"), PublicKey: ctx.String("enode"), AuthHeader: ctx.String("auth-header")})
+			return client.DisconnectInboundPeer(callCtx, &pb.DisconnectInboundPeerRequest{PeerIp: ctx.String("ip"), PeerPort: ctx.Int64("port"), PublicKey: ctx.String("enode")})
 		},
 	)
 	if err != nil {
@@ -696,13 +799,12 @@ func cmdBlxrBatchTX(ctx *cli.Context) error {
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
 			return client.BlxrBatchTX(callCtx, &pb.BlxrBatchTXRequest{
 				TransactionsAndSenders: txsAndSenders,
-				NonceMonitoring:        ctx.Bool("nonce-monitoring"),
 				NextValidator:          ctx.Bool("next-validator"),
 				ValidatorsOnly:         ctx.Bool("validators-only"),
 				Fallback:               int32(ctx.Int("fallback")),
 				NodeValidation:         ctx.Bool("node-validation"),
+				FrontrunningProtection: ctx.Bool("front-running-protection"),
 				SendingTime:            time.Now().UnixNano(),
-				AuthHeader:             ctx.String("auth-header"),
 			})
 		},
 	)
@@ -727,7 +829,7 @@ func cmdListSubscriptions(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			return client.Subscriptions(callCtx, &pb.SubscriptionsRequest{AuthHeader: ctx.String("auth-header")})
+			return client.Subscriptions(callCtx, &pb.SubscriptionsRequest{})
 		},
 	)
 	if err != nil {
@@ -740,7 +842,7 @@ func cmdListPeers(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			return client.Peers(callCtx, &pb.PeersRequest{AuthHeader: ctx.String("auth-header")})
+			return client.Peers(callCtx, &pb.PeersRequest{})
 		},
 	)
 	if err != nil {
@@ -753,7 +855,7 @@ func cmdStatus(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			return client.Status(callCtx, &pb.StatusRequest{AuthHeader: ctx.String("auth-header")})
+			return client.Status(callCtx, &pb.StatusRequest{})
 		},
 	)
 	if err != nil {
@@ -776,8 +878,7 @@ func cmdShortIDs(ctx *cli.Context) error {
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
 			return client.ShortIDs(callCtx, &pb.TxHashListRequest{
-				TxHashes:   txHashes,
-				AuthHeader: ctx.String("auth-header"),
+				TxHashes: txHashes,
 			})
 		},
 	)

@@ -2,6 +2,7 @@ package types
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -112,20 +113,55 @@ func (et *EthTransaction) AccessList() ethtypes.AccessList {
 	return et.tx.AccessList()
 }
 
-func (et *EthTransaction) createFields() {
+func (et *EthTransaction) createFilters() {
 	et.lock.Lock()
 	defer et.lock.Unlock()
 	if et.filters != nil {
 		return
 	}
-
 	var transactionFilters = make(map[string]interface{})
+	tx := et.tx
+	transactionFilters["chain_id"] = int(tx.ChainId().Int64())
+	if tx.Type() == ethtypes.DynamicFeeTxType {
+		transactionFilters["max_fee_per_gas"] = int(tx.GasFeeCap().Int64())
+		transactionFilters["max_priority_fee_per_gas"] = int(tx.GasTipCap().Int64())
+		transactionFilters["gas_price"] = nil
+	} else {
+		transactionFilters["gas_price"] = BigIntAsFloat64(tx.GasPrice())
+	}
+
+	transactionFilters["type"] = strconv.Itoa(int(tx.Type()))
+	transactionFilters["value"] = BigIntAsFloat64(tx.Value())
+	transactionFilters["gas"] = float64(tx.Gas())
+
+	if tx.To() != nil {
+		transactionFilters["to"] = AddressAsString(tx.To())
+	} else {
+		transactionFilters["to"] = "0x0"
+	}
+
+	transactionFilters["from"] = AddressAsString(et.From)
+
+	// note: from some reason method_id is only a filter field
+	methodID := hexutil.Encode(tx.Data())
+	if len(methodID) >= 10 {
+		transactionFilters["method_id"] = "0x" + methodID[2:10]
+	} else {
+		transactionFilters["method_id"] = methodID
+	}
+	et.filters = transactionFilters
+}
+
+func (et *EthTransaction) createFields() {
+	et.lock.Lock()
+	defer et.lock.Unlock()
+
 	tx := et.tx
 
 	fields := make(map[string]interface{})
-	fields["hash"] = strings.ToLower(tx.Hash().String())
-	fields["nonce"] = strings.ToLower(hexutil.EncodeUint64(tx.Nonce()))
-	fields["input"] = strings.ToLower(hexutil.Encode(tx.Data()))
+	fields["hash"] = tx.Hash().String()
+	fields["nonce"] = hexutil.EncodeUint64(tx.Nonce())
+	fields["input"] = hexutil.Encode(tx.Data())
 	v, r, s := tx.RawSignatureValues()
 	fields["v"] = BigIntAsString(v)
 	fields["r"] = BigIntAsString(r)
@@ -135,54 +171,30 @@ func (et *EthTransaction) createFields() {
 		fields["accessList"] = tx.AccessList()
 	}
 
-	transactionFilters["chain_id"] = int(tx.ChainId().Int64())
 	if tx.Type() != ethtypes.LegacyTxType {
-		fields["chainId"] = strings.ToLower(hexutil.EncodeUint64(tx.ChainId().Uint64()))
+		fields["chainId"] = hexutil.EncodeUint64(tx.ChainId().Uint64())
 	}
 
 	if tx.Type() == ethtypes.DynamicFeeTxType {
-		transactionFilters["max_fee_per_gas"] = int(tx.GasFeeCap().Int64())
 		fields["maxFeePerGas"] = hexutil.EncodeBig(tx.GasFeeCap())
-		transactionFilters["max_priority_fee_per_gas"] = int(tx.GasTipCap().Int64())
 		fields["maxPriorityFeePerGas"] = hexutil.EncodeBig(tx.GasTipCap())
-		transactionFilters["gas_price"] = nil
 		fields["gasPrice"] = nil
 	} else {
-		transactionFilters["gas_price"] = BigIntAsFloat64(tx.GasPrice())
 		fields["gasPrice"] = hexutil.EncodeBig(tx.GasPrice())
 	}
 
-	transactionFilters["type"] = strconv.Itoa(int(tx.Type()))
 	fields["type"] = hexutil.EncodeUint64(uint64(tx.Type()))
 
-	transactionFilters["value"] = BigIntAsFloat64(tx.Value())
 	fields["value"] = hexutil.EncodeBig(tx.Value())
 
-	transactionFilters["gas"] = float64(tx.Gas())
 	fields["gas"] = hexutil.EncodeUint64(tx.Gas())
 
 	if tx.To() != nil {
-		transactionFilters["to"] = AddressAsString(tx.To())
 		fields["to"] = AddressAsString(tx.To())
-	} else {
-		transactionFilters["to"] = "0x0"
 	}
-
-	//if sender != nil {
-	transactionFilters["from"] = AddressAsString(et.From)
-	fields["from"] = transactionFilters["from"]
-	//}
-
-	// note: from some reason method_id is only a filter field
-	methodID := strings.ToLower(hexutil.Encode(tx.Data()))
-	if len(methodID) >= 10 {
-		transactionFilters["method_id"] = "0x" + methodID[2:10]
-	} else {
-		transactionFilters["method_id"] = methodID
-	}
+	fields["from"] = AddressAsString(et.From)
 
 	et.fields = fields
-	et.filters = transactionFilters
 }
 
 // EthTransactionFromBytes parses and constructs an Ethereum transaction from bytes
@@ -209,7 +221,7 @@ func (et *EthTransaction) EffectiveGasTipCap() *big.Int {
 
 // Filters returns a map of key,value that can be used to filter transactions
 func (et *EthTransaction) Filters(filters []string) map[string]interface{} {
-	et.createFields()
+	et.createFilters()
 	return et.filters
 }
 
@@ -248,7 +260,7 @@ func AddressAsString(addr *common.Address) string {
 	if addr == nil {
 		return string([]byte("0x"))
 	}
-	return strings.ToLower(addr.Hex())
+	return fmt.Sprintf("0x%s", hex.EncodeToString(addr.Bytes()))
 }
 
 // BigIntAsFloat64 converts BigInt to float64

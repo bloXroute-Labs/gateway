@@ -38,7 +38,7 @@ func ethTransaction(hashString string, txString string) (SHA256Hash, EthTransact
 func TestBigValueTransacrtion(t *testing.T) {
 	hash, ethTx, _, err := ethTransaction(fixtures.BigValueTransactionHashBSC, fixtures.BigValueTransactionBSC)
 	assert.Nil(t, err)
-	ethTx.Filters([]string{})
+	ethTx.Fields([]string{})
 	assert.Equal(t, "0x0", ethTx.fields["type"])
 	assert.Equal(t, "0x"+hash.String(), ethTx.fields["hash"])
 	jsonMap := ethTx.Fields([]string{
@@ -63,7 +63,7 @@ func TestLegacyTransaction(t *testing.T) {
 	assert.Nil(t, err)
 
 	// check decoding transaction structure
-	ethTx.Filters([]string{})
+	ethTx.Fields([]string{})
 	assert.Equal(t, "0x0", ethTx.fields["type"])
 	assert.Equal(t, "0x"+hash.String(), ethTx.fields["hash"])
 	assert.Equal(t, BigIntAsString(expectedGasPrice), ethTx.fields["gasPrice"])
@@ -117,7 +117,7 @@ func TestAccessListTransaction(t *testing.T) {
 	assert.Nil(t, err)
 
 	// check decoding transaction structure
-	ethTx.Filters([]string{})
+	ethTx.Fields([]string{})
 	assert.Equal(t, "0x1", ethTx.fields["type"])
 	assert.Equal(t, "0x"+hash.String(), ethTx.fields["hash"])
 	assert.Equal(t, BigIntAsString(expectedGasPrice), ethTx.fields["gasPrice"])
@@ -169,7 +169,7 @@ func TestDynamicFeeTransaction(t *testing.T) {
 	assert.Nil(t, err)
 
 	// check decoding transaction structure
-	ethTx.Filters([]string{})
+	ethTx.Fields([]string{})
 	assert.Equal(t, "0x2", ethTx.fields["type"])
 	assert.Equal(t, "0x"+hash.String(), ethTx.fields["hash"])
 	assert.Equal(t, int64(fixtures.DynamicFeeFeePerGas), ethTx.GasFeeCap.Int64())
@@ -230,6 +230,7 @@ func TestDynamicFeeTransaction(t *testing.T) {
 func TestContractCreationTx(t *testing.T) {
 	hash, ethTx, _, err := ethTransaction(fixtures.ContractCreationTxHash, fixtures.ContractCreationTx)
 	assert.Nil(t, err)
+	ethTx.Fields([]string{})
 	filters := ethTx.Filters([]string{})
 	assert.Equal(t, "0x0", filters["to"])
 

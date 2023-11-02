@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -45,6 +46,7 @@ type Conn interface {
 }
 
 type realWSConn struct {
+	mu            sync.RWMutex
 	remoteAddress string
 	closed        chan struct{}
 	msgsRaw       chan msgRawResponse
@@ -220,6 +222,10 @@ func (c *realWSConn) write() {
 // Close closes websocket connection
 // It is safe to call Close multiple times
 func (c *realWSConn) Close() error {
+	// we saw we have raise condition
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	select {
 	case <-c.closed:
 		return nil
