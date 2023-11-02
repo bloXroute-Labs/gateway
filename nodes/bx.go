@@ -243,7 +243,7 @@ func (bn *Bx) Peers(_ context.Context, req *pbbase.PeersRequest) (*pbbase.PeersR
 			Trusted:    trusted,
 		}
 		if bxConn, ok := conn.(*handler.BxConn); ok {
-			peer.MinMsFromPeer, peer.MinMsToPeer, peer.SlowTrafficCount, peer.MinMsRoundTrip = bxConn.GetMinLatencies()
+			peer.MinUsFromPeer, peer.MinUsToPeer, peer.SlowTrafficCount, peer.MinUsRoundTrip = bxConn.GetMinLatencies()
 		}
 		resp.Peers = append(resp.Peers, peer)
 

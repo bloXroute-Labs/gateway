@@ -3,7 +3,6 @@ package servers
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -27,10 +26,8 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -143,7 +140,10 @@ func TestClientHandler(t *testing.T) {
 
 	blockchainPeers, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
 
-	fm := NewFeedManager(context.Background(), g, feedChan, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 1, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil, nil)
+	fm := NewFeedManager(context.Background(), g, feedChan, services.NewNoOpSubscriptionServices(),
+		types.NetworkNum(1), 1, types.NodeID("nodeID"),
+		eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false),
+		gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil, nil)
 	providers := fm.nodeWSManager.Providers()
 	p1 := providers[blockchainPeers[0].IPPort()]
 	assert.NotNil(t, p1)
@@ -157,9 +157,11 @@ func TestClientHandler(t *testing.T) {
 	clientHandler := NewClientHandler(fm, nil, NewHTTPServer(fm, cfg.HTTPPort), true, nil, log.WithFields(log.Fields{
 		"component": "gatewayClientHandler",
 	}), &sourceFromNode, mockAuthorize)
-	go clientHandler.ManageWSServer(cfg.ManageWSServer)
-	go clientHandler.ManageHTTPServer(context.Background())
-	group.Go(fm.Start)
+	go clientHandler.ManageWSServer(context.Background(), cfg.ManageWSServer)
+	go clientHandler.ManageHTTPServer()
+	group.Go(func() error {
+		return fm.Start(context.Background())
+	})
 
 	// BSC configuration
 	urlBSC := "127.0.0.1:28333"
@@ -173,9 +175,11 @@ func TestClientHandler(t *testing.T) {
 	clientHandlerBSC := NewClientHandler(fmBSC, nil, NewHTTPServer(fmBSC, cfg.HTTPPort+1), false, getMockQuotaUsage, log.WithFields(log.Fields{
 		"component": "gatewayClientHandlerBSC",
 	}), &sourceFromNode, mockAuthorize)
-	go clientHandlerBSC.ManageWSServer(false)
-	go clientHandlerBSC.ManageHTTPServer(context.Background())
-	group.Go(fmBSC.Start)
+	go clientHandlerBSC.ManageWSServer(context.Background(), false)
+	go clientHandlerBSC.ManageHTTPServer()
+	group.Go(func() error {
+		return fmBSC.Start(context.Background())
+	})
 	time.Sleep(10 * time.Millisecond)
 
 	dialer := websocket.DefaultDialer
@@ -243,9 +247,11 @@ func TestClientHandler(t *testing.T) {
 		clientHandler = NewClientHandler(fm, nil, NewHTTPServer(fm, cfg.HTTPPort), true, getMockQuotaUsage, log.WithFields(log.Fields{
 			"component": "gatewayClientHandler",
 		}), &sourceFromNode, mockAuthorize)
-		go clientHandler.ManageWSServer(cfg.ManageWSServer)
-		go clientHandler.ManageHTTPServer(context.Background())
-		group.Go(fm.Start)
+		go clientHandler.ManageWSServer(context.Background(), cfg.ManageWSServer)
+		go clientHandler.ManageHTTPServer()
+		group.Go(func() error {
+			return fm.Start(context.Background())
+		})
 		time.Sleep(10 * time.Millisecond)
 	}
 
@@ -270,12 +276,42 @@ func TestClientHandler(t *testing.T) {
 	assert.Nil(t, err)
 	assertSubscribe(t, ws, fm, `{"id": "1", "method": "subscribe", "params": ["newTxs", {"include": [], "multiTxs": true}]}`)
 	_, subscriptionID := assertSubscribe(t, ws, fm, `{"id": "1", "method": "subscribe", "params": ["newTxs", {"include": ["tx_hash"]}]}`)
-	time.Sleep(time.Millisecond)
-	assert.True(t, fm.SubscriptionExists(subscriptionID))
+
+	ticker := time.NewTicker(time.Millisecond)
+	timer := time.NewTimer(time.Millisecond * 10)
+loop1:
+	for {
+		select {
+		case <-ticker.C:
+			if fm.SubscriptionExists(subscriptionID) {
+				break loop1
+			}
+		case <-timer.C:
+			assert.True(t, fm.SubscriptionExists(subscriptionID))
+		}
+	}
+
+	ticker.Stop()
+	timer.Stop()
+
 	handlePingRequest(t, ws)
+
 	ws.Close()
 	time.Sleep(3 * time.Millisecond)
-	assert.False(t, fm.SubscriptionExists(subscriptionID))
+
+	ticker = time.NewTicker(time.Millisecond)
+	timer = time.NewTimer(time.Millisecond * 10)
+loop2:
+	for {
+		select {
+		case <-ticker.C:
+			if !fm.SubscriptionExists(subscriptionID) {
+				break loop2
+			}
+		case <-timer.C:
+			assert.False(t, fm.SubscriptionExists(subscriptionID))
+		}
+	}
 
 	// check subscribe and unsubscribe using different endpoints
 	clearWSProviderStats(fm, blockchainPeers)
@@ -289,11 +325,10 @@ func TestClientHandler(t *testing.T) {
 	headers.Set("Authorization", dummyAuthHeader)
 	_, _, errWs0 := dialer.Dial(wsURLs[0], headers)
 	assert.Nil(t, errWs0)
-
 }
 
-//TODO: Follow work to handle sync and unsync on another PR
-//func TestHandleClient_Notification(t *testing.T) {
+// TODO: Follow work to handle sync and unsync on another PR
+// func TestHandleClient_Notification(t *testing.T) {
 //	g := bxmock.MockBxListener{}
 //	stats := statistics.NoStats{}
 //	wsFeed := make(chan types.Notification)
@@ -359,7 +394,7 @@ func TestClientHandler(t *testing.T) {
 //	headers.Set("Authorization", dummyAuthHeader)
 //	_, _, errWs0 := dialer.Dial(wsURLs[0], headers)
 //	assert.Nil(t, errWs0)
-//}
+// }
 
 func handleSubscribe(t *testing.T, fm *FeedManager, ws *websocket.Conn) {
 	unsubscribeFilter, subscriptionID := assertSubscribe(t, ws, fm, `{"id": "1", "method": "subscribe", "params": ["newTxs", {"include": ["tx_hash"]}]}`)
@@ -914,66 +949,6 @@ func handleBscBlxrTxRequestWithNextValidator(t *testing.T, ws *websocket.Conn) {
 	msg := writeMsgToWsAndReadResponse(t, ws, []byte(reqPayload), nil)
 	clientRes := getClientResponse(t, msg)
 	assert.NotNil(t, clientRes.Error)
-}
-
-func TestSendBundleArgs_Validate(t *testing.T) {
-	invalidTransactions, err := hexutil.Decode("0x")
-	require.NoError(t, err)
-	validTransactions, err := hexutil.Decode("0xf8708344ca68852cb417800083032918943b815bb2ee63fdddf3bb9e6cf7ccbf8311dea5968803d61ab6e77d90008026a0b1fbc7fc1a0a038485315c67f93556b2c7edd0c9ae4873992ab0a03ff71dac65a0185fe97853d910164b792becbc25c1e6c8cdae9f2f6dfbf2854d98a818765aaa")
-	require.NoError(t, err)
-
-	testCases := []struct {
-		name    string
-		payload sendBundleArgs
-		error   error
-	}{
-		{
-			name: "bundle without transactions",
-			payload: sendBundleArgs{
-				Txs: []hexutil.Bytes{},
-			},
-			error: errors.New("bundle missing txs"),
-		},
-		{
-			name: "invalid bundle transactions",
-			payload: sendBundleArgs{
-				Txs:         []hexutil.Bytes{invalidTransactions},
-				BlockNumber: "test",
-			},
-			error: errors.New("typed transaction too short"),
-		},
-		{
-			name: "empty block number",
-			payload: sendBundleArgs{
-				Txs:         []hexutil.Bytes{validTransactions},
-				BlockNumber: "",
-			},
-			error: errors.New("bundle missing blockNumber"),
-		},
-		{
-			name: "invalid block number",
-			payload: sendBundleArgs{
-				Txs:         []hexutil.Bytes{validTransactions},
-				BlockNumber: "A",
-			},
-			error: errors.New(`blockNumber must be hex, hex string without 0x prefix`),
-		},
-		{
-			name: "valid payload with hex block number with 0x",
-			payload: sendBundleArgs{
-				Txs:         []hexutil.Bytes{validTransactions},
-				BlockNumber: "0xcccccc",
-			},
-			error: nil,
-		},
-	}
-
-	for _, tt := range testCases {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.payload.validate()
-			assert.Equal(t, tt.error, err)
-		})
-	}
 }
 
 type clientResponse struct {

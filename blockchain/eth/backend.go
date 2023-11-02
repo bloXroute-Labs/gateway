@@ -325,7 +325,8 @@ func (h *Handler) processBDNBlock(bdnBlock *types.BxBlock) {
 		h.broadcastBlock(ethBlock, ethBlockInfo.TotalDifficulty(), nil)
 	}
 
-	if h.config.Network == network.BSCMainnetChainID {
+	switch h.config.Network {
+	case network.BSCMainnetChainID, network.BSCTestnetChainID:
 		if ethBlock.Number().Uint64()%200 == 0 {
 			if err := h.processExtraData(ethBlock); err != nil {
 				log.Errorf("failed to process the epoch containing validator list, %v", err)
@@ -714,12 +715,11 @@ func (h *Handler) processBlock(peer *Peer, blockInfo *BlockInfo) error {
 	blockHash := block.Hash()
 	blockHeight := block.Number()
 
-	if h.config.Network == network.EthMainnetChainID {
+	switch h.config.Network {
+	case network.EthMainnetChainID:
 		peer.Log().Errorf("ignoring block[hash=%s,height=%d] from old node", blockHash.String(), blockHeight)
 		return nil
-	}
-
-	if h.config.Network == network.BSCMainnetChainID {
+	case network.BSCMainnetChainID, network.BSCTestnetChainID:
 		if blockHeight.Uint64()%200 == 0 {
 			if err := h.processExtraData(block); err != nil {
 				log.Errorf("failed to process the epoch containing validator list, %v", err)

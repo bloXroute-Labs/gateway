@@ -9,6 +9,7 @@ const (
 	ErrorNotificationCodeForbiddenByFirewall
 	ErrorNotificationUnsupportedCode
 	ErrorNotificationDisabledTimeout
+	ErrorNotificationDuplicateConnection
 )
 
 // CodeToReason converts code to reason
@@ -17,4 +18,5 @@ var CodeToReason = map[ErrorNotificationCode]string{
 	ErrorNotificationCodeForbiddenByFirewall: "%v",
 	ErrorNotificationUnsupportedCode:         "%v",
 	ErrorNotificationDisabledTimeout:         "closing disabled connection %v",
+	ErrorNotificationDuplicateConnection:     "%v",
 }

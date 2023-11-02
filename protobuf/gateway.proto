@@ -1,4 +1,6 @@
 syntax = "proto3";
+
+import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/bloXroute-Labs/gateway/gateway";
@@ -24,6 +26,9 @@ service Gateway {
   rpc TxReceipts (TxReceiptsRequest) returns (stream TxReceiptsReply){}
   rpc ShortIDs (TxHashListRequest) returns (ShortIDListReply) {}
   rpc ProposedBlock (ProposedBlockRequest) returns (ProposedBlockReply) {}
+  rpc TxsFromShortIDs (ShortIDListRequest) returns (TxListReply) {}
+  rpc BlockInfo (BlockInfoRequest) returns (BlockInfoReply) {}
+  rpc ProposedBlockStats (ProposedBlockStatsRequest) returns (ProposedBlockStatsReply) {}
 }
 
 message TxLogs {
@@ -40,7 +45,7 @@ message TxLogs {
 
 message TxReceiptsRequest {
   repeated string includes = 1;
-  string auth_header = 2;
+  string auth_header = 2 [deprecated = true];
 }
 
 message TxReceiptsReply {
@@ -68,7 +73,7 @@ message CallParams {
 message EthOnBlockRequest {
   repeated string includes = 1;
   repeated CallParams call_params = 2;
-  string auth_header = 3;
+  string auth_header = 3 [deprecated = true];
 }
 
 message EthOnBlockReply {
@@ -82,7 +87,7 @@ message EthOnBlockReply {
 message TxsRequest{
   string filters = 1;
   repeated string includes = 2;
-  string auth_header = 3;
+  string auth_header = 3 [deprecated = true];
 }
 
 message Tx{
@@ -103,7 +108,7 @@ message TxsReply{
 
 message BlocksRequest{
   repeated string includes = 1;
-  string auth_header = 2;
+  string auth_header = 2 [deprecated = true];
 }
 
 message BlockHeader{
@@ -144,7 +149,7 @@ message DisconnectInboundPeerRequest {
   string peer_ip = 1;
   int64 peer_port = 2;
   string public_key = 3;
-  string auth_header = 4;
+  string auth_header = 4 [deprecated = true];
 }
 
 message DisconnectInboundPeerReply {
@@ -152,7 +157,7 @@ message DisconnectInboundPeerReply {
 }
 
 message SubscriptionsRequest{
-  string auth_header = 1;
+  string auth_header = 1 [deprecated = true];
 }
 
 message Subscription{
@@ -172,7 +177,7 @@ message SubscriptionsReply {
 }
 
 message VersionRequest{
-  string auth_header = 1;
+  string auth_header = 1 [deprecated = true];
 }
 
 message VersionReply{
@@ -181,7 +186,7 @@ message VersionReply{
 }
 
 message StopRequest{
-  string auth_header = 1;
+  string auth_header = 1 [deprecated = true];
 }
 
 message StopReply{
@@ -189,7 +194,7 @@ message StopReply{
 
 message PeersRequest {
   string type = 1;
-  string auth_header = 2;
+  string auth_header = 2 [deprecated = true];
 }
 
 message RateSnapshot {
@@ -205,10 +210,10 @@ message Peer {
   string state = 4;
   uint32 network = 5;
   bool initiator = 6;
-  int64 min_ms_from_peer = 7;
-  int64 min_ms_to_peer = 8;
+  int64 min_us_from_peer = 7;
+  int64 min_us_to_peer = 8;
   int64 slow_traffic_count = 9;
-  int64 min_ms_round_trip = 10;
+  int64 min_us_round_trip = 10;
   string account_id = 11;
   string account_tier = 12;
   int64 port = 13;
@@ -258,7 +263,7 @@ message GetBxTransactionResponse {
 }
 
 message TxStoreRequest {
-  string auth_header = 1;
+  string auth_header = 1 [deprecated = true];
 }
 
 message TxStoreNetworkData{
@@ -287,14 +292,19 @@ message BlxrBatchTXRequest {
   bool validators_only = 5;
   bool node_validation = 6;
   int64 sending_time = 7;
-  string auth_header = 8;
+  string auth_header = 8 [deprecated = true];
+  bool frontrunning_protection = 9;
 }
 
 message BlxrTxRequest {
   string transaction = 1;
   bool nonce_monitoring = 2;
   bool next_validator = 3;
-  string auth_header = 4;
+  string auth_header = 4 [deprecated = true];
+  bool validators_only = 5;
+  int32 fallback = 6;
+  bool node_validation = 7;
+  bool frontrunning_protection = 8;
 }
 
 message BlxrTxReply {
@@ -317,7 +327,7 @@ message BlxrBatchTXReply {
 }
 
 message StatusRequest {
-  string auth_header = 1;
+  string auth_header = 1 [deprecated = true];
 }
 
 message AccountInfo {
@@ -404,7 +414,7 @@ message TxResult {
 }
 
 message TxHashListRequest {
-  string auth_header = 1;
+  string auth_header = 1 [deprecated = true];
   repeated bytes txHashes = 2;
 }
 
@@ -412,24 +422,64 @@ message ShortIDListReply {
   repeated uint32 shortIDs = 1;
 }
 
-message ProposedBlockRequest {
-  string auth_header = 1;
-  string validatorHttpAddress = 2;
-  string namespace = 3;
-  uint64 blockNumber = 4;
-  string prevBlockHash = 5;
-  string blockReward = 6;
-  uint64 gasLimit = 7;
-  uint64 gasUsed = 8;
-  repeated compressTx payload = 9;
+message ShortIDListRequest {
+  string auth_header = 1 [deprecated = true];
+  repeated uint32 shortIDs = 2;
 }
 
-message compressTx {
-  bytes rawData = 1;
-  uint32 shortID = 2;
+message TxListReply {
+  repeated bytes txs = 1;
+}
+
+message ProposedBlockRequest {
+  string auth_header = 1 [deprecated = true];
+  string validator_http_address = 2;
+  string namespace = 3;
+  uint64 block_number = 4;
+  string prev_block_hash = 5;
+  string block_reward = 6;
+  uint64 gas_limit = 7;
+  uint64 gas_used = 8;
+  repeated CompressTx payload = 9;
+  bool process_blocks_on_gateway = 10;
+  string id = 11;
+  repeated bytes un_reverted_hashes = 12;
+}
+
+message CompressTx {
+  bytes raw_data = 1;
+  uint32 short_id = 2;
 }
 
 message ProposedBlockReply {
-  string validatorReply = 1;
-  int64 validatorReplyTime = 2;
+  string validator_reply = 1;
+  int64 validator_reply_time = 2;
+}
+
+message BlockInfoRequest {
+  string auth_header = 1;
+
+  google.protobuf.Timestamp start_sending_time = 2;
+
+  uint64 block_number = 3;
+}
+
+message BlockInfoReply {}
+
+message ProposedBlockStatsRequest {
+  string auth_header = 1;
+
+  uint64 block_number = 2;
+}
+
+message ProposedBlockStatsReply {
+  string id = 1;
+
+  google.protobuf.Duration sending_duration = 2;
+
+  google.protobuf.Timestamp received_time = 3;
+  google.protobuf.Timestamp sent_time = 4;
+
+  string validator_reply = 5;
+  int64 validator_reply_time = 6;
 }

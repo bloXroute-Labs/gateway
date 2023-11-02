@@ -474,5 +474,5 @@ func (b *BxConn) closeWithRetry(reason string) error {
 
 // GetMinLatencies exposes the best latencies in ms form and to peer
 func (b BxConn) GetMinLatencies() (int64, int64, int64, int64) {
-	return b.minFromRelay / 1000, b.minToRelay / 1000, b.slowCount, b.minRoundTrip / 1000
+	return b.minFromRelay, b.minToRelay, b.slowCount, b.minRoundTrip
 }

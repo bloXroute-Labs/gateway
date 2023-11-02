@@ -117,6 +117,7 @@ func (bs *BdnPerformanceStats) CloseInterval() *BdnPerformanceStats {
 			newStatsData := BdnPerformanceStatsData{}
 			newStatsData.IsBeacon = stat.IsBeacon
 			newStatsData.IsConnected = stat.IsConnected
+			newStatsData.BlockchainNetwork = stat.BlockchainNetwork
 			nodeStats[endpoint] = &newStatsData
 		}
 	}

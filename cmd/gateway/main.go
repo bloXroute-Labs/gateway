@@ -2,17 +2,18 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
-	"os/signal"
 	"path"
-	"syscall"
+	"time"
 
 	"github.com/urfave/cli/v2"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
@@ -24,7 +25,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/nodes"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	httpclient "github.com/bloXroute-Labs/gateway/v2/utils/httpclient"
+	"github.com/bloXroute-Labs/gateway/v2/utils/httpclient"
 	"github.com/bloXroute-Labs/gateway/v2/version"
 )
 
@@ -87,7 +88,7 @@ func main() {
 			utils.EnableDynamicPeers,
 			utils.ForwardTransactionEndpoint,
 			utils.ForwardTransactionMethod,
-			utils.PolygonMainnetHeimdallEndpoint,
+			utils.PolygonMainnetHeimdallEndpoints,
 			utils.TransactionHoldDuration,
 			utils.TransactionPassedDueDuration,
 			utils.EnableBlockchainRPCMethodSupport,
@@ -96,6 +97,9 @@ func main() {
 			utils.NoTxsToBlockchain,
 			utils.NoBlocks,
 			utils.NoStats,
+			utils.EnableBloomFilter,
+			utils.BlocksToCacheWhileProposing,
+			utils.ProposingInterval,
 		},
 		Action: runGateway,
 	}
@@ -107,18 +111,23 @@ func main() {
 }
 
 func runGateway(c *cli.Context) error {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := utils.ContextWithSignal(c.Context)
 
+	group, ctx := errgroup.WithContext(ctx)
+
+	var pprofServer *http.Server
 	if !c.Bool(utils.DisableProfilingFlag.Name) {
-		go func() {
+		pprofServer = &http.Server{Addr: "0.0.0.0:6060"}
+		group.Go(func() error {
 			log.Infof("pprof http server is running on 0.0.0.0:6060 - %v", "http://localhost:6060/debug/pprof")
-			log.Error(http.ListenAndServe("0.0.0.0:6060", nil))
-		}()
-	}
 
-	sigc := make(chan os.Signal, 1)
-	signal.Notify(sigc, syscall.SIGINT, syscall.SIGTERM)
+			if err := pprofServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				return fmt.Errorf("failed to start pprof http server: %v", err)
+			}
+
+			return nil
+		})
+	}
 
 	bxConfig, err := config.NewBxFromCLI(c)
 	if err != nil {
@@ -148,6 +157,12 @@ func runGateway(c *cli.Context) error {
 		} else if blockchainPeerInfo.Multiaddr != nil {
 			endpoint = utils.MultiaddrToNodeEndoint(*blockchainPeerInfo.Multiaddr, blockchainNetwork)
 			prysmEndpoint = endpoint
+		} else if blockchainPeerInfo.BeaconAPIURI != "" {
+			endpointPtr, err := beacon.CreateAPIEndpoint(blockchainPeerInfo.BeaconAPIURI, blockchainNetwork)
+			if err != nil {
+				return err
+			}
+			endpoint = *endpointPtr
 		} else {
 			continue
 		}
@@ -168,12 +183,12 @@ func runGateway(c *cli.Context) error {
 	recommendedPeers := make(map[string]struct{})
 
 	startupBeaconNode := bxConfig.GatewayMode.IsBDN() && len(ethConfig.BeaconNodes()) > 0
-	startupBlockchainClient := startupBeaconNode || len(ethConfig.StaticEnodes()) > 0 || bxConfig.EnableDynamicPeers // if beacon node running we need to receive txs also
-	startupPrysmClient := bxConfig.GatewayMode.IsBDN() && prysmAddr != ""
 	startupBeaconAPIClients := bxConfig.GatewayMode.IsBDN() && len(ethConfig.BeaconAPIEndpoints()) > 0
+	startupBlockchainClient := startupBeaconAPIClients || startupBeaconNode || len(ethConfig.StaticEnodes()) > 0 || bxConfig.EnableDynamicPeers // if beacon node running we need to receive txs also
+	startupPrysmClient := bxConfig.GatewayMode.IsBDN() && prysmAddr != ""
 
 	var bridge blockchain.Bridge
-	if startupBlockchainClient || startupBeaconNode || startupPrysmClient || startupBeaconAPIClients {
+	if startupBlockchainClient || startupPrysmClient {
 		bridge = blockchain.NewBxBridge(eth.Converter{}, startupBeaconNode || startupBeaconAPIClients)
 	} else {
 		bridge = blockchain.NewNoOpBridge(eth.Converter{})
@@ -197,17 +212,16 @@ func runGateway(c *cli.Context) error {
 	}
 
 	gateway, err := nodes.NewGateway(ctx, bxConfig, bridge, wsManager, blockchainPeers, ethConfig.StaticPeers, recommendedPeers,
-		gatewayPublicKey, sdn, sslCerts, len(ethConfig.StaticEnodes()), c.String(utils.PolygonMainnetHeimdallEndpoint.Name),
-		c.Int(utils.TransactionHoldDuration.Name), c.Int(utils.TransactionPassedDueDuration.Name))
+		gatewayPublicKey, sdn, sslCerts, len(ethConfig.StaticEnodes()), c.String(utils.PolygonMainnetHeimdallEndpoints.Name),
+		c.Int(utils.TransactionHoldDuration.Name), c.Int(utils.TransactionPassedDueDuration.Name), c.Bool(utils.EnableBloomFilter.Name),
+		c.Int(utils.BlocksToCacheWhileProposing.Name), c.Duration(utils.ProposingInterval.Name))
 	if err != nil {
 		return err
 	}
 
-	if err = gateway.Run(); err != nil {
-		// TODO close the gateway while notify all other go routine (bridge, ws server, ...)
-		log.Errorf("closing gateway with err %v", err)
-		log.Exit(0)
-	}
+	group.Go(func() error {
+		return gateway.Run()
+	})
 
 	// Required for beacon node and prysm to sync
 	ethChain := eth.NewChain(ctx, ethConfig.IgnoreBlockTimeout)
@@ -290,17 +304,35 @@ func runGateway(c *cli.Context) error {
 		prysmClient.Start()
 	}
 
-	<-sigc
+	<-ctx.Done()
+
+	log.Infof("shutting down...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err = gateway.Close()
+	if err != nil {
+		log.Errorf("error shutting down gateway: %v", err)
+	}
+
+	if pprofServer != nil {
+		if err = pprofServer.Shutdown(shutdownCtx); err != nil {
+			log.Errorf("error shutting down pprof server: %v", err)
+		}
+	}
 
 	if blockchainServer != nil {
+		log.Infof("stopping blockchain client...")
 		blockchainServer.Stop()
 	}
 
 	if beaconNode != nil {
+		log.Infof("stopping beacon node...")
 		beaconNode.Stop()
 	}
 
-	return nil
+	return group.Wait()
 }
 
 func downloadGenesisFile(network, genesisFilePath string) (string, error) {
@@ -316,7 +348,7 @@ func downloadGenesisFile(network, genesisFilePath string) (string, error) {
 		genesisFileURL = "https://github.com/eth-clients/goerli/raw/main/prater/genesis.ssz"
 
 	default:
-		return "", fmt.Errorf("beacon node is supported on ethereum mainnet and ropsten")
+		return "", fmt.Errorf("beacon node is only supported on Ethereum")
 	}
 
 	out, err := os.Create(genesisFilePath)

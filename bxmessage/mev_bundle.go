@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	uuid "github.com/satori/go.uuid"
 )
@@ -280,12 +281,19 @@ func (m MEVBundle) Pack(protocol Protocol) ([]byte, error) {
 	// RevertingHashes
 	binary.LittleEndian.PutUint16(buf[offset:], uint16(len(m.RevertingHashes)))
 	offset += types.UInt16Len
-	for _, hash := range m.RevertingHashes {
-		// Remove the "0x" prefix and decode the hex string
-		decodedHash, _ := hex.DecodeString(hash[2:])
-		// Write the decoded hash
-		copy(buf[offset:], decodedHash)
-		offset += len(decodedHash)
+	for i, hash := range m.RevertingHashes {
+		if len(hash) >= 2 {
+			// Remove the "0x" prefix and decode the hex string
+			decodedHash, err := hex.DecodeString(hash[2:])
+			if err != nil {
+				return nil, fmt.Errorf("error decoding hash at index %v for bundle %v", i, m.BundleHash)
+			}
+			// Write the decoded hash
+			copy(buf[offset:], decodedHash)
+			offset += len(decodedHash)
+		} else {
+			log.Errorf("got empty reverting hash at index %v for bundle %v", i, m.BundleHash)
+		}
 	}
 
 	// Bundle hash

@@ -2,6 +2,7 @@ package servers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -23,9 +24,7 @@ import (
 	"github.com/sourcegraph/jsonrpc2"
 )
 
-const (
-	pendingNextValidatorListInitCapacity = 100
-)
+const accountExpiredError = "Account expired, unsubscribe feed"
 
 // ClientSubscription contains client subscription feed and connection
 type ClientSubscription struct {
@@ -123,8 +122,8 @@ func NewFeedManager(parent context.Context, node connections.BxListener, wsFeedC
 }
 
 // Start - start feed manager
-func (f *FeedManager) Start() error {
-	go f.run()
+func (f *FeedManager) Start(ctx context.Context) error {
+	f.run(ctx)
 	return nil
 }
 
@@ -184,10 +183,12 @@ func (f *FeedManager) Subscribe(feedName types.FeedType, feedConnectionType type
 	}
 
 	allowed, reason, permissionRespChannel := f.subscriptionServices.IsSubscriptionAllowed(&subscriptionModel)
-	log.Debugf("subscription %v: allowed %v, reason %v", id, allowed, reason)
 	if !allowed {
+		log.Debugf("subscription %v: allowed %v, reason %v", id, allowed, reason)
 		return nil, fmt.Errorf(reason)
 	}
+
+	log.Tracef("subscription %v is allowed", id)
 
 	f.lock.Lock()
 	f.idToClientSubscription[id] = clientSubscription
@@ -255,8 +256,8 @@ func (f *FeedManager) Unsubscribe(subscriptionID string, closeClientConnection b
 	if closeClientConnection && clientSub.connection != nil {
 		// TODO: need to unsubscribe all other subscriptions on this connection.
 		err := clientSub.connection.Close()
-		if err != nil && err != jsonrpc2.ErrClosed {
-			f.log.Warnf("failed to close connection for %v - %v", subscriptionID, err)
+		if err != nil && !errors.Is(err, jsonrpc2.ErrClosed) {
+			f.log.Warnf("failed to close connection for %v: %v", subscriptionID, err)
 			return fmt.Errorf("encountered error closing websocket connection with ID %v", subscriptionID)
 		}
 	}
@@ -280,13 +281,58 @@ func (f *FeedManager) CloseAllClientConnections() {
 }
 
 // run - getting feed notification and pass to client via common channel
-func (f *FeedManager) run() {
+func (f *FeedManager) run(ctx context.Context) {
 	defer f.cancel()
-	f.log.Infof("feedManager is Starting for network %v", f.networkNum)
-	defer f.log.Infof("feedManager stopped for network %v", f.networkNum)
+	f.log.Infof("feedManager is starting for network %v", f.networkNum)
+
+	// variables needed for daily account expiration check
+	firstDailyCheckTriggered := true
+	now := time.Now().UTC()
+	durationUntilMidnight := now.Truncate(24 * time.Hour).Add(24 * time.Hour).Sub(now)
+	dailyTicker := time.NewTicker(durationUntilMidnight)
 
 	for {
 		select {
+		case <-ctx.Done():
+			f.log.Infof("feedManager stopped for network %v", f.networkNum)
+			return
+		case <-dailyTicker.C:
+			// checks every 24 hours for all existing user subscription, if account expired close the subscription.
+			if firstDailyCheckTriggered {
+				firstDailyCheckTriggered = false
+				dailyTicker.Reset(24 * time.Hour)
+			}
+
+			subToRemove := make([]string, 0, len(f.idToClientSubscription))
+
+			f.lock.Lock()
+			for subID, sub := range f.idToClientSubscription {
+				accountModel, err := f.getCustomerAccountModel(sub.AccountID)
+				if err != nil {
+					log.Debugf("can't get account model for %v, while account has active feed subscription (%v), feed type: %v with %v since %s", sub.AccountID, subID, sub.feedType, sub.feedConnectionType, sub.timeOpenedFeed)
+					continue
+				}
+
+				expireDateTime, err := time.Parse(bxgateway.TimeDateLayoutISO, accountModel.ExpireDate)
+				if err != nil {
+					log.Debugf("can't parse account model expiration date for %v, while account has active feed subscription (%v), feed type: %v with %v since %s", sub.AccountID, subID, sub.feedType, sub.feedConnectionType, sub.timeOpenedFeed)
+					continue
+				}
+
+				if time.Now().UTC().After(expireDateTime.UTC()) {
+					// if account expires, disconnect client connection
+					log.Debugf("removing feed subscription for %v because account expires on %v, the feed subscription was (%v), feed type: %v with %v since %s", sub.AccountID, accountModel.ExpireDate, subID, sub.feedType, sub.feedConnectionType, sub.timeOpenedFeed)
+					subToRemove = append(subToRemove, subID)
+				}
+			}
+			f.lock.Unlock()
+
+			for _, sid := range subToRemove {
+				err := f.Unsubscribe(sid, true, accountExpiredError)
+				if err != nil {
+					log.Errorf("failed to remove feed subscription %v, %v", sid, err)
+				}
+			}
 		case notification, ok := <-f.feed:
 			if !ok {
 				f.log.Errorf("can't pull from ws feed channel. Terminating")
@@ -415,6 +461,16 @@ func (f *FeedManager) GetAllSubscriptions() []sdnmessage.SubscriptionModel {
 // GetPendingNextValidatorTxs returns map of pending next validator transactions
 func (f *FeedManager) GetPendingNextValidatorTxs() map[string]PendingNextValidatorTxInfo {
 	return f.pendingBSCNextValidatorTxHashToInfo
+}
+
+// GetNextValidatorMap returns an ordered map of next validators
+func (f *FeedManager) GetNextValidatorMap() *orderedmap.OrderedMap {
+	return f.nextValidatorMap
+}
+
+// GetValidatorStatusMap returns a synced map validators status
+func (f *FeedManager) GetValidatorStatusMap() *syncmap.SyncMap[string, bool] {
+	return f.validatorStatusMap
 }
 
 // LockPendingNextValidatorTxs activates mutex lock for pendingBSCNextValidatorTxHashToInfo map

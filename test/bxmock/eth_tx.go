@@ -45,10 +45,23 @@ func NewSignedEthTx(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey) *e
 // NewSignedEthTxBytes generates a valid Ethereum transaction, and packs it into RLP encoded bytes
 func NewSignedEthTxBytes(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey) (*ethtypes.Transaction, []byte) {
 	tx := NewSignedEthTx(txType, nonce, privateKey)
-	b, err := rlp.EncodeToBytes(tx)
-	if err != nil {
-		panic(err)
+	var b []byte
+	var err error
+	switch txType {
+	case ethtypes.LegacyTxType:
+		b, err = rlp.EncodeToBytes(tx)
+		if err != nil {
+			panic(err)
+		}
+	case ethtypes.DynamicFeeTxType, ethtypes.AccessListTxType:
+		b, err = tx.MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+	default:
+		panic("provided tx type does not exist")
 	}
+
 	return tx, b
 }
 

@@ -31,7 +31,7 @@ type gatewayGRPCServer struct {
 	server      *grpc.Server
 }
 
-func newGatewayGRPCServer(gateway *gateway, host string, port int, user string, secret string) gatewayGRPCServer {
+func newGatewayGRPCServer(gateway *gateway, host string, port int, user string, secret string) *gatewayGRPCServer {
 	grpcHostPort := fmt.Sprintf("%v:%v", host, port)
 
 	var encodedAuth string
@@ -41,7 +41,7 @@ func newGatewayGRPCServer(gateway *gateway, host string, port int, user string, 
 		encodedAuth = ""
 	}
 
-	return gatewayGRPCServer{
+	return &gatewayGRPCServer{
 		gateway:     gateway,
 		listenAddr:  grpcHostPort,
 		encodedAuth: encodedAuth,
@@ -49,21 +49,19 @@ func newGatewayGRPCServer(gateway *gateway, host string, port int, user string, 
 }
 
 func (ggs *gatewayGRPCServer) Start() error {
-	ggs.run()
-	return nil
+	return ggs.run()
 }
 
 func (ggs *gatewayGRPCServer) Stop() {
-	server := ggs.server
-	if server != nil {
+	if ggs.server != nil {
 		ggs.server.Stop()
 	}
 }
 
-func (ggs *gatewayGRPCServer) run() {
+func (ggs *gatewayGRPCServer) run() error {
 	listener, err := net.Listen("tcp", ggs.listenAddr)
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		return fmt.Errorf("failed to listen: %v", err)
 	}
 
 	serverOptions := []grpc.ServerOption{
@@ -77,9 +75,13 @@ func (ggs *gatewayGRPCServer) run() {
 	pb.RegisterGatewayServer(ggs.server, ggs.gateway)
 
 	log.Infof("GRPC server is starting on %v", ggs.listenAddr)
-	if err := ggs.server.Serve(listener); err != nil {
-		log.Fatalf("failed to serve: %v", err)
+
+	err = ggs.server.Serve(listener)
+	if err != nil {
+		return fmt.Errorf("failed to serve: %v", err)
 	}
+
+	return nil
 }
 
 func (ggs *gatewayGRPCServer) authenticate(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {

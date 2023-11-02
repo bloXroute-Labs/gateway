@@ -29,7 +29,7 @@ func TestValidContentParsing(t *testing.T) {
 	assert.Nil(t, err)
 
 	ethTx, ok := blockchainTx.(*EthTransaction)
-	ethTx.Filters([]string{})
+	ethTx.Fields([]string{})
 	assert.True(t, ok)
 
 	assert.Equal(t, "0x0", ethTx.fields["type"])

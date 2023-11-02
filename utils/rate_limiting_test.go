@@ -136,7 +136,7 @@ func TestTxTraceLeakyBucketRateLimiter_Take_HasCorrectLogging(t *testing.T) {
 	mockClock := &MockClock{}
 	startTime := time.Unix(0, 0)
 	mockClock.SetTime(startTime)
-	l := NewTxTraceLeakyBucketRateLimiter(mockClock, 2, PerSecond, "abc")
+	l := NewTxToolsLeakyBucketRateLimiter(mockClock, 2, PerSecond, "abc")
 	logrus.SetLevel(logrus.DebugLevel)
 	hook := test.NewGlobal()
 

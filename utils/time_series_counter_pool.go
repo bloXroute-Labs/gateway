@@ -39,7 +39,7 @@ func (tsc TimeSeriesCounterPool) AddPeer(peerID types.NodeID) {
 // RemovePeer removes peer from the pool
 func (tsc TimeSeriesCounterPool) RemovePeer(peerID types.NodeID) {
 	if !tsc.timeSeriesCounter.Has(peerID) {
-		log.Errorf("counter for %s peer does not exists, can not add remove", peerID)
+		log.Errorf("counter for %s peer does not exists, can not remove", peerID)
 		return
 	}
 

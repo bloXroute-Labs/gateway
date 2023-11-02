@@ -158,5 +158,5 @@ func TestTx_NextValidator(t *testing.T) {
 	txMsg2 := Tx{}
 	_ = txMsg2.Unpack(b, NextValidatorProtocol)
 	assert.Equal(t, 0, int(txMsg2.fallback))
-	assert.Equal(t, "", txMsg2.walletIDs[0])
+	assert.Nil(t, txMsg2.walletIDs)
 }
