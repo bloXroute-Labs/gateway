@@ -646,7 +646,7 @@ func (n *Node) blockSubscriber(msg *pubsub.Message) {
 		return
 	}
 
-	if err := sendBlockToBDN(n.clock, n.log, blk, n.bridge, *endpoint); err != nil {
+	if err := SendBlockToBDN(n.clock, n.log, blk, n.bridge, *endpoint); err != nil {
 		logCtx.Errorf("could not process block[slot=%d,hash=%s]: %v", blk.Block().Slot(), blockHashHex, err)
 		return
 	}

@@ -44,7 +44,8 @@ type Stats interface {
 	AddGatewayBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum,
 		mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int, bundlePrice int64, enforcePayout bool)
 	LogUnsubscribeStats(subscriptionID string, feedName types.FeedType, networkNum types.NetworkNum, accountID types.AccountID, tierName sdnmessage.AccountTier)
-	LogSDKInfo(blockchain, method, sourceCode, version string, feed types.FeedConnectionType, start, end time.Time)
+	LogSDKInfo(blockchain, method, sourceCode, version string, accountID types.AccountID, feed types.FeedConnectionType, start, end time.Time)
+	BundleSentToRsyncStats(timestamp time.Time, bundleHash string, blockNumber string, uuid string, bundlePrice int64, enforcePayout bool)
 }
 
 // NoStats is used to generate empty stats
@@ -85,7 +86,11 @@ func (NoStats) LogUnsubscribeStats(subscriptionID string, feedName types.FeedTyp
 }
 
 // LogSDKInfo does nothing
-func (NoStats) LogSDKInfo(_, _, _, _ string, _ types.FeedConnectionType, _, _ time.Time) {
+func (NoStats) LogSDKInfo(_, _, _, _ string, _ types.AccountID, _ types.FeedConnectionType, _, _ time.Time) {
+}
+
+// BundleSentToRsyncStats does nothing
+func (NoStats) BundleSentToRsyncStats(_ time.Time, _ string, _ string, _ string, _ int64, _ bool) {
 }
 
 // FluentdStats struct that represents fluentd stats info
@@ -417,7 +422,7 @@ func (s FluentdStats) LogUnsubscribeStats(subscriptionID string, feedName types.
 }
 
 // LogSDKInfo generates a fluentd STATS event
-func (s FluentdStats) LogSDKInfo(blockchain, method, sourceCode, version string, feed types.FeedConnectionType, start, end time.Time) {
+func (s FluentdStats) LogSDKInfo(blockchain, method, sourceCode, version string, accountID types.AccountID, feed types.FeedConnectionType, start, end time.Time) {
 	now := time.Now()
 	record := sdkInfoRecord{
 		Blockchain: blockchain,
@@ -425,8 +430,31 @@ func (s FluentdStats) LogSDKInfo(blockchain, method, sourceCode, version string,
 		Feed:       string(feed),
 		SourceCode: sourceCode,
 		Version:    version,
+		AccountID:  accountID,
 		Start:      start.Format(DateFormat),
 		End:        end.Format(DateFormat),
 	}
 	s.LogToFluentD(record, now, "stats.sdk.events")
+}
+
+// BundleSentToRsyncStats generates a fluentd STATS event
+func (s FluentdStats) BundleSentToRsyncStats(timestamp time.Time, bundleHash string, blockNumber string, uuid string, bundlePrice int64, enforcePayout bool) {
+	userSetUUID := false
+	if uuid != "" {
+		userSetUUID = true
+	}
+	record := Record{
+		Type: "bundleSentToRsync",
+		Data: bundleSentToRsyncRecord{
+			BundleHash:    bundleHash,
+			BlockNumber:   blockNumber,
+			UUID:          uuid,
+			UserSetUUID:   userSetUUID,
+			BundlePrice:   bundlePrice,
+			EnforcePayout: enforcePayout,
+			NetworkNum:    5,
+		},
+	}
+
+	s.LogToFluentD(record, timestamp, "stats.bundles_sent_to_rsync")
 }

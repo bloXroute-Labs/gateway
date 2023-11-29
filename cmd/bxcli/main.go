@@ -471,74 +471,75 @@ func cmdVersion(ctx *cli.Context) error {
 	return nil
 }
 
-func cmdNewTXs(ctx *cli.Context) error {
-	type txContent struct {
-		From     string `json:"from"`
-		Gas      string `json:"gas"`
-		GasPrice string `json:"gasPrice"`
-		Hash     string `json:"hash"`
-		Input    string `json:"input"`
-		Nonce    string `json:"nonce"`
-		Value    string `json:"value"`
-		V        string `json:"v"`
-		R        string `json:"r"`
-		S        string `json:"s"`
-		Type     string `json:"type"`
-		To       string `json:"to"`
-	}
+type txContent struct {
+	From     string `json:"from"`
+	Gas      string `json:"gas"`
+	GasPrice string `json:"gasPrice"`
+	Hash     string `json:"hash"`
+	Input    string `json:"input"`
+	Nonce    string `json:"nonce"`
+	Value    string `json:"value"`
+	V        string `json:"v"`
+	R        string `json:"r"`
+	S        string `json:"s"`
+	Type     string `json:"type"`
+	To       string `json:"to"`
+}
 
-	type txReply struct {
-		TxHash      string    `json:"txHash"`
-		TxContents  txContent `json:"txContents"`
-		LocalRegion bool      `json:"localRegion"`
-	}
+type txReply struct {
+	TxHash      string    `json:"txHash"`
+	TxContents  txContent `json:"txContents"`
+	LocalRegion bool      `json:"localRegion"`
+}
 
-	parseResponse := func(message *pb.TxsReply) ([]txReply, error) {
-		transactions := []txReply{}
-		for _, tx := range message.Tx {
-			rawTx := tx.RawTx
+func parseTxResponse(rawTxs []*pb.Tx) ([]txReply, error) {
 
-			var ethTx ethtypes.Transaction
-			err := ethTx.UnmarshalBinary(rawTx)
-			if err != nil {
-				return nil, err
-			}
+	transactions := []txReply{}
+	for _, tx := range rawTxs {
+		rawTx := tx.RawTx
 
-			v, r, s := ethTx.RawSignatureValues()
-			hash := strings.ToLower(ethTx.Hash().String())
-
-			from := hex.EncodeToString(tx.From)
-			if !strings.HasPrefix(from, "0x") {
-				from = "0x" + from
-			}
-
-			txContent := txContent{
-				From:     from,
-				Gas:      hexutil.EncodeUint64(ethTx.Gas()),
-				GasPrice: hexutil.EncodeBig(ethTx.GasPrice()),
-				Hash:     hash,
-				Input:    strings.ToLower(hexutil.Encode(ethTx.Data())),
-				Nonce:    strings.ToLower(hexutil.EncodeUint64(ethTx.Nonce())),
-				Value:    hexutil.EncodeBig(ethTx.Value()),
-				V:        hexutil.EncodeBig(v),
-				R:        hexutil.EncodeBig(r),
-				S:        hexutil.EncodeBig(s),
-				Type:     hexutil.EncodeUint64(uint64(ethTx.Type())),
-				To:       strings.ToLower(ethTx.To().Hex()),
-			}
-
-			reply := txReply{
-				TxHash:      hash,
-				TxContents:  txContent,
-				LocalRegion: tx.LocalRegion,
-			}
-
-			transactions = append(transactions, reply)
+		var ethTx ethtypes.Transaction
+		err := ethTx.UnmarshalBinary(rawTx)
+		if err != nil {
+			return nil, err
 		}
 
-		return transactions, nil
+		v, r, s := ethTx.RawSignatureValues()
+		hash := strings.ToLower(ethTx.Hash().String())
+
+		from := hex.EncodeToString(tx.From)
+		if !strings.HasPrefix(from, "0x") {
+			from = "0x" + from
+		}
+
+		txContent := txContent{
+			From:     from,
+			Gas:      hexutil.EncodeUint64(ethTx.Gas()),
+			GasPrice: hexutil.EncodeBig(ethTx.GasPrice()),
+			Hash:     hash,
+			Input:    strings.ToLower(hexutil.Encode(ethTx.Data())),
+			Nonce:    strings.ToLower(hexutil.EncodeUint64(ethTx.Nonce())),
+			Value:    hexutil.EncodeBig(ethTx.Value()),
+			V:        hexutil.EncodeBig(v),
+			R:        hexutil.EncodeBig(r),
+			S:        hexutil.EncodeBig(s),
+			Type:     hexutil.EncodeUint64(uint64(ethTx.Type())),
+			To:       strings.ToLower(ethTx.To().Hex()),
+		}
+
+		reply := txReply{
+			TxHash:      hash,
+			TxContents:  txContent,
+			LocalRegion: tx.LocalRegion,
+		}
+
+		transactions = append(transactions, reply)
 	}
 
+	return transactions, nil
+}
+
+func cmdNewTXs(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewStreamFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
@@ -554,17 +555,17 @@ func cmdNewTXs(ctx *cli.Context) error {
 			}()
 
 			for {
-				transactions, err := stream.Recv()
+				reply, err := stream.Recv()
 				if err != nil {
 					return nil, err
 				}
 
-				reply, err := parseResponse(transactions)
+				parsedTxs, err := parseTxResponse(reply.Tx)
 				if err != nil {
 					return nil, err
 				}
 
-				bytes, _ := json.MarshalIndent(reply, "", "    ")
+				bytes, _ := json.MarshalIndent(parsedTxs, "", "    ")
 				fmt.Println(string(bytes))
 			}
 		},
@@ -584,17 +585,33 @@ func cmdPendingTXs(ctx *cli.Context) error {
 			if err != nil {
 				return nil, err
 			}
+
+			defer func() {
+				err := stream.CloseSend()
+				if err != nil {
+					fmt.Printf("failed to close stream: %v", err)
+				}
+			}()
+
 			for {
-				tx, err := stream.Recv()
+				reply, err := stream.Recv()
 				if err == io.EOF {
 					fmt.Println("pendingTxs error EOF: ", err)
 					break
 				}
+
 				if err != nil {
 					fmt.Println("pendingTxs error in recv: ", err)
 					break
 				}
-				fmt.Println(tx)
+
+				parsedTxs, err := parseTxResponse(reply.Tx)
+				if err != nil {
+					return nil, err
+				}
+
+				bytes, _ := json.MarshalIndent(parsedTxs, "", "    ")
+				fmt.Println(string(bytes))
 			}
 			return nil, nil
 		},
@@ -606,6 +623,28 @@ func cmdPendingTXs(ctx *cli.Context) error {
 	return nil
 }
 
+type blocksReply struct {
+	Hash                string                    `json:"hash"`
+	Header              *pb.BlockHeader           `json:"header"`
+	FutureValidatorInfo []*pb.FutureValidatorInfo `json:"future_validator_info"`
+	Transaction         []txReply                 `json:"transaction"`
+}
+
+func parseBlockResponse(message *pb.BlocksReply) (*blocksReply, error) {
+	var parsedBlock blocksReply
+
+	parsedBlock.Hash = message.Hash
+	parsedBlock.Header = message.Header
+	parsedBlock.FutureValidatorInfo = message.FutureValidatorInfo
+	var err error
+	parsedBlock.Transaction, err = parseTxResponse(message.Transaction)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse transactions for the block %s: %v", message.Hash, err)
+	}
+
+	return &parsedBlock, nil
+}
+
 func cmdNewBlocks(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
@@ -615,7 +654,7 @@ func cmdNewBlocks(ctx *cli.Context) error {
 				return nil, err
 			}
 			for {
-				block, err := stream.Recv()
+				reply, err := stream.Recv()
 				if err == io.EOF {
 					fmt.Println("newBlocks error EOF: ", err)
 					break
@@ -624,7 +663,10 @@ func cmdNewBlocks(ctx *cli.Context) error {
 					fmt.Println("newBlocks error in recv: ", err)
 					break
 				}
-				fmt.Println(block)
+
+				parsedBlock, err := parseBlockResponse(reply)
+				bytes, _ := json.MarshalIndent(*parsedBlock, "", "    ")
+				fmt.Println(string(bytes))
 			}
 			return nil, nil
 		},
@@ -645,7 +687,7 @@ func cmdBdnBlocks(ctx *cli.Context) error {
 				return nil, err
 			}
 			for {
-				block, err := stream.Recv()
+				reply, err := stream.Recv()
 				if err == io.EOF {
 					fmt.Println("bdnBlocks error EOF: ", err)
 					break
@@ -654,7 +696,10 @@ func cmdBdnBlocks(ctx *cli.Context) error {
 					fmt.Println("bdnBlocks error in recv: ", err)
 					break
 				}
-				fmt.Println(block)
+
+				parsedBlock, err := parseBlockResponse(reply)
+				bytes, _ := json.MarshalIndent(*parsedBlock, "", "    ")
+				fmt.Println(string(bytes))
 			}
 			return nil, nil
 		},

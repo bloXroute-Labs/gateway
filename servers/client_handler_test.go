@@ -11,6 +11,7 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/sourcegraph/jsonrpc2"
 
 	"github.com/bloXroute-Labs/gateway/v2"
@@ -156,7 +157,7 @@ func TestClientHandler(t *testing.T) {
 	sourceFromNode := false
 	clientHandler := NewClientHandler(fm, nil, NewHTTPServer(fm, cfg.HTTPPort), true, nil, log.WithFields(log.Fields{
 		"component": "gatewayClientHandler",
-	}), &sourceFromNode, mockAuthorize)
+	}), &sourceFromNode, mockAuthorize, true)
 	go clientHandler.ManageWSServer(context.Background(), cfg.ManageWSServer)
 	go clientHandler.ManageHTTPServer()
 	group.Go(func() error {
@@ -174,7 +175,7 @@ func TestClientHandler(t *testing.T) {
 	assert.NotNil(t, p4)
 	clientHandlerBSC := NewClientHandler(fmBSC, nil, NewHTTPServer(fmBSC, cfg.HTTPPort+1), false, getMockQuotaUsage, log.WithFields(log.Fields{
 		"component": "gatewayClientHandlerBSC",
-	}), &sourceFromNode, mockAuthorize)
+	}), &sourceFromNode, mockAuthorize, true)
 	go clientHandlerBSC.ManageWSServer(context.Background(), false)
 	go clientHandlerBSC.ManageHTTPServer()
 	group.Go(func() error {
@@ -246,7 +247,7 @@ func TestClientHandler(t *testing.T) {
 		fm = NewFeedManager(context.Background(), g, make(chan types.Notification), services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 1, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil, nil)
 		clientHandler = NewClientHandler(fm, nil, NewHTTPServer(fm, cfg.HTTPPort), true, getMockQuotaUsage, log.WithFields(log.Fields{
 			"component": "gatewayClientHandler",
-		}), &sourceFromNode, mockAuthorize)
+		}), &sourceFromNode, mockAuthorize, true)
 		go clientHandler.ManageWSServer(context.Background(), cfg.ManageWSServer)
 		go clientHandler.ManageHTTPServer()
 		group.Go(func() error {
@@ -411,7 +412,7 @@ func handleEthSubscribe(t *testing.T, fm *FeedManager, ws *websocket.Conn, block
 
 	unsubscribeFilter, subscriptionID := assertEthSubscribe(t, ws, fm, `{"id": "1", "method": "eth_subscribe", "params": ["newHeads"]}`)
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
-	feedNotification, _ := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil)
+	feedNotification, _ := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil, false)
 	feedNotification.SetNotificationType(types.NewBlocksFeed)
 	sourceEndpoint := types.NodeEndpoint{IP: blockchainPeers[0].IP, Port: blockchainPeers[0].Port, BlockchainNetwork: bxgateway.Mainnet}
 	feedNotification.SetSource(&sourceEndpoint)
@@ -522,7 +523,7 @@ func handleTxReceiptsNotification(t *testing.T, fm *FeedManager, ws *websocket.C
 	td := big.NewInt(10000)
 	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, td))
 	numTx := len(bxBlock.Txs)
-	feedNotification, _ := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil)
+	feedNotification, _ := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil, false)
 	feedNotification.SetNotificationType(types.TxReceiptsFeed)
 	sourceEndpoint := types.NodeEndpoint{IP: blockchainPeers[0].IP, Port: blockchainPeers[0].Port}
 	feedNotification.SetSource(&sourceEndpoint)
@@ -612,7 +613,7 @@ func handleOnBlockNotification(t *testing.T, fm *FeedManager, ws *websocket.Conn
 	unsubscribeFilter, subscriptionID := assertSubscribe(t, ws, fm, `{"id": "1", "method": "subscribe", "params": ["ethOnBlock", {"include": [], "call-params":  [{"method": "eth_blockNumber", "name": "height"}] }]}`)
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
-	feedNotification, _ := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil)
+	feedNotification, _ := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil, false)
 	feedNotification.SetNotificationType(types.OnBlockFeed)
 	sourceEndpoint := types.NodeEndpoint{IP: blockchainPeers[0].IP, Port: blockchainPeers[0].Port, BlockchainNetwork: bxgateway.Mainnet}
 	feedNotification.SetSource(&sourceEndpoint)
@@ -653,7 +654,7 @@ func handleTxReceiptsNotificationRequestedUnsynced(t *testing.T, fm *FeedManager
 	td := big.NewInt(10000)
 	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, td))
 	numTx := len(bxBlock.Txs)
-	feedNotification, _ := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil)
+	feedNotification, _ := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil, false)
 	feedNotification.SetNotificationType(types.TxReceiptsFeed)
 	sourceEndpoint := types.NodeEndpoint{IP: blockchainPeers[0].IP, Port: blockchainPeers[0].Port, BlockchainNetwork: bxgateway.Mainnet}
 	feedNotification.SetSource(&sourceEndpoint)
@@ -698,7 +699,7 @@ func handleOnBlockNotificationRequestedUnsynced(t *testing.T, fm *FeedManager, w
 	unsubscribeFilter, subscriptionID := assertSubscribe(t, ws, fm, `{"id": "1", "method": "subscribe", "params": ["ethOnBlock", {"include": [], "call-params":  [{"method": "eth_blockNumber", "name": "height"}] }]}`)
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
-	feedNotification, _ := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil)
+	feedNotification, _ := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil, false)
 	feedNotification.SetNotificationType(types.OnBlockFeed)
 	sourceEndpoint := types.NodeEndpoint{IP: blockchainPeers[0].IP, Port: blockchainPeers[0].Port, BlockchainNetwork: bxgateway.Mainnet}
 	feedNotification.SetSource(&sourceEndpoint)
@@ -749,7 +750,7 @@ func handleTxReceiptsNotificationNoneSynced(t *testing.T, fm *FeedManager, ws *w
 	assert.True(t, fm.SubscriptionExists(subscriptionID))
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
-	feedNotification, err := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil)
+	feedNotification, err := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil, false)
 	assert.Nil(t, err)
 	feedNotification.SetNotificationType(types.TxReceiptsFeed)
 	sourceEndpoint := types.NodeEndpoint{IP: blockchainPeers[0].IP, Port: blockchainPeers[0].Port, BlockchainNetwork: bxgateway.Mainnet}
@@ -786,7 +787,7 @@ func handleOnBlockNotificationNoneSynced(t *testing.T, fm *FeedManager, ws *webs
 	assert.True(t, fm.SubscriptionExists(subscriptionID))
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
-	feedNotification, err := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil)
+	feedNotification, err := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil, false)
 	assert.Nil(t, err)
 	feedNotification.SetNotificationType(types.OnBlockFeed)
 	sourceEndpoint := types.NodeEndpoint{IP: blockchainPeers[0].IP, Port: blockchainPeers[0].Port, BlockchainNetwork: bxgateway.Mainnet}
@@ -1033,4 +1034,70 @@ func assertEthSubscribe(t *testing.T, ws *websocket.Conn, fm *FeedManager, filte
 		`{"id": 1, "method": "eth_unsubscribe", "params": ["%v"]}`,
 		subscriptionID,
 	), subscriptionID
+}
+
+func TestisFiltersSupportedByTxType(t *testing.T) {
+	tests := []struct {
+		name     string
+		txType   uint8
+		filters  []string
+		expected bool
+	}{
+		{
+			name:     "DynamicFeeTxType with gas_price filter",
+			txType:   ethtypes.DynamicFeeTxType,
+			filters:  []string{"gas_price"},
+			expected: false,
+		},
+		{
+			name:     "DynamicFeeTxType with gas_price and max_fee_per_gas filters",
+			txType:   ethtypes.DynamicFeeTxType,
+			filters:  []string{"gas_price", "max_fee_per_gas"},
+			expected: true,
+		},
+		{
+			name:     "DynamicFeeTxType with gas_price and max_priority_fee_per_gas filters",
+			txType:   ethtypes.DynamicFeeTxType,
+			filters:  []string{"gas_price", "max_priority_fee_per_gas"},
+			expected: true,
+		},
+		{
+			name:     "DynamicFeeTxType with gas_price and max_priority_fee_per_gas filters",
+			txType:   ethtypes.DynamicFeeTxType,
+			filters:  []string{"gas_price", "max_fee_per_gas", "max_priority_fee_per_gas"},
+			expected: true,
+		},
+		{
+			name:     "Non-DynamicFeeTxType with max_fee_per_gas filter",
+			txType:   ethtypes.LegacyTxType,
+			filters:  []string{"max_fee_per_gas"},
+			expected: false,
+		},
+		{
+			name:     "Non-DynamicFeeTxType with max_priority_fee_per_gas filter",
+			txType:   ethtypes.LegacyTxType,
+			filters:  []string{"max_priority_fee_per_gas"},
+			expected: false,
+		},
+		{
+			name:     "Non-DynamicFeeTxType with no filters",
+			txType:   ethtypes.LegacyTxType,
+			filters:  []string{},
+			expected: true,
+		},
+		{
+			name:     "Non-DynamicFeeTxType with gasPrice",
+			txType:   ethtypes.LegacyTxType,
+			filters:  []string{"gas_price"},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isFiltersSupportedByTxType(tt.txType, tt.filters); got != tt.expected {
+				t.Errorf("isFiltersSupportedByTxType() = %v, expected %v", got, tt.expected)
+			}
+		})
+	}
 }

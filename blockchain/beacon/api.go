@@ -283,7 +283,7 @@ func (c *APIClient) eventHandler() func(msg *sse.Event) {
 			return
 		}
 
-		if err := sendBlockToBDN(c.clock, c.log, block, c.bridge, *c.nodeEndpoint); err != nil {
+		if err := SendBlockToBDN(c.clock, c.log, block, c.bridge, *c.nodeEndpoint); err != nil {
 			c.log.Errorf("could not proccess beacon block[slot=%d,hash=%s] to eth: %v", block.Block().Slot(), blockHash, err)
 			return
 		}
@@ -333,6 +333,7 @@ func (c *APIClient) BroadcastBlock(block interfaces.ReadOnlySignedBeaconBlock) e
 
 	req.Header.Set("Eth-Consensus-Version", version.String(block.Version()))
 	req.Header.Set("Content-Type", c.blockEncoder.contentType())
+	req.Header.Set("Accept", "application/octet-stream")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

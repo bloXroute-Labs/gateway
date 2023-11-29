@@ -34,6 +34,7 @@ type handlerObj struct {
 	ethSubscribeIDToChanMap  map[string]chan bool
 	headers                  map[string]string
 	stats                    statistics.Stats
+	txFromFieldIncludable    bool
 }
 
 // Handle handling client requests

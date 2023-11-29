@@ -21,7 +21,7 @@ func TestConverter_Transactions(t *testing.T) {
 
 func testTransactionType(t *testing.T, txType uint8) {
 	c := Converter{}
-	tx := bxmock.NewSignedEthTx(txType, 1, nil)
+	tx := bxmock.NewSignedEthTx(txType, 1, nil, nil)
 
 	bdnTx, err := c.TransactionBlockchainToBDN(tx)
 	assert.Nil(t, err)
@@ -61,7 +61,7 @@ func TestConverter_Block(t *testing.T) {
 
 	assert.Equal(t, td, blockInfo.TotalDifficulty())
 
-	canonicFormat, err := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil)
+	canonicFormat, err := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil, false)
 	assert.Nil(t, err)
 
 	for i, tx := range canonicFormat.Transactions {

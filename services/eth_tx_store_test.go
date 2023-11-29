@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"math/big"
-	"math/rand"
 	"testing"
 	"time"
 
@@ -36,7 +35,7 @@ func TestEthTxStore_InvalidChainID(t *testing.T) {
 	store := NewEthTxStore(&utils.MockClock{}, 30*time.Second, 30*time.Second, 30*time.Second,
 		NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{testNetworkNum: &blockchainNetwork}, newTestBloomFilter(t))
 	hash := types.SHA256Hash{1}
-	tx := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey)
+	tx := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey, nil)
 	content, _ := rlp.EncodeToBytes(&tx)
 
 	// first time seeing valid tx
@@ -54,7 +53,7 @@ func TestEthTxStore_Add(t *testing.T) {
 	store := NewEthTxStore(&utils.MockClock{}, 30*time.Second, 30*time.Second, 30*time.Second,
 		NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{testNetworkNum: &blockchainNetwork}, newTestBloomFilter(t))
 	hash := types.SHA256Hash{1}
-	tx := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey)
+	tx := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey, nil)
 	content, _ := rlp.EncodeToBytes(&tx)
 
 	// ignore, transaction is a duplicate
@@ -76,7 +75,7 @@ func TestEthTxStore_Add(t *testing.T) {
 	assert.Equal(t, 1, store.Count())
 
 	// add invalid transaction - should not be added but should get to History
-	tx = bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 2, privateKey)
+	tx = bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 2, privateKey, nil)
 	content, _ = rlp.EncodeToBytes(&tx)
 	hash = types.SHA256Hash{2}
 
@@ -104,23 +103,23 @@ func TestEthTxStore_AddReuseSenderNonce(t *testing.T) {
 
 	// original transaction
 	hash1 := types.SHA256Hash{1}
-	tx1 := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey)
+	tx1 := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey, nil)
 	content1, _ := rlp.EncodeToBytes(&tx1)
 
 	// transaction that reuses nonce
 	hash2 := types.SHA256Hash{2}
-	tx2 := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey)
+	tx2 := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey, nil)
 	content2, _ := rlp.EncodeToBytes(&tx2)
 
 	// incremented nonce
 	hash3 := types.SHA256Hash{3}
-	tx3 := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 2, privateKey)
+	tx3 := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 2, privateKey, nil)
 	content3, _ := rlp.EncodeToBytes(&tx3)
 
 	// different sender
 	privateKey2, _ := crypto.GenerateKey()
 	hash4 := types.SHA256Hash{4}
-	tx4 := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey2)
+	tx4 := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey2, nil)
 	content4, _ := rlp.EncodeToBytes(&tx4)
 
 	// add original transaction
@@ -202,59 +201,76 @@ func TestEthTxStore_AddInvalidTx(t *testing.T) {
 	assert.Equal(t, 0, store.Count())
 }
 
+func newEthTransaction(nonce uint64, gasFee, gasTip int64) (*types.EthTransaction, error) {
+	to := common.HexToAddress("0x12345")
+
+	rawTx := ethtypes.NewTx(&ethtypes.DynamicFeeTx{
+		ChainID:    big.NewInt(testChainID),
+		Nonce:      nonce,
+		GasFeeCap:  big.NewInt(gasFee),
+		GasTipCap:  big.NewInt(gasTip),
+		Gas:        1000,
+		To:         &to,
+		Value:      big.NewInt(100),
+		Data:       []byte{},
+		AccessList: nil,
+	})
+
+	// Sign the transaction with same private key
+	signedTx, err := ethtypes.SignTx(rawTx, ethtypes.NewLondonSigner(rawTx.ChainId()), privateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return types.NewEthTransaction(types.SHA256Hash(signedTx.Hash()), signedTx, types.EmptySender)
+}
+
 func TestNonceTracker_track(t *testing.T) {
 	c := utils.MockClock{}
 	nc := blockchainNetwork
 	nc.AllowTimeReuseSenderNonce = 1
 	nc.NetworkNum = testNetworkNum
 	n := newNonceTracker(&c, sdnmessage.BlockchainNetworks{nc.NetworkNum: &nc}, 10)
-	var fromBytes common.Address
-	rand.Read(fromBytes[:])
-	address := &fromBytes
+	nonce := uint64(1)
 
-	tx := types.EthTransaction{
-		From:      address,
-		GasTipCap: big.NewInt(100),
-		GasFeeCap: big.NewInt(100),
-	}
-	txSame := types.EthTransaction{
-		From:      address,
-		GasTipCap: big.NewInt(100),
-		GasFeeCap: big.NewInt(100),
-	}
-	txLowerGas := types.EthTransaction{
-		From:      address,
-		GasTipCap: big.NewInt(5),
-		GasFeeCap: big.NewInt(5),
-	}
-	txSlightlyHigherGas := types.EthTransaction{
-		From:      address,
-		GasTipCap: big.NewInt(101),
-		GasFeeCap: big.NewInt(101),
-	}
-	txHigherGas := types.EthTransaction{
-		From:      address,
-		GasTipCap: big.NewInt(111),
-		GasFeeCap: big.NewInt(1111),
-	}
+	tx, err := newEthTransaction(nonce, 100, 100)
+	require.NoError(t, err)
 
-	duplicate, _ := n.track(&tx, testNetworkNum)
+	txSame, err := newEthTransaction(nonce, 100, 100)
+	require.NoError(t, err)
+
+	txLowerGas, err := newEthTransaction(nonce, 5, 5)
+	require.NoError(t, err)
+
+	txSlightlyHigherGas, err := newEthTransaction(nonce, 101, 101)
+	require.NoError(t, err)
+
+	txHigherGas, err := newEthTransaction(nonce, 111, 1111)
+	require.NoError(t, err)
+
+	duplicate, _, err := n.track(tx, testNetworkNum)
+	require.NoError(t, err)
 	assert.False(t, duplicate)
 
-	duplicate, _ = n.track(&txSame, testNetworkNum)
+	duplicate, _, err = n.track(txSame, testNetworkNum)
+	assert.NoError(t, err)
 	assert.True(t, duplicate)
 
-	duplicate, _ = n.track(&txLowerGas, testNetworkNum)
+	duplicate, _, err = n.track(txLowerGas, testNetworkNum)
+	assert.NoError(t, err)
 	assert.True(t, duplicate)
 
-	duplicate, _ = n.track(&txSlightlyHigherGas, testNetworkNum)
+	duplicate, _, err = n.track(txSlightlyHigherGas, testNetworkNum)
+	assert.NoError(t, err)
 	assert.True(t, duplicate)
 
-	duplicate, _ = n.track(&txHigherGas, testNetworkNum)
+	duplicate, _, err = n.track(txHigherGas, testNetworkNum)
+	assert.NoError(t, err)
 	assert.False(t, duplicate)
 
 	c.IncTime(5 * time.Second)
-	duplicate, _ = n.track(&txLowerGas, testNetworkNum)
+	duplicate, _, err = n.track(txLowerGas, testNetworkNum)
+	assert.NoError(t, err)
 	assert.False(t, duplicate)
 }
 
@@ -264,49 +280,45 @@ func TestNonceTracker_clean(t *testing.T) {
 	nc.AllowTimeReuseSenderNonce = 1
 	nc.NetworkNum = testNetworkNum
 	n := newNonceTracker(&c, sdnmessage.BlockchainNetworks{nc.NetworkNum: &nc}, 10)
-	var fromBytes common.Address
-	rand.Read(fromBytes[:])
-	address := &fromBytes
 
-	tx := types.EthTransaction{
-		From:      address,
-		GasTipCap: big.NewInt(100),
-		GasFeeCap: big.NewInt(100),
-		Nonce:     1,
-	}
-	tx2 := types.EthTransaction{
-		From:      address,
-		GasTipCap: big.NewInt(100),
-		GasFeeCap: big.NewInt(100),
-		Nonce:     2,
-	}
-	tx3 := types.EthTransaction{
-		From:      address,
-		GasTipCap: big.NewInt(100),
-		GasFeeCap: big.NewInt(100),
-		Nonce:     3,
-	}
+	tx, err := newEthTransaction(1, 100, 100)
+	require.NoError(t, err)
 
-	n.track(&tx, testNetworkNum)
+	tx2, err := newEthTransaction(2, 100, 100)
+	require.NoError(t, err)
+
+	tx3, err := newEthTransaction(3, 100, 100)
+	require.NoError(t, err)
+
+	n.track(tx, testNetworkNum)
 	c.IncTime(500 * time.Millisecond)
 
-	n.track(&tx2, testNetworkNum)
+	n.track(tx2, testNetworkNum)
 	c.IncTime(500 * time.Millisecond)
 
-	n.track(&tx3, testNetworkNum)
+	n.track(tx3, testNetworkNum)
 	c.IncTime(100 * time.Millisecond)
 
 	n.clean()
 
-	rtx, ok := n.getTransaction(address, 1)
+	fromTx1, err := tx.From()
+	require.NoError(t, err)
+
+	rtx, ok := n.getTransaction(fromTx1, 1)
 	assert.Nil(t, rtx)
 	assert.False(t, ok)
 
-	rtx, ok = n.getTransaction(address, 2)
-	assert.Equal(t, &tx2, rtx.tx)
+	fromTx2, err := tx2.From()
+	require.NoError(t, err)
+
+	rtx, ok = n.getTransaction(fromTx2, 2)
+	assert.Equal(t, tx2, rtx.tx)
 	assert.True(t, ok)
 
-	rtx, ok = n.getTransaction(address, 3)
-	assert.Equal(t, &tx3, rtx.tx)
+	fromTx3, err := tx3.From()
+	require.NoError(t, err)
+
+	rtx, ok = n.getTransaction(fromTx3, 3)
+	assert.Equal(t, tx3, rtx.tx)
 	assert.True(t, ok)
 }

@@ -263,13 +263,14 @@ type EthBlockNotification struct {
 	Transactions     []map[string]interface{} `json:"transactions,omitempty"`
 	Uncles           []Header                 `json:"uncles,omitempty"`
 	ValidatorInfo    []*FutureValidatorInfo   `json:"future_validator_info,omitempty"`
+	Withdrawals      ethtypes.Withdrawals     `json:"withdrawals,omitempty"`
 	rawTransactions  [][]byte
 	notificationType FeedType
 	source           *NodeEndpoint
 }
 
 // NewEthBlockNotification creates ETH block notification
-func NewEthBlockNotification(hash ethcommon.Hash, block *ethtypes.Block, info []*FutureValidatorInfo) (*EthBlockNotification, error) {
+func NewEthBlockNotification(hash ethcommon.Hash, block *ethtypes.Block, info []*FutureValidatorInfo, txIncludeSender bool) (*EthBlockNotification, error) {
 	if hash == (ethcommon.Hash{}) {
 		return nil, errors.New("empty block hash")
 	}
@@ -278,24 +279,28 @@ func NewEthBlockNotification(hash ethcommon.Hash, block *ethtypes.Block, info []
 	ethTxs := make([]map[string]interface{}, 0)
 
 	for _, tx := range block.Transactions() {
-		var ethTx *EthTransaction
 		txHash, err := NewSHA256Hash(tx.Hash().Bytes())
 		if err != nil {
 			return nil, err
 		}
 
-		// send EmptySender to cause extraction of real sender
-		ethTx, err = NewEthTransaction(txHash, tx, EmptySender)
+		ethTx, err := NewEthTransaction(txHash, tx, EmptySender)
 		if err != nil {
 			return nil, err
 		}
 
-		fields := ethTx.Fields(AllFields)
+		var fields map[string]interface{}
+		if txIncludeSender {
+			fields = ethTx.Fields(AllFieldsWithFrom)
+		} else {
+			fields = ethTx.Fields(AllFields)
+		}
+
 		// todo: calculate gasPrice for DynamicFeeTxType properly
 		if ethTx.Type() == ethtypes.DynamicFeeTxType {
 			fields["gasPrice"] = fields["maxFeePerGas"]
 		}
-		ethTxs = append(ethTxs, ethTx.Fields(AllFields))
+		ethTxs = append(ethTxs, fields)
 
 		rawTx, err := ethTx.rawTx()
 		if err != nil {
@@ -316,6 +321,7 @@ func NewEthBlockNotification(hash ethcommon.Hash, block *ethtypes.Block, info []
 		Transactions:    ethTxs,
 		Uncles:          ethUncles,
 		ValidatorInfo:   info,
+		Withdrawals:     block.Withdrawals(),
 		rawTransactions: rawTransactions,
 	}, nil
 }
@@ -399,6 +405,8 @@ func (ethBlockNotification *EthBlockNotification) WithFields(fields []string) No
 			block.Uncles = ethBlockNotification.Uncles
 		case "future_validator_info":
 			block.ValidatorInfo = ethBlockNotification.ValidatorInfo
+		case "withdrawals":
+			block.Withdrawals = ethBlockNotification.Withdrawals
 		}
 	}
 	return &block

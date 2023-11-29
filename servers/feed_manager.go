@@ -239,6 +239,7 @@ func (f *FeedManager) Unsubscribe(subscriptionID string, closeClientConnection b
 			string(clientSub.feedType),
 			clientSub.MetaInfo[types.SDKCodeLanguageHeaderKey],
 			clientSub.MetaInfo[types.SDKVersionHeaderKey],
+			clientSub.AccountID,
 			types.WebSocketFeed,
 			clientSub.timeOpenedFeed,
 			time.Now(),
@@ -373,6 +374,18 @@ func (f *FeedManager) SubscriptionExists(subscriptionID string) bool {
 
 	if _, exists := f.idToClientSubscription[subscriptionID]; exists {
 		return true
+	}
+	return false
+}
+
+// SubscriptionTypeExists - check if subscription with specific type exists
+func (f *FeedManager) SubscriptionTypeExists(feedType types.FeedType) bool {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+	for _, clientSub := range f.idToClientSubscription {
+		if clientSub.feedType == feedType {
+			return true
+		}
 	}
 	return false
 }

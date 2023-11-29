@@ -20,13 +20,15 @@ var (
 
 	txContentFields = []string{"tx_contents.nonce", "tx_contents.tx_hash",
 		"tx_contents.gas_price", "tx_contents.gas", "tx_contents.to", "tx_contents.value", "tx_contents.input",
-		"tx_contents.v", "tx_contents.r", "tx_contents.s", "tx_contents.from", "tx_contents.type", "tx_contents.access_list",
+		"tx_contents.v", "tx_contents.r", "tx_contents.s", "tx_contents.type", "tx_contents.access_list",
 		"tx_contents.chain_id", "tx_contents.max_priority_fee_per_gas", "tx_contents.max_fee_per_gas"}
 
 	defaultTxParams = append(txContentFields, "tx_hash", "local_region", "time")
 
-	validTxParams        = append(txContentFields, "tx_contents", "tx_hash", "local_region", "time", "raw_tx")
-	validBlockParams     = append(txContentFields, "hash", "header", "transactions", "uncles", "future_validator_info")
+	txContentFieldsWithFrom = append(txContentFields, "tx_contents.from")
+
+	validTxParams        = append(txContentFields, "tx_contents", "tx_contents.from", "tx_hash", "local_region", "time", "raw_tx")
+	validBlockParams     = append(txContentFields, "tx_contents.from", "hash", "header", "transactions", "uncles", "future_validator_info", "withdrawals")
 	validTxReceiptParams = []string{"block_hash", "block_number", "contract_address",
 		"cumulative_gas_used", "effective_gas_price", "from", "gas_used", "logs", "logs_bloom",
 		"status", "to", "transaction_hash", "transaction_index", "type", "txs_count"}
@@ -98,7 +100,7 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 		return nil, fmt.Errorf("got unsupported params: %v", string(rpcParams[1]))
 	}
 
-	requestedFields, err := h.validateIncludeParam(request.feed, request.options.Include)
+	requestedFields, err := validateIncludeParam(request.feed, request.options.Include, h.txFromFieldIncludable)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +109,7 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 
 	var expr conditions.Expr
 	if request.options.Filters != "" {
-		expr, err = createFiltersExpression(request.options.Filters)
+		expr, err = validateFilters(request.options.Filters, h.txFromFieldIncludable)
 		if err != nil {
 			h.log.Debugf("error when creating filters. request id: %v. method: %v. params: %s. remote address: %v account id: %v error - %v",
 				req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID, err.Error())
@@ -144,7 +146,7 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 	if request.feed == types.OnBlockFeed {
 		for idx, callParams := range request.options.CallParams {
 			if callParams == nil {
-				return nil, fmt.Errorf("call-params cannot be nil")
+				return nil, errors.New("call-params cannot be nil")
 			}
 			err = fillCalls(h.FeedManager, calls, idx, callParams)
 			if err != nil {
@@ -160,42 +162,6 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 		calls:    &calls,
 		MultiTxs: request.options.MultiTxs,
 	}, nil
-}
-
-func (h *handlerObj) validateIncludeParam(feed types.FeedType, include []string) ([]string, error) {
-	var requestedFields []string
-
-	if len(include) == 0 {
-		switch feed {
-		case types.BDNBlocksFeed, types.NewBlocksFeed:
-			requestedFields = validBlockParams
-		case types.BDNBeaconBlocksFeed, types.NewBeaconBlocksFeed:
-			requestedFields = validBeaconBlockParams
-		case types.NewTxsFeed:
-			requestedFields = defaultTxParams
-		case types.PendingTxsFeed:
-			requestedFields = defaultTxParams
-		case types.OnBlockFeed:
-			requestedFields = validOnBlockParams
-		case types.TxReceiptsFeed:
-			requestedFields = validTxReceiptParams
-		}
-
-		return requestedFields, nil
-	}
-
-	for _, param := range include {
-		_, ok := validParamsMap[feed][param]
-		if !ok {
-			return nil, fmt.Errorf("got unsupported param '%v' for feed '%v'", param, feed)
-		}
-		if param == "tx_contents" {
-			requestedFields = append(requestedFields, txContentFields...)
-		}
-		requestedFields = append(requestedFields, param)
-	}
-
-	return requestedFields, nil
 }
 
 func (h *handlerObj) validateFeed(feedName types.FeedType, feedStreaming sdnmessage.BDNFeedService, includes, filters []string) error {

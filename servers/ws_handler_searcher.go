@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/bloXroute-Labs/gateway/v2"
+	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/sourcegraph/jsonrpc2"
 )
 
@@ -27,8 +30,7 @@ func (h *handlerObj) handleRPCMevSearcher(ctx context.Context, conn *jsonrpc2.Co
 	}
 
 	params := jsonrpc.RPCMEVSearcherPayload{
-		BlockchainNetwork: bxgateway.Mainnet,
-		Frontrunning:      true,
+		Frontrunning: true,
 	}
 	if err := json.Unmarshal(*req.Params, &params); err != nil {
 		SendErrorMsg(ctx, jsonrpc.InvalidParams, fmt.Sprintf("failed to unmarshal params for %v request: %v",
@@ -44,16 +46,30 @@ func (h *handlerObj) handleRPCMevSearcher(ctx context.Context, conn *jsonrpc2.Co
 	}
 
 	mevBundleParams := &jsonrpc.RPCBundleSubmissionPayload{
-		BlockchainNetwork: params.BlockchainNetwork,
-		MEVBuilders:       params.MEVBuilders,
-		Frontrunning:      params.Frontrunning,
-		Transaction:       params.Payload[0].Txs,
-		BlockNumber:       params.Payload[0].BlockNumber,
-		MinTimestamp:      params.Payload[0].MinTimestamp,
-		MaxTimestamp:      params.Payload[0].MaxTimestamp,
-		RevertingHashes:   params.Payload[0].RevertingTxHashes,
-		UUID:              params.Payload[0].UUID,
+		MEVBuilders:     params.MEVBuilders,
+		Frontrunning:    params.Frontrunning,
+		Transaction:     params.Payload[0].Txs,
+		BlockNumber:     params.Payload[0].BlockNumber,
+		MinTimestamp:    params.Payload[0].MinTimestamp,
+		MaxTimestamp:    params.Payload[0].MaxTimestamp,
+		RevertingHashes: params.Payload[0].RevertingTxHashes,
+		UUID:            params.Payload[0].UUID,
 	}
 
-	h.handleMEVBundle(ctx, conn, req, mevBundleParams)
+	var ws connections.RPCConn
+	if h.connectionAccount.AccountID == types.BloxrouteAccountID {
+		// Bundle sent from cloud services, need to update account ID of the connection to be the origin sender
+		ws = connections.NewRPCConn(types.AccountID(mevBundleParams.OriginalSenderAccountID), h.remoteAddress, h.FeedManager.networkNum, utils.CloudAPI)
+	} else {
+		ws = connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.FeedManager.networkNum, utils.Websocket)
+	}
+
+	result, errCode, err := HandleMEVBundle(h.FeedManager, ws, h.connectionAccount, mevBundleParams)
+	if err != nil {
+		SendErrorMsg(ctx, jsonrpc.RPCErrorCode(errCode), err.Error(), conn, req.ID)
+		return
+	}
+	if err = conn.Reply(ctx, req.ID, result); err != nil {
+		log.Errorf("error replying to %v, method %v: %v", h.remoteAddress, req.Method, err)
+	}
 }

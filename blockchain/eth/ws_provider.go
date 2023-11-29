@@ -82,7 +82,7 @@ func (ws *WSProvider) Dial() {
 		}
 
 		ws.log.Warnf("failed to dial: err %v, retrying...", err)
-		continue
+		time.Sleep(1 * time.Second)
 	}
 }
 

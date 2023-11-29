@@ -20,7 +20,9 @@ import (
 
 const confirmationDelay = 4 * time.Second
 
-func sendBlockToBDN(clock utils.Clock, log *logger.Entry, block interfaces.ReadOnlySignedBeaconBlock, bridge blockchain.Bridge, endpoint types.NodeEndpoint) error {
+// SendBlockToBDN converts block to BxBlock, sends it to the bridge and starts a timer to send a confirmation after 4 seconds
+// confirmation is needed to cleanup the hash history.
+func SendBlockToBDN(clock utils.Clock, log *logger.Entry, block interfaces.ReadOnlySignedBeaconBlock, bridge blockchain.Bridge, endpoint types.NodeEndpoint) error {
 	bdnBeaconBlock, err := bridge.BlockBlockchainToBDN(block)
 	if err != nil {
 		return fmt.Errorf("could not convert beacon block: %v", err)

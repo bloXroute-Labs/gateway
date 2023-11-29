@@ -46,7 +46,7 @@ func (newTransactionNotification *NewTransactionNotification) MakeBlockchainTran
 	defer newTransactionNotification.lock.Unlock()
 	if newTransactionNotification.validationStatus == TxPendingValidation {
 		newTransactionNotification.BlockchainTransaction, err =
-			newTransactionNotification.BxTransaction.BlockchainTransaction(newTransactionNotification.Sender())
+			newTransactionNotification.BxTransaction.BlockchainTransaction(newTransactionNotification.BxTransaction.sender)
 		if err != nil {
 			newTransactionNotification.validationStatus = TxInvalid
 			err = fmt.Errorf("invalid tx with hash %v. error %v", newTransactionNotification.BxTransaction.Hash(), err)
@@ -76,8 +76,7 @@ func (newTransactionNotification *NewTransactionNotification) Fields(fields []st
 	if err != nil {
 		return nil
 	}
-	ethTx := newTransactionNotification.BlockchainTransaction.(*EthTransaction)
-	return ethTx.Fields(fields)
+	return newTransactionNotification.BlockchainTransaction.Fields(fields)
 }
 
 // WithFields - creates BlockchainTransaction if needs and returns the value of requested fields of the transaction

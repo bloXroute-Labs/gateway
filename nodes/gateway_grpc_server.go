@@ -130,5 +130,5 @@ func (ggs *gatewayGRPCServer) sdkStat(md metadata.MD, method string, start time.
 	}
 
 	// blockchain, method, feed, sourceCode string, start, end time.Time, count int
-	ggs.gateway.stats.LogSDKInfo(blockchain, method, sourceCode, version, types.GRPCFeed, start, time.Now())
+	ggs.gateway.stats.LogSDKInfo(blockchain, method, sourceCode, version, ggs.gateway.accountID, types.GRPCFeed, start, time.Now())
 }

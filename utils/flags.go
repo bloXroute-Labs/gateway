@@ -491,4 +491,10 @@ var (
 		Hidden: true,
 		Value:  50 * time.Millisecond,
 	}
+	TxIncludeSenderInFeed = &cli.BoolFlag{
+		Name:   "tx-include-sender-in-feed",
+		Usage:  "(for gateways only) include sender address in transaction feed",
+		Hidden: true,
+		Value:  true,
+	}
 )

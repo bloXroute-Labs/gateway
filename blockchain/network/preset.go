@@ -30,11 +30,15 @@ const BSCTestnetChainID = 97
 // PolygonMainnetChainID Polygon mainnet chain ID
 const PolygonMainnetChainID = 137
 
+// PolygonMumbaiChainID Polygon testnet chain ID
+const PolygonMumbaiChainID = 80001
+
 var networkMapping = map[string]EthConfig{
 	"Mainnet":         newEthereumMainnetConfig(),
 	"BSC-Mainnet":     newBSCMainnetConfig(),
 	"BSC-Testnet":     newBSCTestnetConfig(),
 	"Polygon-Mainnet": newPolygonMainnetConfig(),
+	"Polygon-Mumbai":  newPolygonMumbaiConfig(),
 	"Zhejiang":        newZhejiangEthereumConfig(),
 	"Goerli":          newGoerliConfig(),
 }
@@ -218,6 +222,36 @@ func newBSCTestnetConfig() EthConfig {
 		IgnoreBlockTimeout:      30 * time.Second,
 		BootstrapNodes:          bootNodes,
 		ProgramName:             "Geth/v1.2.9-34b065ae-20230721/linux-amd64/go1.19.11",
+	}
+}
+
+func newPolygonMumbaiConfig() EthConfig {
+	td, ok := new(big.Int).SetString("40000", 16)
+	if !ok {
+		panic("could not load Polygon Mumbai configuration")
+	}
+
+	var err error
+	var bootNodes []*enode.Node
+
+	bootNodes, err = bootstrapNodes(enode.ValidSchemes, []string{
+		"enode://bdcd4786a616a853b8a041f53496d853c68d99d54ff305615cd91c03cd56895e0a7f6e9f35dbf89131044e2114a9a782b792b5661e3aff07faf125a98606a071@43.200.206.40:30303",
+		"enode://209aaf7ed549cf4a5700fd833da25413f80a1248bd3aa7fe2a87203e3f7b236dd729579e5c8df61c97bf508281bae4969d6de76a7393bcbd04a0af70270333b3@54.216.248.9:30303",
+	})
+
+	if err != nil {
+		panic("could not set Polygon Mumbai bootstrapNodes")
+	}
+
+	return EthConfig{
+		Network:                 PolygonMumbaiChainID,
+		TotalDifficulty:         td,
+		TerminalTotalDifficulty: big.NewInt(math.MaxInt),
+		Head:                    common.HexToHash("0x7b66506a9ebdbf30d32b43c5f15a3b1216269a1ec3a75aa3182b86176a2b1ca7"),
+		Genesis:                 common.HexToHash("0x7b66506a9ebdbf30d32b43c5f15a3b1216269a1ec3a75aa3182b86176a2b1ca7"),
+		IgnoreBlockTimeout:      30 * time.Second,
+		BootstrapNodes:          bootNodes,
+		ProgramName:             "bor/v0.2.16-stable-f083705e/linux-amd64/go1.18.4",
 	}
 }
 

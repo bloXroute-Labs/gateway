@@ -62,7 +62,6 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 	transaction := types.NewBxTransaction(hash, network, flags, timestamp)
 	var blockchainTx types.BlockchainTransaction
 	var err error
-	var result = TransactionResult{Transaction: transaction}
 
 	if validate && !t.HasContent(hash) {
 		// If validate is true we got the tx from gw or cloud-api (with content).
@@ -71,29 +70,38 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 		transaction.SetContent(content)
 		blockchainTx, err = transaction.BlockchainTransaction(types.EmptySender)
 		if err != nil {
-			result.FailedValidation = true
-			result.DebugData = err
-			return result
+			return TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: err}
 		}
+
 		ethTx := blockchainTx.(*types.EthTransaction)
-		txChainID := ethTx.ChainID.Int64()
+		txChainID := ethTx.ChainID().Int64()
 		if networkChainID != 0 && txChainID != 0 && networkChainID != txChainID {
-			result.DebugData = fmt.Errorf("chainID mismatch for hash %v - content chainID %v networkNum %v networkChainID %v", hash, txChainID, network, networkChainID)
-			log.Error(result.DebugData)
-			result.FailedValidation = true
-			return result
+			errChainIDMismatch := fmt.Errorf("chainID mismatch for hash %v - content chainID %v networkNum %v networkChainID %v", hash, txChainID, network, networkChainID)
+			log.Error(errChainIDMismatch)
+			return TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: errChainIDMismatch}
 		}
-		copy(sender[:], ethTx.From.Bytes())
+
+		sender = types.EmptySender
+
+		// If this is not trusted source(external gateway) and network requires, then we extract sender
+		if t.isReuseNonceActive(network) {
+			sender, err = ethTx.Sender()
+			if err != nil {
+				errExtractionFailed := fmt.Errorf("failed to extract sender from transaction %v", hash)
+				log.Error(errExtractionFailed)
+				return TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: errExtractionFailed}
+			}
+		}
 	}
 
-	result = t.BxTxStore.Add(hash, content, shortID, network, false, transaction.Flags(), timestamp, networkChainID, sender)
+	result := t.BxTxStore.Add(hash, content, shortID, network, false, transaction.Flags(), timestamp, networkChainID, sender)
 
 	// if no new content we can leave
 	if !result.NewContent || result.FailedValidation {
 		return result
 	}
-	// if reuseNonce is disabled, we can leave
-	if !t.isReuseNonceActive(network) {
+	// if reuseNonce is disabled or network disables sender extraction, we can leave
+	if !t.isReuseNonceActive(network) || sender == types.EmptySender {
 		return result
 	}
 
@@ -108,16 +116,23 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 	}
 
 	ethTx := blockchainTx.(*types.EthTransaction)
-	result.Nonce = ethTx.Nonce
+	result.Nonce = ethTx.Nonce()
 
-	seenNonce, otherTx := t.track(ethTx, network)
-	if !seenNonce {
+	seenNonce, otherTx, err := t.track(ethTx, network)
+	if err != nil {
+		log.Errorf("unable to track transaction %v with content %v", result.Transaction.Hash(), result.Transaction.Content())
+		result.FailedValidation = true
 		return result
 	}
 
-	// mark tx as reuse nonce
-	result.Transaction.AddFlags(types.TFReusedNonce)
-	result.DebugData = fmt.Sprintf("reuse nonce detected. New transaction %v from %v with nonce %v is reusing nonce with existing tx %v on network %v", result.Transaction.Hash(), ethTx.From.String(), ethTx.Nonce, otherTx, networkChainID)
+	if seenNonce {
+		// mark tx as reuse nonce
+		result.Transaction.AddFlags(types.TFReusedNonce)
+		from, _ := ethTx.From() // we already validated this transaction so we can ignore the error
+		result.DebugData = fmt.Sprintf("reuse nonce detected. New transaction %v from %v with nonce %v is reusing nonce with existing tx %v on network %v", result.Transaction.Hash(), from, ethTx.Nonce(), otherTx, networkChainID)
+		return result
+	}
+
 	return result
 }
 
@@ -176,7 +191,7 @@ func (nt *nonceTracker) getTransaction(from *common.Address, nonce uint64) (*tra
 	return &tx, ok
 }
 
-func (nt *nonceTracker) setTransaction(tx *types.EthTransaction, network types.NetworkNum) {
+func (nt *nonceTracker) setTransaction(tx *types.EthTransaction, from *common.Address, network types.NetworkNum) {
 	reuseNonceGasChange := new(big.Float).SetFloat64(nt.networkConfig[network].AllowGasPriceChangeReuseSenderNonce)
 	reuseNonceDelay := time.Duration(nt.networkConfig[network].AllowTimeReuseSenderNonce) * time.Second
 
@@ -194,7 +209,7 @@ func (nt *nonceTracker) setTransaction(tx *types.EthTransaction, network types.N
 		gasFeeCap:  intGasFeeCap,
 		gasTipCap:  intGasTipCap,
 	}
-	nt.addressNonceToTx.Store(fromNonceKey(tx.From, tx.Nonce), tracked)
+	nt.addressNonceToTx.Store(fromNonceKey(from, tx.Nonce()), tracked)
 }
 
 // isReuseNonceActive returns whether reuse nonce tracking is active
@@ -204,19 +219,24 @@ func (nt nonceTracker) isReuseNonceActive(networkNum types.NetworkNum) bool {
 }
 
 // track returns whether the tx is the newest from its address, and if it should be considered a duplicate
-func (nt *nonceTracker) track(tx *types.EthTransaction, network types.NetworkNum) (bool, *types.SHA256Hash) {
-	oldTx, ok := nt.getTransaction(tx.From, tx.Nonce)
+func (nt *nonceTracker) track(tx *types.EthTransaction, network types.NetworkNum) (bool, *types.SHA256Hash, error) {
+	from, err := tx.From()
+	if err != nil {
+		return false, nil, err
+	}
+
+	oldTx, ok := nt.getTransaction(from, tx.Nonce())
 	if !ok {
-		nt.setTransaction(tx, network)
-		return false, nil
+		nt.setTransaction(tx, from, network)
+		return false, nil, nil
 	}
 
 	if (tx.EffectiveGasFeeCap().Cmp(oldTx.gasFeeCap) >= 0 && tx.EffectiveGasTipCap().Cmp(oldTx.gasTipCap) >= 0) || nt.clock.Now().After(oldTx.expireTime) {
-		nt.setTransaction(tx, network)
-		return false, nil
+		nt.setTransaction(tx, from, network)
+		return false, nil, nil
 	}
 	hash := oldTx.tx.Hash()
-	return true, &hash
+	return true, &hash, nil
 }
 
 func (nt *nonceTracker) cleanLoop() {

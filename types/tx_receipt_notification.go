@@ -2,17 +2,24 @@ package types
 
 import (
 	"encoding/json"
+	"fmt"
 )
 
 const nullAddressStr = "0x"
 
-// TxReceiptNotification - represents a transaction receipt feed entry
+// TxReceiptsNotification - represents a transaction receipt feed entry
 // to avoid deserializing/reserializing the message from Ethereum RPC, no conversion work is done
-type TxReceiptNotification struct {
-	Receipt txReceipt
+type TxReceiptsNotification struct {
+	Receipts []*TxReceipt
 }
 
-type txReceipt struct {
+// NewTxReceiptsNotification returns a new tx receipts notification object
+func NewTxReceiptsNotification(receipts []*TxReceipt) *TxReceiptsNotification {
+	return &TxReceiptsNotification{Receipts: receipts}
+}
+
+// TxReceipt - represents a transaction receipt
+type TxReceipt struct {
 	BlockHash         string        `json:"block_hash,omitempty"`
 	BlockNumber       string        `json:"block_number,omitempty"`
 	ContractAddress   interface{}   `json:"contract_address,omitempty"`
@@ -30,89 +37,89 @@ type txReceipt struct {
 	TxsCount          string        `json:"txs_count,omitempty"`
 }
 
-// NewTxReceiptNotification returns a new TxReceiptNotification
-func NewTxReceiptNotification(txReceipt map[string]interface{}, txsCount string) *TxReceiptNotification {
-	txReceiptNotification := TxReceiptNotification{}
+// NewTxReceipt returns a new tx receipt object created from a map
+func NewTxReceipt(receiptMap map[string]interface{}, txsCount string) *TxReceipt {
+	txReceipt := TxReceipt{}
 
-	blockHash, ok := txReceipt["blockHash"]
+	blockHash, ok := receiptMap["blockHash"]
 	if ok {
-		txReceiptNotification.Receipt.BlockHash = blockHash.(string)
+		txReceipt.BlockHash = blockHash.(string)
 	}
 
-	blockNumber, ok := txReceipt["blockNumber"]
+	blockNumber, ok := receiptMap["blockNumber"]
 	if ok {
-		txReceiptNotification.Receipt.BlockNumber = blockNumber.(string)
+		txReceipt.BlockNumber = blockNumber.(string)
 	}
 
-	contractAddress, ok := txReceipt["contractAddress"]
+	contractAddress, ok := receiptMap["contractAddress"]
 	if ok {
-		txReceiptNotification.Receipt.ContractAddress = contractAddress
+		txReceipt.ContractAddress = contractAddress
 	}
 
-	cumulativeGasUsed, ok := txReceipt["cumulativeGasUsed"]
+	cumulativeGasUsed, ok := receiptMap["cumulativeGasUsed"]
 	if ok {
-		txReceiptNotification.Receipt.CumulativeGasUsed = cumulativeGasUsed.(string)
+		txReceipt.CumulativeGasUsed = cumulativeGasUsed.(string)
 	}
 
-	effectiveGasPrice, ok := txReceipt["effectiveGasPrice"]
+	effectiveGasPrice, ok := receiptMap["effectiveGasPrice"]
 	if ok {
-		txReceiptNotification.Receipt.EffectiveGasPrice = effectiveGasPrice.(string)
+		txReceipt.EffectiveGasPrice = effectiveGasPrice.(string)
 	}
 
-	from, ok := txReceipt["from"]
+	from, ok := receiptMap["from"]
 	if ok {
-		txReceiptNotification.Receipt.From = from
+		txReceipt.From = from
 	}
 
-	gasUsed, ok := txReceipt["gasUsed"]
+	gasUsed, ok := receiptMap["gasUsed"]
 	if ok {
-		txReceiptNotification.Receipt.GasUsed = gasUsed.(string)
+		txReceipt.GasUsed = gasUsed.(string)
 	}
 
-	logs, ok := txReceipt["logs"]
+	logs, ok := receiptMap["logs"]
 	if ok {
-		txReceiptNotification.Receipt.Logs = logs.([]interface{})
+		txReceipt.Logs = logs.([]interface{})
 	}
 
-	logsBloom, ok := txReceipt["logsBloom"]
+	logsBloom, ok := receiptMap["logsBloom"]
 	if ok {
-		txReceiptNotification.Receipt.LogsBloom = logsBloom.(string)
+		txReceipt.LogsBloom = logsBloom.(string)
 	}
 
-	status, ok := txReceipt["status"]
+	status, ok := receiptMap["status"]
 	if ok {
-		txReceiptNotification.Receipt.Status = status.(string)
+		txReceipt.Status = status.(string)
 	}
 
-	to, ok := txReceipt["to"]
+	to, ok := receiptMap["to"]
 	if ok {
-		txReceiptNotification.Receipt.To = to
+		txReceipt.To = to
 	}
 
-	transactionHash, ok := txReceipt["transactionHash"]
+	transactionHash, ok := receiptMap["transactionHash"]
 	if ok {
-		txReceiptNotification.Receipt.TransactionHash = transactionHash.(string)
+		txReceipt.TransactionHash = transactionHash.(string)
 	}
 
-	transactionIndex, ok := txReceipt["transactionIndex"]
+	transactionIndex, ok := receiptMap["transactionIndex"]
 	if ok {
-		txReceiptNotification.Receipt.TransactionIndex = transactionIndex.(string)
+		txReceipt.TransactionIndex = transactionIndex.(string)
 	}
 
-	txType, ok := txReceipt["type"]
+	txType, ok := receiptMap["type"]
 	if ok {
-		txReceiptNotification.Receipt.TxType = txType.(string)
+		txReceipt.TxType = txType.(string)
 	}
 
-	txReceiptNotification.Receipt.TxsCount = txsCount
+	txReceipt.TxsCount = txsCount
 
-	return &txReceiptNotification
+	return &txReceipt
 }
 
 // MarshalJSON formats txReceiptNotification, including nil "to" field if requested
-func (r *TxReceiptNotification) MarshalJSON() ([]byte, error) {
-	marshalled, err := json.Marshal(r.Receipt)
-	if r.Receipt.To != nullAddressStr {
+func (r *TxReceipt) marshalJSON() ([]byte, error) {
+	marshalled, err := json.Marshal(r)
+	if r.To != nullAddressStr {
 		return marshalled, err
 	}
 	var mapWithNilToField map[string]interface{}
@@ -121,65 +128,97 @@ func (r *TxReceiptNotification) MarshalJSON() ([]byte, error) {
 	return json.Marshal(mapWithNilToField)
 }
 
-// WithFields -
-func (r *TxReceiptNotification) WithFields(fields []string) Notification {
-	txReceiptNotification := TxReceiptNotification{}
-	for _, param := range fields {
-		switch param {
-		case "block_hash":
-			txReceiptNotification.Receipt.BlockHash = r.Receipt.BlockHash
-		case "block_number":
-			txReceiptNotification.Receipt.BlockNumber = r.Receipt.BlockNumber
-		case "contract_address":
-			txReceiptNotification.Receipt.ContractAddress = r.Receipt.ContractAddress
-		case "cumulative_gas_used":
-			txReceiptNotification.Receipt.CumulativeGasUsed = r.Receipt.CumulativeGasUsed
-		case "effective_gas_price":
-			txReceiptNotification.Receipt.EffectiveGasPrice = r.Receipt.EffectiveGasPrice
-		case "from":
-			txReceiptNotification.Receipt.From = r.Receipt.From
-		case "gas_used":
-			txReceiptNotification.Receipt.GasUsed = r.Receipt.GasUsed
-		case "logs":
-			txReceiptNotification.Receipt.Logs = r.Receipt.Logs
-		case "logs_bloom":
-			txReceiptNotification.Receipt.LogsBloom = r.Receipt.LogsBloom
-		case "status":
-			txReceiptNotification.Receipt.Status = r.Receipt.Status
-		case "to":
-			txReceiptNotification.Receipt.To = r.Receipt.To
-			if r.Receipt.To == nil {
-				txReceiptNotification.Receipt.To = nullAddressStr
-			}
-		case "transaction_hash":
-			txReceiptNotification.Receipt.TransactionHash = r.Receipt.TransactionHash
-		case "transaction_index":
-			txReceiptNotification.Receipt.TransactionIndex = r.Receipt.TransactionIndex
-		case "type":
-			txReceiptNotification.Receipt.TxType = r.Receipt.TxType
-		case "txs_count":
-			txReceiptNotification.Receipt.TxsCount = r.Receipt.TxsCount
-		}
+// MarshalJSON formats txReceiptsNotification, including nil "to" field if requested
+func (r *TxReceiptsNotification) MarshalJSON() ([]byte, error) {
+	if r.Receipts == nil {
+		return nil, fmt.Errorf("TxReceiptsNotification: Receipt is nil")
 	}
-	return &txReceiptNotification
+
+	// Create a temporary slice to hold marshaled JSON data for each receipt
+	marshalledReceipts := make([]json.RawMessage, len(r.Receipts))
+
+	for i, receipt := range r.Receipts {
+		marshalled, err := receipt.marshalJSON()
+		if err != nil {
+			return nil, err
+		}
+
+		marshalledReceipts[i] = marshalled
+	}
+
+	return json.Marshal(marshalledReceipts)
+}
+
+// WithFields -
+func (r *TxReceiptsNotification) WithFields(fields []string) Notification {
+	txReceiptsNotification := TxReceiptsNotification{Receipts: []*TxReceipt{}}
+
+	for _, receipt := range r.Receipts {
+		newReceipt := &TxReceipt{}
+
+		for _, param := range fields {
+			switch param {
+			case "block_hash":
+				newReceipt.BlockHash = receipt.BlockHash
+			case "block_number":
+				newReceipt.BlockNumber = receipt.BlockNumber
+			case "contract_address":
+				newReceipt.ContractAddress = receipt.ContractAddress
+			case "cumulative_gas_used":
+				newReceipt.CumulativeGasUsed = receipt.CumulativeGasUsed
+			case "effective_gas_price":
+				newReceipt.EffectiveGasPrice = receipt.EffectiveGasPrice
+			case "from":
+				newReceipt.From = receipt.From
+			case "gas_used":
+				newReceipt.GasUsed = receipt.GasUsed
+			case "logs":
+				newReceipt.Logs = receipt.Logs
+			case "logs_bloom":
+				newReceipt.LogsBloom = receipt.LogsBloom
+			case "status":
+				newReceipt.Status = receipt.Status
+			case "to":
+				newReceipt.To = receipt.To
+				if receipt.To == nil {
+					newReceipt.To = nullAddressStr
+				}
+			case "transaction_hash":
+				newReceipt.TransactionHash = receipt.TransactionHash
+			case "transaction_index":
+				newReceipt.TransactionIndex = receipt.TransactionIndex
+			case "type":
+				newReceipt.TxType = receipt.TxType
+			case "txs_count":
+				newReceipt.TxsCount = receipt.TxsCount
+			}
+		}
+
+		txReceiptsNotification.Receipts = append(txReceiptsNotification.Receipts, newReceipt)
+	}
+
+	return &txReceiptsNotification
 }
 
 // Filters -
-func (r *TxReceiptNotification) Filters(filters []string) map[string]interface{} {
+func (r *TxReceiptsNotification) Filters(_ []string) map[string]interface{} {
 	return nil
 }
 
 // LocalRegion -
-func (r *TxReceiptNotification) LocalRegion() bool {
+func (r *TxReceiptsNotification) LocalRegion() bool {
 	return false
 }
 
 // GetHash -
-func (r *TxReceiptNotification) GetHash() string {
-	return r.Receipt.BlockHash
+func (r *TxReceiptsNotification) GetHash() string {
+	if len(r.Receipts) == 0 {
+		return ""
+	}
+	return r.Receipts[0].BlockHash
 }
 
 // NotificationType - feed name
-func (r *TxReceiptNotification) NotificationType() FeedType {
+func (r *TxReceiptsNotification) NotificationType() FeedType {
 	return TxReceiptsFeed
 }

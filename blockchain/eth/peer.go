@@ -286,7 +286,7 @@ func (ep *Peer) Handshake(version uint32, networkChain uint64, td *big.Int, head
 	// Nethermind checks reject connections which brings old value
 	// New: If polygon sees old head it sends header request for it and of course it fails. This causes gateway to be disconnected
 	switch networkChain {
-	case network.EthMainnetChainID, network.PolygonMainnetChainID:
+	case network.EthMainnetChainID, network.PolygonMainnetChainID, network.PolygonMumbaiChainID:
 		td = peerStatus.TD
 		head = peerStatus.Head
 	}

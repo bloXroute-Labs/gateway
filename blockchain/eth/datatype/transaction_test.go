@@ -14,8 +14,8 @@ import (
 func TestProcessingETHTransaction(t *testing.T) {
 	privateKey, _ := crypto.GenerateKey()
 	p := NewProcessingETHTransaction(10)
-	p.Add(bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey), true)
-	p.Add(bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 2, privateKey), false)
+	p.Add(bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey, nil), true)
+	p.Add(bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 2, privateKey, nil), false)
 
 	txs := p.Transactions(utils.Blockchain, false)
 	assert.Equal(t, len(txs), 2)

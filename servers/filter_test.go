@@ -89,3 +89,64 @@ func TestFilter(t *testing.T) {
 		assert.NotNil(t, err)
 	}
 }
+
+func TestIsCorrectGasPriceFilters(t *testing.T) {
+	tests := []struct {
+		name     string
+		filters  []string
+		expected bool
+	}{
+		{
+			name:     "gas_price and max_fee_per_gas exist, txType does not",
+			filters:  []string{"gas_price", "max_fee_per_gas"},
+			expected: false,
+		},
+		{
+			name:     "gas_price and max_priority_fee_per_gas exist, txType does not",
+			filters:  []string{"gas_price", "max_priority_fee_per_gas"},
+			expected: false,
+		},
+		{
+			name:     "gas_price and max_priority_fee_per_gas exist, txType does not",
+			filters:  []string{"gas_price", "max_priority_fee_per_gas", "type"},
+			expected: true,
+		},
+		{
+			name:     "gas_price exists, max_fee_per_gas and txType do not",
+			filters:  []string{"gas_price"},
+			expected: true,
+		},
+		{
+			name:     "gas_price exists, max_priority_fee_per_gas and txType do not",
+			filters:  []string{"gas_price"},
+			expected: true,
+		},
+		{
+			name:     "gas_price and txType exist, max_fee_per_gas does not",
+			filters:  []string{"gas_price", "type"},
+			expected: true,
+		},
+		{
+			name:     "gas_price and txType exist, max_priority_fee_per_gas does not",
+			filters:  []string{"gas_price", "type"},
+			expected: true,
+		},
+		{
+			name:     "no gas price filters",
+			filters:  []string{"type"},
+			expected: true,
+		},
+		{
+			name:     "empty filters",
+			filters:  []string{},
+			expected: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsCorrectGasPriceFilters(tt.filters); got != tt.expected {
+				t.Errorf("IsCorrectGasPriceFilters() = %v, expected %v", got, tt.expected)
+			}
+		})
+	}
+}
