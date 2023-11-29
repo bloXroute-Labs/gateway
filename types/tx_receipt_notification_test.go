@@ -1,6 +1,7 @@
 package types
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/bloXroute-Labs/gateway/v2/test"
@@ -29,14 +30,16 @@ var validTxReceiptParams = []string{"block_hash", "block_number", "contract_addr
 	"status", "to", "transaction_hash", "transaction_index", "type", "txs_count"}
 
 func TestTxReceiptNotification(t *testing.T) {
-	txReceiptNotification := NewTxReceiptNotification(txReceiptMap, "0x0")
+	txReceipt := NewTxReceipt(txReceiptMap, "0x0")
+
+	txReceiptNotification := NewTxReceiptsNotification([]*TxReceipt{txReceipt})
 
 	txReceiptWithFields := txReceiptNotification.WithFields(validTxReceiptParams)
 
-	ethTxReceiptWithFields, ok := txReceiptWithFields.(*TxReceiptNotification)
+	ethTxReceiptWithFields, ok := txReceiptWithFields.(*TxReceiptsNotification)
 	assert.True(t, ok)
 
-	receiptJSON, err := test.MarshallJSONToMap(ethTxReceiptWithFields)
+	receiptJSON, err := test.MarshallJSONToMap(ethTxReceiptWithFields.Receipts[0])
 	assert.Nil(t, err)
 
 	for _, param := range validTxReceiptParams {
@@ -49,19 +52,37 @@ func TestTxReceiptNotification(t *testing.T) {
 }
 
 func TestTxReceiptNotificationWithoutToField(t *testing.T) {
-	txReceiptNotification := NewTxReceiptNotification(txReceiptMap, "0x0")
+	txReceipt := NewTxReceipt(txReceiptMap, "0x0")
+
+	txReceiptNotification := NewTxReceiptsNotification([]*TxReceipt{txReceipt})
 
 	txReceiptWithFields := txReceiptNotification.WithFields([]string{"transaction_hash"})
 
-	ethTxReceiptWithFields, ok := txReceiptWithFields.(*TxReceiptNotification)
+	ethTxReceiptWithFields, ok := txReceiptWithFields.(*TxReceiptsNotification)
 	assert.True(t, ok)
 
-	receiptJSON, err := test.MarshallJSONToMap(ethTxReceiptWithFields)
+	receiptJSON, err := test.MarshallJSONToMap(ethTxReceiptWithFields.Receipts[0])
 	assert.Nil(t, err)
 
 	_, ok = receiptJSON["to"]
 	assert.Equal(t, false, ok)
 	assert.Equal(t, "0x4df870e552898df04761d6ea87ac848e3c60bfa35a9036b2b4d53ac64730a5b6", receiptJSON["transaction_hash"])
+}
+
+func marshallJSONToMapArray(v interface{}) ([]map[string]interface{}, error) {
+	var result []map[string]interface{}
+
+	b, err := json.Marshal(v)
+	if err != nil {
+		return result, err
+	}
+
+	err = json.Unmarshal(b, &result)
+	if err != nil {
+		return result, err
+	}
+
+	return result, nil
 }
 
 func TestContractCreationTxReceipt(t *testing.T) {
@@ -71,18 +92,20 @@ func TestContractCreationTxReceipt(t *testing.T) {
 	}
 	contractCreationReceiptMap["to"] = nil
 
-	txReceiptNotification := NewTxReceiptNotification(contractCreationReceiptMap, "0x0")
+	txReceipt := NewTxReceipt(contractCreationReceiptMap, "0x0")
+
+	txReceiptNotification := NewTxReceiptsNotification([]*TxReceipt{txReceipt})
 
 	txReceiptWithFields := txReceiptNotification.WithFields([]string{"to", "from"})
 
-	ethTxReceiptWithFields, ok := txReceiptWithFields.(*TxReceiptNotification)
+	ethTxReceiptWithFields, ok := txReceiptWithFields.(*TxReceiptsNotification)
 	assert.True(t, ok)
 
-	receiptJSON, err := test.MarshallJSONToMap(ethTxReceiptWithFields)
+	receiptJSON, err := marshallJSONToMapArray(ethTxReceiptWithFields)
 	assert.Nil(t, err)
 
-	to, ok := receiptJSON["to"]
+	to, ok := receiptJSON[0]["to"]
 	assert.Equal(t, true, ok)
 	assert.Equal(t, nil, to)
-	assert.Equal(t, "0x13cf158e1766ca6bdbe2719dace440121b4603b1", receiptJSON["from"])
+	assert.Equal(t, "0x13cf158e1766ca6bdbe2719dace440121b4603b1", receiptJSON[0]["from"])
 }

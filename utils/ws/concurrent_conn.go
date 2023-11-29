@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -125,11 +126,28 @@ func (c *realWSConn) ReadJSON(ctx context.Context, v interface{}) error {
 	default:
 	}
 
-	err := c.realConn.ReadJSON(&v)
+	err := c.ReadJSONHelper(&v)
 	if err != nil && IsWSClosedError(err) {
 		return c.Close()
 	}
 
+	return err
+}
+
+func (c *realWSConn) ReadJSONHelper(v interface{}) error {
+	_, r, err := c.realConn.NextReader()
+	if err != nil {
+		return err
+	}
+
+	processingStart := time.Now()
+	err = json.NewDecoder(r).Decode(v)
+	if err == io.EOF {
+		// One value is expected in the message.
+		err = io.ErrUnexpectedEOF
+	}
+
+	log.Tracef("ws request preprocessing payload decoding duration is %v ms", time.Since(processingStart).Milliseconds())
 	return err
 }
 

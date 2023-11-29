@@ -10,6 +10,7 @@ import (
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/zhouzhuojie/conditions"
 )
 
@@ -19,7 +20,32 @@ var (
 	availableFilters = []string{"gas", "gas_price", "value", "to", "from", "method_id", "type", "chain_id", "max_fee_per_gas", "max_priority_fee_per_gas"}
 )
 
-func createFiltersExpression(filters string) (conditions.Expr, error) {
+// This function is used to skip the evaluation of txs which are not supported by the filters.
+// for example, if the client requested to filter by gas_price we will not evaluate dynamic fee txs, cause the
+// evaluation result will not be correct, or cause the error.
+// It helps us to proceed only to evaluation part with complex filters, like this one:
+// (type == '0' && gas_price > 21000000000) || (type == '2' && max_priority_fee_per_gas > 21000000000)
+//
+// TODO: to get rid of this stuff, we need to move to another expression evaluation library (or forking existing one)
+// to support short circuit behavior for the logical operators.
+func isFiltersSupportedByTxType(txType uint8, filters []string) bool {
+	gasPriceExists := utils.Exists("gas_price", filters)
+	maxFeePerGasExists := utils.Exists("max_fee_per_gas", filters)
+	maxPriorityFeePerGasExists := utils.Exists("max_priority_fee_per_gas", filters)
+
+	if txType == ethtypes.DynamicFeeTxType {
+		if gasPriceExists && !maxFeePerGasExists && !maxPriorityFeePerGasExists {
+			return false
+		}
+	} else {
+		if !gasPriceExists && (maxFeePerGasExists || maxPriorityFeePerGasExists) {
+			return false
+		}
+	}
+	return true
+}
+
+func validateFilters(filters string, txFromFieldIncludable bool) (conditions.Expr, error) {
 	_, expr, err := parseFilter(filters)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing Filters: %v", err)
@@ -33,6 +59,10 @@ func createFiltersExpression(filters string) (conditions.Expr, error) {
 		return nil, fmt.Errorf("error evaluated Filters: %v", err)
 	}
 
+	if !txFromFieldIncludable && utils.Exists(txFromFilter, expr.Args()) {
+		return nil, fmt.Errorf("error creating Filters: error evaluated Filters: argument: %s not found", txFromFilter)
+	}
+
 	log.Infof("GetTxContentAndFilters string - %s, GetTxContentAndFilters args - %s", expr, expr.Args())
 	return expr, nil
 }
@@ -42,6 +72,24 @@ func evaluateFilters(expr conditions.Expr) error {
 	// Evaluate if we should send the tx
 	_, err := conditions.Evaluate(expr, types.EmptyFilteredTransactionMap)
 	return err
+}
+
+// IsCorrectGasPriceFilters check if the gas price filters provided by the user are correct.
+// Needed because of the way we are parsing the filters. All gas price filters configured
+// at once without a type filter will not cause the error to be thrown.
+//
+// TODO: to get rid of this stuff, we need to move to another expression evaluation library (or forking existing one)
+// to support short circuit behavior for the logical operators.
+func IsCorrectGasPriceFilters(filters []string) bool {
+	gasPriceExists := utils.Exists("gas_price", filters)
+	maxFeePerGasExists := utils.Exists("max_fee_per_gas", filters)
+	maxPriorityFeePerGasExists := utils.Exists("max_priority_fee_per_gas", filters)
+	txType := utils.Exists("type", filters)
+
+	if gasPriceExists && (maxFeePerGasExists || maxPriorityFeePerGasExists) && !txType {
+		return false
+	}
+	return true
 }
 
 // parseFilter parsing the filter
@@ -56,8 +104,10 @@ func parseFilter(filters string) (string, conditions.Expr, error) {
 			if isEmptyValue != nil {
 				return "", nil, errors.New("filter is empty")
 			}
+			if !IsCorrectGasPriceFilters(expr.Args()) {
+				return "", nil, errors.New("invalid filters, add the type filter")
+			}
 		}
-
 		return "", expr, err
 	}
 

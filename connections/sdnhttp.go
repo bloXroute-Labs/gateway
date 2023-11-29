@@ -663,7 +663,7 @@ func getPingLatencies(peers sdnmessage.Peers) []nodeLatencyInfo {
 				log.Errorf("error executing (%v) %v: %v", cmd, err, stderr)
 				return
 			}
-			log.Tracef("ping results from %v : %v", (*pingResult).IP, out)
+			log.Tracef("ping results from %v : %q", (*pingResult).IP, out)
 			re := regexp.MustCompile(TimeRegEx)
 			latencyTimeList := re.FindStringSubmatch(out.String())
 			if len(latencyTimeList) > 0 {

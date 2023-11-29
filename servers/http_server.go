@@ -96,7 +96,6 @@ func (s *HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		payload := jsonrpc.RPCBundleSubmissionPayload{
-			BlockchainNetwork: bxgateway.Mainnet,
 			MEVBuilders: map[string]string{
 				bxgateway.BloxrouteBuilderName: "",
 				bxgateway.FlashbotsBuilderName: "",
@@ -112,7 +111,7 @@ func (s *HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 			EnforcePayout:   bundlePayload[0].EnforcePayout,
 		}
 
-		mevBundle, bundleHash, err := mevBundleFromRequest(&payload)
+		mevBundle, bundleHash, err := mevBundleFromRequest(&payload, s.feedManager.networkNum)
 		var result interface{}
 		if payload.UUID == "" {
 			result = GatewayBundleResponse{BundleHash: bundleHash}
@@ -128,9 +127,9 @@ func (s *HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		mevBundle.SetNetworkNum(s.feedManager.networkNum)
 
-		if !s.feedManager.accountModel.TierName.IsEnterprise() {
-			log.Tracef("%s rejected for non Enterprise account %v tier %v", mevBundle, s.feedManager.accountModel.AccountID, s.feedManager.accountModel.TierName)
-			writeErrorJSON(w, rpcRequest.ID, http.StatusForbidden, errors.New("Enterprise account is required in order to send bundle"))
+		if !s.feedManager.accountModel.TierName.IsElite() {
+			log.Tracef("%s rejected for non EnterpriseElite account %v tier %v", mevBundle, s.feedManager.accountModel.AccountID, s.feedManager.accountModel.TierName)
+			writeErrorJSON(w, rpcRequest.ID, http.StatusForbidden, errors.New("EnterpriseElite account is required in order to send bundle"))
 			return
 		}
 
@@ -153,8 +152,7 @@ func (s *HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, rpcRequest.ID, http.StatusOK, result)
 	case jsonrpc.RPCBundleSubmission:
 		params := jsonrpc.RPCBundleSubmissionPayload{
-			BlockchainNetwork: bxgateway.Mainnet,
-			Frontrunning:      true,
+			Frontrunning: true,
 		}
 		if err = json.Unmarshal(*rpcRequest.Params, &params); err != nil {
 			writeErrorJSON(w, rpcRequest.ID, http.StatusInternalServerError, fmt.Errorf("failed to unmarshal params for %v request: %v", jsonrpc.RPCBundleSubmission, err))
@@ -169,7 +167,7 @@ func (s *HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		mevBundle, bundleHash, err := mevBundleFromRequest(&params)
+		mevBundle, bundleHash, err := mevBundleFromRequest(&params, s.feedManager.networkNum)
 		var result interface{}
 		if params.UUID == "" {
 			result = GatewayBundleResponse{BundleHash: bundleHash}

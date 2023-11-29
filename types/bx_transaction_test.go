@@ -29,22 +29,23 @@ func TestValidContentParsing(t *testing.T) {
 	assert.Nil(t, err)
 
 	ethTx, ok := blockchainTx.(*EthTransaction)
-	ethTx.Fields([]string{})
 	assert.True(t, ok)
 
-	assert.Equal(t, "0x0", ethTx.fields["type"])
-	assert.Nil(t, ethTx.fields["AccessList"])
-	assert.Equal(t, "0xb877c7e556d50b0027053336b90f36becf67b3dd", ethTx.fields["to"])
-	assert.Equal(t, "0x40266f84a2ecd4719057b0633cc80e3e0b3666f6f6ec1890a920239634ec6531", ethTx.fields["s"])
-	assert.Equal(t, "0xaa803263146bda76a58ebf9f54be589280e920616bc57e7bd68248821f46fd0c", ethTx.fields["r"])
-	assert.Equal(t, "0x1c", ethTx.fields["v"])
-	assert.Equal(t, "0x50b32f902486000", ethTx.fields["value"])
-	assert.Equal(t, uint64(0x1b7f8), ethTx.Nonce)
-	assert.Equal(t, "0x", ethTx.fields["input"])
-	assert.Equal(t, "0xed2b4580a766bc9d81c73c35a8496f0461e9c261621cb9f4565ae52ade56056d", ethTx.fields["hash"])
-	assert.Equal(t, "0x832f166799a407275500430b61b622f0058f15d6", ethTx.fields["from"])
-	assert.Equal(t, "0x1bf08eb000", ethTx.fields["gasPrice"])
-	assert.Equal(t, "0x13880", ethTx.fields["gas"])
+	fields := ethTx.Fields(AllFieldsWithFrom)
+
+	assert.Equal(t, "0x0", fields["type"])
+	assert.Nil(t, fields["AccessList"])
+	assert.Equal(t, "0xb877c7e556d50b0027053336b90f36becf67b3dd", fields["to"])
+	assert.Equal(t, "0x40266f84a2ecd4719057b0633cc80e3e0b3666f6f6ec1890a920239634ec6531", fields["s"])
+	assert.Equal(t, "0xaa803263146bda76a58ebf9f54be589280e920616bc57e7bd68248821f46fd0c", fields["r"])
+	assert.Equal(t, "0x1c", fields["v"])
+	assert.Equal(t, "0x50b32f902486000", fields["value"])
+	assert.Equal(t, uint64(0x1b7f8), ethTx.Nonce())
+	assert.Equal(t, "0x", fields["input"])
+	assert.Equal(t, "0xed2b4580a766bc9d81c73c35a8496f0461e9c261621cb9f4565ae52ade56056d", fields["hash"])
+	assert.Equal(t, "0x832f166799a407275500430b61b622f0058f15d6", fields["from"])
+	assert.Equal(t, "0x1bf08eb000", fields["gasPrice"])
+	assert.Equal(t, "0x13880", fields["gas"])
 
 }
 

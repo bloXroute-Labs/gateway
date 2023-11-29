@@ -39,6 +39,7 @@ type GatewayClient interface {
 	TxsFromShortIDs(ctx context.Context, in *ShortIDListRequest, opts ...grpc.CallOption) (*TxListReply, error)
 	BlockInfo(ctx context.Context, in *BlockInfoRequest, opts ...grpc.CallOption) (*BlockInfoReply, error)
 	ProposedBlockStats(ctx context.Context, in *ProposedBlockStatsRequest, opts ...grpc.CallOption) (*ProposedBlockStatsReply, error)
+	BlxrSubmitBundle(ctx context.Context, in *BlxrSubmitBundleRequest, opts ...grpc.CallOption) (*BlxrSubmitBundleReply, error)
 }
 
 type gatewayClient struct {
@@ -376,6 +377,15 @@ func (c *gatewayClient) ProposedBlockStats(ctx context.Context, in *ProposedBloc
 	return out, nil
 }
 
+func (c *gatewayClient) BlxrSubmitBundle(ctx context.Context, in *BlxrSubmitBundleRequest, opts ...grpc.CallOption) (*BlxrSubmitBundleReply, error) {
+	out := new(BlxrSubmitBundleReply)
+	err := c.cc.Invoke(ctx, "/gateway.Gateway/BlxrSubmitBundle", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GatewayServer is the server API for Gateway service.
 // All implementations must embed UnimplementedGatewayServer
 // for forward compatibility
@@ -401,6 +411,7 @@ type GatewayServer interface {
 	TxsFromShortIDs(context.Context, *ShortIDListRequest) (*TxListReply, error)
 	BlockInfo(context.Context, *BlockInfoRequest) (*BlockInfoReply, error)
 	ProposedBlockStats(context.Context, *ProposedBlockStatsRequest) (*ProposedBlockStatsReply, error)
+	BlxrSubmitBundle(context.Context, *BlxrSubmitBundleRequest) (*BlxrSubmitBundleReply, error)
 	mustEmbedUnimplementedGatewayServer()
 }
 
@@ -470,6 +481,9 @@ func (UnimplementedGatewayServer) BlockInfo(context.Context, *BlockInfoRequest) 
 }
 func (UnimplementedGatewayServer) ProposedBlockStats(context.Context, *ProposedBlockStatsRequest) (*ProposedBlockStatsReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ProposedBlockStats not implemented")
+}
+func (UnimplementedGatewayServer) BlxrSubmitBundle(context.Context, *BlxrSubmitBundleRequest) (*BlxrSubmitBundleReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BlxrSubmitBundle not implemented")
 }
 func (UnimplementedGatewayServer) mustEmbedUnimplementedGatewayServer() {}
 
@@ -880,6 +894,24 @@ func _Gateway_ProposedBlockStats_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Gateway_BlxrSubmitBundle_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BlxrSubmitBundleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServer).BlxrSubmitBundle(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/gateway.Gateway/BlxrSubmitBundle",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServer).BlxrSubmitBundle(ctx, req.(*BlxrSubmitBundleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Gateway_ServiceDesc is the grpc.ServiceDesc for Gateway service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -946,6 +978,10 @@ var Gateway_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ProposedBlockStats",
 			Handler:    _Gateway_ProposedBlockStats_Handler,
+		},
+		{
+			MethodName: "BlxrSubmitBundle",
+			Handler:    _Gateway_BlxrSubmitBundle_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

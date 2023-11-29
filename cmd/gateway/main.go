@@ -41,6 +41,7 @@ func main() {
 			utils.RegistrationCertDirFlag,
 			utils.WSFlag,
 			utils.WSPortFlag,
+			utils.WSHostFlag,
 			utils.HTTPPortFlag,
 			utils.EnvFlag,
 			utils.LogLevelFlag,
@@ -100,6 +101,7 @@ func main() {
 			utils.EnableBloomFilter,
 			utils.BlocksToCacheWhileProposing,
 			utils.ProposingInterval,
+			utils.TxIncludeSenderInFeed,
 		},
 		Action: runGateway,
 	}
@@ -187,12 +189,8 @@ func runGateway(c *cli.Context) error {
 	startupBlockchainClient := startupBeaconAPIClients || startupBeaconNode || len(ethConfig.StaticEnodes()) > 0 || bxConfig.EnableDynamicPeers // if beacon node running we need to receive txs also
 	startupPrysmClient := bxConfig.GatewayMode.IsBDN() && prysmAddr != ""
 
-	var bridge blockchain.Bridge
-	if startupBlockchainClient || startupPrysmClient {
-		bridge = blockchain.NewBxBridge(eth.Converter{}, startupBeaconNode || startupBeaconAPIClients)
-	} else {
-		bridge = blockchain.NewNoOpBridge(eth.Converter{})
-	}
+	// initialize bridge even if startupPrysmClient and startupBlockchainClient are false
+	bridge := blockchain.NewBxBridge(eth.Converter{}, startupBeaconNode || startupBeaconAPIClients)
 
 	if bxConfig.ManageWSServer && !bxConfig.WebsocketEnabled && !bxConfig.WebsocketTLSEnabled {
 		return fmt.Errorf("websocket server must be enabled using --ws or --ws-tls if --manage-ws-server is enabled")
@@ -211,10 +209,26 @@ func runGateway(c *cli.Context) error {
 		return fmt.Errorf("if blockchan rpc is enabled, a valid websocket address must be provided")
 	}
 
-	gateway, err := nodes.NewGateway(ctx, bxConfig, bridge, wsManager, blockchainPeers, ethConfig.StaticPeers, recommendedPeers,
-		gatewayPublicKey, sdn, sslCerts, len(ethConfig.StaticEnodes()), c.String(utils.PolygonMainnetHeimdallEndpoints.Name),
-		c.Int(utils.TransactionHoldDuration.Name), c.Int(utils.TransactionPassedDueDuration.Name), c.Bool(utils.EnableBloomFilter.Name),
-		c.Int(utils.BlocksToCacheWhileProposing.Name), c.Duration(utils.ProposingInterval.Name))
+	gateway, err := nodes.NewGateway(
+		ctx,
+		bxConfig,
+		bridge,
+		wsManager,
+		blockchainPeers,
+		ethConfig.StaticPeers,
+		recommendedPeers,
+		gatewayPublicKey,
+		sdn,
+		sslCerts,
+		len(ethConfig.StaticEnodes()),
+		c.String(utils.PolygonMainnetHeimdallEndpoints.Name),
+		c.Int(utils.TransactionHoldDuration.Name),
+		c.Int(utils.TransactionPassedDueDuration.Name),
+		c.Bool(utils.EnableBloomFilter.Name),
+		c.Int(utils.BlocksToCacheWhileProposing.Name),
+		c.Duration(utils.ProposingInterval.Name),
+		c.Bool(utils.TxIncludeSenderInFeed.Name),
+	)
 	if err != nil {
 		return err
 	}

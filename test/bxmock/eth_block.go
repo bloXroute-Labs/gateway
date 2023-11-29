@@ -43,9 +43,9 @@ func NewEthBlockHeader(height uint64, parentHash common.Hash) *ethtypes.Header {
 // NewEthBlockWithHeader generates an Ethereum block testing purposes from a header
 func NewEthBlockWithHeader(header *ethtypes.Header) *ethtypes.Block {
 	txs := []*ethtypes.Transaction{
-		NewSignedEthTx(ethtypes.LegacyTxType, 1, nil),
-		NewSignedEthTx(ethtypes.AccessListTxType, 2, nil),
-		NewSignedEthTx(ethtypes.DynamicFeeTxType, 3, nil),
+		NewSignedEthTx(ethtypes.LegacyTxType, 1, nil, nil),
+		NewSignedEthTx(ethtypes.AccessListTxType, 2, nil, nil),
+		NewSignedEthTx(ethtypes.DynamicFeeTxType, 3, nil, nil),
 	}
 	uncles := []*ethtypes.Header{
 		NewEthBlockHeader(header.Number.Uint64(), common.Hash{}),

@@ -128,17 +128,12 @@ func (h *handlerObj) handleRPCSubscribeNotify(ctx context.Context, conn *jsonrpc
 					return
 				}
 			case types.TxReceiptsFeed:
-				block := notification.(*types.EthBlockNotification)
-				sendTxReceiptsNotification := func(notification *types.TxReceiptNotification) error {
-					return h.sendNotification(ctx, subscriptionID, request, conn, notification)
-				}
-				err := handleTxReceipts(h.FeedManager, block, sendTxReceiptsNotification)
-				if err != nil {
-					SendErrorMsg(ctx, jsonrpc.InvalidRequest, err.Error(), conn, reqID)
+				if h.sendTxReceiptNotification(ctx, subscriptionID, request, conn, notification) != nil {
 					return
 				}
 			case types.OnBlockFeed:
 				block := notification.(*types.EthBlockNotification)
+
 				sendEthOnBlockWsNotification := func(notification *types.OnBlockNotification) error {
 					return h.sendNotification(ctx, subscriptionID, request, conn, notification)
 				}
@@ -168,6 +163,23 @@ func (h *handlerObj) sendTxNotification(ctx context.Context, subscriptionID stri
 	if err != nil {
 		h.log.Errorf("error notifying subscriptionID %v: %v", subscriptionID, err)
 		return err
+	}
+
+	return nil
+}
+
+func (h *handlerObj) sendTxReceiptNotification(ctx context.Context, subscriptionID string, clientReq *clientReq, conn *jsonrpc2.Conn, notification types.Notification) error {
+	response := txReceiptResponse{
+		Subscription: subscriptionID,
+	}
+	content := notification.WithFields(clientReq.includes).(*types.TxReceiptsNotification)
+	for _, receipt := range content.Receipts {
+		response.Result = receipt
+		err := conn.Notify(ctx, "subscribe", response)
+		if err != nil {
+			h.log.Errorf("error reply to subscriptionID %v: %v", subscriptionID, err.Error())
+			return err
+		}
 	}
 
 	return nil

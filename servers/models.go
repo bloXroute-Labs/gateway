@@ -42,6 +42,11 @@ type BlockResponse struct {
 	Result       types.Notification `json:"result"`
 }
 
+type txReceiptResponse struct {
+	Subscription string           `json:"subscription"`
+	Result       *types.TxReceipt `json:"result"`
+}
+
 type clientReq struct {
 	includes []string
 	feed     types.FeedType

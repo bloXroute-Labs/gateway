@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/big"
 	"strconv"
-	"strings"
 	"sync"
 
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
@@ -18,12 +17,10 @@ import (
 
 // EthTransaction represents the JSON encoding of an Ethereum transaction
 type EthTransaction struct {
-	tx        *ethtypes.Transaction
-	GasFeeCap *big.Int
-	GasTipCap *big.Int
-	ChainID   *big.Int
-	From      *common.Address
-	Nonce     uint64
+	tx *ethtypes.Transaction
+
+	// Lazy loaded and excluded from 'all' fields
+	from *common.Address
 
 	lock    *sync.Mutex
 	filters map[string]interface{}
@@ -37,10 +34,34 @@ var paramToName = map[string]string{
 	"gas_price":                "gasPrice",
 	"max_fee_per_gas":          "maxFeePerGas",
 	"max_priority_fee_per_gas": "maxPriorityFeePerGas",
+
+	"tx_contents.tx_hash":                  "hash",
+	"tx_contents.nonce":                    "nonce",
+	"tx_contents.input":                    "input",
+	"tx_contents.v":                        "v",
+	"tx_contents.r":                        "r",
+	"tx_contents.s":                        "s",
+	"tx_contents.access_list":              "accessList",
+	"tx_contents.chain_id":                 "chainId",
+	"tx_contents.max_fee_per_gas":          "maxFeePerGas",
+	"tx_contents.max_priority_fee_per_gas": "maxPriorityFeePerGas",
+	"tx_contents.gas_price":                "gasPrice",
+	"tx_contents.type":                     "type",
+	"tx_contents.value":                    "value",
+	"tx_contents.gas":                      "gas",
+	"tx_contents.to":                       "to",
+	"tx_contents.from":                     "from",
 }
 
 // AllFields is used with blocks feeds
-var AllFields []string
+var AllFields = []string{
+	"tx_contents.tx_hash", "tx_contents.nonce", "tx_contents.input", "tx_contents.v", "tx_contents.r",
+	"tx_contents.s", "tx_contents.access_list", "tx_contents.chain_id", "tx_contents.max_fee_per_gas", "tx_contents.max_priority_fee_per_gas",
+	"tx_contents.gas_price", "tx_contents.type", "tx_contents.value", "tx_contents.gas", "tx_contents.to",
+}
+
+// AllFieldsWithFrom is used with transactions feeds
+var AllFieldsWithFrom = append(AllFields, "tx_contents.from")
 
 // EmptyFilteredTransactionMap is a map of key value used to check the filters provided by the websocket client
 var EmptyFilteredTransactionMap = map[string]interface{}{
@@ -60,34 +81,49 @@ var EmptyFilteredTransactionMap = map[string]interface{}{
 
 // NewEthTransaction converts a canonic Ethereum transaction to EthTransaction
 func NewEthTransaction(h SHA256Hash, rawEthTx *ethtypes.Transaction, sender Sender) (*EthTransaction, error) {
-	var (
-		ethSender common.Address
-		err       error
-	)
-	if sender == EmptySender {
-		ethSender, err = ethtypes.Sender(ethtypes.NewLondonSigner(rawEthTx.ChainId()), rawEthTx)
-		if err != nil {
-			return nil, fmt.Errorf("could not parse Ethereum transaction sender: %v", err)
-		}
-	} else {
-		ethSender.SetBytes(sender[:])
-	}
 	ethTx := &EthTransaction{
 		tx:      rawEthTx,
-		From:    &ethSender,
-		Nonce:   rawEthTx.Nonce(),
-		ChainID: rawEthTx.ChainId(),
 		lock:    &sync.Mutex{},
+		filters: make(map[string]interface{}),
+		fields:  make(map[string]interface{}),
 	}
-	switch rawEthTx.Type() {
-	case ethtypes.DynamicFeeTxType:
-		ethTx.GasFeeCap = rawEthTx.GasFeeCap()
-		ethTx.GasTipCap = rawEthTx.GasTipCap()
-	default:
-		ethTx.GasFeeCap = rawEthTx.GasPrice()
-		ethTx.GasTipCap = rawEthTx.GasPrice()
+
+	if sender != EmptySender {
+		ethTx.from = (*common.Address)(sender[:])
 	}
+
 	return ethTx, nil
+}
+
+// From returns the sender of the transaction
+func (et *EthTransaction) From() (*common.Address, error) {
+	et.lock.Lock()
+	defer et.lock.Unlock()
+
+	// Cached
+	if et.from != nil {
+		return et.from, nil
+	}
+
+	from, err := ethtypes.Sender(ethtypes.NewLondonSigner(et.tx.ChainId()), et.tx)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse Ethereum transaction from: %v", err)
+	}
+
+	// Cache
+	et.from = &from
+
+	return &from, nil
+}
+
+// Sender returns the sender of the transaction
+func (et *EthTransaction) Sender() (Sender, error) {
+	from, err := et.From()
+	if err != nil {
+		return EmptySender, err
+	}
+
+	return Sender(*from), nil
 }
 
 // Type provides the transaction type
@@ -116,85 +152,102 @@ func (et *EthTransaction) AccessList() ethtypes.AccessList {
 func (et *EthTransaction) createFilters() {
 	et.lock.Lock()
 	defer et.lock.Unlock()
-	if et.filters != nil {
+
+	if len(et.filters) > 0 {
 		return
 	}
-	var transactionFilters = make(map[string]interface{})
+
 	tx := et.tx
-	transactionFilters["chain_id"] = int(tx.ChainId().Int64())
+	et.filters["chain_id"] = int(tx.ChainId().Int64())
 	if tx.Type() == ethtypes.DynamicFeeTxType {
-		transactionFilters["max_fee_per_gas"] = int(tx.GasFeeCap().Int64())
-		transactionFilters["max_priority_fee_per_gas"] = int(tx.GasTipCap().Int64())
-		transactionFilters["gas_price"] = nil
+		et.filters["max_fee_per_gas"] = int(tx.GasFeeCap().Int64())
+		et.filters["max_priority_fee_per_gas"] = int(tx.GasTipCap().Int64())
+		et.filters["gas_price"] = 0
+		// Because the short circuit behavior is not working in the current evaluation library, and when it tries to evaluate
+		// all parts of the expressions fail on the undefined values.
+		// For example, before this change, the following filter always failed:
+		// (type == '0' && gas_price > 21000000000) || (type == '2' && max_priority_fee_per_gas > 21000000000).
+		//
+		// That's why was decided to set default defined values, just to be able to evaluate the expressions.
+		// Anyway, the evaluation will be correct regardless of the default values.
+		//
+		// Also, to handle the 1-filter setup, when the user defines only the gas_price filter, for example,
+		// we provide the preprocessing check of the tx type and configured filters.
+		// check out isFiltersSupportedByTxType function of bxgateway/servers/client_handler.go
+		//
+		// It means, that when it comes to the evaluation of the filters, we will have only complex expressions,
+		// where we don't actually care about these default values we configured here.
+		//
+		// TODO: to get rid of this stuff, we need to move to another expression evaluation library (or forking existing one)
+		// to support short circuit behavior for the logical operators.
 	} else {
-		transactionFilters["gas_price"] = BigIntAsFloat64(tx.GasPrice())
+		et.filters["gas_price"] = BigIntAsFloat64(tx.GasPrice())
+		et.filters["max_fee_per_gas"] = 0
+		et.filters["max_priority_fee_per_gas"] = 0
 	}
 
-	transactionFilters["type"] = strconv.Itoa(int(tx.Type()))
-	transactionFilters["value"] = BigIntAsFloat64(tx.Value())
-	transactionFilters["gas"] = float64(tx.Gas())
+	et.filters["type"] = strconv.Itoa(int(tx.Type()))
+	et.filters["value"] = BigIntAsFloat64(tx.Value())
+	et.filters["gas"] = float64(tx.Gas())
 
 	if tx.To() != nil {
-		transactionFilters["to"] = AddressAsString(tx.To())
+		et.filters["to"] = AddressAsString(tx.To())
 	} else {
-		transactionFilters["to"] = "0x0"
+		et.filters["to"] = "0x0"
 	}
-
-	transactionFilters["from"] = AddressAsString(et.From)
 
 	// note: from some reason method_id is only a filter field
 	methodID := hexutil.Encode(tx.Data())
 	if len(methodID) >= 10 {
-		transactionFilters["method_id"] = "0x" + methodID[2:10]
+		et.filters["method_id"] = "0x" + methodID[2:10]
 	} else {
-		transactionFilters["method_id"] = methodID
+		et.filters["method_id"] = methodID
 	}
-	et.filters = transactionFilters
 }
 
 func (et *EthTransaction) createFields() {
 	et.lock.Lock()
 	defer et.lock.Unlock()
 
+	if len(et.fields) > 0 {
+		return
+	}
+
 	tx := et.tx
 
-	fields := make(map[string]interface{})
-	fields["hash"] = tx.Hash().String()
-	fields["nonce"] = hexutil.EncodeUint64(tx.Nonce())
-	fields["input"] = hexutil.Encode(tx.Data())
+	et.fields["hash"] = tx.Hash().String()
+	et.fields["nonce"] = hexutil.EncodeUint64(tx.Nonce())
+	et.fields["input"] = hexutil.Encode(tx.Data())
 	v, r, s := tx.RawSignatureValues()
-	fields["v"] = BigIntAsString(v)
-	fields["r"] = BigIntAsString(r)
-	fields["s"] = BigIntAsString(s)
+	et.fields["v"] = BigIntAsString(v)
+	et.fields["r"] = BigIntAsString(r)
+	et.fields["s"] = BigIntAsString(s)
 
 	if tx.AccessList() != nil {
-		fields["accessList"] = tx.AccessList()
+		et.fields["accessList"] = tx.AccessList()
 	}
 
 	if tx.Type() != ethtypes.LegacyTxType {
-		fields["chainId"] = hexutil.EncodeUint64(tx.ChainId().Uint64())
+		et.fields["chainId"] = hexutil.EncodeUint64(tx.ChainId().Uint64())
 	}
 
 	if tx.Type() == ethtypes.DynamicFeeTxType {
-		fields["maxFeePerGas"] = hexutil.EncodeBig(tx.GasFeeCap())
-		fields["maxPriorityFeePerGas"] = hexutil.EncodeBig(tx.GasTipCap())
-		fields["gasPrice"] = nil
+		et.fields["maxFeePerGas"] = hexutil.EncodeBig(tx.GasFeeCap())
+		et.fields["maxPriorityFeePerGas"] = hexutil.EncodeBig(tx.GasTipCap())
+		et.fields["gasPrice"] = nil
 	} else {
-		fields["gasPrice"] = hexutil.EncodeBig(tx.GasPrice())
+		et.fields["gasPrice"] = hexutil.EncodeBig(tx.GasPrice())
 	}
 
-	fields["type"] = hexutil.EncodeUint64(uint64(tx.Type()))
+	et.fields["type"] = hexutil.EncodeUint64(uint64(tx.Type()))
 
-	fields["value"] = hexutil.EncodeBig(tx.Value())
+	et.fields["value"] = hexutil.EncodeBig(tx.Value())
 
-	fields["gas"] = hexutil.EncodeUint64(tx.Gas())
+	et.fields["gas"] = hexutil.EncodeUint64(tx.Gas())
 
 	if tx.To() != nil {
-		fields["to"] = AddressAsString(tx.To())
+		et.fields["to"] = AddressAsString(tx.To())
 	}
-	fields["from"] = AddressAsString(et.From)
-
-	et.fields = fields
 }
 
 // EthTransactionFromBytes parses and constructs an Ethereum transaction from bytes
@@ -211,43 +264,73 @@ func ethTransactionFromBytes(h SHA256Hash, tc TxContent, sender Sender) (*EthTra
 
 // EffectiveGasFeeCap returns a common "gas fee cap" that can be used for all types of transactions
 func (et *EthTransaction) EffectiveGasFeeCap() *big.Int {
-	return et.GasFeeCap
+	if et.Type() == ethtypes.DynamicFeeTxType {
+		return et.tx.GasFeeCap()
+	}
+
+	return et.tx.GasPrice()
 }
 
 // EffectiveGasTipCap returns a common "gas tip cap" that can be used for all types of transactions
 func (et *EthTransaction) EffectiveGasTipCap() *big.Int {
-	return et.GasTipCap
+	if et.Type() == ethtypes.DynamicFeeTxType {
+		return et.tx.GasTipCap()
+	}
+
+	return et.tx.GasPrice()
+}
+
+// ChainID returns the chain ID of the transaction
+func (et *EthTransaction) ChainID() *big.Int {
+	return et.tx.ChainId()
+}
+
+// Nonce returns the nonce of the transaction
+func (et *EthTransaction) Nonce() uint64 {
+	return et.tx.Nonce()
 }
 
 // Filters returns a map of key,value that can be used to filter transactions
 func (et *EthTransaction) Filters(filters []string) map[string]interface{} {
 	et.createFilters()
-	return et.filters
+
+	filteredFields := make(map[string]interface{})
+	for _, param := range filters {
+		if v, ok := et.filters[param]; ok {
+			filteredFields[param] = v
+		} else if param == "from" {
+			from, err := et.From()
+			if err != nil {
+				continue
+			}
+			filteredFields["from"] = AddressAsString(from)
+		}
+	}
+
+	return filteredFields
 }
 
 // Fields - creates a map with selected fields
 func (et *EthTransaction) Fields(fields []string) map[string]interface{} {
 	et.createFields()
 
-	if len(fields) == 0 {
-		return et.fields
-	}
-
 	transactionContent := make(map[string]interface{})
 	for _, param := range fields {
-		parts := strings.Split(param, ".")
-		if len(parts) != 2 {
-			continue
-		}
-		name := parts[1]
-		if v, ok := paramToName[name]; ok {
-			name = v
+		if v, ok := paramToName[param]; ok {
+			param = v
 		}
 
-		if v, ok := et.fields[name]; ok {
-			transactionContent[name] = v
+		if v, ok := et.fields[param]; ok {
+			transactionContent[param] = v
+		} else if param == "from" {
+			from, err := et.From()
+			if err != nil {
+				continue
+			}
+			transactionContent["from"] = AddressAsString(from)
 		}
 	}
+
 	return transactionContent
 }
 

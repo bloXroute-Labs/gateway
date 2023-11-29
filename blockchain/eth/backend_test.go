@@ -85,8 +85,8 @@ func TestHandler_HandleTransactionsFromNode(t *testing.T) {
 	_ = handler.peers.register(peer)
 
 	txs := []*ethtypes.Transaction{
-		bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey),
-		bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 2, privateKey),
+		bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey, nil),
+		bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 2, privateKey, nil),
 	}
 
 	txsPacket := eth.TransactionsPacket(txs)

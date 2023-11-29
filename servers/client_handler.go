@@ -27,8 +27,9 @@ import (
 	"github.com/sourcegraph/jsonrpc2"
 	websocketjsonrpc2 "github.com/sourcegraph/jsonrpc2/websocket"
 	"github.com/zhouzhuojie/conditions"
-	"golang.org/x/sync/errgroup"
 )
+
+const localhost = "127.0.0.1"
 
 // ErrWSConnDelay amount of time to sleep before closing a bad connection. This is configured by tests to a shorted value
 var ErrWSConnDelay = 10 * time.Second
@@ -45,10 +46,11 @@ type ClientHandler struct {
 	pendingTxsSourceFromNode *bool
 	log                      *log.Entry
 	authorize                func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool) (sdnmessage.Account, error)
+	txFromFieldIncludable    bool
 }
 
 // NewClientHandler is a constructor for ClientHandler
-func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, httpServer *HTTPServer, enableBlockchainRPC bool, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), log *log.Entry, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool) (sdnmessage.Account, error)) *ClientHandler {
+func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, httpServer *HTTPServer, enableBlockchainRPC bool, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), log *log.Entry, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool) (sdnmessage.Account, error), txFromFieldIncludable bool) *ClientHandler {
 	return &ClientHandler{
 		feedManager:              feedManager,
 		websocketServer:          websocketServer,
@@ -58,36 +60,33 @@ func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, ht
 		pendingTxsSourceFromNode: pendingTxsSourceFromNode,
 		authorize:                authorize,
 		log:                      log,
+		txFromFieldIncludable:    txFromFieldIncludable,
 	}
 }
 
 // ManageWSServer manage the ws connection of the blockchain node
 func (ch *ClientHandler) ManageWSServer(ctx context.Context, activeManagement bool) error {
-	if activeManagement {
-		for {
-			select {
-			case <-ctx.Done():
-				return nil
-			case syncStatus := <-ch.feedManager.nodeWSManager.ReceiveNodeSyncStatusUpdate():
-				if syncStatus == blockchain.Unsynced {
-					ch.shutdownWSServer()
-					ch.feedManager.subscriptionServices.SendSubscriptionResetNotification(make([]sdnmessage.SubscriptionModel, 0))
-				} else {
-					go ch.runWSServer()
-				}
-			}
-		}
-	} else {
-		g := &errgroup.Group{}
-		g.Go(func() error {
-			return ch.runWSServer()
-		})
-		for {
-			select {
-			case <-ctx.Done():
-				return g.Wait()
-			case <-ch.feedManager.nodeWSManager.ReceiveNodeSyncStatusUpdate():
+	if !activeManagement {
+		go ch.runWSServer()
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			ch.shutdownWSServer()
+			return nil
+		case syncStatus := <-ch.feedManager.nodeWSManager.ReceiveNodeSyncStatusUpdate():
+			if !activeManagement {
 				// consume update
+				continue
+			}
+
+			switch syncStatus {
+			case blockchain.Synced:
+				go ch.runWSServer()
+			case blockchain.Unsynced:
+				ch.shutdownWSServer()
+				ch.feedManager.subscriptionServices.SendSubscriptionResetNotification(make([]sdnmessage.SubscriptionModel, 0))
 			}
 		}
 	}
@@ -105,7 +104,7 @@ func (ch *ClientHandler) Stop() error {
 }
 
 func (ch *ClientHandler) runWSServer() error {
-	ch.websocketServer = newWSServer(ch.feedManager, ch.getQuotaUsage, ch.enableBlockchainRPC, ch.pendingTxsSourceFromNode, ch.authorize)
+	ch.websocketServer = newWSServer(ch.feedManager, ch.getQuotaUsage, ch.enableBlockchainRPC, ch.pendingTxsSourceFromNode, ch.authorize, ch.txFromFieldIncludable)
 	ch.log.Infof("starting websockets RPC server at: %v", ch.websocketServer.Addr)
 	var err error
 	if ch.feedManager.cfg.WebsocketTLSEnabled {
@@ -135,7 +134,7 @@ func (ch *ClientHandler) shutdownWSServer() {
 }
 
 // newWSServer creates and returns a new websocket server managed by FeedManager
-func newWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool) (sdnmessage.Account, error)) *http.Server {
+func newWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool) (sdnmessage.Account, error), txFromFieldIncludable bool) *http.Server {
 	handler := http.NewServeMux()
 	wsHandler := func(responseWriter http.ResponseWriter, request *http.Request) {
 		// if enable client handler - skip authorization
@@ -178,21 +177,25 @@ func newWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) 
 					serverAccountID, request.RemoteAddr, err)
 			}
 		}
-		handleWSClientConnection(feedManager, responseWriter, request, connectionAccountModel, getQuotaUsage, enableBlockchainRPC, pendingTxsSourceFromNode)
+		handleWSClientConnection(feedManager, responseWriter, request, connectionAccountModel, getQuotaUsage, enableBlockchainRPC, pendingTxsSourceFromNode, txFromFieldIncludable)
 	}
 
 	handler.HandleFunc("/ws", wsHandler)
 	handler.HandleFunc("/", wsHandler)
 
 	server := http.Server{
-		Addr:    fmt.Sprintf(":%v", feedManager.cfg.WebsocketPort),
 		Handler: handler,
+	}
+	if feedManager.cfg.WebsocketHost == localhost {
+		server.Addr = fmt.Sprintf(":%v", feedManager.cfg.WebsocketPort)
+	} else {
+		server.Addr = fmt.Sprintf("%v:%v", feedManager.cfg.WebsocketHost, feedManager.cfg.WebsocketPort)
 	}
 	return &server
 }
 
 // handleWsClientConnection - when new http connection is made we get here upgrade to ws, and start handling
-func handleWSClientConnection(feedManager *FeedManager, w http.ResponseWriter, r *http.Request, accountModel sdnmessage.Account, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool, pendingTxsSourceFromNode *bool) {
+func handleWSClientConnection(feedManager *FeedManager, w http.ResponseWriter, r *http.Request, accountModel sdnmessage.Account, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool, pendingTxsSourceFromNode *bool, txFromFieldIncludable bool) {
 	log.Debugf("new web-socket connection from %v", r.RemoteAddr)
 	connection, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -218,6 +221,7 @@ func handleWSClientConnection(feedManager *FeedManager, w http.ResponseWriter, r
 		ethSubscribeIDToChanMap:  make(map[string]chan bool),
 		headers:                  types.SDKMetaFromHeaders(r.Header),
 		stats:                    feedManager.stats,
+		txFromFieldIncludable:    txFromFieldIncludable,
 	}
 
 	asyncHandler := jsonrpc2.AsyncHandler(handler)
@@ -252,28 +256,34 @@ func SendErrorMsg(ctx context.Context, code jsonrpc.RPCErrorCode, data string, c
 }
 
 func filterAndInclude(clientReq *clientReq, tx *types.NewTransactionNotification, remoteAddress string, accountID types.AccountID) *TxResult {
-	hasTxContent := false
 	if clientReq.expr != nil {
-		txFilters := tx.Filters(clientReq.expr.Args())
-		if txFilters == nil {
+		filters := clientReq.expr.Args()
+		txFilters := tx.Filters(filters)
+
+		// should be doone after tx.Filters() to avoid nil pointer dereference
+		txType := tx.BlockchainTransaction.(*types.EthTransaction).Type()
+
+		if !isFiltersSupportedByTxType(txType, filters) {
+			log.Tracef("skipping [%s] transaction evaluation for feed, configured unsupported filter %s for tx type: %d. feed: %v remote address: %v. account id: %v",
+				tx.GetHash(), clientReq.expr, txType, clientReq.feed, remoteAddress, accountID)
 			return nil
 		}
+
 		// Evaluate if we should send the tx
 		shouldSend, err := conditions.Evaluate(clientReq.expr, txFilters)
 		if err != nil {
-			log.Errorf("error evaluate Filters. feed: %v. method: %v. Filters: %v. remote address: %v. account id: %v error - %v tx: %v.",
-				clientReq.feed, clientReq.includes[0], clientReq.expr.String(), remoteAddress, accountID, err.Error(), txFilters)
+			log.Errorf("error evaluate Filters. feed: %v. filters: %s. remote address: %v. account id: %v error - %v tx: %v",
+				clientReq.feed, clientReq.expr, remoteAddress, accountID, err.Error(), txFilters)
 			return nil
 		}
 		if !shouldSend {
 			return nil
 		}
 	}
+
+	hasTxContent := false
 	var response TxResult
 	for _, param := range clientReq.includes {
-		if strings.Contains(param, "tx_contents") {
-			hasTxContent = true
-		}
 		switch param {
 		case "tx_hash":
 			txHash := tx.GetHash()
@@ -287,8 +297,13 @@ func filterAndInclude(clientReq *clientReq, tx *types.NewTransactionNotification
 		case "raw_tx":
 			rawTx := hexutil.Encode(tx.RawTx())
 			response.RawTx = &rawTx
+		default:
+			if strings.HasPrefix(param, "tx_contents.") {
+				hasTxContent = true
+			}
 		}
 	}
+
 	if hasTxContent {
 		fields := tx.Fields(clientReq.includes)
 		if fields == nil {
@@ -310,7 +325,7 @@ func validateTxFromExternalSource(transaction string, txBytes []byte, validators
 		// If UnmarshalBinary failed, we will try RLP in case user made mistake
 		e := rlp.DecodeBytes(txBytes, &ethTx)
 		if e != nil {
-			return nil, false, err
+			return nil, false, fmt.Errorf("failed to unmarshal tx: %w", err)
 		}
 		log.Warnf("Ethereum transaction was in RLP format instead of binary," +
 			" transaction has been processed anyway, but it'd be best to use the Ethereum binary standard encoding")
@@ -426,7 +441,7 @@ func ProcessNextValidatorTx(tx *bxmessage.Tx, fallback uint16, nextValidatorMap 
 		}
 	}
 
-	if networkNum == bxgateway.PolygonMainnetNum {
+	if networkNum == bxgateway.PolygonMainnetNum || networkNum == bxgateway.PolygonMumbaiNum {
 		n1Validator := n2Validator.Prev()
 		if n1Validator != nil {
 			tx.SetWalletID(0, n1Validator.Value.(string))
@@ -437,4 +452,47 @@ func ProcessNextValidatorTx(tx *bxmessage.Tx, fallback uint16, nextValidatorMap 
 	}
 
 	return false, nil
+}
+
+// HandleMEVBundle handles the submission of a bundle and returns its hash, an error and the equivalent error code that we need to send in the response
+func HandleMEVBundle(feedManager *FeedManager, conn connections.Conn, connectionAccount sdnmessage.Account, params *jsonrpc.RPCBundleSubmissionPayload) (*GatewayBundleResponse, int, error) {
+	// If MEVBuilders request parameter is empty, only send to default builders.
+	if len(params.MEVBuilders) == 0 {
+		params.MEVBuilders = map[string]string{
+			bxgateway.BloxrouteBuilderName: "",
+			bxgateway.FlashbotsBuilderName: "",
+		}
+	}
+
+	mevBundle, bundleHash, err := mevBundleFromRequest(params, feedManager.networkNum)
+	var result *GatewayBundleResponse
+	if params.UUID == "" {
+		result = &GatewayBundleResponse{BundleHash: bundleHash}
+	}
+	if err != nil {
+		if errors.Is(err, errBlockedTxHashes) {
+			return result, 0, nil
+		}
+		return nil, jsonrpc2.CodeInvalidParams, err
+	}
+	mevBundle.SetNetworkNum(feedManager.networkNum)
+
+	if !connectionAccount.TierName.IsElite() {
+		log.Tracef("%s rejected for non EnterpriseElite account %v tier %v", mevBundle, connectionAccount.AccountID, connectionAccount.TierName)
+		return nil, jsonrpc2.CodeInvalidRequest, errors.New("enterprise account is required in order to send bundle")
+	}
+
+	maxTxsLen := connectionAccount.Bundles.Networks[bxgateway.NetworkNumToBlockchainNetwork[feedManager.networkNum]].TxsLenLimit
+	if maxTxsLen > 0 && len(mevBundle.Transactions) > maxTxsLen {
+		log.Tracef("%s rejected for exceeding txs limit %v", mevBundle, maxTxsLen)
+		return nil, jsonrpc2.CodeInvalidRequest, fmt.Errorf("txs limit exceeded, max txs allowed: %v", maxTxsLen)
+	}
+
+	if err := feedManager.node.HandleMsg(mevBundle, conn, connections.RunForeground); err != nil {
+		// err here is not possible right now, but anyway we don't want expose reason of internal error to the client
+		log.Errorf("failed to process %s: %v", mevBundle, err)
+		return nil, jsonrpc2.CodeInternalError, err
+	}
+
+	return result, 0, nil
 }

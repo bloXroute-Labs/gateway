@@ -16,9 +16,12 @@ var ChainID = big.NewInt(10)
 var pKey, _ = crypto.HexToECDSA("dae2cb3b03f8a1bbaedae4d43e159360c8d07ffab119d5d7311a81a9d4f53bd1")
 
 // NewSignedEthTx generates a valid signed Ethereum transaction from a provided private key. nil can be specified to use a hardcoded key.
-func NewSignedEthTx(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey) *ethtypes.Transaction {
+func NewSignedEthTx(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey, chainID *big.Int) *ethtypes.Transaction {
 	if privateKey == nil {
 		privateKey = pKey
+	}
+	if chainID == nil {
+		chainID = ChainID
 	}
 
 	var unsignedTx *ethtypes.Transaction
@@ -27,14 +30,14 @@ func NewSignedEthTx(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey) *e
 	case ethtypes.LegacyTxType:
 		unsignedTx = newEthLegacyTx(nonce, privateKey)
 	case ethtypes.AccessListTxType:
-		unsignedTx = newEthAccessListTx(nonce, privateKey)
+		unsignedTx = newEthAccessListTx(nonce, privateKey, chainID)
 	case ethtypes.DynamicFeeTxType:
-		unsignedTx = newEthDynamicFeeTx(nonce, privateKey)
+		unsignedTx = newEthDynamicFeeTx(nonce, privateKey, chainID)
 	default:
 		panic("provided tx type does not exist")
 	}
 
-	signer := ethtypes.NewLondonSigner(ChainID)
+	signer := ethtypes.NewLondonSigner(chainID)
 	hash := signer.Hash(unsignedTx)
 	signature, _ := crypto.Sign(hash.Bytes(), privateKey)
 
@@ -43,8 +46,8 @@ func NewSignedEthTx(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey) *e
 }
 
 // NewSignedEthTxBytes generates a valid Ethereum transaction, and packs it into RLP encoded bytes
-func NewSignedEthTxBytes(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey) (*ethtypes.Transaction, []byte) {
-	tx := NewSignedEthTx(txType, nonce, privateKey)
+func NewSignedEthTxBytes(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey, chainID *big.Int) (*ethtypes.Transaction, []byte) {
+	tx := NewSignedEthTx(txType, nonce, privateKey, chainID)
 	var b []byte
 	var err error
 	switch txType {
@@ -66,8 +69,8 @@ func NewSignedEthTxBytes(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKe
 }
 
 // NewSignedEthTxMessage generates a valid Ethereum transaction, and packs it into a bloxroute tx message
-func NewSignedEthTxMessage(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey, networkNum types.NetworkNum, flags types.TxFlags) (*ethtypes.Transaction, *bxmessage.Tx) {
-	ethTx, ethTxBytes := NewSignedEthTxBytes(txType, nonce, privateKey)
+func NewSignedEthTxMessage(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey, networkNum types.NetworkNum, flags types.TxFlags, chainID *big.Int) (*ethtypes.Transaction, *bxmessage.Tx) {
+	ethTx, ethTxBytes := NewSignedEthTxBytes(txType, nonce, privateKey, chainID)
 	var hash types.SHA256Hash
 	copy(hash[:], ethTx.Hash().Bytes())
 	return ethTx, bxmessage.NewTx(hash, ethTxBytes, networkNum, flags, "")
@@ -90,10 +93,10 @@ func newEthLegacyTx(nonce uint64, privateKey *ecdsa.PrivateKey) *ethtypes.Transa
 	return unsignedTx
 }
 
-func newEthAccessListTx(nonce uint64, privateKey *ecdsa.PrivateKey) *ethtypes.Transaction {
+func newEthAccessListTx(nonce uint64, privateKey *ecdsa.PrivateKey, chainID *big.Int) *ethtypes.Transaction {
 	address := crypto.PubkeyToAddress(privateKey.PublicKey)
 	unsignedTx := ethtypes.NewTx(&ethtypes.AccessListTx{
-		ChainID:    ChainID,
+		ChainID:    chainID,
 		Nonce:      nonce,
 		GasPrice:   big.NewInt(100),
 		Gas:        0,
@@ -109,10 +112,10 @@ func newEthAccessListTx(nonce uint64, privateKey *ecdsa.PrivateKey) *ethtypes.Tr
 }
 
 // newEthDynamicFeeTx generates a valid signed Ethereum transaction from a provided private key. nil can be specified to use a hardcoded private key.
-func newEthDynamicFeeTx(nonce uint64, privateKey *ecdsa.PrivateKey) *ethtypes.Transaction {
+func newEthDynamicFeeTx(nonce uint64, privateKey *ecdsa.PrivateKey, chainID *big.Int) *ethtypes.Transaction {
 	address := crypto.PubkeyToAddress(privateKey.PublicKey)
 	unsignedTx := ethtypes.NewTx(&ethtypes.DynamicFeeTx{
-		ChainID:    ChainID,
+		ChainID:    chainID,
 		Nonce:      nonce,
 		GasTipCap:  big.NewInt(100),
 		GasFeeCap:  big.NewInt(100),

@@ -19,6 +19,7 @@ func InitFluentD(fluentDEnabled bool, fluentDHost, nodeID string, logLevel logru
 			Port:          24224,
 			MarshalAsJSON: true,
 			AsyncConnect:  true,
+			BufferLimit:   defaultBufferLimit,
 		})
 		if err != nil {
 			logrus.Warnf("Failed to create fluentd config with error %v", err)

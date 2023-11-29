@@ -65,6 +65,16 @@ type bundleRecord struct {
 	SentGatewayPeers int              `json:"gateway_peers,omitempty"`
 }
 
+type bundleSentToRsyncRecord struct {
+	BundleHash    string           `json:"bundle_hash"`
+	BlockNumber   string           `json:"block_number"`
+	UUID          string           `json:"uuid"`
+	UserSetUUID   bool             `json:"user_set_UUID"`
+	BundlePrice   int64            `json:"bundle_price"`
+	EnforcePayout bool             `json:"enforce_payout"`
+	NetworkNum    types.NetworkNum `json:"network_num"`
+}
+
 type ethBlockContent struct {
 	BlockHash  string           `json:"block_hash"`
 	NetworkNum types.NetworkNum `json:"network_num"`
@@ -137,11 +147,12 @@ type unsubscribeRecord struct {
 }
 
 type sdkInfoRecord struct {
-	Blockchain string `json:"blockchain"`
-	Method     string `json:"method"`
-	Feed       string `json:"feed"`
-	SourceCode string `json:"source_code"`
-	Version    string `json:"version"`
-	Start      string `json:"start"`
-	End        string `json:"end"`
+	Blockchain string          `json:"blockchain"`
+	Method     string          `json:"method"`
+	Feed       string          `json:"feed"`
+	SourceCode string          `json:"source_code"`
+	Version    string          `json:"version"`
+	AccountID  types.AccountID `json:"account_id"`
+	Start      string          `json:"start"`
+	End        string          `json:"end"`
 }

@@ -171,14 +171,17 @@ func handleEthOnBlock(feedManager *FeedManager, block *types.EthBlockNotificatio
 	return nil
 }
 
-func handleTxReceipts(feedManager *FeedManager, block *types.EthBlockNotification, sendNotification func(notification *types.TxReceiptNotification) error) error {
+// HandleTxReceipts - fetches transaction receipts for transactions in block and sends them to the client
+func HandleTxReceipts(feedManager *FeedManager, block *types.EthBlockNotification) ([]*types.TxReceipt, error) {
 	nodeWS, ok := feedManager.getSyncedWSProvider(block.Source())
 	if !ok {
-		log.Errorf("node ws connection is not available")
-		return fmt.Errorf("node ws connection is not available")
+		return nil, fmt.Errorf("node ws connection is not available")
 	}
 
+	var result []*types.TxReceipt
+	var mu sync.Mutex
 	g := new(errgroup.Group)
+
 	for _, t := range block.Transactions {
 		tx := t
 		g.Go(func() error {
@@ -194,21 +197,24 @@ func handleTxReceipts(feedManager *FeedManager, block *types.EthBlockNotificatio
 				transactions, exist := responseBlock.(map[string]interface{})["transactions"]
 				txsCount = len(transactions.([]interface{}))
 				if !exist {
-					return fmt.Errorf("transactions field doesn't exist when query previous epoch block")
+					return fmt.Errorf("transactions field doesn't exist when querying the previous epoch block")
 				}
 			}
 
-			txReceiptNotification := types.NewTxReceiptNotification(responseTxReceipt.(map[string]interface{}), fmt.Sprintf("0x%x", txsCount))
-			if err = sendNotification(txReceiptNotification); err != nil {
-				log.Errorf("failed to send tx receipt for %v err %v", hash, err)
-				return err
-			}
-			return err
+			receipt := types.NewTxReceipt(responseTxReceipt.(map[string]interface{}), fmt.Sprintf("0x%x", txsCount))
+
+			mu.Lock()
+			result = append(result, receipt)
+			mu.Unlock()
+
+			return nil
 		})
 	}
+
 	if err := g.Wait(); err != nil {
-		return nil
+		return nil, err
 	}
+
 	log.Debugf("finished fetching transaction receipts for block %v, %v", block.BlockHash, block.Header.Number)
-	return nil
+	return result, nil
 }

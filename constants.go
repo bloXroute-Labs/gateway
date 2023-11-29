@@ -169,6 +169,9 @@ const Goerli = "Goerli"
 // PolygonMainnet - for Polygon main net blockchain network name
 const PolygonMainnet = "Polygon-Mainnet"
 
+// PolygonMumbai - for Polygon Mumbai blockchain network name
+const PolygonMumbai = "Polygon-Mumbai"
+
 // MainnetNum - for Ethereum main net blockchain network number
 const MainnetNum types.NetworkNum = 5
 
@@ -190,6 +193,9 @@ const BSCTestnetChainID = 97
 // PolygonMainnetNum - for Polygon main net blockchain network number
 const PolygonMainnetNum types.NetworkNum = 36
 
+// PolygonMumbaiNum - for Polygon Mumbai blockchain network number
+const PolygonMumbaiNum types.NetworkNum = 47
+
 // RopstenNum - for Ropsten blockchain network number
 const RopstenNum types.NetworkNum = 32
 
@@ -204,6 +210,7 @@ var BlockchainNetworkToNetworkNum = map[string]types.NetworkNum{
 	Mainnet:        MainnetNum,
 	BSCMainnet:     BSCMainnetNum,
 	PolygonMainnet: PolygonMainnetNum,
+	PolygonMumbai:  PolygonMumbaiNum,
 	Ropsten:        RopstenNum,
 	Goerli:         GoerliNum,
 	BSCTestnet:     BSCTestnetNum,
@@ -215,11 +222,24 @@ var NetworkToBlockDuration = map[string]time.Duration{
 	BSCMainnet:     3 * time.Second,
 	BSCTestnet:     3 * time.Second,
 	PolygonMainnet: 2 * time.Second,
+	PolygonMumbai:  2 * time.Second,
 }
 
-// NetworkToChainID - Mapping from network to chainID
-var NetworkToChainID = map[string]types.NetworkID{
-	Mainnet:        EthChainID,
-	BSCMainnet:     BSCChainID,
-	PolygonMainnet: PolygonChainID,
+// NetworkNumToChainID - Mapping from networkNum to chainID
+var NetworkNumToChainID = map[types.NetworkNum]types.NetworkID{
+	MainnetNum:        EthChainID,
+	BSCMainnetNum:     BSCChainID,
+	PolygonMainnetNum: PolygonChainID,
+	PolygonMumbaiNum:  PolygonChainID,
+}
+
+// NetworkNumToBlockchainNetwork - Mapping from networkNum to blockchain network
+var NetworkNumToBlockchainNetwork = map[types.NetworkNum]string{
+	MainnetNum:        Mainnet,
+	BSCMainnetNum:     BSCMainnet,
+	PolygonMainnetNum: PolygonMainnet,
+	PolygonMumbaiNum:  PolygonMumbai,
+	RopstenNum:        Ropsten,
+	GoerliNum:         Goerli,
+	BSCTestnetNum:     BSCTestnet,
 }

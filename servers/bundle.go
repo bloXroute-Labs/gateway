@@ -159,16 +159,16 @@ func trimZeroFromHEX(hex string) (string, error) {
 	return strings.ToLower(hexutil.EncodeUint64(value)), nil
 }
 
-func mevBundleFromRequest(payload *jsonrpc.RPCBundleSubmissionPayload) (*bxmessage.MEVBundle, string, error) {
+func mevBundleFromRequest(payload *jsonrpc.RPCBundleSubmissionPayload, networkNum types.NetworkNum) (*bxmessage.MEVBundle, string, error) {
 	if err := payload.Validate(); err != nil {
 		return nil, "", fmt.Errorf("%w: %v", errInvalidPayload, err)
 	}
 
-	if payload.BlockchainNetwork == bxgateway.PolygonMainnet {
-		return nil, "", fmt.Errorf("%w: %v", errInvalidNetwork, payload.BlockchainNetwork)
+	if networkNum == bxgateway.PolygonMainnetNum || networkNum == bxgateway.PolygonMumbaiNum {
+		return nil, "", fmt.Errorf("%w: %v", errInvalidNetwork, networkNum)
 	}
 
-	parsedBundle, err := parseBundle(payload.Transaction, int64(bxgateway.NetworkToChainID[payload.BlockchainNetwork]))
+	parsedBundle, err := parseBundle(payload.Transaction, int64(bxgateway.NetworkNumToChainID[networkNum]))
 	if err != nil {
 		return nil, "", fmt.Errorf("%w: %v", errUnableToParseBundle, err)
 	}

@@ -91,9 +91,29 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 
 	bridge := blockchain.NewBxBridge(eth.Converter{}, true)
 	blockchainPeers, blockchainPeersInfo := ethtest.GenerateBlockchainPeersInfo(numPeers)
-	node, _ := NewGateway(context.Background(), bxConfig, bridge, eth.NewEthWSManager(blockchainPeersInfo,
-		eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false), blockchainPeers, blockchainPeersInfo,
-		make(map[string]struct{}), "", sdn, nil, 0, "", 0, 0, false, 0, 0)
+	node, _ := NewGateway(
+		context.Background(),
+		bxConfig,
+		bridge,
+		eth.NewEthWSManager(blockchainPeersInfo,
+			eth.NewMockWSProvider,
+			bxgateway.WSProviderTimeout,
+			false),
+		blockchainPeers,
+		blockchainPeersInfo,
+		make(map[string]struct{}),
+		"",
+		sdn,
+		nil,
+		0,
+		"",
+		0,
+		0,
+		false,
+		0,
+		0,
+		false,
+	)
 
 	g := node.(*gateway)
 
@@ -195,7 +215,7 @@ func assertTransactionSentToRelay(t *testing.T, ethTx *ethtypes.Transaction, eth
 	if ethTx.Type() == ethtypes.LegacyTxType {
 		assert.Equal(t, ethTxBytes, sentTx.Content())
 	} else {
-		//first two bytes for tx type thus gets dropped
+		// first two bytes for tx type thus gets dropped
 		assert.Equal(t, ethTxBytes, sentTx.Content()[2:])
 	}
 }
@@ -279,13 +299,16 @@ func TestGateway_HandleTransactionFromBlockchain_SeenInBloomFilter(t *testing.T)
 		assert.Nil(t, err)
 	}()
 
-	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil)
+	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil, nil)
 	txHash := ethTx.Hash().String()
 	txHash = txHash[2:]
 	assert.Equal(t, false, g.pendingTxs.Exists(txHash))
 	processEthTxOnBridge(t, bridge, ethTx, g.blockchainPeers[0])
 	assertTransactionSentToRelay(t, ethTx, ethTxBytes, mockTLS, relayConn)
 	assert.Equal(t, true, g.pendingTxs.Exists(txHash))
+
+	// Bloom filter is adding asynchronously, so wait a bit
+	time.Sleep(time.Microsecond)
 
 	// create empty TxStore to make sure transaction is ignored due to bloom_filter
 	g.TxStore = services.NewEthTxStore(g.clock, 30*time.Minute, 72*time.Hour, 10*time.Minute,
@@ -311,7 +334,7 @@ func TestGateway_HandleTransactionFromBlockchain(t *testing.T) {
 		assert.Nil(t, err)
 	}()
 
-	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil)
+	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil, nil)
 	txHash := ethTx.Hash().String()
 	txHash = txHash[2:]
 	assert.Equal(t, false, g.pendingTxs.Exists(txHash))
@@ -335,7 +358,7 @@ func TestGateway_HandleTransactionFromInboundBlockchain(t *testing.T) {
 		assert.Nil(t, err)
 	}()
 
-	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil)
+	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil, nil)
 	txHash := ethTx.Hash().String()
 	txHash = txHash[2:]
 	g.blockchainPeers[0].Dynamic = true
@@ -360,7 +383,7 @@ func TestGateway_HandleTransactionFromBlockchain_MultiNode(t *testing.T) {
 		assert.Nil(t, err)
 	}()
 
-	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil)
+	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil, nil)
 	processEthTxOnBridge(t, bridge, ethTx, g.blockchainPeers[0])
 	assertTransactionSentToRelay(t, ethTx, ethTxBytes, mockTLS, relayConn)
 
@@ -382,7 +405,7 @@ func TestGateway_HandleTransactionFromBlockchain_TwoRelays(t *testing.T) {
 		assert.Nil(t, err)
 	}()
 
-	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil)
+	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil, nil)
 	processEthTxOnBridge(t, bridge, ethTx, g.blockchainPeers[0])
 
 	assertTransactionSentToRelay(t, ethTx, ethTxBytes, mockTLS1, relayConn1)
@@ -408,12 +431,12 @@ func TestGateway_HandleTransactionFromBlockchain_BurstLimit(t *testing.T) {
 	}()
 
 	for i := uint64(1); i <= uint64(limit); i++ {
-		ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, i, nil)
+		ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, i, nil, nil)
 		processEthTxOnBridge(t, bridge, ethTx, g.blockchainPeers[0])
 		assertTransactionSentToRelay(t, ethTx, ethTxBytes, mockTLS, relayConn)
 	}
 
-	ethTx, _ := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, uint64(limit+1), nil)
+	ethTx, _ := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, uint64(limit+1), nil, nil)
 	processEthTxOnBridge(t, bridge, ethTx, g.blockchainPeers[0])
 	assertNoTransactionSentToRelay(t, mockTLS)
 
@@ -441,13 +464,13 @@ func TestGateway_HandleTransactionFromRPC_BurstLimitPaid(t *testing.T) {
 	}()
 
 	for i := uint64(1); i <= uint64(limit); i++ {
-		_, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, i, nil, networkNum, 0)
+		_, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, i, nil, networkNum, 0, nil)
 		txMessage.SetFlags(types.TFPaidTx)
 		err := g.HandleMsg(txMessage, connections.NewRPCConn(account.AccountID, "", networkNum, utils.Websocket), connections.RunForeground)
 		assert.Nil(t, err)
 	}
 
-	_, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, uint64(limit+1), nil, networkNum, 0)
+	_, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, uint64(limit+1), nil, networkNum, 0, nil)
 	txMessage.SetFlags(types.TFPaidTx)
 	err := g.HandleMsg(txMessage, connections.NewRPCConn(account.AccountID, "", networkNum, utils.Websocket), connections.RunForeground)
 	assert.Nil(t, err)
@@ -474,14 +497,14 @@ func TestGateway_HandleTransactionFromRPC_BurstLimitUnpaid(t *testing.T) {
 	}()
 
 	for i := uint64(1); i <= uint64(limit); i++ {
-		_, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, i, nil, networkNum, 0)
+		_, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, i, nil, networkNum, 0, nil)
 		txMessage.SetFlags(types.TFDeliverToNode)
 		err := g.HandleMsg(txMessage, connections.NewRPCConn(account.AccountID, "", networkNum, utils.Websocket), connections.RunForeground)
 		assert.Nil(t, err)
 	}
 
 	for i := uint64(1); i <= uint64(5); i++ {
-		_, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, uint64(limit)+i, nil, networkNum, 0)
+		_, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, uint64(limit)+i, nil, networkNum, 0, nil)
 		txMessage.SetFlags(types.TFDeliverToNode)
 		err := g.HandleMsg(txMessage, connections.NewRPCConn(account.AccountID, "", networkNum, utils.Websocket), connections.RunForeground)
 		assert.Nil(t, err)
@@ -623,7 +646,7 @@ func TestGateway_HandleTransactionFromRPC(t *testing.T) {
 	bridge, g := setup(t, 1)
 	mockTLS, relayConn := addRelayConn(g)
 
-	ethTx, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0)
+	ethTx, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0, nil)
 	txMessage.SetFlags(types.TFDeliverToNode)
 
 	err := g.HandleMsg(txMessage, connections.NewRPCConn("", "", networkNum, utils.Websocket), connections.RunForeground)
@@ -650,7 +673,7 @@ func TestGateway_HandleTransactionFromRelay(t *testing.T) {
 	_, relayConn1 := addRelayConn(g)
 	mockTLS2, _ := addRelayConn(g)
 
-	deliveredEthTx, deliveredTxMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0)
+	deliveredEthTx, deliveredTxMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0, nil)
 	deliveredTxMessage.SetFlags(types.TFDeliverToNode)
 
 	err := g.HandleMsg(deliveredTxMessage, relayConn1, connections.RunForeground)
@@ -664,7 +687,7 @@ func TestGateway_HandleTransactionFromRelay(t *testing.T) {
 	bdnTx := bdnTxs.Transactions[0]
 	assert.Equal(t, deliveredEthTx.Hash().Bytes(), bdnTx.Hash().Bytes())
 
-	_, undeliveredTxMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0)
+	_, undeliveredTxMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0, nil)
 
 	err = g.HandleMsg(undeliveredTxMessage, relayConn1, connections.RunForeground)
 	assert.Nil(t, err)
@@ -682,7 +705,7 @@ func TestGateway_ReprocessTransactionFromRelay(t *testing.T) {
 	mockTLS2, _ := addRelayConn(g)
 
 	// send new tx
-	ethTx, ethTxMsg := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0)
+	ethTx, ethTxMsg := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0, nil)
 	err := g.HandleMsg(ethTxMsg, relayConn1, connections.RunForeground)
 	assert.Nil(t, err)
 	assertNoTransactionSentToRelay(t, mockTLS2)
@@ -719,10 +742,10 @@ func TestGateway_HandleTransactionFromRelayBlocksOnly(t *testing.T) {
 	_, relayConn := addRelayConn(g)
 	g.BxConfig.BlocksOnly = true
 
-	_, freeTx := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0)
+	_, freeTx := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0, nil)
 	freeTx.SetFlags(types.TFDeliverToNode)
 
-	_, paidTx := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 2, nil, networkNum, 0)
+	_, paidTx := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 2, nil, networkNum, 0, nil)
 	paidTx.SetFlags(types.TFPaidTx | types.TFDeliverToNode)
 
 	err := g.HandleMsg(paidTx, relayConn, connections.RunForeground)
@@ -746,6 +769,7 @@ func TestGateway_HandleBlockFromBlockchain(t *testing.T) {
 
 	g.BxConfig.WebsocketEnabled = true
 	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
 	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 	var count int32
 	var wg sync.WaitGroup
@@ -802,6 +826,7 @@ func TestGateway_HandleBlockFromInboundBlockchain(t *testing.T) {
 
 	g.BxConfig.WebsocketEnabled = true
 	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
 	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 	var count int32
 	var wg sync.WaitGroup
@@ -948,6 +973,7 @@ func TestGateway_HandleBlockFromRelay(t *testing.T) {
 func TestGateway_HandleBeaconBlockFromRelay(t *testing.T) {
 	bridge, g := setup(t, 1)
 	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
 	_, relayConn1 := addRelayConn(g)
 	mockTLS2, _ := addRelayConn(g)
 
@@ -1049,6 +1075,7 @@ func TestGateway_HandleBeaconBlockFromRelay(t *testing.T) {
 func TestGateway_ValidateHeightBDNBlocksWithNode(t *testing.T) {
 	bridge, g := setup(t, 1)
 	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
 	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 	g.BxConfig.WebsocketEnabled = true
 
@@ -1119,14 +1146,15 @@ func TestGateway_BlockFeedIfSubscribeOnly(t *testing.T) {
 	expectNoFeedNotification(t, bridge, g, true, heightFromNode, heightFromNode, 0)
 
 	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
 	heightFromNode = 10
 	expectFeedNotification(t, bridge, g, true, heightFromNode, heightFromNode, 0)
-
 }
 
 func TestGateway_ValidateHeightBDNBlocksWithoutNode(t *testing.T) {
 	bridge, g := setup(t, 1)
 	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
 	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 	g.BxConfig.WebsocketEnabled = true
 	g.blockchainPeers = []types.NodeEndpoint{}
@@ -1147,6 +1175,42 @@ func TestGateway_ValidateHeightBDNBlocksWithoutNode(t *testing.T) {
 
 	// should publish block from BDN after 3 skipped, reset best height, clear skip count
 	expectFeedNotification(t, bridge, g, true, tooFarHeight+7, tooFarHeight+7, 0)
+}
+
+func TestGateway_TestNoTxReceiptsWithoutSubscription(t *testing.T) {
+	// The test checks that there is no TxReceipts feed notification when there is no corresponding subscription
+	bridge, g := setup(t, 1)
+	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	g.BxConfig.WebsocketEnabled = true
+	g.blockchainPeers = []types.NodeEndpoint{}
+
+	ethBlock := bxmock.NewEthBlock(uint64(10), common.Hash{})
+	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
+	err := g.publishBlock(bxBlock, nil, nil, false)
+	assert.Nil(t, err)
+
+	expectedNotifications := map[types.FeedType]struct{}{
+		types.BDNBlocksFeed: {},
+		types.OnBlockFeed:   {},
+	}
+
+	// TxReceipts and OnBlock runs in goroutine
+	ticker := time.NewTicker(1 * time.Second)
+
+	// It is neccessary to have FailNow to not wait until timeout when something goes wrong
+	for len(expectedNotifications) > 0 {
+		select {
+		case notification := <-g.feedManagerChan:
+			if _, ok := expectedNotifications[notification.NotificationType()]; ok {
+				delete(expectedNotifications, notification.NotificationType())
+				continue
+			}
+			assert.FailNowf(t, "not expected feed notification", string(notification.NotificationType()))
+		case <-ticker.C:
+			assert.FailNowf(t, "did not receive expected feed notifications", fmt.Sprintf("%v", expectedNotifications))
+		}
+	}
 }
 
 func expectNoFeedNotification(t *testing.T, bridge blockchain.Bridge, g *gateway, isBDNBlock bool, blockHeight int, expectedBestBlockHeight int, expectedSkipBlockCount int) {

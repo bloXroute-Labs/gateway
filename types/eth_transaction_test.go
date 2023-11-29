@@ -3,7 +3,6 @@ package types
 import (
 	"encoding/hex"
 	"math/big"
-	"strings"
 	"testing"
 	"time"
 
@@ -38,7 +37,7 @@ func ethTransaction(hashString string, txString string) (SHA256Hash, EthTransact
 func TestBigValueTransacrtion(t *testing.T) {
 	hash, ethTx, _, err := ethTransaction(fixtures.BigValueTransactionHashBSC, fixtures.BigValueTransactionBSC)
 	assert.Nil(t, err)
-	ethTx.Fields([]string{})
+	ethTx.Fields(AllFields)
 	assert.Equal(t, "0x0", ethTx.fields["type"])
 	assert.Equal(t, "0x"+hash.String(), ethTx.fields["hash"])
 	jsonMap := ethTx.Fields([]string{
@@ -63,14 +62,16 @@ func TestLegacyTransaction(t *testing.T) {
 	assert.Nil(t, err)
 
 	// check decoding transaction structure
-	ethTx.Fields([]string{})
+	ethTx.Fields(AllFieldsWithFrom)
 	assert.Equal(t, "0x0", ethTx.fields["type"])
 	assert.Equal(t, "0x"+hash.String(), ethTx.fields["hash"])
 	assert.Equal(t, BigIntAsString(expectedGasPrice), ethTx.fields["gasPrice"])
-	assert.Equal(t, expectedGasPrice, ethTx.GasFeeCap)
-	assert.Equal(t, expectedGasPrice, ethTx.GasTipCap)
-	assert.Equal(t, expectedChainID, ethTx.ChainID)
-	assert.Equal(t, strings.ToLower(expectedFromAddress.String()), ethTx.fields["from"])
+	assert.NotContains(t, ethTx.fields, "maxFeePerGas")
+	assert.NotContains(t, ethTx.fields, "maxPriorityFeePerGas")
+	assert.Equal(t, expectedChainID, ethTx.ChainID())
+	from, err := ethTx.From()
+	assert.NoError(t, err)
+	assert.Equal(t, expectedFromAddress, *from)
 
 	// check WithFields
 	jsonMap := ethTx.Fields([]string{
@@ -95,6 +96,7 @@ func TestLegacyTransaction(t *testing.T) {
 
 	// check Filters
 	filteredTx := ethTx.Filters([]string{
+		"type",
 		"from",
 		"chain_id",
 		"gas_price",
@@ -117,13 +119,15 @@ func TestAccessListTransaction(t *testing.T) {
 	assert.Nil(t, err)
 
 	// check decoding transaction structure
-	ethTx.Fields([]string{})
+	ethTx.Fields(AllFieldsWithFrom)
 	assert.Equal(t, "0x1", ethTx.fields["type"])
 	assert.Equal(t, "0x"+hash.String(), ethTx.fields["hash"])
 	assert.Equal(t, BigIntAsString(expectedGasPrice), ethTx.fields["gasPrice"])
-	assert.Equal(t, expectedGasPrice, ethTx.GasFeeCap)
-	assert.Equal(t, expectedGasPrice, ethTx.GasTipCap)
-	assert.Equal(t, strings.ToLower(expectedFromAddress.String()), ethTx.fields["from"])
+	assert.NotContains(t, ethTx.fields, "maxFeePerGas")
+	assert.NotContains(t, ethTx.fields, "maxPriorityFeePerGas")
+	from, err := ethTx.From()
+	assert.NoError(t, err)
+	assert.Equal(t, expectedFromAddress, *from)
 
 	// check WithFields
 	jsonMap := ethTx.Fields([]string{
@@ -163,18 +167,23 @@ func TestAccessListTransaction(t *testing.T) {
 }
 
 func TestDynamicFeeTransaction(t *testing.T) {
+	expectedMaxFeePerGas := new(big.Int).SetInt64(fixtures.DynamicFeeFeePerGas)
+	expectedPriorityFeePerGas := new(big.Int).SetInt64(fixtures.DynamicFeeTipPerGas)
 	expectedFromAddress := test.NewEthAddress(fixtures.DynamicFeeFromAddress)
 
 	hash, ethTx, _, err := ethTransaction(fixtures.DynamicFeeTransactionHash, fixtures.DynamicFeeTransaction)
 	assert.Nil(t, err)
 
 	// check decoding transaction structure
-	ethTx.Fields([]string{})
+	ethTx.Fields(AllFieldsWithFrom)
 	assert.Equal(t, "0x2", ethTx.fields["type"])
 	assert.Equal(t, "0x"+hash.String(), ethTx.fields["hash"])
-	assert.Equal(t, int64(fixtures.DynamicFeeFeePerGas), ethTx.GasFeeCap.Int64())
-	assert.Equal(t, int64(fixtures.DynamicFeeTipPerGas), ethTx.GasTipCap.Int64())
-	assert.Equal(t, strings.ToLower(expectedFromAddress.String()), ethTx.fields["from"])
+	assert.Equal(t, BigIntAsString(expectedMaxFeePerGas), ethTx.fields["maxFeePerGas"])
+	assert.Equal(t, BigIntAsString(expectedPriorityFeePerGas), ethTx.fields["maxPriorityFeePerGas"])
+	assert.Nil(t, ethTx.fields["gasPrice"])
+	from, err := ethTx.From()
+	assert.NoError(t, err)
+	assert.Equal(t, expectedFromAddress, *from)
 
 	// check WithFields
 	jsonMap := ethTx.Fields([]string{
@@ -231,7 +240,7 @@ func TestContractCreationTx(t *testing.T) {
 	hash, ethTx, _, err := ethTransaction(fixtures.ContractCreationTxHash, fixtures.ContractCreationTx)
 	assert.Nil(t, err)
 	ethTx.Fields([]string{})
-	filters := ethTx.Filters([]string{})
+	filters := ethTx.Filters([]string{"to"})
 	assert.Equal(t, "0x0", filters["to"])
 
 	assert.Equal(t, "0x"+hash.String(), ethTx.fields["hash"])

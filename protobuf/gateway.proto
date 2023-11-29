@@ -29,6 +29,7 @@ service Gateway {
   rpc TxsFromShortIDs (ShortIDListRequest) returns (TxListReply) {}
   rpc BlockInfo (BlockInfoRequest) returns (BlockInfoReply) {}
   rpc ProposedBlockStats (ProposedBlockStatsRequest) returns (ProposedBlockStatsReply) {}
+  rpc BlxrSubmitBundle (BlxrSubmitBundleRequest) returns (BlxrSubmitBundleReply) {}
 }
 
 message TxLogs {
@@ -83,6 +84,21 @@ message EthOnBlockReply {
   string tag = 4;
 }
 
+message BlxrSubmitBundleRequest {
+  map<string, string> mev_builders = 1;
+  repeated string transactions = 2;
+  string block_number = 3;
+  int64 min_timestamp = 4;
+  int64 max_timestamp = 5;
+  repeated string reverting_hashes = 6;
+  string uuid = 7;
+  int64 bundle_price = 8;
+  bool enforce_payout = 9;
+}
+
+message BlxrSubmitBundleReply {
+  string bundle_hash = 1;
+}
 
 message TxsRequest{
   string filters = 1;
@@ -137,12 +153,20 @@ message FutureValidatorInfo{
   string accessible = 3;
 }
 
+message Withdrawal{
+  string address = 1;
+  string amount = 2;
+  string index = 3;
+  string validator_index = 4;
+}
+
 message BlocksReply{
   string hash = 1;
   string subscriptionID = 2 [deprecated=true];
   BlockHeader header = 3;
   repeated FutureValidatorInfo future_validator_info = 4;
   repeated Tx transaction = 5;
+  repeated Withdrawal withdrawals = 6;
 }
 
 message DisconnectInboundPeerRequest {
@@ -483,3 +507,4 @@ message ProposedBlockStatsReply {
   string validator_reply = 5;
   int64 validator_reply_time = 6;
 }
+

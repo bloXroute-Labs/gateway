@@ -351,20 +351,21 @@ func BeaconBlockToEthBlock(block interfaces.ReadOnlySignedBeaconBlock) (*ethtype
 	}
 
 	var withdrawalsHash *ethcommon.Hash
-	if block.Version() == version.Capella {
+	ethWithdrawals := ethtypes.Withdrawals{}
+
+	if block.Version() >= version.Capella {
 		withdrawals, err := execution.Withdrawals()
 		if err != nil {
 			return nil, fmt.Errorf("could not fetch withdrawals: %v", err)
 		}
 
-		ethWithdrawals := make(ethtypes.Withdrawals, len(withdrawals))
-		for i, withdrawal := range withdrawals {
-			ethWithdrawals[i] = &ethtypes.Withdrawal{
+		for _, withdrawal := range withdrawals {
+			ethWithdrawals = append(ethWithdrawals, &ethtypes.Withdrawal{
 				Index:     withdrawal.Index,
 				Validator: uint64(withdrawal.ValidatorIndex),
 				Address:   ethcommon.BytesToAddress(withdrawal.Address),
 				Amount:    withdrawal.Amount,
-			}
+			})
 		}
 
 		wsHash := ethtypes.DeriveSha(ethWithdrawals, trie.NewStackTrie(nil))
@@ -390,5 +391,5 @@ func BeaconBlockToEthBlock(block interfaces.ReadOnlySignedBeaconBlock) (*ethtype
 		WithdrawalsHash: withdrawalsHash,
 	}
 
-	return ethtypes.NewBlockWithHeader(header).WithBody(txs, nil /* uncles */), nil
+	return ethtypes.NewBlockWithHeader(header).WithBody(txs, nil /* uncles */).WithWithdrawals(ethWithdrawals), nil
 }
