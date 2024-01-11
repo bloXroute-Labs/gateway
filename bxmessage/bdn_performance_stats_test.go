@@ -17,7 +17,7 @@ var BDNStatsMsgBytesForIsBeacon = []byte("\xff\xfe\xfd\xfcbdnstats\x00\x00\x00\x
 func TestBdnPerformanceStats_Unpack(t *testing.T) {
 	bdnStats := BdnPerformanceStats{}
 	err := bdnStats.Unpack(BDNStatsMsgBytes, MinFastSyncProtocol)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, uint16(100), bdnStats.memoryUtilizationMb)
 	assert.Equal(t, 2, len(bdnStats.nodeStats))
 	ipEndpoint := types.NodeEndpoint{
@@ -60,7 +60,7 @@ func TestBdnPerformanceStats_Unpack(t *testing.T) {
 func TestBdnPerformanceStats_UnpackBurstLimit(t *testing.T) {
 	bdnStats := BdnPerformanceStats{}
 	err := bdnStats.Unpack(BDNStatsMsgBytes, FullTxTimeStampProtocol)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, uint16(100), bdnStats.memoryUtilizationMb)
 	assert.Equal(t, 2, len(bdnStats.nodeStats))
 	ipEndpoint := types.NodeEndpoint{
@@ -104,7 +104,7 @@ func TestBdnPerformanceStats_UnpackBurstLimit(t *testing.T) {
 func TestBdnPerformanceStats_Pack_BurstLimitTx_MinFastSyncProtocol(t *testing.T) {
 	bdnStatsFromBytes := BdnPerformanceStats{}
 	err := bdnStatsFromBytes.Unpack(BDNStatsMsgBytes, MinFastSyncProtocol)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	inbound, outbound := bdnStatsFromBytes.GetConnectionsCount()
 	assert.Equal(t, int64(0), inbound)
 	assert.Equal(t, int64(2), outbound)
@@ -150,7 +150,7 @@ func TestBdnPerformanceStats_Pack_BurstLimitTx_MinFastSyncProtocol(t *testing.T)
 	require.NoError(t, err)
 
 	err = bdnStatsFromBytes.Unpack(packed, MinFastSyncProtocol)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, bdnStats.intervalStartTime, bdnStatsFromBytes.intervalStartTime)
 	assert.Equal(t, bdnStats.intervalEndTime, bdnStatsFromBytes.intervalEndTime)
 	assert.Equal(t, bdnStats.memoryUtilizationMb, bdnStatsFromBytes.memoryUtilizationMb)
@@ -237,7 +237,7 @@ func TestBdnPerformanceStats_Pack_BurstLimitTx_FullTxTimeStampProtocol(t *testin
 	require.NoError(t, err)
 
 	err = bdnStatsFromBytes.Unpack(packed, FullTxTimeStampProtocol)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, bdnStats.intervalStartTime, bdnStatsFromBytes.intervalStartTime)
 	assert.Equal(t, bdnStats.intervalEndTime, bdnStatsFromBytes.intervalEndTime)
 	assert.Equal(t, bdnStats.memoryUtilizationMb, bdnStatsFromBytes.memoryUtilizationMb)
@@ -356,7 +356,7 @@ func TestBdnPerformanceStats_Pack_GatewayInboundConnections(t *testing.T) {
 
 	bdnStatsFromBytes = BdnPerformanceStats{}
 	err = bdnStatsFromBytes.Unpack(packed, GatewayInboundConnections)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	inbound, outbound = bdnStatsFromBytes.GetConnectionsCount()
 
 	assert.Equal(t, int64(2), inbound)
@@ -373,7 +373,7 @@ func TestBdnPerformanceStats_Pack_GatewayInboundConnections(t *testing.T) {
 
 	bdnStatsFromBytes = BdnPerformanceStats{}
 	err = bdnStatsFromBytes.Unpack(packed, IsBeaconProtocol)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	inbound, outbound = bdnStatsFromBytes.GetConnectionsCount()
 	assert.Equal(t, int64(0), inbound)
 	assert.Equal(t, int64(2), outbound)
@@ -429,7 +429,7 @@ func TestBdnPerformanceStats_Pack_IsConnectedToGateway(t *testing.T) {
 
 	bdnStatsFromBytes = BdnPerformanceStats{}
 	err = bdnStatsFromBytes.Unpack(packed, IsConnectedToGateway)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, 2, len(bdnStatsFromBytes.nodeStats))
 	assert.True(t, bdnStatsFromBytes.nodeStats[endpoint1.IPPort()].IsConnected)
 	assert.False(t, bdnStatsFromBytes.nodeStats[endpoint2.IPPort()].IsConnected)
@@ -440,7 +440,7 @@ func TestBdnPerformanceStats_Pack_IsConnectedToGateway(t *testing.T) {
 
 	bdnStatsFromBytes = BdnPerformanceStats{}
 	err = bdnStatsFromBytes.Unpack(packed, MevSearcherWithUUID)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, 1, len(bdnStatsFromBytes.nodeStats))
 	assert.True(t, bdnStatsFromBytes.nodeStats[endpoint1.IPPort()].IsConnected)
 	_, exits := bdnStatsFromBytes.nodeStats[endpoint2.IPPort()]
@@ -505,7 +505,7 @@ func TestBdnPerformanceStats_Pack_IsBeaconProtocol(t *testing.T) {
 	require.NoError(t, err)
 
 	err = bdnStatsFromBytes.Unpack(packed, IsBeaconProtocol)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, bdnStats.intervalStartTime, bdnStatsFromBytes.intervalStartTime)
 	assert.Equal(t, bdnStats.intervalEndTime, bdnStatsFromBytes.intervalEndTime)
 	assert.Equal(t, bdnStats.memoryUtilizationMb, bdnStatsFromBytes.memoryUtilizationMb)

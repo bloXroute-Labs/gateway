@@ -1,6 +1,7 @@
 package eth
 
 import (
+	"sync/atomic"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
@@ -57,8 +58,9 @@ type MockWSProvider struct {
 	ethWSURI           string
 	endpoint           types.NodeEndpoint
 	syncStatus         blockchain.NodeSyncStatus
-	NumReceiptsFetched int
-	NumRPCCalls        int
+	open               atomic.Bool
+	numReceiptsFetched atomic.Int64
+	numRPCCalls        atomic.Int64
 	TxSent             []string
 }
 
@@ -68,7 +70,24 @@ func NewMockWSProvider(ethWSUri string, peerEndpoint types.NodeEndpoint, timeout
 		ethWSURI:   ethWSUri,
 		endpoint:   peerEndpoint,
 		syncStatus: blockchain.Unsynced,
+		open:       atomic.Bool{},
 	}
+}
+
+// ResetCounters resets the counters
+func (m *MockWSProvider) ResetCounters() {
+	m.numReceiptsFetched.Store(0)
+	m.numRPCCalls.Store(0)
+}
+
+// NumReceiptsFetched returns the number of receipts fetched
+func (m *MockWSProvider) NumReceiptsFetched() int {
+	return int(m.numReceiptsFetched.Load())
+}
+
+// NumRPCCalls returns the number of RPC calls made
+func (m *MockWSProvider) NumRPCCalls() int {
+	return int(m.numRPCCalls.Load())
 }
 
 // SetBlockchainPeer sets the blockchain peer that corresponds to the ws client
@@ -98,7 +117,7 @@ func (m *MockWSProvider) Subscribe(responseChannel interface{}, feedName string,
 
 // CallRPC returns a fake response with no error
 func (m *MockWSProvider) CallRPC(method string, payload []interface{}, options blockchain.RPCOptions) (interface{}, error) {
-	m.NumRPCCalls++
+	m.numRPCCalls.Add(1)
 	return "response", nil
 }
 
@@ -110,7 +129,7 @@ func (m *MockWSProvider) SendTransaction(rawTx string, options blockchain.RPCOpt
 
 // FetchTransactionReceipt returns a fake response with no error
 func (m *MockWSProvider) FetchTransactionReceipt(payload []interface{}, options blockchain.RPCOptions) (interface{}, error) {
-	m.NumReceiptsFetched++
+	m.numReceiptsFetched.Add(1)
 	return testTxReceiptMap, nil
 }
 
@@ -126,18 +145,19 @@ func (m *MockWSProvider) FetchBlock(_ []interface{}, _ blockchain.RPCOptions) (i
 
 // Dial is a no-op
 func (m *MockWSProvider) Dial() {
-	return
+	m.open.Store(true)
 }
 
 // Close is a no-op
 func (m *MockWSProvider) Close() {
+	m.open.Store(false)
 }
 
 // Addr noop
 func (m *MockWSProvider) Addr() string { return m.ethWSURI }
 
 // IsOpen noop
-func (m *MockWSProvider) IsOpen() bool { return true }
+func (m *MockWSProvider) IsOpen() bool { return m.open.Load() }
 
 // Log returns a fake log entry
 func (m *MockWSProvider) Log() *log.Entry {

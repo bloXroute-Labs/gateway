@@ -8,15 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/stretchr/testify/assert"
 )
 
 const (
-	bscMainnetBloomCap     = 35e6
-	mainnetBloomCap        = 85e5
-	polygonMainnetBloomCap = 225e5
-	capacity               = bscMainnetBloomCap + mainnetBloomCap + polygonMainnetBloomCap
+	capacity             = 1e6
+	bloomFilterQueueSize = 500
 )
 
 func TestMain(m *testing.M) {
@@ -55,17 +54,16 @@ func TestBloomFilter(t *testing.T) {
 	mockClock := utils.MockClock{}
 
 	ctx := context.Background()
-	bf, _ := newBloomFilter(ctx, &mockClock, 1*time.Hour, tmpDir, capacity)
+	bf, _ := newBloomFilter(ctx, &mockClock, 1*time.Hour, tmpDir, capacity, bloomFilterQueueSize)
 
-	hashCount := 1000
+	hashCount := bloomFilterQueueSize / 10
 	hashes := generateHashes(hashCount)
 
 	for _, hash := range hashes {
 		bf.Add(hash)
 	}
 
-	// wait for hashes to be added
-	time.Sleep(time.Millisecond)
+	test.WaitChanConsumed(t, bf.queue)
 
 	for i, hash := range hashes {
 		assert.True(t, bf.Check(hash), i)
@@ -83,10 +81,11 @@ func TestBloomFilter(t *testing.T) {
 	// stop when store is done
 	var newHashes [][]byte
 	go func() {
-		for {
+		defer close(stopNewTxChan)
+
+		for i := 0; i < bloomFilterQueueSize; i++ {
 			select {
 			case <-ctx.Done():
-				stopNewTxChan <- struct{}{}
 				return
 			default:
 				hash := make([]byte, 32)
@@ -95,11 +94,11 @@ func TestBloomFilter(t *testing.T) {
 
 				newHashes = append(newHashes, hash)
 				bf.Add(hash)
-
-				// don't need to add hashes too fast
-				time.Sleep(time.Millisecond)
 			}
 		}
+
+		// Waiting until storeOnDisk finished if bloom was filled before
+		<-ctx.Done()
 	}()
 
 	go func() {
@@ -109,6 +108,8 @@ func TestBloomFilter(t *testing.T) {
 	}()
 
 	<-stopNewTxChan
+
+	test.WaitChanConsumed(t, bf.queue)
 
 	assert.Equal(t, uint32(hashCount+len(newHashes)), bf.counter.Load())
 
@@ -132,7 +133,7 @@ func TestBloomFilter_maybeSwitchFilters(t *testing.T) {
 	overflowPercent := 10
 	overflow := bloomFilterQueueSize / overflowPercent
 	cap := uint32(bloomFilterQueueSize - overflow) // don't want any queue overflow to not lose hashes
-	bf, _ := newBloomFilter(ctx, &mockClock, 1*time.Hour, tmpDir, cap)
+	bf, _ := newBloomFilter(ctx, &mockClock, 1*time.Hour, tmpDir, cap, bloomFilterQueueSize)
 
 	newCapacity := int(cap) + overflow
 	hashes := generateHashes(newCapacity)
@@ -149,17 +150,12 @@ func TestBloomFilter_maybeSwitchFilters(t *testing.T) {
 
 			for _, hash := range hashes {
 				bf.Add(hash)
-
-				// Hash is added asynchrounously.
-				// Each hash is added less then microsecond so we need multiply it by number of workers because eventually other add would compete for the lock.
-				// In reality because it spends less then microsecond we don't need wait 1 microsecond for each hash and each worker so we can wait less.
-				time.Sleep(time.Microsecond * time.Duration(workers))
 			}
 		}(h, wg)
 	}
 
 	wg.Wait()
-	time.Sleep(time.Microsecond) // wait last hash to be consumed
+	test.WaitChanConsumed(t, bf.queue)
 
 	assert.Equal(t, uint32(overflow), bf.counter.Load(), "%d != %d", overflow, bf.counter.Load())
 
@@ -183,15 +179,16 @@ func TestBloomFilter_storeOnDisk(t *testing.T) {
 	mockClock := utils.MockClock{}
 
 	ctx := context.Background()
-	bf, _ := newBloomFilter(ctx, &mockClock, 1*time.Hour, tmpDir, capacity)
+	bf, _ := newBloomFilter(ctx, &mockClock, 1*time.Hour, tmpDir, capacity, bloomFilterQueueSize)
 
 	// fill the bloom partially
-	hashes := generateHashes(capacity / 1000)
+	hashes := generateHashes(bloomFilterQueueSize)
 
 	for _, hash := range hashes {
 		bf.Add(hash)
-		time.Sleep(time.Microsecond)
 	}
+
+	test.WaitChanConsumed(t, bf.queue)
 
 	bf.storeOnDisk()
 
@@ -200,9 +197,7 @@ func TestBloomFilter_storeOnDisk(t *testing.T) {
 	defer os.Remove(tmpDir2)
 
 	// read the bloom filter
-	bf2, err := newBloomFilter(
-		ctx, &mockClock, 1*time.Hour, tmpDir2,
-		bscMainnetBloomCap+mainnetBloomCap+polygonMainnetBloomCap)
+	bf2, err := newBloomFilter(ctx, &mockClock, 1*time.Hour, tmpDir2, capacity, bloomFilterQueueSize)
 	ctx.Done()
 	assert.NoError(t, err)
 
@@ -218,14 +213,14 @@ func BenchmarkBloomFilter_Add(b *testing.B) {
 	mockClock := utils.MockClock{}
 
 	ctx := context.Background()
-	bf, _ := newBloomFilter(ctx, &mockClock, 1*time.Hour, tmpDir, capacity)
+	bf, _ := newBloomFilter(ctx, &mockClock, 1*time.Hour, tmpDir, 66e6, 10000)
 	bf.queue = make(chan []byte, b.N)
 
 	hashes := generateHashes(b.N)
 
 	b.ResetTimer()
 	for _, hash := range hashes {
-		bf.Add(hash)
+		bf.add(hash)
 	}
 }
 
@@ -237,14 +232,14 @@ func BenchmarkBloomFilter_Check(b *testing.B) {
 	mockClock := utils.MockClock{}
 
 	ctx := context.Background()
-	bf, err := newBloomFilter(ctx, &mockClock, 1*time.Hour, tmpDir, capacity)
+	bf, err := newBloomFilter(ctx, &mockClock, 1*time.Hour, tmpDir, 66e6, 10000)
 	assert.NoError(b, err)
 
 	// fill the bloom
 	hashes := generateHashes(b.N)
 
 	for _, hash := range hashes {
-		bf.Add(hash)
+		bf.add(hash)
 	}
 
 	b.ResetTimer()
@@ -261,12 +256,12 @@ func Benchmark_storeOnDisk(b *testing.B) {
 	mockClock := utils.MockClock{}
 
 	ctx := context.Background()
-	bf, err := newBloomFilter(ctx, &mockClock, 1*time.Hour, tmpDir, capacity)
+	bf, err := newBloomFilter(ctx, &mockClock, 1*time.Hour, tmpDir, 66e6, 10000)
 	assert.NoError(b, err)
 
 	hashes := generateHashes(b.N)
 	for _, hash := range hashes {
-		bf.Add(hash)
+		bf.add(hash)
 	}
 
 	b.ResetTimer()

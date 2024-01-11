@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2"
@@ -19,7 +20,12 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/rlp"
 )
+
+// UpgradeStatusMsg is a message overloaded in eth/66
+// TODO: upgrade go-ethereum package
+const UpgradeStatusMsg = 0x0b
 
 const (
 	maxMessageSize                  = 10 * 1024 * 1024
@@ -65,6 +71,7 @@ type Peer struct {
 	confirmedHead       blockRef
 	sentHead            blockRef
 	queuedBlocks        []*eth.NewBlockPacket
+	mu                  sync.RWMutex
 
 	RequestConfirmations bool
 }
@@ -125,13 +132,19 @@ func (ep *Peer) Dynamic() bool {
 
 // Log returns the context logger for the peer connection
 func (ep *Peer) Log() *log.Entry {
-	return ep.log.WithField("head", ep.confirmedHead)
+	ep.mu.RLock()
+	confirmedHead := ep.confirmedHead
+	ep.mu.RUnlock()
+
+	return ep.log.WithField("head", confirmedHead)
 }
 
 // Disconnect closes the running peer with a protocol error
 func (ep *Peer) Disconnect(reason p2p.DiscReason) {
 	ep.p.Disconnect(reason)
+	ep.mu.Lock()
 	ep.disconnected = true
+	ep.mu.Unlock()
 }
 
 // Start launches the block sending loop that queued blocks get sent in order to the peer
@@ -144,6 +157,24 @@ func (ep *Peer) Stop() {
 	ep.cancel()
 }
 
+func (ep *Peer) getConfirmedHead() blockRef {
+	ep.mu.RLock()
+	defer ep.mu.RUnlock()
+	return ep.confirmedHead
+}
+
+func (ep *Peer) getSentHead() blockRef {
+	ep.mu.RLock()
+	defer ep.mu.RUnlock()
+	return ep.sentHead
+}
+
+func (ep *Peer) getQueuedBlocks() []*eth.NewBlockPacket {
+	ep.mu.RLock()
+	defer ep.mu.RUnlock()
+	return ep.queuedBlocks
+}
+
 func (ep *Peer) isVersion66() bool {
 	return ep.version >= eth.ETH66
 }
@@ -152,27 +183,32 @@ func (ep *Peer) blockLoop() {
 	for {
 		select {
 		case newHead := <-ep.newHeadCh:
-			if newHead.height < ep.confirmedHead.height {
+			if newHead.height < ep.getConfirmedHead().height {
 				break
 			}
 
+			ep.mu.Lock()
 			// update most recent blocks
 			ep.confirmedHead = newHead
 			if newHead.height >= ep.sentHead.height {
 				ep.sentHead = newHead
 			}
+			ep.mu.Unlock()
 
 			// check if any blocks need to be released and determine number of blocks to prune
 			var (
 				breakpoint   = -1
 				releaseBlock = false
 			)
-			for i, qb := range ep.queuedBlocks {
+
+			confirmedHead := ep.getConfirmedHead()
+
+			for i, qb := range ep.getQueuedBlocks() {
 				queuedBlock := qb.Block
 
-				nextHeight := queuedBlock.NumberU64() == ep.confirmedHead.height+1
-				isNextBlock := nextHeight && queuedBlock.ParentHash() == ep.confirmedHead.hash
-				exceedsHeight := queuedBlock.NumberU64() > ep.confirmedHead.height+1
+				nextHeight := queuedBlock.NumberU64() == confirmedHead.height+1
+				isNextBlock := nextHeight && queuedBlock.ParentHash() == confirmedHead.hash
+				exceedsHeight := queuedBlock.NumberU64() > confirmedHead.height+1
 
 				// next block: stop here and release
 				if isNextBlock {
@@ -199,10 +235,13 @@ func (ep *Peer) blockLoop() {
 			}
 
 			// prune blocks
-			for _, prunedBlock := range ep.queuedBlocks[:breakpoint] {
+			for _, prunedBlock := range ep.getQueuedBlocks()[:breakpoint] {
 				ep.Log().Debugf("pruning now stale block %v at height %v after confirming %v", prunedBlock.Block.Hash(), prunedBlock.Block.NumberU64(), newHead)
 			}
+
+			ep.mu.Lock()
 			ep.queuedBlocks = ep.queuedBlocks[breakpoint:]
+			ep.mu.Unlock()
 
 			// release block if possible
 			if releaseBlock {
@@ -218,23 +257,29 @@ func (ep *Peer) blockLoop() {
 				break
 			}
 
+			confirmedHead := ep.getConfirmedHead()
+			sentHead := ep.getSentHead()
+
 			// release next block if ready
-			nextBlock := newBlockNumber == ep.confirmedHead.height+1 && newBlock.Block.ParentHash() == ep.confirmedHead.hash
-			initialBlock := ep.confirmedHead.height == 0 && ep.sentHead.height == 0 && newBlock.Block.ParentHash() == ep.confirmedHead.hash
+			nextBlock := newBlockNumber == confirmedHead.height+1 && newBlock.Block.ParentHash() == confirmedHead.hash
+			initialBlock := confirmedHead.height == 0 && sentHead.height == 0 && newBlock.Block.ParentHash() == confirmedHead.hash
 			if nextBlock || initialBlock {
-				ep.Log().Debugf("queued block %v at height %v is next expected (%v), sending immediately", newBlockHash, newBlockNumber, ep.confirmedHead.height+1)
+				ep.Log().Debugf("queued block %v at height %v is next expected (%v), sending immediately", newBlockHash, newBlockNumber, confirmedHead.height+1)
 				err := ep.sendNewBlock(newBlock)
 				if err != nil {
 					ep.Log().Errorf("could not send block %v to peer %v: %v", newBlockHash, ep, err)
 				}
+				ep.mu.Lock()
 				ep.sentHead = blockRef{
 					height: newBlockNumber,
 					hash:   newBlockHash,
 				}
+				ep.mu.Unlock()
 			} else {
 				// find position in block queue that block should be inserted at
-				insertionPoint := len(ep.queuedBlocks)
-				for i, block := range ep.queuedBlocks {
+				queuedBlocks := ep.getQueuedBlocks()
+				insertionPoint := len(queuedBlocks)
+				for i, block := range queuedBlocks {
 					if block.Block.NumberU64() > newBlock.Block.NumberU64() {
 						insertionPoint = i
 					}
@@ -242,13 +287,17 @@ func (ep *Peer) blockLoop() {
 
 				ep.Log().Debugf("queuing block %v at height %v behind %v blocks", newBlockHash, newBlockNumber, insertionPoint)
 
+				ep.mu.Lock()
 				// insert block at insertion point
 				ep.queuedBlocks = append(ep.queuedBlocks, &eth.NewBlockPacket{})
 				copy(ep.queuedBlocks[insertionPoint+1:], ep.queuedBlocks[insertionPoint:])
 				ep.queuedBlocks[insertionPoint] = newBlock
+				ep.mu.Unlock()
 
-				if len(ep.queuedBlocks) > blockQueueMaxSize {
+				if len(ep.getQueuedBlocks()) > blockQueueMaxSize {
+					ep.mu.Lock()
 					ep.queuedBlocks = ep.queuedBlocks[len(ep.queuedBlocks)-blockQueueMaxSize:]
+					ep.mu.Unlock()
 				}
 			}
 		case <-ep.ctx.Done():
@@ -259,14 +308,16 @@ func (ep *Peer) blockLoop() {
 
 // should only be called by blockLoop when then length of the queue has already been checked
 func (ep *Peer) sendTopBlock() {
+	ep.mu.Lock()
 	block := ep.queuedBlocks[0]
 	ep.queuedBlocks = ep.queuedBlocks[1:]
 	ep.sentHead = blockRef{
 		height: block.Block.NumberU64(),
 		hash:   block.Block.Hash(),
 	}
+	ep.mu.Unlock()
 
-	ep.Log().Debugf("after confirming height %v, immediately sending next block %v at height %v", ep.confirmedHead.height, block.Block.Hash(), block.Block.NumberU64())
+	ep.Log().Debugf("after confirming height %v, immediately sending next block %v at height %v", ep.getConfirmedHead(), block.Block.Hash(), block.Block.NumberU64())
 	err := ep.sendNewBlock(block)
 	if err != nil {
 		ep.Log().Errorf("could not send block %v: %v", block.Block.Hash(), err)
@@ -280,7 +331,9 @@ func (ep *Peer) Handshake(version uint32, networkChain uint64, td *big.Int, head
 		return peerStatus, err
 	}
 
+	ep.mu.Lock()
 	ep.confirmedHead = blockRef{hash: head}
+	ep.mu.Unlock()
 
 	// for ethereum override the TD and the Head as get from the peer
 	// Nethermind checks reject connections which brings old value
@@ -299,6 +352,17 @@ func (ep *Peer) Handshake(version uint32, networkChain uint64, td *big.Int, head
 		Genesis:         genesis,
 		ForkID:          peerStatus.ForkID,
 	})
+
+	if version >= eth.ETH67 {
+		// Relevant only for BSC
+		switch networkChain {
+		case network.BSCMainnetChainID, network.BSCTestnetChainID:
+			_, err = ep.upgradeStatus(peerStatus.ProtocolVersion)
+			if err != nil {
+				ep.Log().Errorf("failed to upgrade status: %v", err)
+			}
+		}
+	}
 
 	if peerStatus.NetworkID != networkChain {
 		if !ep.Dynamic() {
@@ -341,6 +405,100 @@ func (ep *Peer) Handshake(version uint32, networkChain uint64, td *big.Int, head
 	}
 
 	return peerStatus, nil
+}
+
+// UpgradeStatusExtension is the extension data for the UpgradeStatusPacket
+type UpgradeStatusExtension struct {
+	DisablePeerTxBroadcast bool
+}
+
+// Encode encodes the extension data
+func (e *UpgradeStatusExtension) Encode() (*rlp.RawValue, error) {
+	rawBytes, err := rlp.EncodeToBytes(e)
+	if err != nil {
+		return nil, err
+	}
+	raw := rlp.RawValue(rawBytes)
+	return &raw, nil
+}
+
+// UpgradeStatusPacket is the packet used to upgrade the status message
+type UpgradeStatusPacket struct {
+	Extension *rlp.RawValue `rlp:"nil"`
+}
+
+// GetExtension decodes the extension data
+func (p *UpgradeStatusPacket) GetExtension() (*UpgradeStatusExtension, error) {
+	extension := &UpgradeStatusExtension{}
+	if p.Extension == nil {
+		return extension, nil
+	}
+	err := rlp.DecodeBytes(*p.Extension, extension)
+	if err != nil {
+		return nil, err
+	}
+	return extension, nil
+}
+
+func (ep *Peer) upgradeStatus(version uint32) (*UpgradeStatusExtension, error) {
+	upgradeStatus, err := ep.readUpgradeStatus()
+	if err != nil {
+		return nil, err
+	}
+
+	extension, err := upgradeStatus.GetExtension()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ep.send(UpgradeStatusMsg, upgradeStatus); err != nil {
+		return extension, err
+	}
+
+	return extension, nil
+}
+
+func (ep *Peer) readUpgradeStatus() (*UpgradeStatusPacket, error) {
+	var upgradeStatus UpgradeStatusPacket // safe to read after two values have been received from errc
+	type messageChanResponse struct {
+		msg p2p.Msg
+		err error
+	}
+	messageChan := make(chan messageChanResponse, 1)
+
+	go func() {
+		msg, err := ep.rw.ReadMsg()
+		messageChan <- messageChanResponse{msg, err}
+
+	}()
+	timeout := time.NewTicker(time.Second * 6)
+	var msg p2p.Msg
+	select {
+	case message := <-messageChan:
+		if message.err != nil {
+			return nil, message.err
+		}
+		msg = message.msg
+	case <-timeout.C:
+		timeout.Stop()
+		return nil, errors.New("failed to get message from peer, deadline exceeded")
+	}
+	defer func() {
+		_ = msg.Discard()
+	}()
+
+	if msg.Code != UpgradeStatusMsg {
+		return &upgradeStatus, fmt.Errorf("unexpected message: %v, should have been %v", msg.Code, UpgradeStatusMsg)
+	}
+
+	if msg.Size > maxMessageSize {
+		return &upgradeStatus, fmt.Errorf("message is too big: %v > %v", msg.Size, maxMessageSize)
+	}
+
+	if err := msg.Decode(&upgradeStatus); err != nil {
+		return &upgradeStatus, fmt.Errorf("could not decode upgrade status message: %v", err)
+	}
+	return &upgradeStatus, nil
 }
 
 func (ep *Peer) readStatus() (*eth.StatusPacket, error) {
@@ -604,7 +762,7 @@ func (ep *Peer) sendNewBlock(packet *eth.NewBlockPacket) error {
 			defer ticker.Stop()
 			for count < fastBlockConfirmationAttempts {
 				<-ticker.Alert()
-				if ep.confirmedHead.height >= blockNumber {
+				if ep.getConfirmedHead().height >= blockNumber {
 					return
 				}
 				err := ep.RequestBlockHeader(blockHash)
@@ -618,7 +776,7 @@ func (ep *Peer) sendNewBlock(packet *eth.NewBlockPacket) error {
 			ticker = ep.clock.Ticker(slowBlockConfirmationInterval)
 			for {
 				<-ticker.Alert()
-				if ep.confirmedHead.height >= blockNumber {
+				if ep.getConfirmedHead().height >= blockNumber {
 					return
 				}
 				err := ep.RequestBlockHeader(blockHash)
@@ -639,8 +797,14 @@ func (ep *Peer) registerForResponse66(requestID uint64, responseCh chan eth.Pack
 	ep.responseQueue66.Store(requestID, responseCh)
 }
 
+func (ep *Peer) isDisconnected() bool {
+	ep.mu.RLock()
+	defer ep.mu.RUnlock()
+	return ep.disconnected
+}
+
 func (ep *Peer) send(msgCode uint64, data interface{}) error {
-	if ep.disconnected {
+	if ep.isDisconnected() {
 		return nil
 	}
 	return p2p.Send(ep.rw, msgCode, data)

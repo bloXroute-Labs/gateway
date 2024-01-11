@@ -13,12 +13,13 @@ import (
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
 	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
@@ -30,7 +31,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/servers"
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
-	mock_connections "github.com/bloXroute-Labs/gateway/v2/test/sdnhttpmock"
+	"github.com/bloXroute-Labs/gateway/v2/test/mock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/version"
 	"github.com/ethereum/go-ethereum/common"
@@ -65,14 +66,13 @@ func spawnGRPCServer(t *testing.T, port int, user string, password string) (*gat
 	serverConfig := config.NewGRPC("0.0.0.0", port, user, password)
 	bridge, g := setup(t, 1)
 	g.BxConfig.GRPC = serverConfig
-	g.grpcHandler = servers.NewGrpcHandler(g.feedManager, true)
+	g.grpcHandler = servers.NewGrpcHandler(g.feedManager, g.wsManager, true)
 	s := newGatewayGRPCServer(g, serverConfig.Host, serverConfig.Port, serverConfig.User, serverConfig.Password)
 	go func() {
 		_ = s.Start()
 	}()
 
-	// small sleep for goroutine to start
-	time.Sleep(1 * time.Millisecond)
+	test.WaitServerStarted(t, fmt.Sprintf("%v:%v", serverConfig.Host, serverConfig.Port))
 
 	return g, bridge, s
 }
@@ -102,7 +102,7 @@ func TestGatewayGRPCServerAuth(t *testing.T) {
 	defer s.Stop()
 
 	ctl := gomock.NewController(t)
-	mockedSdn := mock_connections.NewMockSDNHTTP(ctl)
+	mockedSdn := mock.NewMockSDNHTTP(ctl)
 	g.sdn = mockedSdn
 	mockedSdn.EXPECT().AccountModel().Return(testAccountModel).AnyTimes()
 
@@ -132,7 +132,7 @@ func TestGatewayGRPCGatewayUserHeaderAuth(t *testing.T) {
 	defer s.Stop()
 
 	ctl := gomock.NewController(t)
-	mockedSdn := mock_connections.NewMockSDNHTTP(ctl)
+	mockedSdn := mock.NewMockSDNHTTP(ctl)
 	g.sdn = mockedSdn
 
 	// there is no need to mock FetchCustomerAccountModel because
@@ -159,7 +159,7 @@ func TestGatewayGRPCNotGatewayUserHeaderAuth(t *testing.T) {
 	defer s.Stop()
 
 	ctl := gomock.NewController(t)
-	mockedSdn := mock_connections.NewMockSDNHTTP(ctl)
+	mockedSdn := mock.NewMockSDNHTTP(ctl)
 
 	fetchCustomerAccountModel := sdnmessage.Account{
 		AccountInfo: sdnmessage.AccountInfo{
@@ -209,7 +209,7 @@ func TestInternalGatewayUnauthorizedAccess(t *testing.T) {
 		SecretHash: "undefined_user_pass",
 	}
 
-	mockedSdn := mock_connections.NewMockSDNHTTP(ctl)
+	mockedSdn := mock.NewMockSDNHTTP(ctl)
 	g.sdn = mockedSdn
 
 	mockedSdn.EXPECT().FetchCustomerAccountModel(gomock.Any()).Return(fetchCustomerAccountModel, fmt.Errorf("error %v", http.StatusNotFound)).AnyTimes()
@@ -223,7 +223,7 @@ func TestInternalGatewayUnauthorizedAccess(t *testing.T) {
 
 	require.NotNil(t, err)
 
-	mockedSdn = mock_connections.NewMockSDNHTTP(ctl)
+	mockedSdn = mock.NewMockSDNHTTP(ctl)
 	g.sdn = mockedSdn
 
 	mockedSdn.EXPECT().FetchCustomerAccountModel(gomock.Any()).Return(fetchCustomerAccountModel, fmt.Errorf("error %v", http.StatusUnauthorized)).AnyTimes()
@@ -234,7 +234,7 @@ func TestInternalGatewayUnauthorizedAccess(t *testing.T) {
 
 	require.NotNil(t, err)
 
-	mockedSdn = mock_connections.NewMockSDNHTTP(ctl)
+	mockedSdn = mock.NewMockSDNHTTP(ctl)
 	g.sdn = mockedSdn
 	mockedSdn.EXPECT().FetchCustomerAccountModel(gomock.Any()).Return(fetchCustomerAccountModel, fmt.Errorf("error %v", http.StatusBadRequest)).AnyTimes()
 	mockedSdn.EXPECT().AccountModel().Return(accountModel).AnyTimes()
@@ -258,7 +258,7 @@ func TestGatewayGRPCServerPeers(t *testing.T) {
 			return client.Peers(ctx, &pb.PeersRequest{})
 		})
 
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 
 		peersReply, ok := res.(*pb.PeersReply)
 		assert.True(t, ok)
@@ -286,6 +286,8 @@ func TestGatewayGRPCNewTxs(t *testing.T) {
 
 	go g.feedManager.Start(context.Background())
 
+	time.Sleep(5 * time.Millisecond)
+
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
 
 	_ = rpc.GatewayConsoleCall(clientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
@@ -304,8 +306,10 @@ func TestGatewayGRPCNewTxs(t *testing.T) {
 		err = g.HandleMsg(deliveredTxMessage, relayConn1, connections.RunForeground)
 		require.NoError(t, err)
 
+		test.WaitChanConsumed(t, g.feedManagerChan)
+
 		txNotification, err := newTxsStream.Recv()
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.NotNil(t, txNotification.Tx)
 		require.Equal(t, 1, len(txNotification.Tx))
 
@@ -322,6 +326,8 @@ func TestGatewayGRPCNewTxs_withNonTxIncludes(t *testing.T) {
 	g.BxConfig.WebsocketEnabled = true
 
 	go g.feedManager.Start(context.Background())
+
+	time.Sleep(5 * time.Millisecond)
 
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
 
@@ -353,31 +359,35 @@ func TestGatewayGRPCNewTxs_withNonTxIncludes(t *testing.T) {
 func TestGatewayGRPCPendingTxs(t *testing.T) {
 	port := test.NextTestPort()
 
-	g, bridge, s := spawnGRPCServer(t, port, "", "")
+	g, _, s := spawnGRPCServer(t, port, "", "")
 	defer s.Stop()
 	g.BxConfig.WebsocketEnabled = true
 
-	go func() {
-		err := g.handleBridgeMessages(context.Background())
-		assert.Nil(t, err)
-	}()
-
 	go g.feedManager.Start(context.Background())
+
+	time.Sleep(5 * time.Millisecond)
 
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
 
 	_ = rpc.GatewayConsoleCall(clientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
 		res, err := client.PendingTxs(ctx, &pb.TxsRequest{AuthHeader: "Og=="})
-		assert.Nil(t, err)
+		assert.NoError(t, err)
+
+		time.Sleep(time.Millisecond)
+		runtime.Gosched()
 
 		pendingTxsStream, ok := res.(pb.Gateway_PendingTxsClient)
 		assert.True(t, ok)
 
-		ethTx, _ := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil, nil)
-		processEthTxOnBridge(t, bridge, ethTx, g.blockchainPeers[0])
+		_, deliveredTxMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0, big.NewInt(network.EthMainnetChainID))
+
+		err = g.HandleMsg(deliveredTxMessage, connections.NewBlockchainConn(types.NodeEndpoint{IP: "1.1.1.1", Port: 1800}), connections.RunForeground)
+		require.NoError(t, err)
+
+		test.WaitChanConsumed(t, g.feedManagerChan)
 
 		txNotification, err := pendingTxsStream.Recv()
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.NotNil(t, txNotification.Tx)
 		assert.Equal(t, 1, len(txNotification.Tx))
 
@@ -395,28 +405,33 @@ func TestGatewayGRPCNewBlocks(t *testing.T) {
 
 	go func() {
 		err := g.handleBridgeMessages(context.Background())
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}()
 
 	go g.feedManager.Start(context.Background())
+
+	time.Sleep(5 * time.Millisecond)
 
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
 
 	_ = rpc.GatewayConsoleCall(clientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
 		res, err := client.NewBlocks(ctx, &pb.BlocksRequest{AuthHeader: "Og=="})
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 
 		newBlocksStream, ok := res.(pb.Gateway_NewBlocksClient)
 		assert.True(t, ok)
 
 		ethBlock := bxmock.NewEthBlock(10, common.Hash{})
 		bxBlock, err := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 
 		_ = bridge.SendBlockToBDN(bxBlock, types.NodeEndpoint{IP: "1.1.1.1", Port: 1800})
 
+		test.WaitChanConsumed(t, bridge.ReceiveBlockFromNode())
+		test.WaitChanConsumed(t, g.feedManagerChan)
+
 		newBlocksNotification, err := newBlocksStream.Recv()
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.NotNil(t, newBlocksNotification.Header)
 		assert.Equal(t, ethBlock.Hash().String(), newBlocksNotification.Hash)
 		assert.NotNil(t, newBlocksNotification.SubscriptionID)
@@ -443,6 +458,8 @@ func TestGatewayGRPCBdnBlocks(t *testing.T) {
 
 	go g.feedManager.Start(context.Background())
 
+	time.Sleep(5 * time.Millisecond)
+
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
 	err := rpc.GatewayConsoleCall(clientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
 		res, err := client.BdnBlocks(ctx, &pb.BlocksRequest{AuthHeader: "Og=="})
@@ -468,6 +485,8 @@ func TestGatewayGRPCBdnBlocks(t *testing.T) {
 
 		err = g.HandleMsg(broadcastMessage, relayConn1, connections.RunForeground)
 		require.NoError(t, err)
+
+		test.WaitChanConsumed(t, g.feedManagerChan)
 
 		bdnBlocksNotification, err := bdnBlocksStream.Recv()
 		require.NoError(t, err)
@@ -499,7 +518,7 @@ func TestGatewayGRPCBlxrTx(t *testing.T) {
 
 	setupSdn := func() connections.SDNHTTP {
 		ctl := gomock.NewController(t)
-		sdn := mock_connections.NewMockSDNHTTP(ctl)
+		sdn := mock.NewMockSDNHTTP(ctl)
 		sdn.EXPECT().AccountModel().Return(testAccountModel).AnyTimes()
 		sdn.EXPECT().NetworkNum().Return(networkNum).AnyTimes()
 		return sdn
@@ -537,7 +556,7 @@ func TestGatewayGRPCBlxrTx(t *testing.T) {
 			description: "Empty account",
 			setupSdnFunc: func() connections.SDNHTTP {
 				ctl := gomock.NewController(t)
-				sdn := mock_connections.NewMockSDNHTTP(ctl)
+				sdn := mock.NewMockSDNHTTP(ctl)
 				sdn.EXPECT().AccountModel().Return(sdnmessage.Account{}).AnyTimes()
 				sdn.EXPECT().NetworkNum().Return(networkNum).AnyTimes()
 				return sdn
@@ -594,7 +613,7 @@ func TestGatewayGRPCBlxrTx(t *testing.T) {
 			description: "Send transaction with next validator",
 			setupSdnFunc: func() connections.SDNHTTP {
 				ctl := gomock.NewController(t)
-				sdn := mock_connections.NewMockSDNHTTP(ctl)
+				sdn := mock.NewMockSDNHTTP(ctl)
 				sdn.EXPECT().AccountModel().Return(testAccountModel).AnyTimes()
 				sdn.EXPECT().NetworkNum().Return(bxgateway.BSCMainnetNum).AnyTimes()
 				return sdn
@@ -635,7 +654,7 @@ func TestGatewayGRPCBlxrTx(t *testing.T) {
 			description: "Nil validator map on next validator",
 			setupSdnFunc: func() connections.SDNHTTP {
 				ctl := gomock.NewController(t)
-				sdn := mock_connections.NewMockSDNHTTP(ctl)
+				sdn := mock.NewMockSDNHTTP(ctl)
 				sdn.EXPECT().AccountModel().Return(testAccountModel).AnyTimes()
 				sdn.EXPECT().NetworkNum().Return(bxgateway.BSCMainnetNum).AnyTimes()
 				return sdn
@@ -656,7 +675,7 @@ func TestGatewayGRPCBlxrTx(t *testing.T) {
 			description: "Empty validator map on next validator",
 			setupSdnFunc: func() connections.SDNHTTP {
 				ctl := gomock.NewController(t)
-				sdn := mock_connections.NewMockSDNHTTP(ctl)
+				sdn := mock.NewMockSDNHTTP(ctl)
 				sdn.EXPECT().AccountModel().Return(testAccountModel).AnyTimes()
 				sdn.EXPECT().NetworkNum().Return(bxgateway.BSCMainnetNum).AnyTimes()
 				return sdn
@@ -730,7 +749,7 @@ func TestGatewayGRPCBlxrBatchTx(t *testing.T) {
 
 	setupSdn := func() connections.SDNHTTP {
 		ctl := gomock.NewController(t)
-		sdn := mock_connections.NewMockSDNHTTP(ctl)
+		sdn := mock.NewMockSDNHTTP(ctl)
 		sdn.EXPECT().AccountModel().Return(testAccountModel).AnyTimes()
 		sdn.EXPECT().NetworkNum().Return(networkNum).AnyTimes()
 		return sdn
@@ -866,7 +885,7 @@ func TestGatewaySubmitBundle(t *testing.T) {
 
 	setupSdn := func() connections.SDNHTTP {
 		ctl := gomock.NewController(t)
-		sdn := mock_connections.NewMockSDNHTTP(ctl)
+		sdn := mock.NewMockSDNHTTP(ctl)
 		sdn.EXPECT().AccountModel().Return(sdnmessage.Account{
 			AccountInfo: sdnmessage.AccountInfo{
 				AccountID: testGatewayAccountID,
@@ -917,7 +936,7 @@ func TestGatewaySubmitBundle(t *testing.T) {
 			description: "Txs limit exceeded",
 			setupSdnFunc: func() connections.SDNHTTP {
 				ctl := gomock.NewController(t)
-				sdn := mock_connections.NewMockSDNHTTP(ctl)
+				sdn := mock.NewMockSDNHTTP(ctl)
 				sdn.EXPECT().AccountModel().Return(sdnmessage.Account{
 					AccountInfo: sdnmessage.AccountInfo{
 						AccountID: testGatewayAccountID,
@@ -946,7 +965,7 @@ func TestGatewaySubmitBundle(t *testing.T) {
 			description: "Account wrong tier",
 			setupSdnFunc: func() connections.SDNHTTP {
 				ctl := gomock.NewController(t)
-				sdn := mock_connections.NewMockSDNHTTP(ctl)
+				sdn := mock.NewMockSDNHTTP(ctl)
 				sdn.EXPECT().AccountModel().Return(sdnmessage.Account{
 					AccountInfo: sdnmessage.AccountInfo{
 						AccountID: testGatewayAccountID,
@@ -962,7 +981,7 @@ func TestGatewaySubmitBundle(t *testing.T) {
 				BlockNumber: "0x1f71710",
 			},
 			generateTxAndHash: generateDynamicFeeTxAndHash,
-			expectedErrSubStr: "enterprise account is required in order to send bundle",
+			expectedErrSubStr: "enterprise elite account is required in order to send bundle",
 		},
 
 		{

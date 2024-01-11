@@ -36,7 +36,7 @@ func ethTransaction(hashString string, txString string) (SHA256Hash, EthTransact
 }
 func TestBigValueTransacrtion(t *testing.T) {
 	hash, ethTx, _, err := ethTransaction(fixtures.BigValueTransactionHashBSC, fixtures.BigValueTransactionBSC)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	ethTx.Fields(AllFields)
 	assert.Equal(t, "0x0", ethTx.fields["type"])
 	assert.Equal(t, "0x"+hash.String(), ethTx.fields["hash"])
@@ -59,7 +59,7 @@ func TestLegacyTransaction(t *testing.T) {
 	expectedChainID := new(big.Int).SetInt64(fixtures.LegacyChainID)
 
 	hash, ethTx, _, err := ethTransaction(fixtures.LegacyTransactionHash, fixtures.LegacyTransaction)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// check decoding transaction structure
 	ethTx.Fields(AllFieldsWithFrom)
@@ -103,7 +103,7 @@ func TestLegacyTransaction(t *testing.T) {
 		"max_fee_per_gas",
 		"max_priority_fee_per_gas",
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.True(t, test.Contains(filteredTx, "type"))
 	assert.Equal(t, fixtures.LegacyFromAddress, filteredTx["from"])
 	assert.Equal(t, fixtures.LegacyGasPrice, filteredTx["gas_price"])
@@ -116,7 +116,7 @@ func TestAccessListTransaction(t *testing.T) {
 	expectedFromAddress := test.NewEthAddress(fixtures.AccessListFromAddress)
 
 	hash, ethTx, _, err := ethTransaction(fixtures.AccessListTransactionHash, fixtures.AccessListTransaction)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// check decoding transaction structure
 	ethTx.Fields(AllFieldsWithFrom)
@@ -139,7 +139,7 @@ func TestAccessListTransaction(t *testing.T) {
 		"tx_contents.max_priority_fee_per_gas",
 		"tx_contents.access_list",
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	assert.Equal(t, fixtures.AccessListFromAddress, jsonMap["from"])
 	assert.Equal(t, fixtures.AccessListTransactionHash, jsonMap["hash"])
@@ -159,7 +159,7 @@ func TestAccessListTransaction(t *testing.T) {
 		"max_priority_fee_per_gas",
 		"type",
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, "1", filteredTx["type"])
 	assert.Equal(t, fixtures.AccessListFromAddress, filteredTx["from"])
 	assert.Equal(t, fixtures.AccessListGasPrice, filteredTx["gas_price"])
@@ -172,7 +172,7 @@ func TestDynamicFeeTransaction(t *testing.T) {
 	expectedFromAddress := test.NewEthAddress(fixtures.DynamicFeeFromAddress)
 
 	hash, ethTx, _, err := ethTransaction(fixtures.DynamicFeeTransactionHash, fixtures.DynamicFeeTransaction)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// check decoding transaction structure
 	ethTx.Fields(AllFieldsWithFrom)
@@ -196,9 +196,9 @@ func TestDynamicFeeTransaction(t *testing.T) {
 		"tx_contents.access_list",
 		"tx_contents.type",
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, fixtures.DynamicFeeFromAddress, jsonMap["from"])
 	assert.Equal(t, fixtures.DynamicFeeTransactionHash, jsonMap["hash"])
 	assert.Equal(t, hexutil.EncodeUint64(fixtures.DynamicFeeChainID), jsonMap["chainId"])
@@ -214,9 +214,9 @@ func TestDynamicFeeTransaction(t *testing.T) {
 		"tx_contents.max_fee_per_gas",
 		"tx_contents.max_priority_fee_per_gas",
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, hexutil.EncodeUint64(fixtures.DynamicFeeFeePerGas), jsonMapWithoutType["maxFeePerGas"])
 	assert.Equal(t, hexutil.EncodeUint64(fixtures.DynamicFeeTipPerGas), jsonMapWithoutType["maxPriorityFeePerGas"])
 	assert.Equal(t, nil, jsonMapWithoutType["gasPrice"])
@@ -229,7 +229,7 @@ func TestDynamicFeeTransaction(t *testing.T) {
 		"max_fee_per_gas",
 		"max_priority_fee_per_gas",
 	})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, fixtures.DynamicFeeFromAddress, filteredTx["from"])
 	assert.Equal(t, fixtures.DynamicFeeChainID, filteredTx["chain_id"])
 	assert.Equal(t, fixtures.DynamicFeeFeePerGas, filteredTx["max_fee_per_gas"])
@@ -238,7 +238,7 @@ func TestDynamicFeeTransaction(t *testing.T) {
 
 func TestContractCreationTx(t *testing.T) {
 	hash, ethTx, _, err := ethTransaction(fixtures.ContractCreationTxHash, fixtures.ContractCreationTx)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	ethTx.Fields([]string{})
 	filters := ethTx.Filters([]string{"to"})
 	assert.Equal(t, "0x0", filters["to"])

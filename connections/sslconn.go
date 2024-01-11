@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
@@ -52,6 +53,8 @@ type SSLConn struct {
 	log             *log.Entry
 	clock           utils.Clock
 	connectedAt     time.Time
+
+	mu sync.RWMutex
 }
 
 // NewSSLConnection constructs a new SSL connection. If socket is not nil, then the connection was initiated by the remote.
@@ -104,11 +107,11 @@ func (s *SSLConn) sendLoop(ctx context.Context) {
 
 // packAndWrite is called by the sendLoop go routine
 func (s *SSLConn) packAndWrite(msg bxmessage.Message) {
-	if !s.connectionOpen {
+	if !s.IsOpen() {
 		return
 	}
 
-	buf, err := msg.Pack(s.protocol)
+	buf, err := msg.Pack(s.Protocol())
 	if err != nil {
 		s.Log().Warnf("can't pack message %v: %v. skipping", msg, err)
 		return
@@ -132,43 +135,55 @@ func (s *SSLConn) ID() Socket {
 }
 
 // GetConnectionType returns type of the connection
-func (s SSLConn) GetConnectionType() utils.NodeType { return s.extensions.NodeType }
+func (s *SSLConn) GetConnectionType() utils.NodeType { return s.extensions.NodeType }
 
 // GetNodeID return node ID
-func (s SSLConn) GetNodeID() types.NodeID { return s.extensions.NodeID }
+func (s *SSLConn) GetNodeID() types.NodeID { return s.extensions.NodeID }
 
 // GetPeerIP return peer IP
-func (s SSLConn) GetPeerIP() string { return s.ip }
+func (s *SSLConn) GetPeerIP() string { return s.ip }
 
 // GetPeerPort return peer port
-func (s SSLConn) GetPeerPort() int64 { return s.port }
+func (s *SSLConn) GetPeerPort() int64 { return s.port }
 
 // GetLocalPort return local port
-func (s SSLConn) GetLocalPort() int64 { return LocalInitiatedPort }
+func (s *SSLConn) GetLocalPort() int64 { return LocalInitiatedPort }
 
 // GetConnectedAt gets ttime of connection
-func (s SSLConn) GetConnectedAt() time.Time { return s.connectedAt }
+func (s *SSLConn) GetConnectedAt() time.Time { return s.connectedAt }
 
 // GetAccountID return account ID
-func (s SSLConn) GetAccountID() types.AccountID { return s.extensions.AccountID }
+func (s *SSLConn) GetAccountID() types.AccountID { return s.extensions.AccountID }
 
 // IsOpen indicates whether the socket connection is open
-func (s SSLConn) IsOpen() bool {
+func (s *SSLConn) IsOpen() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	return s.connectionOpen
 }
 
 // IsDisabled indicates whether the socket connection is disabled (ping and pong only)
-func (s SSLConn) IsDisabled() bool {
+func (s *SSLConn) IsDisabled() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	return s.disabled
 }
 
 // Protocol provides the protocol version of the connection
 func (s *SSLConn) Protocol() bxmessage.Protocol {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	return s.protocol
 }
 
 // SetProtocol sets the protocol version the connection is using
 func (s *SSLConn) SetProtocol(p bxmessage.Protocol) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.protocol = p
 }
 
@@ -179,6 +194,9 @@ func (s *SSLConn) Log() *log.Entry {
 
 // Connect initializes a connection to a bloxroute node. If this is called when the remote addr is the one initiating the connection, then this function is does little besides mark some connection states as ready. Connect is also responsible for starting any goroutines relevant to the connection.
 func (s *SSLConn) Connect() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.pq = bxmessage.NewMsgPriorityQueue(s.queueToMessageChan, PriorityQueueInterval)
 	s.buf.Reset()
 
@@ -249,7 +267,7 @@ func (s *SSLConn) ReadMessages(callBack func(msg bxmessage.MessageBytes), readDe
 
 // readWithDeadline reads bytes from the connection onto a buffer
 func (s *SSLConn) readWithDeadline(buf []byte, deadline time.Duration) (int, error) {
-	if !s.connectionOpen {
+	if !s.IsOpen() {
 		return 0, fmt.Errorf("connection is closing. Read from socket disabled")
 	}
 	_ = s.Socket.SetReadDeadline(s.clock.Now().Add(deadline))
@@ -259,12 +277,7 @@ func (s *SSLConn) readWithDeadline(buf []byte, deadline time.Duration) (int, err
 // Send sends messages over the wire to the peer node
 func (s *SSLConn) Send(msg bxmessage.Message) error {
 	var err error
-	if s.Socket == nil {
-		err = fmt.Errorf("trying to send a message to connection before it's connected")
-		s.Log().Debug(err)
-		return err
-	}
-	if !s.connectionOpen {
+	if !s.IsOpen() {
 		// note - can't use s.String() or s.s.RemoteAddr()  here since RemoteAddr() may produce nil
 		err = fmt.Errorf("trying to send a message to %v:%v while it is closed", s.ip, s.port)
 		s.Log().Debug(err)
@@ -309,6 +322,9 @@ func (s *SSLConn) queueToMessageChan(msg bxmessage.Message) {
 
 // Disable marks the connection as disabled, meaning it sends/processes only ping/pong messages. Must be called in a go routine.
 func (s *SSLConn) Disable(reason string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.Log().Errorf("disabling connection: %v", reason)
 	s.disabled = true
 }
@@ -319,7 +335,7 @@ func (s *SSLConn) Close(reason string) error {
 }
 
 // String represents a printable/readable identifier for the connection
-func (s SSLConn) String() string {
+func (s *SSLConn) String() string {
 	if s.Socket == nil {
 		return fmt.Sprintf("%v:%v", s.ip, s.port)
 	}
@@ -334,12 +350,14 @@ func (s *SSLConn) IsInitiator() bool {
 // close should only be called when s.lock is already held
 func (s *SSLConn) close(reason string) error {
 	// connection already closed
-	if !s.connectionOpen {
+	if !s.IsOpen() {
 		return nil
 	}
 
+	s.mu.Lock()
 	s.connectionOpen = false
 	s.disabled = false
+	s.mu.Unlock()
 	// don't close s.sendMessages - not needed and can create race with sendLoop
 
 	// stop sendLoop

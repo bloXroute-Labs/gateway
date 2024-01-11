@@ -34,6 +34,11 @@ func init() {
 }
 
 func logOneLine(oneline line) {
+	// Checking if no one updating logrus configuration like formatter to avoid race condition
+	// Multiple logOneLine not blocking each other since it is read lock
+	initConfigMutex.RLock()
+	defer initConfigMutex.RUnlock()
+
 	entry := logrus.NewEntry(logrus.StandardLogger())
 	entry.Time = oneline.time
 	if oneline.data != nil {

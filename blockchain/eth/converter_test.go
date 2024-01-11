@@ -4,6 +4,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/common"
@@ -24,16 +25,16 @@ func testTransactionType(t *testing.T, txType uint8) {
 	tx := bxmock.NewSignedEthTx(txType, 1, nil, nil)
 
 	bdnTx, err := c.TransactionBlockchainToBDN(tx)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	blockchainTx, err := c.TransactionBDNToBlockchain(bdnTx)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	originalEncodedBytes, err := rlp.EncodeToBytes(tx)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	processedEncodedBytes, err := rlp.EncodeToBytes(blockchainTx.(*ethtypes.Transaction))
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	assert.Equal(t, originalEncodedBytes, processedEncodedBytes)
 }
@@ -44,11 +45,11 @@ func TestConverter_Block(t *testing.T) {
 	td := big.NewInt(100)
 
 	bxBlock, err := c.BlockBlockchainToBDN(NewBlockInfo(block, td))
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, block.Hash().Bytes(), bxBlock.Hash().Bytes())
 
 	blockchainBlock, err := c.BlockBDNtoBlockchain(bxBlock)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	blockInfo := blockchainBlock.(*BlockInfo)
 
@@ -62,7 +63,7 @@ func TestConverter_Block(t *testing.T) {
 	assert.Equal(t, td, blockInfo.TotalDifficulty())
 
 	canonicFormat, err := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil, false)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	for i, tx := range canonicFormat.Transactions {
 		assert.Equal(t, tx["hash"], ethBlock.Transactions()[i].Hash().String())
@@ -75,12 +76,12 @@ func TestConverter_BellatrixBeaconBlock(t *testing.T) {
 
 	beaconBlock := bxmock.NewBellatrixBeaconBlock(t, 11, nil, block)
 
-	bxBlock, err := c.BlockBlockchainToBDN(beaconBlock)
-	assert.Nil(t, err)
+	bxBlock, err := c.BlockBlockchainToBDN(beacon.NewWrappedReadOnlySignedBeaconBlock(beaconBlock))
+	assert.NoError(t, err)
 	assert.Equal(t, block.Hash().Bytes(), bxBlock.Hash().Bytes())
 
 	blockchainBlock, err := c.BlockBDNtoBlockchain(bxBlock)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	bellatrixBlock, err := blockchainBlock.(interfaces.ReadOnlySignedBeaconBlock).PbBellatrixBlock()
 	assert.NoError(t, err)
@@ -95,7 +96,7 @@ func TestConverter_BellatrixBeaconBlock(t *testing.T) {
 	}
 
 	beaconCanonicFormat, err := types.NewBeaconBlockNotification(blockchainBlock.(interfaces.ReadOnlySignedBeaconBlock))
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// Check beacon notification transactions exactly same as beacon BxBlock
 	for i, txRaw := range beaconCanonicFormat.(*types.BellatrixBlockNotification).Block.Body.ExecutionPayload.Transactions {
@@ -117,12 +118,12 @@ func TestConverter_CapellaBeaconBlock(t *testing.T) {
 
 	beaconBlock := bxmock.NewCapellaBeaconBlock(t, 11, nil, block)
 
-	bxBlock, err := c.BlockBlockchainToBDN(beaconBlock)
-	assert.Nil(t, err)
+	bxBlock, err := c.BlockBlockchainToBDN(beacon.NewWrappedReadOnlySignedBeaconBlock(beaconBlock))
+	assert.NoError(t, err)
 	assert.Equal(t, block.Hash().Bytes(), bxBlock.Hash().Bytes())
 
 	blockchainBlock, err := c.BlockBDNtoBlockchain(bxBlock)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	capellaBlock, err := blockchainBlock.(interfaces.ReadOnlySignedBeaconBlock).PbCapellaBlock()
 	assert.NoError(t, err)
@@ -137,7 +138,7 @@ func TestConverter_CapellaBeaconBlock(t *testing.T) {
 	}
 
 	beaconCanonicFormat, err := types.NewBeaconBlockNotification(blockchainBlock.(interfaces.ReadOnlySignedBeaconBlock))
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// Check beacon notification transactions exactly same as beacon BxBlock
 	for i, txRaw := range beaconCanonicFormat.(*types.CapellaBlockNotification).Block.Body.ExecutionPayload.Transactions {

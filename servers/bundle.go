@@ -59,6 +59,20 @@ func ParseRawTransaction(tx string) (*ethtypes.Transaction, error) {
 	return &ethTx, nil
 }
 
+// GetRawTxsHashes is a helper function used to parse a list of raw txs to hex
+func GetRawTxsHashes(transactions []string) ([]string, error) {
+	txHashes := make([]string, 0, len(transactions))
+	for _, tx := range transactions {
+		transaction, err := ParseRawTransaction(tx)
+		if err != nil {
+			return nil, err
+		}
+		txHash := transaction.Hash().Hex()
+		txHashes = append(txHashes, txHash)
+	}
+	return txHashes, nil
+}
+
 // ParseRawTransactionGroup is a helper function used to process a group of rawTransactions
 func ParseRawTransactionGroup(transactions []string, trimTxHashPrefix bool, chainID int64) (*RawTransactionGroupData, error) {
 	bundleHash := sha3.NewLegacyKeccak256()

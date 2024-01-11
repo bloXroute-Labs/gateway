@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -242,14 +243,24 @@ func (c *APIClient) subscribeToEvents() {
 	eventsURL := fmt.Sprintf(subscribeBlockEventRoute, c.URL)
 	client := sse.NewClient(eventsURL)
 	for {
-		c.log.Info("subscribing to head events ", eventsURL)
+		select {
+		case <-c.ctx.Done():
+			return
+		default:
+			c.log.Info("subscribing to head events ", eventsURL)
 
-		err := client.SubscribeRawWithContext(c.ctx, c.eventHandler())
+			err := client.SubscribeRawWithContext(c.ctx, c.eventHandler())
 
-		if err != nil {
-			c.log.Errorf("failed to subscribe to head events")
-		} else {
-			c.log.Warnf("APIClient SubscribeRaw ended, reconnecting: %v", c.URL)
+			// If the context was canceled, we're shutting down.
+			if errors.Is(err, context.Canceled) {
+				return
+			}
+
+			if err != nil {
+				c.log.Errorf("failed to subscribe to head events: %v", err)
+			} else {
+				c.log.Warnf("APIClient SubscribeRaw ended, reconnecting: %v", c.URL)
+			}
 		}
 
 		time.Sleep(10 * time.Second)
@@ -272,18 +283,19 @@ func (c *APIClient) eventHandler() func(msg *sse.Event) {
 			return
 		}
 
-		blockHash, err := c.hashOfBlock(block)
+		if c.isOldBlock(block) {
+			c.log.Errorf("block slot=%d is too old to process", block.Block().Slot())
+			return
+		}
+
+		wrappedBlock := NewWrappedReadOnlySignedBeaconBlock(block)
+		blockHash, err := c.hashOfBlock(wrappedBlock)
 		if (err != nil) || (blockHash != data.Block) {
 			c.log.Errorf("could not approve beacon block[slot=%d,hash=%s]: %v", block.Block().Slot(), data.Block, err)
 			return
 		}
 
-		if c.isOldBlock(block) {
-			c.log.Errorf("block[slot=%d,hash=%s] is too old to process", block.Block().Slot(), blockHash)
-			return
-		}
-
-		if err := SendBlockToBDN(c.clock, c.log, block, c.bridge, *c.nodeEndpoint); err != nil {
+		if err := SendBlockToBDN(c.clock, c.log, wrappedBlock, c.bridge, *c.nodeEndpoint); err != nil {
 			c.log.Errorf("could not proccess beacon block[slot=%d,hash=%s] to eth: %v", block.Block().Slot(), blockHash, err)
 			return
 		}
@@ -300,8 +312,8 @@ func (c *APIClient) unmarshalEvent(eventData []byte) (headEventData, error) {
 }
 
 // hashOfBlock returns the hash of a beacon block.
-func (c *APIClient) hashOfBlock(block interfaces.ReadOnlySignedBeaconBlock) (string, error) {
-	blockHash, err := block.Block().HashTreeRoot()
+func (c *APIClient) hashOfBlock(block WrappedReadOnlySignedBeaconBlock) (string, error) {
+	blockHash, err := block.HashTreeRoot()
 	if err != nil {
 		return "", err
 	}

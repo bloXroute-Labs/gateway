@@ -70,7 +70,7 @@ func TestInitGateway_GetsCorrectBlockchainNetworkFromProtocolAndNetwork(t *testi
 				},
 			}
 			err := s.InitGateway(testCase.protocol, testCase.network)
-			assert.Nil(t, err)
+			assert.NoError(t, err)
 
 			//check Network Number correct
 			bcn, found := (*s.Networks())[testCase.networkNumber]

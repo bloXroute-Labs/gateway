@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sync"
 	"time"
 )
 
@@ -84,6 +85,8 @@ type BxBlock struct {
 	Number          *big.Int
 	timestamp       time.Time
 	size            int
+
+	mu sync.RWMutex
 }
 
 // NewBxBlock creates a new BxBlock that's ready for compression. This means that all transaction hashes must be included.
@@ -133,7 +136,7 @@ func (b *BxBlock) IsBeaconBlock() bool {
 }
 
 // Serialize returns an expensive string representation of the BxBlock
-func (b BxBlock) Serialize() string {
+func (b *BxBlock) Serialize() string {
 	m := make(map[string]interface{})
 	m["header"] = hex.EncodeToString(b.Header)
 	m["trailer"] = hex.EncodeToString(b.Trailer)
@@ -151,7 +154,7 @@ func (b BxBlock) Serialize() string {
 }
 
 // Hash returns block hash
-func (b BxBlock) Hash() SHA256Hash {
+func (b *BxBlock) Hash() SHA256Hash {
 	return b.hash
 }
 
@@ -161,17 +164,23 @@ func (b BxBlock) BeaconHash() SHA256Hash {
 }
 
 // Timestamp returns block add time
-func (b BxBlock) Timestamp() time.Time {
+func (b *BxBlock) Timestamp() time.Time {
 	return b.timestamp
 }
 
 // Size returns the original blockchain block
-func (b BxBlock) Size() int {
+func (b *BxBlock) Size() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	return b.size
 }
 
 // SetSize sets the original blockchain block
 func (b *BxBlock) SetSize(size int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	b.size = size
 }
 

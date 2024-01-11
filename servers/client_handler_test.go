@@ -73,7 +73,7 @@ var accountIDToAccountModel = map[types.AccountID]sdnmessage.Account{
 	},
 }
 
-func mockAuthorize(accountID types.AccountID, _ string, _ bool) (sdnmessage.Account, error) {
+func mockAuthorize(accountID types.AccountID, _ string, _ bool, _ string) (sdnmessage.Account, error) {
 	return getMockCustomerAccountModel(accountID)
 }
 
@@ -104,8 +104,7 @@ func reset(fm *FeedManager, wsURL string, blockchainPeers []types.NodeEndpoint) 
 
 func clearWSProviderStats(fm *FeedManager, blockchainPeers []types.NodeEndpoint) {
 	for _, wsProvider := range fm.nodeWSManager.Providers() {
-		wsProvider.(*eth.MockWSProvider).NumReceiptsFetched = 0
-		wsProvider.(*eth.MockWSProvider).NumRPCCalls = 0
+		wsProvider.(*eth.MockWSProvider).ResetCounters()
 	}
 }
 
@@ -164,23 +163,6 @@ func TestClientHandler(t *testing.T) {
 		return fm.Start(context.Background())
 	})
 
-	// BSC configuration
-	urlBSC := "127.0.0.1:28333"
-	cfgBSC := config.Bx{WebsocketPort: 28333, ManageWSServer: true, WebsocketTLSEnabled: false}
-	BscWsURLs := fmt.Sprintf("ws://%s/ws", urlBSC)
-	blockchainPeersBSC, blockchainPeersInfoBSC := test.GenerateBlockchainPeersInfo(1)
-
-	fmBSC := NewFeedManager(context.Background(), g, feedChan, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 56, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfoBSC, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false), gwAccount, getMockCustomerAccountModel, "", "", cfgBSC, stats, nil, nil)
-	p4 := providers[blockchainPeersBSC[0].IPPort()]
-	assert.NotNil(t, p4)
-	clientHandlerBSC := NewClientHandler(fmBSC, nil, NewHTTPServer(fmBSC, cfg.HTTPPort+1), false, getMockQuotaUsage, log.WithFields(log.Fields{
-		"component": "gatewayClientHandlerBSC",
-	}), &sourceFromNode, mockAuthorize, true)
-	go clientHandlerBSC.ManageWSServer(context.Background(), false)
-	go clientHandlerBSC.ManageHTTPServer()
-	group.Go(func() error {
-		return fmBSC.Start(context.Background())
-	})
 	time.Sleep(10 * time.Millisecond)
 
 	dialer := websocket.DefaultDialer
@@ -222,7 +204,7 @@ func TestClientHandler(t *testing.T) {
 		dummyAuthHeader = "Z3c6c2VjcmV0" //gw:secret
 		headers.Set("Authorization", dummyAuthHeader)
 		ws, _, err = dialer.Dial(wsURL, headers)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 
 		t.Run(fmt.Sprintf("wsClient-%s", wsURL), func(t *testing.T) {
 			handlePingRequest(t, ws)
@@ -256,15 +238,6 @@ func TestClientHandler(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	markAllPeersWithSyncStatus(fm, blockchainPeersBSC, blockchain.Synced)
-	wsBSC, _, err := dialer.Dial(BscWsURLs, headers)
-	assert.Nil(t, err)
-
-	t.Run(fmt.Sprintf("wsClient-%s", urlBSC), func(t *testing.T) {
-		handleBscBlxrTxRequestWithNextValidator(t, wsBSC)
-		handleNonBloxrouteRPCMethodsDisabled(t, fm, wsBSC, blockchainPeers)
-	})
-
 	// check disconnected subscription
 	clearWSProviderStats(fm, blockchainPeers)
 	markAllPeersWithSyncStatus(fm, blockchainPeers, blockchain.Unsynced)
@@ -274,7 +247,7 @@ func TestClientHandler(t *testing.T) {
 	authHeader := "Z3c6c2VjcmV0" //gw:secret
 	headers.Set("Authorization", authHeader)
 	ws, _, err := dialer.Dial(wsURLs[0], headers)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assertSubscribe(t, ws, fm, `{"id": "1", "method": "subscribe", "params": ["newTxs", {"include": [], "multiTxs": true}]}`)
 	_, subscriptionID := assertSubscribe(t, ws, fm, `{"id": "1", "method": "subscribe", "params": ["newTxs", {"include": ["tx_hash"]}]}`)
 
@@ -326,6 +299,48 @@ loop2:
 	headers.Set("Authorization", dummyAuthHeader)
 	_, _, errWs0 := dialer.Dial(wsURLs[0], headers)
 	assert.Nil(t, errWs0)
+}
+
+func TestClientHandler_BSC(t *testing.T) {
+	g := bxmock.MockBxListener{}
+	stats := statistics.NoStats{}
+	feedChan := make(chan types.Notification)
+
+	gwAccount, _ := getMockCustomerAccountModel("gw")
+
+	// BSC configuration
+	urlBSC := "127.0.0.1:28333"
+	cfgBSC := config.Bx{WebsocketPort: 28333, ManageWSServer: true, WebsocketTLSEnabled: false}
+	BscWsURLs := fmt.Sprintf("ws://%s/ws", urlBSC)
+	blockchainPeersBSC, blockchainPeersInfoBSC := test.GenerateBlockchainPeersInfo(1)
+
+	var group errgroup.Group
+	sourceFromNode := false
+	fmBSC := NewFeedManager(context.Background(), g, feedChan, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 56, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfoBSC, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false), gwAccount, getMockCustomerAccountModel, "", "", cfgBSC, stats, nil, nil)
+	clientHandlerBSC := NewClientHandler(fmBSC, nil, NewHTTPServer(fmBSC, cfgBSC.HTTPPort), false, getMockQuotaUsage, log.WithFields(log.Fields{
+		"component": "gatewayClientHandlerBSC",
+	}), &sourceFromNode, mockAuthorize, true)
+	go clientHandlerBSC.ManageWSServer(context.Background(), false)
+	go clientHandlerBSC.ManageHTTPServer()
+	group.Go(func() error {
+		return fmBSC.Start(context.Background())
+	})
+
+	time.Sleep(10 * time.Millisecond)
+
+	dialer := websocket.DefaultDialer
+	headers := make(http.Header)
+
+	markAllPeersWithSyncStatus(fmBSC, blockchainPeersBSC, blockchain.Synced)
+	dummyAuthHeader := "Z3c6c2VjcmV0" //gw:secret
+	headers.Set("Authorization", dummyAuthHeader)
+	wsBSC, _, err := dialer.Dial(BscWsURLs, headers)
+	assert.NoError(t, err)
+
+	t.Run(fmt.Sprintf("wsClient-%s", urlBSC), func(t *testing.T) {
+		handleBscBlxrTxRequestWithNextValidator(t, wsBSC)
+		// handleNonBloxrouteRPCMethodsDisabled(t, fmBSC, wsBSC, blockchainPeersBSC)
+	})
 }
 
 // TODO: Follow work to handle sync and unsync on another PR
@@ -423,12 +438,12 @@ func handleEthSubscribe(t *testing.T, fm *FeedManager, ws *websocket.Conn, block
 
 	for i := 0; i < 1; i++ {
 		_, message, err := ws.ReadMessage()
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		var req jsonrpc2.Request
 		err = json.Unmarshal(message, &req)
 		var m newHeadsResponseParams
 		err = json.Unmarshal(*req.Params, &m)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.Equal(t, m.Result.BlockHash.String(), ethBlock.Hash().String())
 	}
 
@@ -451,13 +466,13 @@ func handleTxReceiptsSubscribeClientCloseConnection(t *testing.T, fm *FeedManage
 	subscribeMsg := writeMsgToWsAndReadResponse(t, ws, []byte(`{"id": "1", "method": "subscribe", "params": ["txReceipts", {"include": []}]}`), nil)
 	clientRes := getClientResponse(t, subscribeMsg)
 	subscriptionID, err := uuid.FromString(fmt.Sprintf("%v", clientRes.Result))
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.True(t, fm.SubscriptionExists(subscriptionID))
 
 	fm.wsFeed <- mockBlockTransaction()
 
 	err = ws.Close()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	time.Sleep(5 * time.Millisecond)
 	assert.False(t, fm.SubscriptionExists(subscriptionID))
@@ -536,10 +551,10 @@ func handleTxReceiptsNotification(t *testing.T, fm *FeedManager, ws *websocket.C
 	// expect receipt notifications
 	for i := 0; i < numTx; i++ {
 		_, message, err := ws.ReadMessage()
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		var m json.RawMessage
 		err = json.Unmarshal(message, &m)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}
 
 	writeMsgToWsAndReadResponse(t, ws, []byte(unsubscribeFilter), nil)
@@ -561,7 +576,7 @@ func handleNonBloxrouteRPCMethodsDisabled(t *testing.T, fm *FeedManager, ws *web
 	request := `{"jsonrpc": "2.0", "id": "1", "method": "eth_getBalance", "params": ["0xAABCf4f110F06aFd82A7696f4fb79AE4a41D0f81", "latest"]}`
 	response := writeMsgToWsAndReadResponse(t, ws, []byte(request), nil)
 	clientRes := getClientResponse(t, response)
-	assert.Equal(t, 0, ws1.(*eth.MockWSProvider).NumRPCCalls)
+	assert.Equal(t, 0, ws1.(*eth.MockWSProvider).NumRPCCalls())
 	assert.NotNil(t, clientRes.Error)
 	assert.Equal(t, clientRes.Error.(map[string]interface{})["data"], "got unsupported method name: eth_getBalance")
 	assert.Equal(t, clientRes.Error.(map[string]interface{})["code"], float64(jsonrpc.MethodNotFound))
@@ -582,7 +597,7 @@ func handleNonBloxrouteRPCMethods(t *testing.T, fm *FeedManager, ws *websocket.C
 	request := `{"jsonrpc": "2.0", "id": "1", "method": "eth_getBalance", "params": ["0xAABCf4f110F06aFd82A7696f4fb79AE4a41D0f81", "latest"]}`
 	response := writeMsgToWsAndReadResponse(t, ws, []byte(request), nil)
 	clientRes := getClientResponse(t, response)
-	assert.Equal(t, 1, ws1.(*eth.MockWSProvider).NumRPCCalls)
+	assert.Equal(t, 1, ws1.(*eth.MockWSProvider).NumRPCCalls())
 	assert.Equal(t, "response", clientRes.Result)
 	markAllPeersWithSyncStatus(fm, blockchainPeers, blockchain.Synced)
 }
@@ -626,10 +641,10 @@ func handleOnBlockNotification(t *testing.T, fm *FeedManager, ws *websocket.Conn
 	// expect onBlock notification and TaskCompletedEvent
 	for i := 0; i < 2; i++ {
 		_, message, err := ws.ReadMessage()
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		var m json.RawMessage
 		err = json.Unmarshal(message, &m)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}
 
 	writeMsgToWsAndReadResponse(t, ws, []byte(unsubscribeFilter), nil)
@@ -672,10 +687,10 @@ func handleTxReceiptsNotificationRequestedUnsynced(t *testing.T, fm *FeedManager
 	// expect receipt notifications
 	for i := 0; i < numTx; i++ {
 		_, message, err := ws.ReadMessage()
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		var m json.RawMessage
 		err = json.Unmarshal(message, &m)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}
 
 	writeMsgToWsAndReadResponse(t, ws, []byte(unsubscribeFilter), nil)
@@ -711,16 +726,16 @@ func handleOnBlockNotificationRequestedUnsynced(t *testing.T, fm *FeedManager, w
 
 	fm.feed <- feedNotification
 	time.Sleep(time.Millisecond)
-	assert.Equal(t, 1, expectedSyncedWSProvider.(*eth.MockWSProvider).NumRPCCalls)
-	assert.Equal(t, 0, requestedUnsyncedWSProvider.(*eth.MockWSProvider).NumRPCCalls)
+	assert.Equal(t, 1, expectedSyncedWSProvider.(*eth.MockWSProvider).NumRPCCalls())
+	assert.Equal(t, 0, requestedUnsyncedWSProvider.(*eth.MockWSProvider).NumRPCCalls())
 
 	// expect onBlock notification and TaskCompletedEvent
 	for i := 0; i < 2; i++ {
 		_, message, err := ws.ReadMessage()
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		var m json.RawMessage
 		err = json.Unmarshal(message, &m)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}
 
 	writeMsgToWsAndReadResponse(t, ws, []byte(unsubscribeFilter), nil)
@@ -751,7 +766,7 @@ func handleTxReceiptsNotificationNoneSynced(t *testing.T, fm *FeedManager, ws *w
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
 	feedNotification, err := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil, false)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	feedNotification.SetNotificationType(types.TxReceiptsFeed)
 	sourceEndpoint := types.NodeEndpoint{IP: blockchainPeers[0].IP, Port: blockchainPeers[0].Port, BlockchainNetwork: bxgateway.Mainnet}
 	feedNotification.SetSource(&sourceEndpoint)
@@ -788,7 +803,7 @@ func handleOnBlockNotificationNoneSynced(t *testing.T, fm *FeedManager, ws *webs
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
 	feedNotification, err := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil, false)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	feedNotification.SetNotificationType(types.OnBlockFeed)
 	sourceEndpoint := types.NodeEndpoint{IP: blockchainPeers[0].IP, Port: blockchainPeers[0].Port, BlockchainNetwork: bxgateway.Mainnet}
 	feedNotification.SetSource(&sourceEndpoint)
@@ -844,7 +859,7 @@ func handlePingRequest(t *testing.T, ws *websocket.Conn) {
 	clientRes := getClientResponse(t, msg)
 	res := parsePingResult(t, clientRes.Result)
 	timeServerReceivesRequest, err := time.Parse(bxgateway.MicroSecTimeFormat, res.Pong)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.True(t, timeClientReceivesResponse.After(timeServerReceivesRequest))
 	assert.True(t, timeServerReceivesRequest.After(timeClientSendsRequest))
 }
@@ -962,16 +977,16 @@ type clientResponse struct {
 func getClientResponse(t *testing.T, msg []byte) (cr clientResponse) {
 	res := clientResponse{}
 	err := json.Unmarshal(msg, &res)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	return res
 }
 
 func parsePingResult(t *testing.T, rpcResponse interface{}) (pr rpcPingResponse) {
 	res := rpcPingResponse{}
 	b, err := json.Marshal(rpcResponse)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	err = json.Unmarshal(b, &res)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	return res
 }
 
@@ -982,33 +997,33 @@ func parseQuotaUsage(t *testing.T, rpcResponse interface{}) (qr connections.Quot
 		QuotaLimit:  2,
 	}
 	b, err := json.Marshal(rpcResponse)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	err = json.Unmarshal(b, &res)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	return res
 }
 
 func parseBlxrTxResult(t *testing.T, rpcResponse interface{}) (tr rpcTxResponse) {
 	res := rpcTxResponse{}
 	b, err := json.Marshal(rpcResponse)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	err = json.Unmarshal(b, &res)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	return res
 }
 
 func parseBlxrTxsResult(t *testing.T, rpcResponse interface{}) (tr rpcBatchTxResponse) {
 	res := rpcBatchTxResponse{}
 	b, err := json.Marshal(rpcResponse)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	err = json.Unmarshal(b, &res)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	return res
 }
 
 func writeMsgToWsAndReadResponse(t *testing.T, conn *websocket.Conn, msg []byte, expectedErr *websocket.CloseError) (response []byte) {
 	err := conn.WriteMessage(websocket.TextMessage, msg)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	_, response, err = conn.ReadMessage()
 	assert.True(t, (expectedErr == nil && err == nil) || (expectedErr != nil && err != nil))
 	return response

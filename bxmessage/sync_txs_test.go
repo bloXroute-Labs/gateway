@@ -21,11 +21,11 @@ func TestPackUnpackTimeStamp(t *testing.T) {
 	syncTxs1.Add(tx1)
 	syncTxs1.Add(tx2)
 	buf, err := syncTxs1.Pack(CurrentProtocol)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	syncTxs2 := SyncTxsMessage{}
 	err = syncTxs2.Unpack(buf, CurrentProtocol)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, 2, len(syncTxs2.ContentShortIds))
 	//log.Info(syncTxs2.ContentShortIds[0].Timestamp().Second())
 	assert.Equal(t, tx1.AddTime().Second(), syncTxs2.ContentShortIds[0].Timestamp().Second())
@@ -48,7 +48,7 @@ func TestPackUnpackBadBuffer(t *testing.T) {
 	syncTxs1.Add(tx1)
 	syncTxs1.Add(tx2)
 	buf, err := syncTxs1.Pack(CurrentProtocol)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	syncTxs2 := SyncTxsMessage{}
 	err = syncTxs2.Unpack(buf[0:0], CurrentProtocol)
@@ -75,6 +75,6 @@ func TestPackUnpackBadBuffer(t *testing.T) {
 	assert.NotNil(t, err)
 
 	err = syncTxs2.Unpack(buf[0:], CurrentProtocol)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 }

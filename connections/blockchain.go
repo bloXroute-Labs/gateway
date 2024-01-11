@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
@@ -22,10 +23,12 @@ var blockchainTLSPlaceholder = TLS{}
 
 // NewBlockchainConn return a new instance of the Blockchain placeholder connection
 func NewBlockchainConn(ipEndpoint types.NodeEndpoint) Blockchain {
+	connType := utils.Blockchain.String()
+
 	return Blockchain{
 		endpoint: ipEndpoint,
 		log: log.WithFields(log.Fields{
-			"connType":   utils.Blockchain.String(),
+			"connType":   connType,
 			"remoteAddr": fmt.Sprintf("%v:%v", ipEndpoint.IP, ipEndpoint.Port),
 		}),
 	}

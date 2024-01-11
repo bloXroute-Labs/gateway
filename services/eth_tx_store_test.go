@@ -26,7 +26,7 @@ var blockchainNetwork = sdnmessage.BlockchainNetwork{
 }
 
 func newTestBloomFilter(t *testing.T) BloomFilter {
-	bf, err := NewBloomFilter(context.Background(), utils.RealClock{}, time.Hour, "", 1e6)
+	bf, err := NewBloomFilter(context.Background(), utils.RealClock{}, time.Hour, "", 1e6, 1000)
 	require.NoError(t, err)
 	return bf
 }

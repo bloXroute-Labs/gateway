@@ -8,6 +8,8 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
+//go:generate mockgen -destination ../test/mock/conn_mock.go -package mock . Conn
+
 // ConnHandler defines the methods needed to handle bloxroute connections
 type ConnHandler interface {
 	ProcessMessage(msg bxmessage.MessageBytes)

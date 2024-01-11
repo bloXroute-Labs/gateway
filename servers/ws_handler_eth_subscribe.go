@@ -227,7 +227,7 @@ func (h *handlerObj) handleEthSubscribeFeed(ctx context.Context, feedType string
 
 // sendTxNotificationEthSubscribeFormat - build a response according to client request and notify client
 func (h *handlerObj) sendTxNotificationEthFormat(ctx context.Context, subscriptionID string, clientReq *clientReq, conn *jsonrpc2.Conn, tx *types.NewTransactionNotification) error {
-	result := filterAndInclude(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
+	result := filterAndIncludeTx(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
 	if result == nil {
 		return nil
 	}

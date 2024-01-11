@@ -7,19 +7,19 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	uuid "github.com/satori/go.uuid"
 )
 
 const (
 	maxAuthNames = 255
-	uuidSize     = 16
 )
 
 var emptyUUID = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
@@ -54,6 +54,13 @@ type MEVBundle struct {
 	// From protocol version 38
 	BundlePrice   int64 `json:"bundlePrice,omitempty"` // in wei
 	EnforcePayout bool  `json:"enforcePayout,omitempty"`
+
+	// From protocol version 40
+	OriginalSenderAccountID string `json:"originalSenderAccountId,omitempty"`
+
+	// From protocol version 41
+	OriginalSenderAccountTier sdnmessage.AccountTier
+	SentFromCloudAPI          bool
 }
 
 // NewMEVBundle creates a new MEVBundle
@@ -94,7 +101,7 @@ func NewMEVBundle(
 
 // String returns a string representation of the MEVBundle
 func (m MEVBundle) String() string {
-	return fmt.Sprintf("mev bundle(hash: %s, blockNumber: %s, builders: %v, frontrunning: %t, txs: %d)", m.BundleHash, m.BlockNumber, m.MEVBuilders, m.Frontrunning, len(m.Transactions))
+	return fmt.Sprintf("mev bundle(sender account ID: %s, hash: %s, blockNumber: %s, builders: %v, frontrunning: %t, txs: %d)", m.OriginalSenderAccountID, m.BundleHash, m.BlockNumber, m.MEVBuilders, m.Frontrunning, len(m.Transactions))
 }
 
 // SetHash sets the hash based on the fields in BundleSubmission
@@ -123,77 +130,76 @@ func (m *MEVBundle) SetHash() {
 	} else {
 		buf = append(buf, []uint8{0}...)
 	}
-	for name, auth := range m.MEVBuilders {
+
+	// Convert map to a sorted slice of key-value pairs
+	builders := make([]string, 0, len(m.MEVBuilders))
+	for k := range m.MEVBuilders {
+		builders = append(builders, k)
+	}
+
+	sort.Strings(builders)
+
+	for _, name := range builders {
+		auth := m.MEVBuilders[name]
 		buf = append(buf, []byte(name+auth)...)
 	}
 
 	m.hash = utils.DoubleSHA256(buf[:])
 }
 
-func (m MEVBundle) size(protocol Protocol) uint32 {
+func (m MEVBundle) size(protocol Protocol, txs [][]byte) uint32 {
 	var size uint32
 
-	size += m.BroadcastHeader.Size() +
-		types.UInt16Len + uint32(len(m.Method)) + // Method length (2 bytes) + method
-		uuidSize + // UUID
-		types.UInt64Len + // BlockNumber length (8 bytes) + blockNumber
-		types.UInt64Len + // MinTimestamp (4 bytes) + MaxTimestamp (4 bytes)
-		types.UInt16Len + // RevertingHashes count (2 bytes)
-		types.UInt8Len + // Frontrunning (1 byte)
-		TimestampLen +
-		types.SHA256HashLen
-
-	if protocol >= BundlesOverBDNPayoutProtocol {
-		size += types.UInt64Len + // BundlePrice (8 bytes)
-			types.UInt8Len // EnforcePayout (1 byte)
-	}
+	size += BroadcastHeaderLen    // Broadcast header + Control Byte
+	size += types.UInt16Len       // Method size-prefix
+	size += uint32(len(m.Method)) // Method content
+	size += UUIDv4Len             // UUID
+	size += types.UInt64Len       // BlockNumber
+	size += types.UInt32Len       // MinTimestamp
+	size += types.UInt32Len       // MaxTimestamp
+	size += types.UInt8Len        // Frontrunning
+	size += TimestampLen          // PerformanceTimestamp
+	size += types.SHA256HashLen   // BundleHash
 
 	// Transactions
-	for _, tx := range m.Transactions {
-		size += types.UInt16Len + uint32(len(tx)) // Length (2 bytes) + transaction
+	size += types.UInt16Len // Transactions count
+	for _, tx := range txs {
+		size += types.UInt16Len // Transaction size-prefix
+		size += uint32(len(tx)) // Transaction content
 	}
 
 	// RevertingHashes
-	for _, hash := range m.RevertingHashes {
-		size += types.UInt16Len + uint32(len(hash)) // Length (2 bytes) + hash
+	size += types.UInt16Len                                      // RevertingHashes count
+	size += uint32(types.SHA256HashLen * len(m.RevertingHashes)) // Reverting hashes content
+
+	size += types.UInt8Len // MEVBuilders count
+	for name, authorization := range m.MEVBuilders {
+		size += types.UInt16Len            // Name size-prefix
+		size += uint32(len(name))          // Name content
+		size += types.UInt16Len            // Authorization size-prefix
+		size += uint32(len(authorization)) // Authorization content
 	}
 
-	// MEVBuilders
-	size += types.UInt32Len // MEVBuilders count (4 bytes)
+	// From protocol version 38: Bundle Price and Enforce Payout
+	if protocol >= BundlesOverBDNPayoutProtocol {
+		size += types.UInt64Len // BundlePrice (8 bytes)
+		size += types.UInt8Len  // EnforcePayout (1 byte)
+	}
 
-	for name, authorization := range m.MEVBuilders {
-		size += uint32(types.UInt16Len + len(name) + types.UInt16Len + len(authorization))
+	// From protocol version 40: OriginalSenderAccountID
+	if protocol >= BundlesOverBDNOriginalSenderAccountProtocol {
+		size += types.UInt16Len                        // OriginalSenderAccountID size-prefix
+		size += uint32(len(m.OriginalSenderAccountID)) // OriginalSenderAccountID content
+	}
+
+	// From protocol version 41: OriginalSenderAccountTier and SentFromCloudAPI
+	if protocol >= BundlesOverBDNOriginalSenderTierProtocol {
+		size += types.UInt16Len                          // OriginalSenderAccountTier size-prefix
+		size += uint32(len(m.OriginalSenderAccountTier)) // OriginalSenderAccountTier content
+		size += types.UInt8Len                           // SentFromCloudAPI bool
 	}
 
 	return size
-}
-
-// Clone create new MEVSearcher entity based on auth
-func (m MEVBundle) Clone(auth MEVBundleBuilders) MEVBundle {
-	clone := MEVBundle{}
-
-	clone.BroadcastHeader = m.BroadcastHeader
-	clone.JSONRPC = m.JSONRPC
-	clone.Method = m.Method
-	clone.UUID = m.UUID
-	clone.BlockNumber = m.BlockNumber
-	clone.MinTimestamp = m.MinTimestamp
-	clone.MaxTimestamp = m.MaxTimestamp
-	clone.Frontrunning = m.Frontrunning
-	clone.MEVBuilders = auth
-	clone.PerformanceTimestamp = m.PerformanceTimestamp
-	clone.BundleHash = m.BundleHash
-
-	clone.Transactions = make([]string, len(m.Transactions))
-	copy(clone.Transactions, m.Transactions)
-
-	clone.RevertingHashes = make([]string, len(m.RevertingHashes))
-	copy(clone.RevertingHashes, m.RevertingHashes)
-
-	clone.BundlePrice = m.BundlePrice
-	clone.EnforcePayout = m.EnforcePayout
-
-	return clone
 }
 
 // Names Returns a slice of builder names
@@ -212,26 +218,20 @@ func (m MEVBundle) Pack(protocol Protocol) ([]byte, error) {
 		return nil, fmt.Errorf("MEVBundle should not pack from lower protocol %v", protocol)
 	}
 
-	// Calculate the total size of the buffer
-	//bufLen := BroadcastHeaderLen +
-	//	4 + len(m.Method) + // Method length (4 bytes) + method
-	//	16 + // UUID
-	//	4 + // Transactions count (4 bytes)
-	//	len(m.Transactions)*4 + // Total length of all transactions (4 bytes per transaction)
-	//	4 + len(m.BlockNumber) + // BlockNumber length (4 bytes)
-	//	blockNumber
-	//	8 + // MinTimestamp (4 bytes) + MaxTimestamp (4 bytes)
-	//	4 + // RevertingHashes count (4 bytes)
-	//	len(m.RevertingHashes)*4 + // Total length of all reverting hashes (4 bytes per hash)
-	//	1 + // Frontrunning (1 byte)
-	//	2 + // MEVBuilders count (2 bytes)
-	//  8 + // BundlePrice (8 bytes)
-	//  1 // EnforcePayout (1 byte)
+	decodedTxs, err := m.decodeTransactions()
+	if err != nil {
+		return nil, err
+	}
 
-	bufLen := m.size(protocol)
+	decodedRevertingHashes, err := m.decodeRevertingHashes()
+	if err != nil {
+		return nil, err
+	}
+
+	bufLen := m.size(protocol, decodedTxs)
 	buf := make([]byte, bufLen)
 	m.BroadcastHeader.Pack(&buf, MEVBundleType, protocol)
-	offset := BroadcastHeaderLen
+	offset := BroadcastHeaderOffset
 
 	// Method
 	binary.LittleEndian.PutUint16(buf[offset:], uint16(len(m.Method)))
@@ -249,20 +249,16 @@ func (m MEVBundle) Pack(protocol Protocol) ([]byte, error) {
 
 		copy(buf[offset:], uuidBytes[:])
 	}
-	offset += uuidSize
+	offset += UUIDv4Len
 
 	// Transactions
-	binary.LittleEndian.PutUint16(buf[offset:], uint16(len(m.Transactions)))
+	binary.LittleEndian.PutUint16(buf[offset:], uint16(len(decodedTxs)))
 	offset += types.UInt16Len
-	for _, tx := range m.Transactions {
-		txBytes, err := hex.DecodeString(tx[2:]) // Assuming m.Transaction elements are hex strings
-		if err != nil {
-			return nil, fmt.Errorf("Error decoding tx: %v, err: %v", tx, err)
-		}
-		binary.LittleEndian.PutUint16(buf[offset:], uint16(len(txBytes)))
+	for _, tx := range decodedTxs {
+		binary.LittleEndian.PutUint16(buf[offset:], uint16(len(tx)))
 		offset += types.UInt16Len
-		copy(buf[offset:], txBytes)
-		offset += len(txBytes)
+		copy(buf[offset:], tx)
+		offset += len(tx)
 	}
 
 	blockNumber, err := strconv.ParseInt(strings.TrimPrefix(m.BlockNumber, "0x"), 16, 64)
@@ -279,21 +275,11 @@ func (m MEVBundle) Pack(protocol Protocol) ([]byte, error) {
 	offset += types.UInt32Len
 
 	// RevertingHashes
-	binary.LittleEndian.PutUint16(buf[offset:], uint16(len(m.RevertingHashes)))
+	binary.LittleEndian.PutUint16(buf[offset:], uint16(len(decodedRevertingHashes)))
 	offset += types.UInt16Len
-	for i, hash := range m.RevertingHashes {
-		if len(hash) >= 2 {
-			// Remove the "0x" prefix and decode the hex string
-			decodedHash, err := hex.DecodeString(hash[2:])
-			if err != nil {
-				return nil, fmt.Errorf("error decoding hash at index %v for bundle %v", i, m.BundleHash)
-			}
-			// Write the decoded hash
-			copy(buf[offset:], decodedHash)
-			offset += len(decodedHash)
-		} else {
-			log.Errorf("got empty reverting hash at index %v for bundle %v", i, m.BundleHash)
-		}
+	for _, hash := range decodedRevertingHashes {
+		copy(buf[offset:], hash)
+		offset += types.SHA256HashLen
 	}
 
 	// Bundle hash
@@ -317,10 +303,11 @@ func (m MEVBundle) Pack(protocol Protocol) ([]byte, error) {
 	if err := checkBuilderSize(len(m.MEVBuilders)); err != nil {
 		return nil, err
 	}
+
 	mevBuilders := make([]uint8, 1)
 	mevBuilders[0] = byte(len(m.MEVBuilders))
 	copy(buf[offset:], mevBuilders)
-	offset++
+	offset += types.UInt8Len
 
 	for name, auth := range m.MEVBuilders {
 		nameLength := len(name)
@@ -358,6 +345,31 @@ func (m MEVBundle) Pack(protocol Protocol) ([]byte, error) {
 		offset += types.UInt8Len
 	}
 
+	if protocol >= BundlesOverBDNOriginalSenderAccountProtocol {
+		// can be either bloXroute LABS or UUID so value here is dynamic
+		originalSenderAccountIDLength := len(m.OriginalSenderAccountID)
+		binary.LittleEndian.PutUint16(buf[offset:], uint16(originalSenderAccountIDLength))
+		offset += types.UInt16Len
+
+		copy(buf[offset:], m.OriginalSenderAccountID)
+		offset += originalSenderAccountIDLength
+	}
+
+	if protocol >= BundlesOverBDNOriginalSenderTierProtocol {
+		binary.LittleEndian.PutUint16(buf[offset:], uint16(len(m.OriginalSenderAccountTier)))
+		offset += types.UInt16Len
+
+		copy(buf[offset:], m.OriginalSenderAccountTier)
+		offset += len(m.OriginalSenderAccountTier)
+
+		if m.SentFromCloudAPI {
+			buf[offset] = 1
+		} else {
+			buf[offset] = 0
+		}
+		offset += types.UInt8Len //nolint:ineffassign
+	}
+
 	return buf, nil
 }
 
@@ -371,7 +383,7 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 	if err != nil {
 		return err
 	}
-	offset := BroadcastHeaderLen
+	offset := BroadcastHeaderOffset
 
 	if err := checkBufSize(&data, offset, types.UInt16Len); err != nil {
 		return err
@@ -389,14 +401,14 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 	if err := checkBufSize(&data, offset, types.UInt16Len); err != nil {
 		return err
 	}
-	if bytes.Compare(data[offset:offset+uuidSize], emptyUUID) != 0 {
-		uuidRaw, err := uuid.FromBytes(data[offset : offset+uuidSize])
+	if bytes.Compare(data[offset:offset+UUIDv4Len], emptyUUID) != 0 {
+		uuidRaw, err := uuid.FromBytes(data[offset : offset+UUIDv4Len])
 		if err != nil {
 			return fmt.Errorf("failed to parse uuid from bytes, %v", err)
 		}
 		m.UUID = uuidRaw.String()
 	}
-	offset += uuidSize
+	offset += UUIDv4Len
 
 	// Transactions
 	if err := checkBufSize(&data, offset, types.UInt16Len); err != nil {
@@ -551,6 +563,46 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 		offset += types.UInt8Len
 	}
 
+	if protocol >= BundlesOverBDNOriginalSenderAccountProtocol {
+		if err := checkBufSize(&data, offset, types.UInt16Len); err != nil {
+			return err
+		}
+		originalSenderAccountIDLength := binary.LittleEndian.Uint16(data[offset:])
+		offset += types.UInt16Len
+
+		if err := checkBufSize(&data, offset, int(originalSenderAccountIDLength)); err != nil {
+			return err
+		}
+
+		m.OriginalSenderAccountID = string(data[offset : offset+int(originalSenderAccountIDLength)])
+		offset += int(originalSenderAccountIDLength)
+	}
+
+	if protocol >= BundlesOverBDNOriginalSenderTierProtocol {
+		// OriginalSenderAccountTier
+		if err = checkBufSize(&data, offset, types.UInt16Len); err != nil {
+			return err
+		}
+
+		originalSenderAccountTierLen := binary.LittleEndian.Uint16(data[offset:])
+		offset += types.UInt16Len
+
+		if err = checkBufSize(&data, offset, int(originalSenderAccountTierLen)); err != nil {
+			return err
+		}
+
+		m.OriginalSenderAccountTier = sdnmessage.AccountTier(data[offset : offset+int(originalSenderAccountTierLen)])
+		offset += int(originalSenderAccountTierLen)
+
+		// SentFromCloudAPI
+		if err := checkBufSize(&data, offset, types.UInt8Len); err != nil {
+			return err
+		}
+
+		m.SentFromCloudAPI = data[offset] == 1
+		offset += types.UInt8Len //nolint:ineffassign
+	}
+
 	return nil
 }
 
@@ -564,4 +616,39 @@ func checkBuilderSize(builderSize int) error {
 	}
 
 	return nil
+}
+
+func (m *MEVBundle) decodeTransactions() ([][]byte, error) {
+	var decoded = make([][]byte, 0, len(m.Transactions))
+
+	for _, tx := range m.Transactions {
+		txBytes, err := hex.DecodeString(strings.TrimPrefix(tx, "0x"))
+		if err != nil {
+			return nil, fmt.Errorf("decode tx hex: %v for bundle %v: %v", tx, m.BundleHash, err)
+		}
+
+		decoded = append(decoded, txBytes)
+	}
+
+	return decoded, nil
+}
+
+func (m *MEVBundle) decodeRevertingHashes() ([][]byte, error) {
+	var decoded = make([][]byte, 0, len(m.RevertingHashes))
+
+	for _, hash := range m.RevertingHashes {
+		// Remove the "0x" prefix and decode the hex string
+		decodedHash, err := hex.DecodeString(strings.TrimPrefix(hash, "0x"))
+		if err != nil {
+			return nil, fmt.Errorf("decode reverting hash hex %v for bundle %v: %s", hash, m.BundleHash, err)
+		}
+
+		if ln := len(decodedHash); ln != types.SHA256HashLen {
+			return nil, fmt.Errorf("illegal reverting hash size %v for bundle %v: expected size: %dbytes, got %dbytes", hash, m.BundleHash, types.SHA256HashLen, ln)
+		}
+
+		decoded = append(decoded, decodedHash)
+	}
+
+	return decoded, nil
 }

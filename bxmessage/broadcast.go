@@ -146,7 +146,7 @@ func (b *Broadcast) Pack(protocol Protocol) ([]byte, error) {
 	bufLen := b.Size(protocol)
 	buf := make([]byte, bufLen)
 	b.BroadcastHeader.Pack(&buf, BroadcastType, protocol)
-	offset := BroadcastHeaderLen
+	offset := BroadcastHeaderOffset
 	if b.IsBeaconBlock() && protocol < BeaconBlockProtocol {
 		return nil, fmt.Errorf("should not pack beacon block to lower protocol %v", protocol)
 	}
@@ -184,7 +184,7 @@ func (b *Broadcast) Unpack(buf []byte, protocol Protocol) error {
 		return err
 	}
 
-	offset := BroadcastHeaderLen
+	offset := BroadcastHeaderOffset
 	copy(b.broadcastType[:], buf[offset:])
 	offset += BroadcastTypeLen
 	if b.IsBeaconBlock() && protocol < BeaconBlockProtocol {

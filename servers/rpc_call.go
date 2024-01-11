@@ -104,9 +104,9 @@ func (c *RPCCall) string() string {
 	})
 }
 
-func fillCalls(feedManager *FeedManager, calls map[string]*RPCCall, callIdx int, callParams map[string]string) error {
+func fillCalls(nodeWSManager blockchain.WSManager, calls map[string]*RPCCall, callIdx int, callParams map[string]string) error {
 	call := newCall(strconv.Itoa(callIdx))
-	err := call.constructCall(callParams, feedManager.nodeWSManager)
+	err := call.constructCall(callParams, nodeWSManager)
 	if err != nil {
 		return err
 	}
@@ -118,9 +118,14 @@ func fillCalls(feedManager *FeedManager, calls map[string]*RPCCall, callIdx int,
 	return err
 }
 
-func handleEthOnBlock(feedManager *FeedManager, block *types.EthBlockNotification, calls map[string]*RPCCall, sendNotification func(notification *types.OnBlockNotification) error) error {
+// WSProviderManager interface for ws provider manager
+type WSProviderManager interface {
+	GetSyncedWSProvider(preferredProviderEndpoint *types.NodeEndpoint) (blockchain.WSProvider, bool)
+}
+
+func handleEthOnBlock(nodeWSManager blockchain.WSManager, providerManager WSProviderManager, block *types.EthBlockNotification, calls map[string]*RPCCall, sendNotification func(notification *types.OnBlockNotification) error) error {
 	if len(block.Transactions) > 0 {
-		nodeWS, ok := feedManager.getSyncedWSProvider(block.Source())
+		nodeWS, ok := providerManager.GetSyncedWSProvider(block.Source())
 		if !ok {
 			log.Errorf("failed to get synced ws provider")
 			return fmt.Errorf("node ws connection is not available")
@@ -137,7 +142,7 @@ func handleEthOnBlock(feedManager *FeedManager, block *types.EthBlockNotificatio
 					return
 				}
 				tag := hexutil.EncodeUint64(block.Header.GetNumber() + uint64(call.blockOffset))
-				payload, err := feedManager.nodeWSManager.ConstructRPCCallPayload(call.commandMethod, call.callPayload, tag)
+				payload, err := nodeWSManager.ConstructRPCCallPayload(call.commandMethod, call.callPayload, tag)
 				if err != nil {
 					return
 				}
@@ -173,7 +178,7 @@ func handleEthOnBlock(feedManager *FeedManager, block *types.EthBlockNotificatio
 
 // HandleTxReceipts - fetches transaction receipts for transactions in block and sends them to the client
 func HandleTxReceipts(feedManager *FeedManager, block *types.EthBlockNotification) ([]*types.TxReceipt, error) {
-	nodeWS, ok := feedManager.getSyncedWSProvider(block.Source())
+	nodeWS, ok := feedManager.GetSyncedWSProvider(block.Source())
 	if !ok {
 		return nil, fmt.Errorf("node ws connection is not available")
 	}
@@ -181,27 +186,20 @@ func HandleTxReceipts(feedManager *FeedManager, block *types.EthBlockNotificatio
 	var result []*types.TxReceipt
 	var mu sync.Mutex
 	g := new(errgroup.Group)
+	rpcOptions := blockchain.RPCOptions{RetryAttempts: bxgateway.MaxEthTxReceiptCallRetries, RetryInterval: bxgateway.EthTxReceiptCallRetrySleepInterval}
+	txsCountHex := fmt.Sprintf("0x%x", len(block.Transactions))
 
 	for _, t := range block.Transactions {
 		tx := t
 		g.Go(func() error {
 			hash := tx["hash"]
-			responseTxReceipt, err := nodeWS.FetchTransactionReceipt([]interface{}{hash}, blockchain.RPCOptions{RetryAttempts: bxgateway.MaxEthTxReceiptCallRetries, RetryInterval: bxgateway.EthTxReceiptCallRetrySleepInterval})
+			responseTxReceipt, err := nodeWS.FetchTransactionReceipt([]interface{}{hash}, rpcOptions)
 			if err != nil || responseTxReceipt == nil {
 				log.Debugf("failed to fetch transaction receipt for %v in block %v: %v", hash, block.BlockHash, err)
 				return err
 			}
-			responseBlock, err := nodeWS.FetchBlock([]interface{}{responseTxReceipt.(map[string]interface{})["blockNumber"], false}, blockchain.RPCOptions{RetryAttempts: bxgateway.MaxEthOnBlockCallRetries, RetryInterval: bxgateway.EthOnBlockCallRetrySleepInterval})
-			var txsCount int
-			if err == nil && responseBlock != nil {
-				transactions, exist := responseBlock.(map[string]interface{})["transactions"]
-				txsCount = len(transactions.([]interface{}))
-				if !exist {
-					return fmt.Errorf("transactions field doesn't exist when querying the previous epoch block")
-				}
-			}
 
-			receipt := types.NewTxReceipt(responseTxReceipt.(map[string]interface{}), fmt.Sprintf("0x%x", txsCount))
+			receipt := types.NewTxReceipt(responseTxReceipt.(map[string]interface{}), txsCountHex)
 
 			mu.Lock()
 			result = append(result, receipt)

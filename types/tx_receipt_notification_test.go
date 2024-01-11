@@ -40,7 +40,7 @@ func TestTxReceiptNotification(t *testing.T) {
 	assert.True(t, ok)
 
 	receiptJSON, err := test.MarshallJSONToMap(ethTxReceiptWithFields.Receipts[0])
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	for _, param := range validTxReceiptParams {
 		_, ok = receiptJSON[param]
@@ -62,7 +62,7 @@ func TestTxReceiptNotificationWithoutToField(t *testing.T) {
 	assert.True(t, ok)
 
 	receiptJSON, err := test.MarshallJSONToMap(ethTxReceiptWithFields.Receipts[0])
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	_, ok = receiptJSON["to"]
 	assert.Equal(t, false, ok)
@@ -102,7 +102,7 @@ func TestContractCreationTxReceipt(t *testing.T) {
 	assert.True(t, ok)
 
 	receiptJSON, err := marshallJSONToMapArray(ethTxReceiptWithFields)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	to, ok := receiptJSON[0]["to"]
 	assert.Equal(t, true, ok)

@@ -29,7 +29,7 @@ import (
 	"github.com/jinzhu/copier"
 )
 
-//go:generate mockgen -destination ../../bxgateway/test/sdnhttpmock/mock_sdnhttp.go -package mock_connections . SDNHTTP
+//go:generate mockgen -destination ../../bxgateway/test/mock/mock_sdnhttp.go -package mock . SDNHTTP
 
 // ErrSDNUnavailable - represents sdn service unavailable
 var ErrSDNUnavailable = errors.New("SDN service unavailable")
@@ -403,6 +403,7 @@ func (s *realSDNHTTP) Register() error {
 		s.nodeID = nodeID
 	}
 
+	log.Debugf("registering sdn for relay proxy %v with version %v", s.nodeModel.NodeID, s.nodeModel.SourceVersion)
 	resp, err := s.httpWithCache(s.sdnURL+"/nodes", bxgateway.PostMethod, nodeModelCacheFileName, bytes.NewBuffer(s.nodeModel.Pack()))
 	if err != nil {
 		return err

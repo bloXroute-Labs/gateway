@@ -1,6 +1,7 @@
 package servers
 
 import (
+	"strings"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2"
@@ -9,6 +10,8 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
 	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/zhouzhuojie/conditions"
 )
 
 // HandleSingleTransaction handles a single tx, returns txHash, a boolean value indicating if it was successfully or not and an error only if we need to send it back to the caller
@@ -75,4 +78,74 @@ func HandleSingleTransaction(
 	}
 
 	return tx.Hash().String(), true, nil
+}
+
+func shouldSendTx(clientReq *clientReq, tx *types.NewTransactionNotification, remoteAddress string, accountID types.AccountID) bool {
+	if clientReq.expr == nil {
+		return true
+	}
+
+	filters := clientReq.expr.Args()
+	txFilters := tx.Filters(filters)
+
+	// should be done after tx.Filters() to avoid nil pointer dereference
+	txType := tx.BlockchainTransaction.(*types.EthTransaction).Type()
+
+	if !isFiltersSupportedByTxType(txType, filters) {
+		return false
+	}
+
+	// Evaluate if we should send the tx
+	shouldSend, err := conditions.Evaluate(clientReq.expr, txFilters)
+	if err != nil {
+		log.Errorf("error evaluate Filters. feed: %v. filters: %s. remote address: %v. account id: %v error - %v tx: %v",
+			clientReq.feed, clientReq.expr, remoteAddress, accountID, err.Error(), txFilters)
+		return false
+	}
+
+	return shouldSend
+}
+
+func includeTx(clientReq *clientReq, tx *types.NewTransactionNotification) *TxResult {
+	hasTxContent := false
+	var response TxResult
+	for _, param := range clientReq.includes {
+		switch param {
+		case "tx_hash":
+			txHash := tx.GetHash()
+			response.TxHash = &txHash
+		case "time":
+			timeNow := time.Now().Format(bxgateway.MicroSecTimeFormat)
+			response.Time = &timeNow
+		case "local_region":
+			localRegion := tx.LocalRegion()
+			response.LocalRegion = &localRegion
+		case "raw_tx":
+			rawTx := hexutil.Encode(tx.RawTx())
+			response.RawTx = &rawTx
+		default:
+			if !hasTxContent && strings.HasPrefix(param, "tx_contents.") {
+				hasTxContent = true
+			}
+		}
+	}
+
+	if hasTxContent {
+		fields := tx.Fields(clientReq.includes)
+		if fields == nil {
+			log.Errorf("Got nil from tx.Fields - need to be checked")
+			return nil
+		}
+		response.TxContents = fields
+	}
+
+	return &response
+}
+
+func filterAndIncludeTx(clientReq *clientReq, tx *types.NewTransactionNotification, remoteAddress string, accountID types.AccountID) *TxResult {
+	if !shouldSendTx(clientReq, tx, remoteAddress, accountID) {
+		return nil
+	}
+
+	return includeTx(clientReq, tx)
 }

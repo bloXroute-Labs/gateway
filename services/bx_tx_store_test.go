@@ -254,7 +254,7 @@ func TestHistory(t *testing.T) {
 	assert.False(t, result.NewSID)
 	// make sure hash2 is already in store
 	tx, err := store.GetTxByShortID(shortID2)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, content2, tx.Content())
 	// make sure size is 2
 	assert.Equal(t, 2, store.Count())
@@ -284,7 +284,7 @@ func TestGetTxByShortID(t *testing.T) {
 	assert.True(t, result12.NewSID)
 	tx, err = store.GetTxByShortID(1)
 	assert.NotNil(t, tx)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, content1, tx.Content())
 
 	store.remove(string(hash1[:]), FullReEntryProtection, "TestGetTxByShortID")

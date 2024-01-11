@@ -198,19 +198,19 @@ func TestChain_GetHeaders_ByNumber(t *testing.T) {
 
 	// expected: 1
 	headers, err = c.GetHeaders(eth.HashOrNumber{Number: 1}, 1, 0, false)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, 1, len(headers))
 	assert.Equal(t, block1.Header(), headers[0])
 
 	// fork point, expected: 3b
 	headers, err = c.GetHeaders(eth.HashOrNumber{Number: 3}, 1, 0, false)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, 1, len(headers))
 	assert.Equal(t, block3b.Header(), headers[0])
 
 	// expected: 1, 2, 3b, 4
 	headers, err = c.GetHeaders(eth.HashOrNumber{Number: 1}, 4, 0, false)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, 4, len(headers))
 	assert.Equal(t, block1.Header(), headers[0])
 	assert.Equal(t, block2.Header(), headers[1])
@@ -219,21 +219,21 @@ func TestChain_GetHeaders_ByNumber(t *testing.T) {
 
 	// expected: 1, 3b
 	headers, err = c.GetHeaders(eth.HashOrNumber{Number: 1}, 2, 1, false)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, 2, len(headers))
 	assert.Equal(t, block1.Header(), headers[0])
 	assert.Equal(t, block3b.Header(), headers[1])
 
 	// expected: 4, 2
 	headers, err = c.GetHeaders(eth.HashOrNumber{Number: 4}, 2, 1, true)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, 2, len(headers))
 	assert.Equal(t, block4.Header(), headers[0])
 	assert.Equal(t, block2.Header(), headers[1])
 
 	// expected: 1, 2, 3b, 4 (found all that was possible)
 	headers, err = c.GetHeaders(eth.HashOrNumber{Number: 1}, 100, 0, false)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, 4, len(headers))
 	assert.Equal(t, block1.Header(), headers[0])
 	assert.Equal(t, block2.Header(), headers[1])
@@ -268,25 +268,25 @@ func TestChain_GetHeaders_ByHash(t *testing.T) {
 
 	// expected: 1
 	headers, err = c.GetHeaders(eth.HashOrNumber{Hash: block1.Hash()}, 1, 0, false)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, 1, len(headers))
 	assert.Equal(t, block1.Header(), headers[0])
 
 	// fork point, expected: 3a
 	headers, err = c.GetHeaders(eth.HashOrNumber{Hash: block3a.Hash()}, 1, 0, false)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, 1, len(headers))
 	assert.Equal(t, block3a.Header(), headers[0])
 
 	// fork point, expected: 3b (even though it's not part of chain, still return it if requested)
 	headers, err = c.GetHeaders(eth.HashOrNumber{Hash: block3b.Hash()}, 1, 0, false)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, 1, len(headers))
 	assert.Equal(t, block3b.Header(), headers[0])
 
 	// expected: 1, 2, 3b, 4
 	headers, err = c.GetHeaders(eth.HashOrNumber{Hash: block1.Hash()}, 4, 0, false)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, 4, len(headers))
 	assert.Equal(t, block1.Header(), headers[0])
 	assert.Equal(t, block2.Header(), headers[1])
@@ -295,21 +295,21 @@ func TestChain_GetHeaders_ByHash(t *testing.T) {
 
 	// expected: 1, 3b
 	headers, err = c.GetHeaders(eth.HashOrNumber{Hash: block1.Hash()}, 2, 1, false)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, 2, len(headers))
 	assert.Equal(t, block1.Header(), headers[0])
 	assert.Equal(t, block3b.Header(), headers[1])
 
 	// expected: 4, 2
 	headers, err = c.GetHeaders(eth.HashOrNumber{Hash: block4.Hash()}, 2, 1, true)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, 2, len(headers))
 	assert.Equal(t, block4.Header(), headers[0])
 	assert.Equal(t, block2.Header(), headers[1])
 
 	// expected: 1, 2, 3b, 4 (found all that was possible)
 	headers, err = c.GetHeaders(eth.HashOrNumber{Hash: block1.Hash()}, 100, 0, false)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, 4, len(headers))
 	assert.Equal(t, block1.Header(), headers[0])
 	assert.Equal(t, block2.Header(), headers[1])
@@ -371,7 +371,7 @@ func TestChain_GetNewHeadsForBDN(t *testing.T) {
 	addBlock(c, block2)
 
 	blocks, err := c.GetNewHeadsForBDN(2)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, block2.Hash(), blocks[0].Block.Hash())
 	assert.Equal(t, block1.Hash(), blocks[1].Block.Hash())
 
@@ -382,11 +382,12 @@ func TestChain_GetNewHeadsForBDN(t *testing.T) {
 	addBlock(c, block3)
 
 	blocks, err = c.GetNewHeadsForBDN(2)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, block3.Hash(), blocks[0].Block.Hash())
 }
 
 func TestChain_clean(t *testing.T) {
+	// -race can degradate clean performance
 	cleanInterval := 15 * time.Millisecond
 	c := newChain(context.Background(), 30*time.Second, 5, 5, cleanInterval, 3)
 
@@ -436,6 +437,7 @@ func TestChain_clean(t *testing.T) {
 }
 
 func TestChain_cleanNoChainstate(t *testing.T) {
+	// -race can degradate clean performance
 	cleanInterval := 15 * time.Millisecond
 	c := newChain(context.Background(), 30*time.Second, 5, 5, cleanInterval, 3)
 

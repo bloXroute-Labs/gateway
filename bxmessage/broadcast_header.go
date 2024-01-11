@@ -63,11 +63,11 @@ func (b *BroadcastHeader) Pack(buf *[]byte, msgType string, _ Protocol) {
 	offset := HeaderLen
 
 	copy((*buf)[offset:], b.hash[:])
-	offset += types.SHA256HashLen
+	offset += types.SHA256HashLen // 32
 	binary.LittleEndian.PutUint32((*buf)[offset:], uint32(b.networkNumber))
-	offset += types.NetworkNumLen
+	offset += types.NetworkNumLen // 4
 	copy((*buf)[offset:], b.sourceID[:])
-	offset += SourceIDLen
+	offset += SourceIDLen //nolint:ineffassign
 	b.Header.Pack(buf, msgType)
 }
 
@@ -91,5 +91,5 @@ func (b *BroadcastHeader) Unpack(buf []byte, protocol Protocol) error {
 
 // Size returns the byte length of BroadcastHeader
 func (b *BroadcastHeader) Size() uint32 {
-	return b.Header.Size() + uint32(types.SHA256HashLen+types.NetworkNumLen+SourceIDLen)
+	return BroadcastHeaderLen
 }

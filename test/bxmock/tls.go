@@ -8,6 +8,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
@@ -37,17 +38,18 @@ type MockTLS struct {
 	sendingBytes chan []byte
 	buf          bytes.Buffer
 	Timeout      time.Duration
+	closed       atomic.Bool
 }
 
 // NewMockTLS constructs a new mock for testing
-func NewMockTLS(ip string, port int64, nodeID types.NodeID, nodeType utils.NodeType, accountID types.AccountID) MockTLS {
+func NewMockTLS(ip string, port int64, nodeID types.NodeID, nodeType utils.NodeType, accountID types.AccountID) *MockTLS {
 	split := strings.Split(ip, ".")
 	ipBytes := make([]byte, len(split))
 	for i, part := range split {
 		intRep, _ := strconv.Atoi(part)
 		ipBytes[i] = byte(intRep)
 	}
-	return MockTLS{
+	return &MockTLS{
 		ip:           ip,
 		netIP:        ipBytes,
 		port:         int(port),
@@ -60,13 +62,18 @@ func NewMockTLS(ip string, port int64, nodeID types.NodeID, nodeType utils.NodeT
 	}
 }
 
+// IsClosed is a filler implementation that always returns false
+func (m *MockTLS) IsClosed() bool {
+	return m.closed.Load()
+}
+
 // Equals compares the remote IP addr of two sockets
-func (m MockTLS) Equals(s connections.Socket) bool {
+func (m *MockTLS) Equals(s connections.Socket) bool {
 	return m.RemoteAddr().String() == s.RemoteAddr().String()
 }
 
 // Read pulls messages queued onto the MockTLS connection
-func (m MockTLS) Read(b []byte) (int, error) {
+func (m *MockTLS) Read(b []byte) (int, error) {
 	msg := <-m.queuedBytes
 	if msg.close {
 		return 0, errors.New("closing connection")
@@ -77,12 +84,12 @@ func (m MockTLS) Read(b []byte) (int, error) {
 }
 
 // SetReadDeadline currently does nothing
-func (m MockTLS) SetReadDeadline(_ time.Time) error {
+func (m *MockTLS) SetReadDeadline(_ time.Time) error {
 	return nil
 }
 
 // Write currently does nothing. An expected implementation in the future would track bytes written for comparison for tests.
-func (m MockTLS) Write(b []byte) (int, error) {
+func (m *MockTLS) Write(b []byte) (int, error) {
 	var header [bxmessage.HeaderLen]byte
 	m.buf.Write(b)
 	for {
@@ -102,7 +109,7 @@ func (m MockTLS) Write(b []byte) (int, error) {
 }
 
 // RemoteAddr is a filler implementation that returns the data this mock was constructed with
-func (m MockTLS) RemoteAddr() net.Addr {
+func (m *MockTLS) RemoteAddr() net.Addr {
 	addr := net.TCPAddr{
 		IP:   m.netIP,
 		Port: m.port,
@@ -112,7 +119,7 @@ func (m MockTLS) RemoteAddr() net.Addr {
 }
 
 // Properties is a filler implementation that returns the data this mock was constructed with
-func (m MockTLS) Properties() (utils.BxSSLProperties, error) {
+func (m *MockTLS) Properties() (utils.BxSSLProperties, error) {
 	return utils.BxSSLProperties{
 		NodeType:  m.nodeType,
 		NodeID:    m.nodeID,
@@ -121,18 +128,19 @@ func (m MockTLS) Properties() (utils.BxSSLProperties, error) {
 }
 
 // Close simulates an EOF from the remote connection
-func (m MockTLS) Close(string) error {
+func (m *MockTLS) Close(string) error {
+	m.closed.Store(true)
 	m.queuedBytes <- MockBytes{close: true}
 	return nil
 }
 
 // MockQueue is a mock only method to queue up bytes to be read by the connection
-func (m MockTLS) MockQueue(b []byte) {
+func (m *MockTLS) MockQueue(b []byte) {
 	m.queuedBytes <- MockBytes{b: b}
 }
 
 // MockAdvanceSent is a mock only method that processes the sent bytes so the next message can be sent on the socket. MockTLS only allows a single message to be queued up at a time.
-func (m MockTLS) MockAdvanceSent() ([]byte, error) {
+func (m *MockTLS) MockAdvanceSent() ([]byte, error) {
 	t := time.NewTimer(m.Timeout)
 	select {
 	case sentBytes := <-m.sendingBytes:

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -50,7 +51,7 @@ func (c Converter) BlockBlockchainToBDN(i interface{}) (*types.BxBlock, error) {
 	switch b := i.(type) {
 	case *BlockInfo:
 		return c.ethBlockBlockchainToBDN(b)
-	case interfaces.ReadOnlySignedBeaconBlock:
+	case beacon.WrappedReadOnlySignedBeaconBlock:
 		return c.beaconBlockBlockchainToBDN(b)
 	case *ethtypes.Block:
 		return c.ethBlockBlockchainToBDN(NewBlockInfo(b, b.Difficulty()))
@@ -93,9 +94,9 @@ func (c Converter) ethBlockBlockchainToBDN(blockInfo *BlockInfo) (*types.BxBlock
 	return types.NewBxBlock(hash, types.EmptyHash, types.BxBlockTypeEth, encodedHeader, txs, encodedTrailer, difficulty, block.Number(), int(block.Size()))
 }
 
-func (c Converter) beaconBlockBlockchainToBDN(block interfaces.ReadOnlySignedBeaconBlock) (*types.BxBlock, error) {
+func (c Converter) beaconBlockBlockchainToBDN(wrappedBlock beacon.WrappedReadOnlySignedBeaconBlock) (*types.BxBlock, error) {
 	// Safe modification
-	block, err := block.Copy()
+	block, err := wrappedBlock.Block.Copy()
 	if err != nil {
 		return nil, fmt.Errorf("could not copy block: %v", err)
 	}
@@ -105,7 +106,7 @@ func (c Converter) beaconBlockBlockchainToBDN(block interfaces.ReadOnlySignedBea
 		return nil, fmt.Errorf("could not get header: %v", err)
 	}
 
-	rawHash, err := block.Block().HashTreeRoot()
+	rawHash, err := wrappedBlock.HashTreeRoot()
 	if err != nil {
 		return nil, fmt.Errorf("could not get hash: %v: %v", header, err)
 	}

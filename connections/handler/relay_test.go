@@ -3,10 +3,10 @@ package handler
 import (
 	"runtime"
 	"testing"
-	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/stretchr/testify/assert"
@@ -19,23 +19,31 @@ func TestRelay_ClosingFromLocal(t *testing.T) {
 
 	tls, r := relayConn()
 	err := r.Start()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// wait for hello message to be sent on connection so all goroutines are started
 	_, err = tls.MockAdvanceSent()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
+
+	test.WaitUntilTrueOrFail(t, func() bool {
+		return r.Conn.IsOpen()
+	})
 
 	// expect 3 new  goroutines: read loop, send loop and read from receive channel
-	assert.Equal(t, startCount+3, runtime.NumGoroutine())
+	test.WaitUntilTrueOrFail(t, func() bool {
+		return runtime.NumGoroutine() == startCount+3
+	})
 
 	err = r.Close("test close")
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
-	// allow small delta for goroutines to finish
-	time.Sleep(1 * time.Millisecond)
+	test.WaitUntilTrueOrFail(t, func() bool {
+		return tls.IsClosed() && !r.Conn.IsOpen()
+	})
 
-	endCount := runtime.NumGoroutine()
-	assert.Equal(t, startCount, endCount)
+	test.WaitUntilTrueOrFail(t, func() bool {
+		return runtime.NumGoroutine() == startCount
+	})
 }
 
 func TestRelay_ClosingFromRemote(t *testing.T) {
@@ -43,28 +51,35 @@ func TestRelay_ClosingFromRemote(t *testing.T) {
 
 	tls, r := relayConn()
 	err := r.Start()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// allow small wait for goroutines to start, returns when connection is ready and hello message sent out
 	_, err = tls.MockAdvanceSent()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
+
+	test.WaitUntilTrueOrFail(t, func() bool {
+		return r.Conn.IsOpen()
+	})
 
 	// expect 2 new goroutines: read loop, send loop and read from receive channel
-	startedCount := runtime.NumGoroutine()
-	assert.Equal(t, startCount+3, startedCount)
+	test.WaitUntilTrueOrFail(t, func() bool {
+		return runtime.NumGoroutine() == startCount+3
+	})
 
 	err = tls.Close("test close")
-	assert.Nil(t, err)
-
-	// allow small delta for goroutines to finish
-	time.Sleep(1 * time.Millisecond)
+	assert.NoError(t, err)
 
 	// only readloop go routines should be closed, since connection is expecting retry
+	test.WaitUntilTrueOrFail(t, func() bool {
+		return tls.IsClosed() && r.Conn.IsOpen()
+	})
 
-	assert.Equal(t, startCount+2, runtime.NumGoroutine())
+	test.WaitUntilTrueOrFail(t, func() bool {
+		return runtime.NumGoroutine() == startCount+2
+	})
 }
 
-func relayConn() (bxmock.MockTLS, *Relay) {
+func relayConn() (*bxmock.MockTLS, *Relay) {
 	ip := "127.0.0.1"
 	port := int64(3000)
 

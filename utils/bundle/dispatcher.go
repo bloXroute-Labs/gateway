@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -29,20 +32,9 @@ type Builder struct {
 	SignatureRequired bool     `json:"signature_required"`
 }
 
-type request struct {
-	bundleHash  string
-	blockNumber string
-	method      string
-	request     *http.Request
-}
-
-// String returns a string representation of the request
-func (r *request) String() string {
-	return fmt.Sprintf("bundleHash: %v, blockNumber: %v, endpoint: %s, method: %v", r.bundleHash, r.blockNumber, r.request.URL, r.method)
-}
-
 // Dispatcher is responsible for dispatching MEV bundles to MEV builders
 type Dispatcher struct {
+	stats               statistics.Stats
 	client              *http.Client
 	builders            map[string]*Builder
 	mevMaxProfitBuilder bool
@@ -50,12 +42,13 @@ type Dispatcher struct {
 }
 
 // NewDispatcher creates a new NewDispatcher
-func NewDispatcher(builders map[string]*Builder, mevMaxProfitBuilder bool, processMegaBundle bool) *Dispatcher {
+func NewDispatcher(stats statistics.Stats, builders map[string]*Builder, mevMaxProfitBuilder bool, processMegaBundle bool) *Dispatcher {
 	for name, builder := range builders {
 		builder.Name = name
 	}
 
 	return &Dispatcher{
+		stats: stats,
 		client: &http.Client{
 			Transport: &http.Transport{
 				MaxConnsPerHost:     100,
@@ -93,24 +86,7 @@ func (d *Dispatcher) Dispatch(bundle *bxmessage.MEVBundle) error {
 		return fmt.Errorf("failed to create new mevBundle http request for bundleHash: %v, err: %v", bundle.BundleHash, err)
 	}
 
-	for _, req := range d.makeRequests(bundle, json) {
-		go func(req *request) {
-			resp, err := d.client.Do(req.request)
-			if err != nil {
-				log.Errorf("failed to forward mevBundle (%s, json: '%s'), err: %v", req, json, err)
-				return
-			}
-			defer resp.Body.Close()
-
-			respBody, err := io.ReadAll(resp.Body)
-			if err != nil {
-				log.Errorf("failed to read mevBundle (%s, json: '%s') response, err: %v", req, json, err)
-				return
-			}
-
-			log.Tracef("sent mevBundle (%s, json: '%s') got response: %v, status code: %v", req, json, string(respBody), resp.StatusCode)
-		}(req)
-	}
+	d.makeRequests(bundle, json)
 
 	return nil
 }
@@ -147,48 +123,125 @@ func (d *Dispatcher) bundleJSON(bundle *bxmessage.MEVBundle) ([]byte, error) {
 	return json, nil
 }
 
-func (d *Dispatcher) makeRequests(bundle *bxmessage.MEVBundle, json []byte) []*request {
-	requests := make([]*request, 0, len(bundle.MEVBuilders))
-	for builderName := range bundle.MEVBuilders {
+// makeRequests concurrently sends provided bundle to MEVBuilders
+func (d *Dispatcher) makeRequests(bundle *bxmessage.MEVBundle, json []byte) {
+	mevBuilders := bundle.MEVBuilders
+	_, ok := bundle.MEVBuilders[bxgateway.AllBuilderName]
+	if ok {
+		mevBuilders = d.getAllBuilders()
+	}
+
+	var wg = new(sync.WaitGroup)
+	for builderName := range mevBuilders {
 		builder := d.getBuilder(builderName)
 		if builder == nil {
-			log.Errorf("failed to find mev builder %v in config, bundleHash: %v", builderName, bundle.BundleHash)
 			continue
 		}
 
 		for _, endpoint := range builder.Endpoints {
-			if builder.Name == bxgateway.FlashbotsBuilderName && len(bundle.Transactions) == 0 {
-				req, err := d.cancelRequest(endpoint, bundle)
-				if err != nil {
-					log.Errorf("failed to create cancel request for mev builder %v, bundleHash: %v, err: %v", endpoint, bundle.BundleHash, err)
-					continue
-				}
-
-				requests = append(requests, &request{
-					request:     req,
-					bundleHash:  bundle.BundleHash,
-					blockNumber: bundle.BlockNumber,
-					method:      string(jsonrpc.RPCEthCancelBundle),
-				})
-				continue
-			}
-
-			req, err := d.bundleRequest(endpoint, builder, bundle, json)
-			if err != nil {
-				log.Errorf("failed to create send http request for mev builder %v, bundleHash: %v, err: %v", endpoint, bundle.BundleHash, err)
-				continue
-			}
-
-			requests = append(requests, &request{
-				request:     req,
-				bundleHash:  bundle.BundleHash,
-				blockNumber: bundle.BlockNumber,
-				method:      string(jsonrpc.RPCEthSendBundle),
-			})
+			wg.Add(1)
+			go func(endpoint string) {
+				d.sendBundleToBuilder(endpoint, builder, bundle, json)
+				wg.Done()
+			}(endpoint)
 		}
 	}
 
-	return requests
+	wg.Wait()
+}
+
+type bundleRequest struct {
+	bundleHash  string
+	blockNumber string
+	method      string
+	request     *http.Request
+}
+
+// String returns a string representation of the request
+func (r *bundleRequest) String() string {
+	return fmt.Sprintf("bundleHash: %v, blockNumber: %v, endpoint: %s, method: %v", r.bundleHash, r.blockNumber, r.request.URL, r.method)
+}
+
+// sendBundleToBuilder sends MEVBundle or CancelBundle request to MEVBuilder
+func (d *Dispatcher) sendBundleToBuilder(endpoint string, builder *Builder, bundle *bxmessage.MEVBundle, json []byte) {
+	lg := log.WithFields(log.Fields{
+		"builder":         builder.Name,
+		"builderEndpoint": endpoint,
+		"bundleHash":      bundle.BundleHash,
+	})
+
+	var bundleRq *bundleRequest
+	var err error
+	var cancelBundle bool
+
+	if builder.Name == bxgateway.FlashbotsBuilderName && len(bundle.Transactions) == 0 {
+		cancelBundle = true
+		bundleRq, err = d.cancelBundleRequest(endpoint, bundle)
+		if err != nil {
+			lg.Errorf("failed to create cancelBundleRequest for MEVBuilder: %s", err)
+			return
+		}
+	} else {
+		bundleRq, err = d.bundleRequest(endpoint, builder, bundle, json)
+		if err != nil {
+			lg.Errorf("failed to create bundleRequest for MEVBuilder: %s", err)
+			return
+		}
+	}
+
+	rsp, err := d.do(bundleRq, json)
+	if err != nil {
+		lg.Errorf("do HTTP request to MEVBuilder: %s", err)
+		return
+	}
+
+	if cancelBundle {
+		lg.Tracef("sent CancelMEVBundle to MEVBuilder (request: %s, json: '%s') got response: %v, status code: %v", bundleRq, json, string(rsp.body), rsp.code)
+	} else {
+		lg.Tracef("sent MEVBundle to MEVBuilder (request: %s, json: '%s') got response: %v, status code: %v", bundleRq, json, string(rsp.body), rsp.code)
+		d.stats.AddBuilderGatewaySentBundleToMEVBuilderEvent(
+			rsp.estimatedBundleReceivedTime,
+			builder.Name,
+			bundle.BundleHash,
+			bundle.BlockNumber,
+			bundle.UUID,
+			endpoint,
+			bundle.GetNetworkNum(),
+			types.AccountID(bundle.OriginalSenderAccountID),
+			bundle.OriginalSenderAccountTier,
+			rsp.code,
+		)
+	}
+}
+
+type doResult struct {
+	code                        int
+	body                        []byte
+	estimatedBundleReceivedTime time.Time
+}
+
+// do performs HTTP request to provided MEVBuilder and records BuilderGatewaySentBundleToBuilder event
+func (d *Dispatcher) do(bundleRq *bundleRequest, json []byte) (rsp *doResult, err error) {
+	timeBeforeSendingBundle := time.Now()
+	resp, err := d.client.Do(bundleRq.request)
+	if err != nil {
+		return nil, fmt.Errorf("forward MEVBundle (request: %s, json: '%s'): %v", bundleRq, json, err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	sendingDuration := time.Since(timeBeforeSendingBundle)
+	estimatedBundleReceivedTime := timeBeforeSendingBundle.Add(sendingDuration / 2)
+	rspBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read MEVBuilder response (request: %s, json: '%s'): %v", bundleRq, json, err)
+	}
+
+	return &doResult{
+		code:                        resp.StatusCode,
+		body:                        rspBody,
+		estimatedBundleReceivedTime: estimatedBundleReceivedTime,
+	}, nil
 }
 
 func (d *Dispatcher) getBuilder(builder string) *Builder {
@@ -200,7 +253,16 @@ func (d *Dispatcher) getBuilder(builder string) *Builder {
 	return nil
 }
 
-func (d *Dispatcher) bundleRequest(endpoint string, builder *Builder, bundle *bxmessage.MEVBundle, json []byte) (*http.Request, error) {
+func (d *Dispatcher) getAllBuilders() map[string]string {
+	builders := make(map[string]string)
+	for name, builder := range d.builders {
+		builders[name] = builder.Name
+	}
+
+	return builders
+}
+
+func (d *Dispatcher) bundleRequest(endpoint string, builder *Builder, bundle *bxmessage.MEVBundle, json []byte) (*bundleRequest, error) {
 	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(json))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create http request: %v", err)
@@ -220,10 +282,15 @@ func (d *Dispatcher) bundleRequest(endpoint string, builder *Builder, bundle *bx
 		}
 	}
 
-	return req, nil
+	return &bundleRequest{
+		bundleHash:  bundle.BundleHash,
+		blockNumber: bundle.BlockNumber,
+		method:      string(jsonrpc.RPCEthSendBundle),
+		request:     req,
+	}, nil
 }
 
-func (d *Dispatcher) cancelRequest(endpoint string, bundle *bxmessage.MEVBundle) (*http.Request, error) {
+func (d *Dispatcher) cancelBundleRequest(endpoint string, bundle *bxmessage.MEVBundle) (*bundleRequest, error) {
 	params := []jsonrpc.RPCCancelBundlePayload{
 		{
 			ReplacementUUID: bundle.UUID,
@@ -256,7 +323,12 @@ func (d *Dispatcher) cancelRequest(endpoint string, bundle *bxmessage.MEVBundle)
 	}
 	req.Header.Set(flashbotAuthHeader, flashbotsSignature)
 
-	return req, nil
+	return &bundleRequest{
+		bundleHash:  bundle.BundleHash,
+		blockNumber: bundle.BlockNumber,
+		method:      string(jsonrpc.RPCEthCancelBundle),
+		request:     req,
+	}, nil
 }
 
 // generateRandomFlashbotsSignature Generates a signature while submitting bundles to flashbots

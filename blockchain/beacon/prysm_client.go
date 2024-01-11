@@ -103,19 +103,20 @@ func (c *PrysmClient) run() {
 					continue
 				}
 
-				blockHash, err := blk.Block().HashTreeRoot()
+				if blk.Block().Slot() <= currentSlot(c.config.GenesisTime)-prysmTypes.Slot(c.config.IgnoreSlotCount) {
+					c.log.Errorf("block slot=%d is too old to process", blk.Block().Slot())
+					continue
+				}
+
+				wrappedBlock := NewWrappedReadOnlySignedBeaconBlock(blk)
+				blockHash, err := wrappedBlock.HashTreeRoot()
 				if err != nil {
 					c.log.Errorf("could not get beacon block[slot=%d] hash: %v", blk.Block().Slot(), err)
 					continue
 				}
 				blockHashHex := ethcommon.BytesToHash(blockHash[:]).String()
 
-				if blk.Block().Slot() <= currentSlot(c.config.GenesisTime)-prysmTypes.Slot(c.config.IgnoreSlotCount) {
-					c.log.Errorf("block[slot=%d,hash=%s] is too old to process", blk.Block().Slot(), blockHashHex)
-					continue
-				}
-
-				if err := SendBlockToBDN(c.clock, c.log, blk, c.bridge, c.endpoint); err != nil {
+				if err := SendBlockToBDN(c.clock, c.log, wrappedBlock, c.bridge, c.endpoint); err != nil {
 					c.log.Errorf("could not proccess beacon block[slot=%d,hash=%s] to eth: %v", blk.Block().Slot(), blockHashHex, err)
 					continue
 				}

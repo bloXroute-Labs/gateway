@@ -19,7 +19,7 @@ func TestMultiEthWSURIParse(t *testing.T) {
 	input, enodes := generateMultiEthWSURIInput(3)
 	config := EthConfig{}
 	err := config.parseMultiNode(input)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	peerInfo := config.StaticPeers
 	assert.Equal(t, len(peerInfo), 3)
 	for i, info := range peerInfo {

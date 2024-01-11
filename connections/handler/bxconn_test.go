@@ -7,10 +7,12 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
+	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type testHandler struct {
@@ -39,6 +41,58 @@ func TestBxConn_BDNIsDefaultForOldProtocol(t *testing.T) {
 	assert.True(t, bx.capabilities&types.CapabilityBDN != 0)
 }
 
+func TestBxConn_ProtocolVersion(t *testing.T) {
+	th := testHandler{}
+	_, bx := bxConn(&th)
+
+	// client sending hello with protocol version which older than the current protocol version, we should update the protocol
+	{
+		helloMessage := bxmessage.Hello{
+			Protocol: bxmessage.CurrentProtocol - 2,
+		}
+		b, _ := helloMessage.Pack(bxmessage.CurrentProtocol) // with wich protocol to pack here is not important
+		msg := bxmessage.NewMessageBytes(b, time.Now())
+		bx.ProcessMessage(msg)
+		require.Equal(t, bxmessage.Protocol(bxmessage.CurrentProtocol-2), bx.Protocol())
+	}
+
+	// if protocol version updated and supported, we should update the protocol
+	//
+	// there was a bug where we were not updating the protocol version if previous protocol was older than current protocol
+	// so using old protocol version before is required for this test
+	{
+		helloMessage := bxmessage.Hello{
+			Protocol: bxmessage.CurrentProtocol - 1,
+		}
+		b, _ := helloMessage.Pack(bxmessage.CurrentProtocol)
+		msg := bxmessage.NewMessageBytes(b, time.Now())
+		bx.ProcessMessage(msg)
+		require.Equal(t, bxmessage.Protocol(bxmessage.CurrentProtocol-1), bx.Protocol())
+	}
+
+	// if protocol version is not supported, we should default to the latest supported - current protocol
+	{
+		helloMessage := bxmessage.Hello{
+			Protocol: bxmessage.CurrentProtocol + 2,
+		}
+		b, _ := helloMessage.Pack(bxmessage.CurrentProtocol)
+		msg := bxmessage.NewMessageBytes(b, time.Now())
+		bx.ProcessMessage(msg)
+		require.Equal(t, bxmessage.Protocol(bxmessage.CurrentProtocol), bx.Protocol())
+	}
+
+	// protocol can be downgraded when changes are reverted
+	{
+		helloMessage := bxmessage.Hello{
+			Protocol: bxmessage.CurrentProtocol - 1,
+		}
+		b, _ := helloMessage.Pack(bxmessage.CurrentProtocol)
+		msg := bxmessage.NewMessageBytes(b, time.Now())
+		bx.ProcessMessage(msg)
+		require.Equal(t, bxmessage.Protocol(bxmessage.CurrentProtocol-1), bx.Protocol())
+	}
+}
+
 // semi integration test: in general, sleep should be avoided, but these closing tests cases are checking that we are closing goroutines correctly
 func TestBxConn_ClosingFromHandler(t *testing.T) {
 	startCount := runtime.NumGoroutine()
@@ -48,28 +102,36 @@ func TestBxConn_ClosingFromHandler(t *testing.T) {
 	th.setConn(bx)
 
 	err := bx.Start()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// wait for hello message to be sent on connection so all goroutines are started
 	_, err = tls.MockAdvanceSent()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
+
+	test.WaitUntilTrueOrFail(t, func() bool {
+		return bx.Conn.IsOpen()
+	})
 
 	// expect 3 additional goroutines: read loop, send loop and read from receive channel
-	assert.Equal(t, startCount+3, runtime.NumGoroutine())
+	test.WaitUntilTrueOrFail(t, func() bool {
+		return runtime.NumGoroutine() == startCount+3
+	})
 
 	// queue message, which should trigger a close
 	helloMessage := bxmessage.Hello{}
 	b, err := helloMessage.Pack(bxmessage.CurrentProtocol)
 	tls.MockQueue(b)
 
-	// allow small delta for goroutines to finish
-	time.Sleep(1 * time.Millisecond)
+	test.WaitUntilTrueOrFail(t, func() bool {
+		return tls.IsClosed() && !bx.Conn.IsOpen()
+	})
 
-	endCount := runtime.NumGoroutine()
-	assert.Equal(t, startCount, endCount)
+	test.WaitUntilTrueOrFail(t, func() bool {
+		return runtime.NumGoroutine() == startCount
+	})
 }
 
-func bxConn(handler connections.ConnHandler) (bxmock.MockTLS, *BxConn) {
+func bxConn(handler connections.ConnHandler) (*bxmock.MockTLS, *BxConn) {
 	ip := "127.0.0.1"
 	port := int64(3000)
 

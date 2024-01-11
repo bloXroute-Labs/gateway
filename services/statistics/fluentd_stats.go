@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -45,7 +47,9 @@ type Stats interface {
 		mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int, bundlePrice int64, enforcePayout bool)
 	LogUnsubscribeStats(subscriptionID string, feedName types.FeedType, networkNum types.NetworkNum, accountID types.AccountID, tierName sdnmessage.AccountTier)
 	LogSDKInfo(blockchain, method, sourceCode, version string, accountID types.AccountID, feed types.FeedConnectionType, start, end time.Time)
-	BundleSentToRsyncStats(timestamp time.Time, bundleHash string, blockNumber string, uuid string, bundlePrice int64, enforcePayout bool)
+	BundleSentToBuilderStats(timestamp time.Time, builderName string, bundleHash string, blockNumber string, uuid string, networkNum types.NetworkNum, accountID types.AccountID, accountTier sdnmessage.AccountTier, builderURL string, statusCode int)
+	AddBuilderGatewaySentBundleToMEVBuilderEvent(timestamp time.Time, builderName, bundleHash, blockNumber, uuid, builderURL string,
+		networkNum types.NetworkNum, accountID types.AccountID, accountTier sdnmessage.AccountTier, statusCode int)
 }
 
 // NoStats is used to generate empty stats
@@ -89,8 +93,13 @@ func (NoStats) LogUnsubscribeStats(subscriptionID string, feedName types.FeedTyp
 func (NoStats) LogSDKInfo(_, _, _, _ string, _ types.AccountID, _ types.FeedConnectionType, _, _ time.Time) {
 }
 
-// BundleSentToRsyncStats does nothing
-func (NoStats) BundleSentToRsyncStats(_ time.Time, _ string, _ string, _ string, _ int64, _ bool) {
+// BundleSentToBuilderStats does nothing
+func (NoStats) BundleSentToBuilderStats(_ time.Time, _ string, _ string, _ string, _ string, _ types.NetworkNum, _ types.AccountID, _ sdnmessage.AccountTier, _ string, _ int) {
+}
+
+// AddBuilderGatewaySentBundleToMEVBuilderEvent does nothing
+func (NoStats) AddBuilderGatewaySentBundleToMEVBuilderEvent(_ time.Time, _, _, _, _, _ string,
+	_ types.NetworkNum, _ types.AccountID, _ sdnmessage.AccountTier, _ int) {
 }
 
 // FluentdStats struct that represents fluentd stats info
@@ -106,7 +115,7 @@ type FluentdStats struct {
 func (s FluentdStats) AddTxsByShortIDsEvent(name string, source connections.Conn, txInfo *types.BxTransaction,
 	shortID types.ShortID, sourceID types.NodeID, sentPeers int, sentGatewayPeers int,
 	startTime time.Time, priority bxmessage.SendPriority, debugData interface{}) {
-	if txInfo == nil || !s.shouldLogEventForTx(txInfo) {
+	if txInfo == nil || !s.shouldLogEvent(txInfo.NetworkNum(), txInfo.Hash()) {
 		return
 	}
 
@@ -244,6 +253,14 @@ func (s FluentdStats) addBlockContent(name string, networkNum types.NetworkNum, 
 // AddBundleEvent generates a fluentd STATS event
 // Includes sent peers and sent gateway peers
 func (s FluentdStats) AddBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum, mevBuilderNames []string, frontrunning bool, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int, bundlePrice int64, enforcePayout bool, sentPeers int, sentGatewayPeers int) {
+	hashInBytes, err := types.NewSHA256HashFromString(bundleHash)
+	if err != nil {
+		log.Errorf("error converting bundle hash from string to byte: %v", err)
+		return
+	}
+	if !s.shouldLogEvent(networkNum, hashInBytes) {
+		return
+	}
 	now := time.Now()
 
 	record := Record{
@@ -365,15 +382,14 @@ func (s FluentdStats) UpdateBlockchainNetwork(network sdnmessage.BlockchainNetwo
 	s.Lock.Unlock()
 }
 
-func (s FluentdStats) shouldLogEventForTx(txInfo *types.BxTransaction) bool {
-	txHashPercentage := s.getLogPercentageByHash(txInfo.NetworkNum())
-	if txHashPercentage <= 0 {
+func (s FluentdStats) shouldLogEvent(network types.NetworkNum, hash types.SHA256Hash) bool {
+	hashPercentage := s.getLogPercentageByHash(network)
+	if hashPercentage <= 0 {
 		return false
 	}
-	txHash := txInfo.Hash()
-	lastBytesValue := binary.BigEndian.Uint16(txHash[types.SHA256HashLen-TailByteCount:])
+	lastBytesValue := binary.BigEndian.Uint16(hash[types.SHA256HashLen-TailByteCount:])
 	probabilityValue := float64(lastBytesValue) * float64(100) / float64(MaxTailByteValue)
-	return probabilityValue <= txHashPercentage
+	return probabilityValue <= hashPercentage
 }
 
 func (s FluentdStats) getLogPercentageByHash(networkNum types.NetworkNum) float64 {
@@ -437,24 +453,67 @@ func (s FluentdStats) LogSDKInfo(blockchain, method, sourceCode, version string,
 	s.LogToFluentD(record, now, "stats.sdk.events")
 }
 
-// BundleSentToRsyncStats generates a fluentd STATS event
-func (s FluentdStats) BundleSentToRsyncStats(timestamp time.Time, bundleHash string, blockNumber string, uuid string, bundlePrice int64, enforcePayout bool) {
-	userSetUUID := false
-	if uuid != "" {
-		userSetUUID = true
+// BundleSentToBuilderStats generates a fluentd STATS event
+func (s FluentdStats) BundleSentToBuilderStats(timestamp time.Time, builderName string, bundleHash string, blockNumber string, uuid string, networkNum types.NetworkNum, accountID types.AccountID, accountTier sdnmessage.AccountTier, builderURL string, statusCode int) {
+	blockNumberInt64, err := hex2int64(blockNumber)
+	if err != nil {
+		log.Errorf("BundleSentToBuilderStats: parse blockNumber: %s", blockNumber)
+		return
 	}
+
 	record := Record{
-		Type: "bundleSentToRsync",
-		Data: bundleSentToRsyncRecord{
-			BundleHash:    bundleHash,
-			BlockNumber:   blockNumber,
-			UUID:          uuid,
-			UserSetUUID:   userSetUUID,
-			BundlePrice:   bundlePrice,
-			EnforcePayout: enforcePayout,
-			NetworkNum:    5,
+		Type: "bundleSentToExternalBuilder",
+		Data: bundleSentToBuilderRecord{
+			BundleHash:  bundleHash,
+			BlockNumber: blockNumberInt64,
+			BuilderName: builderName,
+			UUID:        uuid,
+			NetworkNum:  networkNum,
+			AccountID:   accountID,
+			AccountTier: accountTier,
+			BuilderURL:  builderURL,
+			StatusCode:  statusCode,
 		},
 	}
 
-	s.LogToFluentD(record, timestamp, "stats.bundles_sent_to_rsync")
+	s.LogToFluentD(record, timestamp, "stats.bundles_sent_to_external_builder")
+}
+
+// hex2int64 takes a hex string and returns the parsed integer value.
+// It handles hex strings with or without the "0x" prefix.
+func hex2int64(hexStr string) (int64, error) {
+	// Ensure the prefix is uniformly lowercase for comparison and remove it if present.
+	return strconv.ParseInt(strings.TrimPrefix(strings.ToLower(hexStr), "0x"), 16, 64)
+}
+
+// AddBuilderGatewaySentBundleToMEVBuilderEvent generates a fluentd STATS event
+func (s FluentdStats) AddBuilderGatewaySentBundleToMEVBuilderEvent(timestamp time.Time,
+	builderName, bundleHash, blockNumber, uuid, builderURL string,
+	networkNum types.NetworkNum,
+	accountID types.AccountID,
+	accountTier sdnmessage.AccountTier,
+	statusCode int) {
+
+	blockNumberInt64, err := hex2int64(blockNumber)
+	if err != nil {
+		log.Errorf("AddBuilderGatewaySentBundleToMEVBuilderEvent: parse blockNumber: %s", blockNumber)
+		return
+	}
+
+	record := Record{
+		Type: "BuilderGatewaySentBundleToMEVBuilder",
+		Data: bundleSentToBuilderRecord{
+			BundleHash:  bundleHash,
+			BlockNumber: blockNumberInt64,
+			BuilderName: builderName,
+			UUID:        uuid,
+			NetworkNum:  networkNum,
+			AccountID:   accountID,
+			AccountTier: accountTier,
+			BuilderURL:  builderURL,
+			StatusCode:  statusCode,
+		},
+	}
+
+	s.LogToFluentD(record, timestamp, "stats.builder_gateway.sent_bundle")
 }

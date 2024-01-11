@@ -3,12 +3,14 @@ package beacon
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/prysmaticlabs/prysm/v4/beacon-chain/core/signing"
 	p2ptypes "github.com/prysmaticlabs/prysm/v4/beacon-chain/p2p/types"
 	"github.com/prysmaticlabs/prysm/v4/config/params"
@@ -16,13 +18,42 @@ import (
 	prysmTypes "github.com/prysmaticlabs/prysm/v4/consensus-types/primitives"
 	"github.com/prysmaticlabs/prysm/v4/encoding/bytesutil"
 	"github.com/prysmaticlabs/prysm/v4/time/slots"
+	log "github.com/sirupsen/logrus"
 )
 
 const confirmationDelay = 4 * time.Second
 
-// SendBlockToBDN converts block to BxBlock, sends it to the bridge and starts a timer to send a confirmation after 4 seconds
-// confirmation is needed to cleanup the hash history.
-func SendBlockToBDN(clock utils.Clock, log *logger.Entry, block interfaces.ReadOnlySignedBeaconBlock, bridge blockchain.Bridge, endpoint types.NodeEndpoint) error {
+// WrappedReadOnlySignedBeaconBlock represent wrapper for ReadOnlySignedBeaconBlock
+type WrappedReadOnlySignedBeaconBlock struct {
+	Block interfaces.ReadOnlySignedBeaconBlock
+	hash  *common.Hash
+	lock  *sync.RWMutex
+}
+
+// NewWrappedReadOnlySignedBeaconBlock create new WrappedReadOnlySignedBeaconBlock
+func NewWrappedReadOnlySignedBeaconBlock(beaconBlock interfaces.ReadOnlySignedBeaconBlock) WrappedReadOnlySignedBeaconBlock {
+	return WrappedReadOnlySignedBeaconBlock{Block: beaconBlock, lock: &sync.RWMutex{}}
+}
+
+// HashTreeRoot we use it when we want to extract hash, now it will extract only once
+func (b *WrappedReadOnlySignedBeaconBlock) HashTreeRoot() (common.Hash, error) {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+	if b.hash == nil {
+		rawHash, err := b.Block.Block().HashTreeRoot()
+		if err != nil {
+			log.Errorf("error extracting block hash from block: %v", err)
+			return common.Hash{}, err
+		}
+		blockHash := common.Hash(rawHash)
+		b.hash = &blockHash
+	}
+	return *b.hash, nil
+}
+
+// SendBlockToBDN converts block to BxBlock, sends it to the bridge and starts a timer to send a confirmation after 4-seconds
+// confirmation is needed to clean up the hash history.
+func SendBlockToBDN(clock utils.Clock, log *logger.Entry, block WrappedReadOnlySignedBeaconBlock, bridge blockchain.Bridge, endpoint types.NodeEndpoint) error {
 	bdnBeaconBlock, err := bridge.BlockBlockchainToBDN(block)
 	if err != nil {
 		return fmt.Errorf("could not convert beacon block: %v", err)

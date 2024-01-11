@@ -21,11 +21,11 @@ func TestBroadcastPackUnpack(t *testing.T) {
 	broadcast := NewBlockBroadcast(blockHash, beaconBlockHash, types.BxBlockTypeBeaconBellatrix, blockBody, types.ShortIDList{}, networkNum)
 
 	b, err := broadcast.Pack(BeaconBlockProtocol)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	var decodedBroadcast Broadcast
 	err = decodedBroadcast.Unpack(b, BeaconBlockProtocol)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	assert.Equal(t, blockHash, decodedBroadcast.Hash())
 	assert.Equal(t, beaconBlockHash, decodedBroadcast.BeaconHash())
@@ -39,13 +39,13 @@ func TestBroadcastUnpackFixtureWithShortIDs(t *testing.T) {
 
 	var broadcast Broadcast
 	err := broadcast.Unpack(b, 0)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, networkNum, broadcast.networkNumber)
 	assert.Equal(t, h, broadcast.Hash())
 	assert.Equal(t, 2, len(broadcast.ShortIDs()))
 
 	encodedBroadcast, err := broadcast.Pack(0)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, b, encodedBroadcast)
 }
 
@@ -55,11 +55,11 @@ func TestBroadcastUnpackFixtureEmptyBlock(t *testing.T) {
 
 	var broadcast Broadcast
 	err := broadcast.Unpack(b, 0)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, networkNum, broadcast.networkNumber)
 	assert.Equal(t, h, broadcast.Hash())
 
 	encodedBroadcast, err := broadcast.Pack(0)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, b, encodedBroadcast)
 }

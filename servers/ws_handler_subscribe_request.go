@@ -148,7 +148,7 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 			if callParams == nil {
 				return nil, errors.New("call-params cannot be nil")
 			}
-			err = fillCalls(h.FeedManager, calls, idx, callParams)
+			err = fillCalls(h.FeedManager.nodeWSManager, calls, idx, callParams)
 			if err != nil {
 				return nil, err
 			}

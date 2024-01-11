@@ -634,19 +634,20 @@ func (n *Node) blockSubscriber(msg *pubsub.Message) {
 		return
 	}
 
-	blockHash, err := blk.Block().HashTreeRoot()
+	if blk.Block().Slot() <= currentSlot(n.genesisState.GenesisTime())-prysmTypes.Slot(n.config.IgnoreSlotCount) {
+		logCtx.Errorf("block slot=%d is too old to process", blk.Block().Slot())
+		return
+	}
+
+	wrappedBlock := NewWrappedReadOnlySignedBeaconBlock(blk)
+	blockHash, err := wrappedBlock.HashTreeRoot()
 	if err != nil {
 		logCtx.Errorf("could not get block[slot=%d] hash: %v", blk.Block().Slot(), err)
 		return
 	}
 	blockHashHex := ethcommon.BytesToHash(blockHash[:]).String()
 
-	if blk.Block().Slot() <= currentSlot(n.genesisState.GenesisTime())-prysmTypes.Slot(n.config.IgnoreSlotCount) {
-		logCtx.Errorf("block[slot=%d,hash=%s] is too old to process", blk.Block().Slot(), blockHashHex)
-		return
-	}
-
-	if err := SendBlockToBDN(n.clock, n.log, blk, n.bridge, *endpoint); err != nil {
+	if err := SendBlockToBDN(n.clock, n.log, wrappedBlock, n.bridge, *endpoint); err != nil {
 		logCtx.Errorf("could not process block[slot=%d,hash=%s]: %v", blk.Block().Slot(), blockHashHex, err)
 		return
 	}

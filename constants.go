@@ -97,6 +97,9 @@ const MaxAnnouncementFromNode = 100
 // ParallelQueueChannelSize - size of TXQueueChannel
 const ParallelQueueChannelSize = 1000
 
+// BloomFilterQueueSize - size of bloom filter queue
+const BloomFilterQueueSize = 10000
+
 // GetMethod - get method for http
 const GetMethod = "GET"
 
@@ -141,11 +144,8 @@ const (
 	// ExternalBeaverBuilderName - set beaverbuild external mev builders name
 	ExternalBeaverBuilderName = "beaverbuild"
 
-	// ExternalEdenBuilderName - set eden external mev builders name
-	ExternalEdenBuilderName = "eden"
-
-	// ExternalBlocknativeBuilderName - set blocknative external mev builders name
-	ExternalBlocknativeBuilderName = "blocknative"
+	// ExternalTitanBuilderName - for cloud-api private tx searcher name
+	ExternalTitanBuilderName = "titan"
 )
 
 // Mainnet - for Ethereum main net blockchain network name

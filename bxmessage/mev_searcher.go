@@ -188,9 +188,9 @@ func (m MEVSearcher) size(protocol Protocol) uint32 {
 	switch {
 	case protocol < MevSearcherWithUUID:
 	case protocol == MevSearcherWithUUID:
-		size += uuidSize
+		size += UUIDv4Len
 	default:
-		size += uuidSize + types.UInt8Len + types.UInt16Len + uint32(m.effectiveGasPriceLen) + types.UInt16Len + uint32(m.coinbaseProfitLen)
+		size += UUIDv4Len + types.UInt8Len + types.UInt16Len + uint32(m.effectiveGasPriceLen) + types.UInt16Len + uint32(m.coinbaseProfitLen)
 	}
 
 	return size
@@ -202,7 +202,7 @@ func (m MEVSearcher) Pack(protocol Protocol) ([]byte, error) {
 	bufLen := m.size(protocol)
 	buf := make([]byte, bufLen)
 	m.BroadcastHeader.Pack(&buf, MEVSearcherType, protocol)
-	offset := BroadcastHeaderLen
+	offset := BroadcastHeaderOffset
 
 	binary.LittleEndian.PutUint16(buf[offset:], uint16(len(m.Method)))
 	offset += types.UInt16Len
@@ -242,7 +242,7 @@ func (m MEVSearcher) Pack(protocol Protocol) ([]byte, error) {
 			copy(buf[offset:], uuidBytes[:])
 		}
 
-		offset += uuidSize
+		offset += UUIDv4Len
 	}
 
 	if protocol >= MevMaxProfitBuilder {
@@ -277,7 +277,7 @@ func (m *MEVSearcher) Unpack(buf []byte, protocol Protocol) error {
 	if err != nil {
 		return err
 	}
-	offset := BroadcastHeaderLen
+	offset := BroadcastHeaderOffset
 
 	if err := checkBufSize(&buf, offset, types.UInt16Len); err != nil {
 		return err
@@ -327,17 +327,17 @@ func (m *MEVSearcher) Unpack(buf []byte, protocol Protocol) error {
 	}
 
 	if protocol >= MevSearcherWithUUID {
-		if err := checkBufSize(&buf, offset, uuidSize); err != nil {
+		if err := checkBufSize(&buf, offset, UUIDv4Len); err != nil {
 			return err
 		}
-		if !bytes.Equal(buf[offset:offset+uuidSize], emptyUUID) {
-			uuidRaw, err := uuid.FromBytes(buf[offset : offset+uuidSize])
+		if !bytes.Equal(buf[offset:offset+UUIDv4Len], emptyUUID) {
+			uuidRaw, err := uuid.FromBytes(buf[offset : offset+UUIDv4Len])
 			if err != nil {
 				return fmt.Errorf("failed to parse uuid from bytes, %v", err)
 			}
 			m.UUID = uuidRaw.String()
 		}
-		offset += uuidSize
+		offset += UUIDv4Len
 	}
 
 	if protocol >= MevMaxProfitBuilder {

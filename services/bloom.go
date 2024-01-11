@@ -22,7 +22,6 @@ const (
 	previousBloomFileName         = "previous.bloom"
 	counterBloomFileName          = "counter.bloom"
 	bloomFalsePositiveProbability = 1e-6
-	bloomFilterQueueSize          = 10000
 )
 
 // BloomFilter interface
@@ -64,11 +63,11 @@ type bloomFilter struct {
 }
 
 // NewBloomFilter constructor for BloomFilter
-func NewBloomFilter(ctx context.Context, clock utils.Clock, storeInterval time.Duration, datadir string, capacity uint32) (BloomFilter, error) {
-	return newBloomFilter(ctx, clock, storeInterval, datadir, capacity)
+func NewBloomFilter(ctx context.Context, clock utils.Clock, storeInterval time.Duration, datadir string, capacity uint32, queueSize uint32) (BloomFilter, error) {
+	return newBloomFilter(ctx, clock, storeInterval, datadir, capacity, queueSize)
 }
 
-func newBloomFilter(ctx context.Context, clock utils.Clock, storeInterval time.Duration, datadir string, capacity uint32) (*bloomFilter, error) {
+func newBloomFilter(ctx context.Context, clock utils.Clock, storeInterval time.Duration, datadir string, capacity uint32, queueSize uint32) (*bloomFilter, error) {
 	bf := &bloomFilter{
 		ctx:           ctx,
 		mx:            &sync.RWMutex{},
@@ -79,7 +78,7 @@ func newBloomFilter(ctx context.Context, clock utils.Clock, storeInterval time.D
 		clock:         clock,
 		datadir:       datadir,
 		counter:       atomic.Uint32{},
-		queue:         make(chan []byte, bloomFilterQueueSize),
+		queue:         make(chan []byte, queueSize),
 		stopConsume:   make(chan struct{}),
 	}
 
@@ -105,6 +104,17 @@ func (b *bloomFilter) Add(val []byte) {
 	default:
 		log.Warn("BloomFilter queue is full during persisting cache, dropping value")
 	}
+}
+
+func (b *bloomFilter) add(val []byte) {
+	b.counter.Add(1)
+
+	b.mx.Lock()
+	b.current.Add(val)
+	b.mx.Unlock()
+
+	// it uses lock inside to control locking granularly
+	b.maybeSwitchFilters()
 }
 
 // Check if value exists in bloom filter
@@ -268,14 +278,7 @@ func (b *bloomFilter) consumeWorker() {
 	for {
 		select {
 		case val := <-b.queue:
-			b.counter.Add(1)
-
-			b.mx.Lock()
-			b.current.Add(val)
-			b.mx.Unlock()
-
-			// it uses lock inside to control locking granularly
-			b.maybeSwitchFilters()
+			b.add(val)
 		case <-b.stopConsume:
 			b.stopConsume <- struct{}{}
 			<-b.stopConsume

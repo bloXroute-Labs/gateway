@@ -14,7 +14,8 @@ func TestHashHistory_Set_Get(t *testing.T) {
 	// have to use date between 1678 and 2262 for UnixNano to work
 	clock.SetTime(time.Date(2000, 01, 01, 00, 00, 00, 00, time.UTC))
 
-	history := newHashHistory("", clock, 30*time.Minute)
+	// clean duration more than in test, we will clean manually
+	history := newHashHistory("", clock, 60*time.Minute)
 
 	hash1 := types.SHA256Hash{1}
 	hash2 := types.SHA256Hash{2}

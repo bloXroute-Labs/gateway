@@ -107,6 +107,7 @@ func (bs *BdnPerformanceStats) IsGatewayAllow(minAllowedNodes uint64, maxAllowed
 // CloseInterval sets the closing interval end time, starts new interval with cleared stats, and returns BdnPerformanceStats of closed interval
 func (bs *BdnPerformanceStats) CloseInterval() *BdnPerformanceStats {
 	bs.lock.Lock()
+	defer bs.lock.Unlock()
 
 	// close interval
 	bs.intervalEndTime = time.Now()
@@ -137,14 +138,15 @@ func (bs *BdnPerformanceStats) CloseInterval() *BdnPerformanceStats {
 	// start new interval
 	bs.intervalStartTime = time.Now()
 
-	bs.lock.Unlock()
-
 	bs.memoryUtilizationMb = 0
 	return prevBDNStats
 }
 
 // SetMemoryUtilization sets the memory utilization field of message
 func (bs *BdnPerformanceStats) SetMemoryUtilization(mb int) {
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
+
 	bs.memoryUtilizationMb = uint16(mb)
 }
 
@@ -273,41 +275,57 @@ func (bs *BdnPerformanceStats) LogDuplicateTxFromNode(node types.NodeEndpoint) {
 
 // LogBurstLimitedTransactionsPaid logs a tx count exceeded limit paid transactions in the stats
 func (bs *BdnPerformanceStats) LogBurstLimitedTransactionsPaid() {
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
 	bs.burstLimitedTransactionsPaid++
 }
 
 // LogBurstLimitedTransactionsUnpaid logs a tx count exceeded limit paid transactions in the stats
 func (bs *BdnPerformanceStats) LogBurstLimitedTransactionsUnpaid() {
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
 	bs.burstLimitedTransactionsUnpaid++
 }
 
 // StartTime returns the start time of the current stat interval
 func (bs *BdnPerformanceStats) StartTime() time.Time {
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
 	return bs.intervalStartTime
 }
 
 // EndTime returns the start time of the current stat interval
 func (bs *BdnPerformanceStats) EndTime() time.Time {
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
 	return bs.intervalEndTime
 }
 
 // Memory returns memory utilization stat
 func (bs *BdnPerformanceStats) Memory() uint16 {
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
 	return bs.memoryUtilizationMb
 }
 
 // BurstLimitedTransactionsPaid returns relay burst limited transactions paid stat
 func (bs *BdnPerformanceStats) BurstLimitedTransactionsPaid() uint16 {
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
 	return bs.burstLimitedTransactionsPaid
 }
 
 // BurstLimitedTransactionsUnpaid returns relay burst limited transactions unpaid stat
 func (bs *BdnPerformanceStats) BurstLimitedTransactionsUnpaid() uint16 {
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
 	return bs.burstLimitedTransactionsUnpaid
 }
 
 // NodeStats returns the bdn stats data for all nodes
 func (bs *BdnPerformanceStats) NodeStats() map[string]*BdnPerformanceStatsData {
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
 	return bs.nodeStats
 }
 
