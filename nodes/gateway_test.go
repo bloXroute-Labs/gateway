@@ -3,10 +3,8 @@ package nodes
 import (
 	"context"
 	"fmt"
-	"io"
 	"math"
 	"math/big"
-	"net"
 	"os"
 	"sync"
 	"testing"
@@ -40,7 +38,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/peer"
 )
 
 var (
