@@ -3,14 +3,19 @@ package test
 import (
 	"encoding/json"
 	"math/rand"
+	"net"
 	"os"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
+	"testing"
+	"time"
 
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/stretchr/testify/assert"
 )
 
 // MarshallJSONToMap is a test utility for serializing a struct to JSON while easily being able to assert on its contents
@@ -91,4 +96,39 @@ func MapsEqual(a, b map[string]string) bool {
 		}
 	}
 	return true
+}
+
+// WaitUntilTrueOrFail waits until the condition is true or fails the test after a second
+func WaitUntilTrueOrFail(t *testing.T, condition func() bool) {
+	timeout := time.NewTimer(time.Second)
+	for {
+		select {
+		case <-timeout.C:
+			assert.FailNow(t, "condition not met")
+		default:
+			if condition() {
+				return
+			}
+			time.Sleep(time.Microsecond)
+		}
+	}
+}
+
+// WaitChanConsumed waits until the channel is empty or fails the test after a second
+func WaitChanConsumed(t *testing.T, ch interface{}) {
+	WaitUntilTrueOrFail(t, func() bool {
+		return reflect.ValueOf(ch).Len() == 0
+	})
+}
+
+// WaitServerStarted waits until the server is started or fails the test after a second
+func WaitServerStarted(t *testing.T, addr string) {
+	WaitUntilTrueOrFail(t, func() bool {
+		conn, err := net.Dial("tcp", addr)
+		if err == nil {
+			conn.Close()
+			return true
+		}
+		return false
+	})
 }

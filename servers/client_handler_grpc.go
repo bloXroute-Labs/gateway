@@ -8,30 +8,46 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/sourcegraph/jsonrpc2"
 	"github.com/zhouzhuojie/conditions"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 )
 
+//go:generate mockgen -destination ../../bxgateway/test/mock/mock_grpc_feed_manager.go -package mock . GRPCFeedManager
+
+// GRPCFeedManager declares the interface of the feed manager for grpc handler
+type GRPCFeedManager interface {
+	Subscribe(feedName types.FeedType, feedConnectionType types.FeedConnectionType, conn *jsonrpc2.Conn, ci types.ClientInfo, ro types.ReqOptions, ethSubscribe bool) (*ClientSubscriptionHandlingInfo, error)
+	Unsubscribe(subscriptionID string, closeClientConnection bool, errMsg string) error
+	GetSyncedWSProvider(preferredProviderEndpoint *types.NodeEndpoint) (blockchain.WSProvider, bool)
+}
+
 const maxTxsInSingleResponse = 50
 
 // GrpcHandler is an instance to handle gateway GRPC requests(part of requests)
 type GrpcHandler struct {
-	feedManager           *FeedManager
+	feedManager           GRPCFeedManager
+	nodeWSManager         blockchain.WSManager
 	txFromFieldIncludable bool
+	IntentsStore          *services.UserIntentStore
 }
 
 // NewGrpcHandler create new instance of GrpcHandler
-func NewGrpcHandler(feedManager *FeedManager, txFromFieldIncludable bool) *GrpcHandler {
+func NewGrpcHandler(feedManager GRPCFeedManager, nodeWSManager blockchain.WSManager, txFromFieldIncludable bool) *GrpcHandler {
 	return &GrpcHandler{
 		feedManager:           feedManager,
+		nodeWSManager:         nodeWSManager,
 		txFromFieldIncludable: txFromFieldIncludable,
+		IntentsStore:          services.NewUserIntentsStore(),
 	}
 }
 
@@ -165,7 +181,7 @@ func generateEthOnBlockReply(n *types.OnBlockNotification) *pb.EthOnBlockReply {
 	}
 }
 
-func makeTransaction(transaction types.NewTransactionNotification, txFromFieldIncludable bool) *pb.Tx {
+func makeTransaction(transaction *types.NewTransactionNotification, txFromFieldIncludable bool) *pb.Tx {
 	tx := &pb.Tx{
 		LocalRegion: transaction.LocalRegion(),
 		Time:        time.Now().UnixNano(),
@@ -210,9 +226,8 @@ func processTx(clientReq *clientReq, notification types.Notification, multiTxsRe
 		transaction = &tx.NewTransactionNotification
 	}
 
-	txResult := filterAndInclude(clientReq, transaction, remoteAddress, accountID)
-	if txResult != nil {
-		*multiTxsResponse = append(*multiTxsResponse, makeTransaction(*transaction, txFromFieldIncludable))
+	if shouldSendTx(clientReq, transaction, remoteAddress, accountID) {
+		*multiTxsResponse = append(*multiTxsResponse, makeTransaction(transaction, txFromFieldIncludable))
 	}
 }
 
@@ -304,7 +319,7 @@ func (g *GrpcHandler) EthOnBlock(req *pb.EthOnBlockRequest, stream pb.Gateway_Et
 		if callParams == nil {
 			return status.Error(codes.InvalidArgument, "call-params cannot be nil")
 		}
-		err = fillCalls(g.feedManager, calls, idx, callParams.Params)
+		err = fillCalls(g.nodeWSManager, calls, idx, callParams.Params)
 		if err != nil {
 			return status.Error(codes.InvalidArgument, err.Error())
 		}
@@ -323,7 +338,7 @@ func (g *GrpcHandler) EthOnBlock(req *pb.EthOnBlockRequest, stream pb.Gateway_Et
 			return stream.Send(grpcEthOnBlockNotificationReply)
 		}
 
-		err = handleEthOnBlock(g.feedManager, block, calls, sendEthOnBlockGrpcNotification)
+		err = handleEthOnBlock(g.nodeWSManager, g.feedManager, block, calls, sendEthOnBlockGrpcNotification)
 		if err != nil {
 			return status.Error(codes.Internal, err.Error())
 		}

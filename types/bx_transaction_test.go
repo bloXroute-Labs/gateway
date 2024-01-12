@@ -26,7 +26,7 @@ func TestValidContentParsing(t *testing.T) {
 	tx := NewBxTransaction(hash, testNetworkNum, TFPaidTx, time.Now())
 	tx.SetContent(content)
 	blockchainTx, err := tx.BlockchainTransaction(EmptySender)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	ethTx, ok := blockchainTx.(*EthTransaction)
 	assert.True(t, ok)
@@ -58,7 +58,7 @@ func TestValidContentParsing(t *testing.T) {
 //	tx := NewBxTransaction(hash, 5)
 //	tx.SetContent(content)
 //	blockchainTx, err := tx.BlockchainTransaction()
-//	assert.Nil(t, err)
+//	assert.NoError(t, err)
 //
 //	ethTx, ok := blockchainTx.(*Transaction)
 //	assert.True(t, ok)

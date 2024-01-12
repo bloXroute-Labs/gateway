@@ -19,7 +19,7 @@ func (m abstractCleanup) Pack(protocol Protocol, msgType string) ([]byte, error)
 	buf := make([]byte, bufLen)
 
 	m.BroadcastHeader.Pack(&buf, msgType, protocol)
-	offset := BroadcastHeaderLen
+	offset := BroadcastHeaderOffset
 	binary.LittleEndian.PutUint32(buf[offset:], uint32(len(m.ShortIDs)))
 	offset += types.UInt32Len
 	for i := 0; i < len(m.ShortIDs); i++ {

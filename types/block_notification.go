@@ -356,8 +356,13 @@ type Header struct {
 }
 
 // GetNumber returns the block number from the header in uint64
-func (h Header) GetNumber() uint64 {
+func (h *Header) GetNumber() uint64 {
 	return h.hexNumber
+}
+
+// UpdateNumber updates the block number from the header in uint64
+func (h *Header) UpdateNumber(number uint64) {
+	h.hexNumber = number
 }
 
 // ConvertEthHeaderToBlockNotificationHeader converts Ethereum header to bloxroute Ethereum Header

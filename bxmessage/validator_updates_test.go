@@ -16,14 +16,14 @@ func TestValidatorUpdatesPackUnpack(t *testing.T) {
 	}
 	vu, err := NewValidatorUpdates(bxgateway.BSCMainnetNum, 3, onlineList)
 
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	b, err := vu.Pack(0)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	var update ValidatorUpdates
 	err = update.Unpack(b, 0)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	assert.Equal(t, bxgateway.BSCMainnetNum, types.NetworkNum(update.networkNum))
 	assert.Equal(t, 3, int(update.onlineListLength))

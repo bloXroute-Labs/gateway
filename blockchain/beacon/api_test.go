@@ -79,7 +79,7 @@ func TestNewAPIClient(t *testing.T) {
 	client, err := NewAPIClient(ctx, httpClient, config, bridge, url, blockchainNetwork)
 
 	time.Sleep(time.Second)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, ctx, client.ctx)
 	assert.Equal(t, url, client.URL)
 	assert.Equal(t, bridge, client.bridge)
@@ -98,7 +98,7 @@ func TestAPIClient_requestBlock(t *testing.T) {
 	)
 
 	client, err := NewAPIClient(ctx, httpClient, config, bridge, url, blockchainNetwork)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	tests := []struct {
 		name        string
 		version     string
@@ -133,7 +133,7 @@ func TestAPIClient_requestBlock(t *testing.T) {
 			if tt.expectError {
 				assert.NotNil(t, err)
 			} else {
-				assert.Nil(t, err)
+				assert.NoError(t, err)
 			}
 		})
 	}
@@ -152,7 +152,7 @@ func TestAPIClient_hashOfBlock(t *testing.T) {
 	)
 
 	client, err := NewAPIClient(ctx, httpClient, config, bridge, url, blockchainNetwork)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	respHeaders := http.Header{}
 	respHeaders.Add("Eth-Consensus-Version", "capella")
 	httpmock.RegisterResponder("GET", "http://"+client.URL+"/eth/v2/beacon/blocks/"+blockID,
@@ -193,7 +193,7 @@ func TestAPIClient_hashOfBlock(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := client.hashOfBlock(tt.block)
+			got, err := client.hashOfBlock(NewWrappedReadOnlySignedBeaconBlock(tt.block))
 			if (err != nil) != tt.wantFuncErr {
 				t.Errorf("APIClient.hashOfBlock() error = %v, wantErr %v", err, tt.wantFuncErr)
 				return
@@ -222,7 +222,7 @@ func TestAPIClient_processResponse(t *testing.T) {
 	// Initialize Beacon API client
 	client, err := NewAPIClient(ctx, httpClient, config, bridge, url, blockchainNetwork)
 
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	version := "capella"
 
@@ -270,9 +270,12 @@ func TestAPIClient_broadcastBlock(t *testing.T) {
 		},
 	)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Initialize Beacon API client
 	client, err := NewAPIClient(ctx, httpClient, config, bridge, url, blockchainNetwork)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	client.Start()
 	time.Sleep(time.Second)
 	// Test Case 1: Successful broadcast ssz

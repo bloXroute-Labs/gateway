@@ -16,7 +16,7 @@ func TestLog_Exit(t *testing.T) {
 		Infof("log record %v", i)
 	}
 
-	assert.Greater(t, numLogRecords, len(hook.Entries))
+	assert.Greater(t, numLogRecords, len(hook.AllEntries()))
 	NonBlocking.Exit()
-	assert.Equal(t, numLogRecords, len(hook.Entries))
+	assert.Equal(t, numLogRecords, len(hook.AllEntries()))
 }

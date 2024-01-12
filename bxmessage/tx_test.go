@@ -36,12 +36,12 @@ func TestTx_SourceIDValid(t *testing.T) {
 	sourceID := "4c5df5f8-2fd9-4739-a319-8beeba554a88"
 	tx := Tx{}
 	err := tx.SetSourceID(types.NodeID(sourceID))
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, types.NodeID(sourceID), tx.SourceID())
 
 	newSourceID := "9ee4ec57-d189-428e-92e6-d496670b5022"
 	err = tx.SetSourceID(types.NodeID(newSourceID))
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, types.NodeID(newSourceID), tx.SourceID())
 
 	newInvalidSourceID := "invalid-source-id"

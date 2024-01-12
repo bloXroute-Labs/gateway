@@ -164,12 +164,11 @@ func (h *Handler) runEthSub(wsCtx context.Context, nodeWS blockchain.WSProvider)
 		newPendingTxsErrCh = newPendingTxsSub.Sub.(*rpc.ClientSubscription).Err()
 
 		done := h.handleFeeds(wsCtx, nodeWS, newHeadsRespCh, newPendingTxsRespCh, newHeadsErrCh, newPendingTxsErrCh)
-		if done {
-			return
-		}
-
 		// we had a feed error. Reconnect and resubscribe
 		nodeWS.Close()
+		if done { // if closure is expected, just exit
+			return
+		}
 	}
 }
 
@@ -606,9 +605,21 @@ func (h *Handler) broadcastBlockAnnouncement(block *ethtypes.Block) {
 	}
 }
 
+func (h *Handler) isChainIDMatch(txChainID uint64) bool {
+	// if chainID is 0 its legacy tx,so we want to propagate it,if it's not 0,we need to check if its match to gw chain id
+	if txChainID == 0 || txChainID == h.config.Network {
+		return true
+	}
+	return false
+}
+
 func (h *Handler) processTransactions(peer *Peer, txs []*ethtypes.Transaction) error {
 	bdnTxs := make([]*types.BxTransaction, 0, len(txs))
 	for _, tx := range txs {
+		if !h.isChainIDMatch(tx.ChainId().Uint64()) {
+			log.Debugf("tx %v from blockchain peer %v has invalid chain id", tx.Hash().String(), peer.endpoint.IPPort())
+			continue
+		}
 		bdnTx, err := h.bridge.TransactionBlockchainToBDN(tx)
 		if err != nil {
 			return err

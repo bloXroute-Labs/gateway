@@ -20,13 +20,11 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
 	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/gorilla/websocket"
 	"github.com/sourcegraph/jsonrpc2"
 	websocketjsonrpc2 "github.com/sourcegraph/jsonrpc2/websocket"
-	"github.com/zhouzhuojie/conditions"
 )
 
 const localhost = "127.0.0.1"
@@ -45,12 +43,12 @@ type ClientHandler struct {
 	enableBlockchainRPC      bool
 	pendingTxsSourceFromNode *bool
 	log                      *log.Entry
-	authorize                func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool) (sdnmessage.Account, error)
+	authorize                func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool, ip string) (sdnmessage.Account, error)
 	txFromFieldIncludable    bool
 }
 
 // NewClientHandler is a constructor for ClientHandler
-func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, httpServer *HTTPServer, enableBlockchainRPC bool, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), log *log.Entry, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool) (sdnmessage.Account, error), txFromFieldIncludable bool) *ClientHandler {
+func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, httpServer *HTTPServer, enableBlockchainRPC bool, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), log *log.Entry, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool, ip string) (sdnmessage.Account, error), txFromFieldIncludable bool) *ClientHandler {
 	return &ClientHandler{
 		feedManager:              feedManager,
 		websocketServer:          websocketServer,
@@ -134,7 +132,7 @@ func (ch *ClientHandler) shutdownWSServer() {
 }
 
 // newWSServer creates and returns a new websocket server managed by FeedManager
-func newWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool) (sdnmessage.Account, error), txFromFieldIncludable bool) *http.Server {
+func newWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool, ip string) (sdnmessage.Account, error), txFromFieldIncludable bool) *http.Server {
 	handler := http.NewServeMux()
 	wsHandler := func(responseWriter http.ResponseWriter, request *http.Request) {
 		// if enable client handler - skip authorization
@@ -165,7 +163,7 @@ func newWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) 
 				errorWithDelay(responseWriter, request, fmt.Errorf("missing authorization from method: %v", request.Method).Error())
 				return
 			}
-			connectionAccountModel, err = authorize(accountID, secretHash, true)
+			connectionAccountModel, err = authorize(accountID, secretHash, true, request.RemoteAddr)
 			if err != nil {
 				errorWithDelay(responseWriter, request, err.Error())
 				return
@@ -253,66 +251,6 @@ func SendErrorMsg(ctx context.Context, code jsonrpc.RPCErrorCode, data string, c
 		// TODO: move this to caller and add identifying information
 		log.Errorf("could not respond to client with error message: %v", err)
 	}
-}
-
-func filterAndInclude(clientReq *clientReq, tx *types.NewTransactionNotification, remoteAddress string, accountID types.AccountID) *TxResult {
-	if clientReq.expr != nil {
-		filters := clientReq.expr.Args()
-		txFilters := tx.Filters(filters)
-
-		// should be doone after tx.Filters() to avoid nil pointer dereference
-		txType := tx.BlockchainTransaction.(*types.EthTransaction).Type()
-
-		if !isFiltersSupportedByTxType(txType, filters) {
-			log.Tracef("skipping [%s] transaction evaluation for feed, configured unsupported filter %s for tx type: %d. feed: %v remote address: %v. account id: %v",
-				tx.GetHash(), clientReq.expr, txType, clientReq.feed, remoteAddress, accountID)
-			return nil
-		}
-
-		// Evaluate if we should send the tx
-		shouldSend, err := conditions.Evaluate(clientReq.expr, txFilters)
-		if err != nil {
-			log.Errorf("error evaluate Filters. feed: %v. filters: %s. remote address: %v. account id: %v error - %v tx: %v",
-				clientReq.feed, clientReq.expr, remoteAddress, accountID, err.Error(), txFilters)
-			return nil
-		}
-		if !shouldSend {
-			return nil
-		}
-	}
-
-	hasTxContent := false
-	var response TxResult
-	for _, param := range clientReq.includes {
-		switch param {
-		case "tx_hash":
-			txHash := tx.GetHash()
-			response.TxHash = &txHash
-		case "time":
-			timeNow := time.Now().Format(bxgateway.MicroSecTimeFormat)
-			response.Time = &timeNow
-		case "local_region":
-			localRegion := tx.LocalRegion()
-			response.LocalRegion = &localRegion
-		case "raw_tx":
-			rawTx := hexutil.Encode(tx.RawTx())
-			response.RawTx = &rawTx
-		default:
-			if strings.HasPrefix(param, "tx_contents.") {
-				hasTxContent = true
-			}
-		}
-	}
-
-	if hasTxContent {
-		fields := tx.Fields(clientReq.includes)
-		if fields == nil {
-			log.Errorf("Got nil from tx.Fields - need to be checked")
-			return nil
-		}
-		response.TxContents = fields
-	}
-	return &response
 }
 
 // validateTxFromExternalSource validate transaction from external source (ws / grpc), return bool indicates if tx is pending reevaluation
@@ -460,7 +398,6 @@ func HandleMEVBundle(feedManager *FeedManager, conn connections.Conn, connection
 	if len(params.MEVBuilders) == 0 {
 		params.MEVBuilders = map[string]string{
 			bxgateway.BloxrouteBuilderName: "",
-			bxgateway.FlashbotsBuilderName: "",
 		}
 	}
 
@@ -477,9 +414,16 @@ func HandleMEVBundle(feedManager *FeedManager, conn connections.Conn, connection
 	}
 	mevBundle.SetNetworkNum(feedManager.networkNum)
 
+	// sent from cloud api
+	if connectionAccount.AccountID == types.BloxrouteAccountID {
+		mevBundle.SentFromCloudAPI = true
+	}
+
+	mevBundle.OriginalSenderAccountID = string(conn.GetAccountID())
+
 	if !connectionAccount.TierName.IsElite() {
 		log.Tracef("%s rejected for non EnterpriseElite account %v tier %v", mevBundle, connectionAccount.AccountID, connectionAccount.TierName)
-		return nil, jsonrpc2.CodeInvalidRequest, errors.New("enterprise account is required in order to send bundle")
+		return nil, jsonrpc2.CodeInvalidRequest, errors.New("enterprise elite account is required in order to send bundle")
 	}
 
 	maxTxsLen := connectionAccount.Bundles.Networks[bxgateway.NetworkNumToBlockchainNetwork[feedManager.networkNum]].TxsLenLimit

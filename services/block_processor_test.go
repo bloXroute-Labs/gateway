@@ -43,11 +43,11 @@ func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 	store.Add(txs[3].Hash(), txs[3].Content(), 2, testNetworkNum, false, 0, clock.Now(), 0, types.EmptySender)
 
 	bxBlock, err := types.NewBxBlock(blockHash, types.EmptyHash, types.BxBlockTypeEth, header, txs, trailer, big.NewInt(10000), big.NewInt(10), blockSize)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// assume the blockchain network MinTxAgeSecond is 2
 	broadcastMessage, shortIDs, err := bp.BxBlockToBroadcast(bxBlock, testNetworkNum, time.Second*2)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// only the first shortID exists, the second Tx didn't get added into shortID
 	assert.Equal(t, 1, len(shortIDs))
@@ -69,7 +69,7 @@ func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 	// decompress same block works after clearing processed list
 	bp.(*blockProcessor).processedBlocks = NewHashHistory("processedBlocks", 30*time.Minute)
 	decodedBxBlock, missingShortIDs, err := bp.BxBlockFromBroadcast(broadcastMessage)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, 0, len(missingShortIDs))
 
 	assert.Equal(t, header, decodedBxBlock.Header)
@@ -115,7 +115,7 @@ func TestRLPBlockProcessor_BroadcastToBxBlockShortIDs(t *testing.T) {
 	store.Add(txHash2, txContent2, 2, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 
 	bxBlock, missingShortIDs, err := bp.BxBlockFromBroadcast(broadcast)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.NotNil(t, bxBlock)
 	assert.Equal(t, 0, len(missingShortIDs))
 
@@ -162,7 +162,7 @@ func TestRLPBlockProcessor_BroadcastToBxBlockFullTxs(t *testing.T) {
 	store.Add(txHash1, txContent1, 1, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 
 	bxBlock, missingShortIDs, err := bp.BxBlockFromBroadcast(broadcast)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.NotNil(t, bxBlock)
 	assert.Equal(t, 0, len(missingShortIDs))
 
@@ -206,7 +206,7 @@ func TestRLPBlockProcessor_ProcessBroadcast(t *testing.T) {
 	bp := NewBlockProcessor(&store)
 
 	bxBlock, _, err := bp.BxBlockFromBroadcast(broadcast)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	assert.NotNil(t, bxBlock)
 	assert.Equal(t, broadcast.Hash(), bxBlock.Hash())

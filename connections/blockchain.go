@@ -22,10 +22,12 @@ var blockchainTLSPlaceholder = TLS{}
 
 // NewBlockchainConn return a new instance of the Blockchain placeholder connection
 func NewBlockchainConn(ipEndpoint types.NodeEndpoint) Blockchain {
+	connType := utils.Blockchain.String()
+
 	return Blockchain{
 		endpoint: ipEndpoint,
 		log: log.WithFields(log.Fields{
-			"connType":   utils.Blockchain.String(),
+			"connType":   connType,
 			"remoteAddr": fmt.Sprintf("%v:%v", ipEndpoint.IP, ipEndpoint.Port),
 		}),
 	}

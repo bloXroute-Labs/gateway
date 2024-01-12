@@ -258,7 +258,7 @@ func (m Tx) Pack(protocol Protocol) ([]byte, error) {
 	bufLen := m.Size(protocol)
 	buf := make([]byte, bufLen)
 	m.BroadcastHeader.Pack(&buf, TxType, protocol)
-	offset := BroadcastHeaderLen
+	offset := BroadcastHeaderOffset
 
 	binary.LittleEndian.PutUint32(buf[offset:], uint32(m.shortID))
 	offset += types.ShortIDLen
@@ -335,7 +335,7 @@ func (m *Tx) Unpack(buf []byte, protocol Protocol) error {
 	if err := m.BroadcastHeader.Unpack(buf, protocol); err != nil {
 		return err
 	}
-	offset := BroadcastHeaderLen
+	offset := BroadcastHeaderOffset
 	if err := checkBufSize(&buf, offset, types.ShortIDLen+types.TxFlagsLen); err != nil {
 		return err
 	}

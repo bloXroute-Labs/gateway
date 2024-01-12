@@ -98,7 +98,6 @@ func (s *HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 		payload := jsonrpc.RPCBundleSubmissionPayload{
 			MEVBuilders: map[string]string{
 				bxgateway.BloxrouteBuilderName: "",
-				bxgateway.FlashbotsBuilderName: "",
 			},
 			Frontrunning:    bundlePayload[0].Frontrunning,
 			Transaction:     bundlePayload[0].Txs,
@@ -163,7 +162,6 @@ func (s *HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 		if len(params.MEVBuilders) == 0 {
 			params.MEVBuilders = map[string]string{
 				bxgateway.BloxrouteBuilderName: "",
-				bxgateway.FlashbotsBuilderName: "",
 			}
 		}
 

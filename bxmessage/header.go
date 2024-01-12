@@ -78,8 +78,6 @@ func (h Header) ProcessChannelPosition() int {
 
 // Pack serializes a Header into a buffer for sending on the wire
 func (h *Header) Pack(buf *[]byte, msgType string) {
-	h.msgType = msgType
-
 	binary.BigEndian.PutUint32(*buf, 0xfffefdfc)
 	copy((*buf)[TypeOffset:], msgType)
 	binary.LittleEndian.PutUint32((*buf)[PayloadSizeOffset:], uint32(len(*buf))-HeaderLen)

@@ -67,12 +67,9 @@ func (hh HashHistory) Count() int {
 
 func (hh HashHistory) cleanup() {
 	ticker := hh.clock.Ticker(hh.cleanupFreq)
-	for {
-		select {
-		case <-ticker.Alert():
-			itemsCleaned := hh.clean()
-			log.Debugf("cleaned %v entries in HashHistory[%v], the remaining entries are %v", itemsCleaned, hh.name, hh.Count())
-		}
+	for range ticker.Alert() {
+		itemsCleaned := hh.clean()
+		log.Debugf("cleaned %v entries in HashHistory[%v], the remaining entries are %v", itemsCleaned, hh.name, hh.Count())
 	}
 }
 

@@ -79,7 +79,7 @@ func TestFilter(t *testing.T) {
 		s.Filters = pythonFormat
 		goFormatResult, exp, err := parseFilter(s.Filters)
 		assert.Equal(t, strings.ToLower(expectedGoFormat), strings.ToLower(goFormatResult))
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.Nil(t, evaluateFilters(exp))
 	}
 

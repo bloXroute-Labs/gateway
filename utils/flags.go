@@ -495,6 +495,6 @@ var (
 		Name:   "tx-include-sender-in-feed",
 		Usage:  "(for gateways only) include sender address in transaction feed",
 		Hidden: true,
-		Value:  true,
+		Value:  false,
 	}
 )

@@ -108,7 +108,7 @@ func TestRegister_BlockchainNetworkNumberUpdated(t *testing.T) {
 
 			err := s.Register()
 
-			assert.Nil(t, err)
+			assert.NoError(t, err)
 			assert.Equal(t, testCase.nodeModel.Network, s.nodeModel.Network)
 			assert.Equal(t, testCase.nodeModel.Protocol, s.nodeModel.Protocol)
 			assert.Equal(t, testCase.networkNumber, s.nodeModel.BlockchainNetworkNum)
@@ -184,10 +184,10 @@ func TestDirectRelayConnections_IfPingOver40MSLogsWarning(t *testing.T) {
 			autoRelayInstructions := make(chan RelayInstruction)
 			go func() { <-autoRelayInstructions }()
 			err := sdn.DirectRelayConnections(ctx, "auto", 1, autoRelayInstructions, time.Second)
-			assert.Nil(t, err)
+			assert.NoError(t, err)
 			time.Sleep(time.Millisecond)
 
-			logs := globalHook.Entries
+			logs := globalHook.AllEntries()
 			if testCase.log == "" {
 				assert.Nil(t, logs)
 			} else {
@@ -770,7 +770,7 @@ func TestSDNHTTP_CacheFiles_ServiceUnavailable_SDN_BlockchainNetworks(t *testing
 		// bxapi is not responsive
 		// -> trying to load the blockchain networks from cache file
 		resp, err := sdn.httpWithCache(url, bxgateway.GetMethod, blockchainNetworksCacheFileName, nil)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.NotNil(t, resp)
 		cachedNetwork := []*sdnmessage.BlockchainNetwork{}
 		assert.Nil(t, json.Unmarshal(resp, &cachedNetwork))
@@ -812,7 +812,7 @@ func TestSDNHTTP_CacheFiles_ServiceUnavailable_SDN_Node(t *testing.T) {
 		// bxapi is not responsive
 		// -> trying to load the node model from cache file
 		resp, err := sdn.httpWithCache(sdn.sdnURL+"/nodes", bxgateway.PostMethod, nodeModelCacheFileName, bytes.NewBuffer(sdn.NodeModel().Pack()))
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.NotNil(t, resp)
 		cachedNodeModel := &sdnmessage.NodeModel{}
 		assert.Nil(t, json.Unmarshal(resp, &cachedNodeModel))
@@ -854,7 +854,7 @@ func TestSDNHTTP_CacheFiles_ServiceUnavailable_SDN_Relays(t *testing.T) {
 		// bxapi is not responsive
 		// -> trying to load the peers from cache file
 		resp, err := sdn.httpWithCache(url, bxgateway.GetMethod, potentialRelaysFileName, nil)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.NotNil(t, resp)
 		cachedPeers := sdnmessage.Peers{}
 		assert.Nil(t, json.Unmarshal(resp, &cachedPeers))
@@ -897,7 +897,7 @@ func TestSDNHTTP_CacheFiles_ServiceUnavailable_SDN_Account(t *testing.T) {
 		// bxapi is not responsive
 		// -> trying to load the account model from cache file
 		resp, err := sdn.httpWithCache(url, bxgateway.GetMethod, accountModelsFileName, nil)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.NotNil(t, resp)
 
 		cachedAccountModel := sdnmessage.Account{}
@@ -1163,7 +1163,7 @@ func TestSDNHTTP_FillInAccountDefaults(t *testing.T) {
 
 	targetAccount, err := sdnhttp.fillInAccountDefaults(&targetAccount, now)
 
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, sdnmessage.GetDefaultEliteAccount(now), targetAccount)
 
 }

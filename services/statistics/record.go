@@ -65,14 +65,17 @@ type bundleRecord struct {
 	SentGatewayPeers int              `json:"gateway_peers,omitempty"`
 }
 
-type bundleSentToRsyncRecord struct {
-	BundleHash    string           `json:"bundle_hash"`
-	BlockNumber   string           `json:"block_number"`
-	UUID          string           `json:"uuid"`
-	UserSetUUID   bool             `json:"user_set_UUID"`
-	BundlePrice   int64            `json:"bundle_price"`
-	EnforcePayout bool             `json:"enforce_payout"`
-	NetworkNum    types.NetworkNum `json:"network_num"`
+type bundleSentToBuilderRecord struct {
+	BundleHash  string                 `json:"bundle_hash"`
+	BlockNumber int64                  `json:"block_number"`
+	UUID        string                 `json:"uuid"`
+	UserSetUUID bool                   `json:"user_set_UUID"`
+	BuilderName string                 `json:"builder_name"`
+	NetworkNum  types.NetworkNum       `json:"network_num"`
+	AccountID   types.AccountID        `json:"account_id"`
+	AccountTier sdnmessage.AccountTier `json:"account_tier"`
+	BuilderURL  string                 `json:"builder_url"`
+	StatusCode  int                    `json:"status_code"`
 }
 
 type ethBlockContent struct {

@@ -141,54 +141,54 @@ func TestTxTraceLeakyBucketRateLimiter_Take_HasCorrectLogging(t *testing.T) {
 	hook := test.NewGlobal()
 
 	res, counter := l.Take()
-	if len(hook.Entries) != 1 {
+	if len(hook.AllEntries()) != 1 {
 		t.FailNow()
 	}
 	assert.True(t, res)
-	assert.Equal(t, fmt.Sprintf("Account ID abc has 1 / 2 tx trace calls left per second"), hook.LastEntry().Message)
+	assert.Equal(t, "Account ID abc has 1 / 2 tx trace calls left per second", hook.LastEntry().Message)
 	assert.Equal(t, float32(1), counter)
 
 	res, counter = l.Take()
-	if len(hook.Entries) != 2 {
+	if len(hook.AllEntries()) != 2 {
 		t.FailNow()
 	}
 	assert.True(t, res)
-	assert.Equal(t, fmt.Sprintf("Account ID abc has 0 / 2 tx trace calls left per second"), hook.LastEntry().Message)
+	assert.Equal(t, "Account ID abc has 0 / 2 tx trace calls left per second", hook.LastEntry().Message)
 	assert.Equal(t, float32(0), counter)
 
 	mockClock.SetTime(startTime.Add(time.Millisecond * 300))
 	res, counter = l.Take()
-	if len(hook.Entries) != 3 {
+	if len(hook.AllEntries()) != 3 {
 		t.FailNow()
 	}
 	assert.False(t, res)
-	assert.Equal(t, fmt.Sprintf("Account ID abc has 0.6 / 2 tx trace calls left per second"), hook.LastEntry().Message)
+	assert.Equal(t, "Account ID abc has 0.6 / 2 tx trace calls left per second", hook.LastEntry().Message)
 	assert.Equal(t, float32(0.6), counter)
 
 	mockClock.SetTime(startTime.Add(time.Millisecond * 450))
 	res, counter = l.Take()
-	if len(hook.Entries) != 4 {
+	if len(hook.AllEntries()) != 4 {
 		t.FailNow()
 	}
 	assert.False(t, res)
-	assert.Equal(t, fmt.Sprintf("Account ID abc has 0.90000004 / 2 tx trace calls left per second"), hook.LastEntry().Message)
+	assert.Equal(t, "Account ID abc has 0.90000004 / 2 tx trace calls left per second", hook.LastEntry().Message)
 	assert.Equal(t, float32(0.90000004), counter)
 
 	mockClock.SetTime(startTime.Add(time.Millisecond * 500))
 	res, counter = l.Take()
-	if len(hook.Entries) != 5 {
+	if len(hook.AllEntries()) != 5 {
 		t.FailNow()
 	}
 	assert.True(t, res)
-	assert.Equal(t, fmt.Sprintf("Account ID abc has 0 / 2 tx trace calls left per second"), hook.LastEntry().Message)
+	assert.Equal(t, "Account ID abc has 0 / 2 tx trace calls left per second", hook.LastEntry().Message)
 	assert.Equal(t, float32(0), counter)
 
 	mockClock.SetTime(startTime.Add(time.Second * 2))
 	res, counter = l.Take()
-	if len(hook.Entries) != 6 {
+	if len(hook.AllEntries()) != 6 {
 		t.FailNow()
 	}
 	assert.True(t, res)
-	assert.Equal(t, fmt.Sprintf("Account ID abc has 1 / 2 tx trace calls left per second"), hook.LastEntry().Message)
+	assert.Equal(t, "Account ID abc has 1 / 2 tx trace calls left per second", hook.LastEntry().Message)
 	assert.Equal(t, float32(1), counter)
 }

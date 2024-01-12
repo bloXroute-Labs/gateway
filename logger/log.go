@@ -6,10 +6,14 @@ import (
 	"io/ioutil"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/orandin/lumberjackrus"
 	"github.com/sirupsen/logrus"
 )
+
+// initConfigMutex avoids race condition when somebody calls Init
+var initConfigMutex sync.RWMutex
 
 // Config represents logger options for where to write data and what data to write
 type Config struct {
@@ -76,6 +80,10 @@ func Init(logConfig *Config, version string) error {
 	if err != nil {
 		return err
 	}
+
+	// Lock configuration to avoid race conditions
+	initConfigMutex.Lock()
+	defer initConfigMutex.Unlock()
 
 	logrus.SetFormatter(formatter)
 	logrus.SetLevel(logrus.TraceLevel)

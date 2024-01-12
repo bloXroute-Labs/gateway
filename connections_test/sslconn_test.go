@@ -3,7 +3,6 @@ package connections_test
 import (
 	"runtime"
 	"testing"
-	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
@@ -19,24 +18,34 @@ func TestSSLConn_ClosingFromSend(t *testing.T) {
 	startCount := runtime.NumGoroutine()
 
 	_, s := sslConn(1)
-	assert.Equal(t, startCount, runtime.NumGoroutine())
+
+	test.WaitUntilTrueOrFail(t, func() bool {
+		return runtime.NumGoroutine() == startCount
+	})
 
 	// send loop started
 	_ = s.Connect()
-	assert.Equal(t, startCount+1, runtime.NumGoroutine())
+
+	test.WaitUntilTrueOrFail(t, func() bool {
+		return runtime.NumGoroutine() == startCount+1
+	})
 
 	am := bxmessage.Ack{}
 	_ = s.Send(&am)
 	assert.True(t, s.IsOpen())
 
 	_ = s.Send(&am)
-	assert.False(t, s.IsOpen())
 
-	time.Sleep(1 * time.Millisecond)
-	assert.Equal(t, startCount, runtime.NumGoroutine())
+	test.WaitUntilTrueOrFail(t, func() bool {
+		return !s.IsOpen()
+	})
+
+	test.WaitUntilTrueOrFail(t, func() bool {
+		return runtime.NumGoroutine() == startCount
+	})
 }
 
-func sslConn(backlog int) (bxmock.MockTLS, *connections.SSLConn) {
+func sslConn(backlog int) (*bxmock.MockTLS, *connections.SSLConn) {
 	ip := "127.0.0.1"
 	port := int64(3000)
 

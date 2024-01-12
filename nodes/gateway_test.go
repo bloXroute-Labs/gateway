@@ -7,12 +7,12 @@ import (
 	"math/big"
 	"os"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	ethtest "github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
@@ -28,21 +28,21 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/services/loggers"
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
-	mock_connections "github.com/bloXroute-Labs/gateway/v2/test/sdnhttpmock"
+	"github.com/bloXroute-Labs/gateway/v2/test/mock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/utilmock"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/metadata"
 )
 
 var (
 	networkNum           types.NetworkNum = 5
-	chainID              int64            = 1
+	chainID              int64            = network.EthMainnetChainID
 	blockchainIPEndpoint                  = types.NodeEndpoint{IP: "123.45.6.78", Port: 8001}
 )
 
@@ -54,7 +54,7 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 	}
 	utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
 	ctl := gomock.NewController(t)
-	sdn := mock_connections.NewMockSDNHTTP(ctl)
+	sdn := mock.NewMockSDNHTTP(ctl)
 	sdn.EXPECT().FetchAllBlockchainNetworks().Return(nil).AnyTimes()
 	sdn.EXPECT().FetchCustomerAccountModel(gomock.Any()).Return(sdnmessage.Account{}, nil).AnyTimes()
 	sdn.EXPECT().MinTxAge().Return(time.Millisecond).AnyTimes()
@@ -83,6 +83,7 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 	}
 
 	bxConfig := &config.Bx{
+		NoStats:    true,
 		Config:     &logConfig,
 		NodeType:   utils.Gateway,
 		TxTraceLog: &txTraceLog,
@@ -138,11 +139,11 @@ func newBP() (*services.BxTxStore, services.BlockProcessor) {
 	return &txStore, bp
 }
 
-func addRelayConn(g *gateway) (bxmock.MockTLS, *handler.Relay) {
+func addRelayConn(g *gateway) (*bxmock.MockTLS, *handler.Relay) {
 	mockTLS := bxmock.NewMockTLS("1.1.1.1", 1800, "", utils.Relay, "")
 	relayConn := handler.NewRelay(g,
 		func() (connections.Socket, error) {
-			return &mockTLS, nil
+			return mockTLS, nil
 		},
 		&utils.SSLCerts{}, "1.1.1.1", 1800, "", utils.Relay, true, g.sdn.Networks(), true, true, connections.LocalInitiatedPort, utils.RealClock{},
 		false, true)
@@ -192,15 +193,15 @@ func bxBlockFromEth(b blockchain.Bridge, height uint64, parentHash types.SHA256H
 
 func processEthTxOnBridge(t *testing.T, bridge blockchain.Bridge, ethTx *ethtypes.Transaction, blockchainPeer types.NodeEndpoint) {
 	bdnTx, err := bridge.TransactionBlockchainToBDN(ethTx)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// send transactions over bridge from blockchain connection
 	txs := []*types.BxTransaction{bdnTx}
 	err = bridge.SendTransactionsToBDN(txs, blockchainPeer)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 }
 
-func assertTransactionSentToRelay(t *testing.T, ethTx *ethtypes.Transaction, ethTxBytes []byte, relayTLS bxmock.MockTLS, relayConn *handler.Relay) {
+func assertTransactionSentToRelay(t *testing.T, ethTx *ethtypes.Transaction, ethTxBytes []byte, relayTLS *bxmock.MockTLS, relayConn *handler.Relay) {
 	msgBytes, err := relayTLS.MockAdvanceSent()
 	if err != nil {
 		assert.FailNow(t, "no messages sent on relay connection")
@@ -209,7 +210,7 @@ func assertTransactionSentToRelay(t *testing.T, ethTx *ethtypes.Transaction, eth
 	// transaction is broadcast to relays
 	var sentTx bxmessage.Tx
 	err = sentTx.Unpack(msgBytes, relayConn.Protocol())
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	assert.Equal(t, ethTx.Hash().Bytes(), sentTx.Hash().Bytes())
 	if ethTx.Type() == ethtypes.LegacyTxType {
@@ -220,24 +221,14 @@ func assertTransactionSentToRelay(t *testing.T, ethTx *ethtypes.Transaction, eth
 	}
 }
 
-func assertNoTransactionSentToRelay(t *testing.T, relayTLS bxmock.MockTLS) {
+func assertNoTransactionSentToRelay(t *testing.T, relayTLS *bxmock.MockTLS) {
 	_, err := relayTLS.MockAdvanceSent()
 	assert.NotNil(t, err)
 }
 
-func assertNoBlockSentToRelay(t *testing.T, relayTLS bxmock.MockTLS) {
+func assertNoBlockSentToRelay(t *testing.T, relayTLS *bxmock.MockTLS) {
 	_, err := relayTLS.MockAdvanceSent()
 	assert.NotNil(t, err)
-}
-
-func waitUntillTXQueueChannelIsEmpty(g *gateway) {
-	for {
-		if g.txsQueue.Len() == 0 {
-			time.Sleep(10 * time.Millisecond)
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
 }
 
 func TestGateway_PushBlockchainConfig(t *testing.T) {
@@ -266,7 +257,7 @@ func TestGateway_PushBlockchainConfig(t *testing.T) {
 	}()
 
 	err := g.pushBlockchainConfig()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	wg.Wait()
 	assert.NotNil(t, ethConfig)
@@ -286,7 +277,7 @@ func TestGateway_HandleTransactionFromBlockchain_SeenInBloomFilter(t *testing.T)
 	bridge, g := setup(t, 1)
 	mockTLS, relayConn := addRelayConn(g)
 
-	bf, err := services.NewBloomFilter(context.Background(), utils.RealClock{}, time.Hour, "", 1e6)
+	bf, err := services.NewBloomFilter(context.Background(), utils.RealClock{}, time.Hour, "", 1e6, 1000)
 	defer func() { _ = os.Remove("bloom") }()
 	require.NoError(t, err)
 
@@ -296,10 +287,10 @@ func TestGateway_HandleTransactionFromBlockchain_SeenInBloomFilter(t *testing.T)
 
 	go func() {
 		err := g.handleBridgeMessages(context.Background())
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}()
 
-	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil, nil)
+	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil, big.NewInt(network.EthMainnetChainID))
 	txHash := ethTx.Hash().String()
 	txHash = txHash[2:]
 	assert.Equal(t, false, g.pendingTxs.Exists(txHash))
@@ -331,10 +322,10 @@ func TestGateway_HandleTransactionFromBlockchain(t *testing.T) {
 
 	go func() {
 		err := g.handleBridgeMessages(context.Background())
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}()
 
-	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil, nil)
+	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil, big.NewInt(network.EthMainnetChainID))
 	txHash := ethTx.Hash().String()
 	txHash = txHash[2:]
 	assert.Equal(t, false, g.pendingTxs.Exists(txHash))
@@ -355,10 +346,10 @@ func TestGateway_HandleTransactionFromInboundBlockchain(t *testing.T) {
 
 	go func() {
 		err := g.handleBridgeMessages(context.Background())
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}()
 
-	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil, nil)
+	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil, big.NewInt(network.EthMainnetChainID))
 	txHash := ethTx.Hash().String()
 	txHash = txHash[2:]
 	g.blockchainPeers[0].Dynamic = true
@@ -380,10 +371,10 @@ func TestGateway_HandleTransactionFromBlockchain_MultiNode(t *testing.T) {
 
 	go func() {
 		err := g.handleBridgeMessages(context.Background())
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}()
 
-	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil, nil)
+	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil, big.NewInt(network.EthMainnetChainID))
 	processEthTxOnBridge(t, bridge, ethTx, g.blockchainPeers[0])
 	assertTransactionSentToRelay(t, ethTx, ethTxBytes, mockTLS, relayConn)
 
@@ -402,10 +393,10 @@ func TestGateway_HandleTransactionFromBlockchain_TwoRelays(t *testing.T) {
 
 	go func() {
 		err := g.handleBridgeMessages(context.Background())
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}()
 
-	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil, nil)
+	ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, 1, nil, big.NewInt(network.EthMainnetChainID))
 	processEthTxOnBridge(t, bridge, ethTx, g.blockchainPeers[0])
 
 	assertTransactionSentToRelay(t, ethTx, ethTxBytes, mockTLS1, relayConn1)
@@ -427,16 +418,16 @@ func TestGateway_HandleTransactionFromBlockchain_BurstLimit(t *testing.T) {
 
 	go func() {
 		err := g.handleBridgeMessages(context.Background())
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}()
 
 	for i := uint64(1); i <= uint64(limit); i++ {
-		ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, i, nil, nil)
+		ethTx, ethTxBytes := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, i, nil, big.NewInt(network.EthMainnetChainID))
 		processEthTxOnBridge(t, bridge, ethTx, g.blockchainPeers[0])
 		assertTransactionSentToRelay(t, ethTx, ethTxBytes, mockTLS, relayConn)
 	}
 
-	ethTx, _ := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, uint64(limit+1), nil, nil)
+	ethTx, _ := bxmock.NewSignedEthTxBytes(ethtypes.DynamicFeeTxType, uint64(limit+1), nil, big.NewInt(network.EthMainnetChainID))
 	processEthTxOnBridge(t, bridge, ethTx, g.blockchainPeers[0])
 	assertNoTransactionSentToRelay(t, mockTLS)
 
@@ -460,23 +451,23 @@ func TestGateway_HandleTransactionFromRPC_BurstLimitPaid(t *testing.T) {
 
 	go func() {
 		err := g.handleBridgeMessages(context.Background())
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}()
 
 	for i := uint64(1); i <= uint64(limit); i++ {
-		_, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, i, nil, networkNum, 0, nil)
+		_, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, i, nil, networkNum, 0, big.NewInt(network.EthMainnetChainID))
 		txMessage.SetFlags(types.TFPaidTx)
 		err := g.HandleMsg(txMessage, connections.NewRPCConn(account.AccountID, "", networkNum, utils.Websocket), connections.RunForeground)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}
 
-	_, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, uint64(limit+1), nil, networkNum, 0, nil)
+	_, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, uint64(limit+1), nil, networkNum, 0, big.NewInt(network.EthMainnetChainID))
 	txMessage.SetFlags(types.TFPaidTx)
 	err := g.HandleMsg(txMessage, connections.NewRPCConn(account.AccountID, "", networkNum, utils.Websocket), connections.RunForeground)
-	assert.Nil(t, err)
-	waitUntillTXQueueChannelIsEmpty(g)
-	countLimitPaid := g.bdnStats.BurstLimitedTransactionsPaid()
-	assert.Equal(t, countLimitPaid, uint16(1))
+	assert.NoError(t, err)
+	test.WaitUntilTrueOrFail(t, func() bool {
+		return g.bdnStats.BurstLimitedTransactionsPaid() == uint16(1)
+	})
 }
 
 func TestGateway_HandleTransactionFromRPC_BurstLimitUnpaid(t *testing.T) {
@@ -493,25 +484,25 @@ func TestGateway_HandleTransactionFromRPC_BurstLimitUnpaid(t *testing.T) {
 
 	go func() {
 		err := g.handleBridgeMessages(context.Background())
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}()
 
 	for i := uint64(1); i <= uint64(limit); i++ {
-		_, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, i, nil, networkNum, 0, nil)
+		_, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, i, nil, networkNum, 0, big.NewInt(network.EthMainnetChainID))
 		txMessage.SetFlags(types.TFDeliverToNode)
 		err := g.HandleMsg(txMessage, connections.NewRPCConn(account.AccountID, "", networkNum, utils.Websocket), connections.RunForeground)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}
 
 	for i := uint64(1); i <= uint64(5); i++ {
-		_, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, uint64(limit)+i, nil, networkNum, 0, nil)
+		_, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, uint64(limit)+i, nil, networkNum, 0, big.NewInt(network.EthMainnetChainID))
 		txMessage.SetFlags(types.TFDeliverToNode)
 		err := g.HandleMsg(txMessage, connections.NewRPCConn(account.AccountID, "", networkNum, utils.Websocket), connections.RunForeground)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}
-	waitUntillTXQueueChannelIsEmpty(g)
-	countLimitUnpaid := g.bdnStats.BurstLimitedTransactionsUnpaid()
-	assert.Equal(t, countLimitUnpaid, uint16(5))
+	test.WaitUntilTrueOrFail(t, func() bool {
+		return g.bdnStats.BurstLimitedTransactionsUnpaid() == uint16(5)
+	})
 }
 
 func mockAccountBurstRateLimit(g *gateway, limit sdnmessage.BDNServiceLimit) *sdnmessage.Account {
@@ -542,19 +533,19 @@ func TestGateway_HandleBlockConfirmationFromBackend(t *testing.T) {
 	mockTLS, _ := addRelayConn(g)
 	go func() {
 		err := g.handleBridgeMessages(context.Background())
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}()
 
 	g.BxConfig.SendConfirmation = true
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
 	bxBlock, err := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	bridge.SendConfirmedBlockToGateway(bxBlock, types.NodeEndpoint{IP: "1.1.1.1", Port: 1800})
 
 	_, err = mockTLS.MockAdvanceSent()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 }
 
 func TestGateway_HandleTransactionHashesFromBlockchain(t *testing.T) {
@@ -562,7 +553,7 @@ func TestGateway_HandleTransactionHashesFromBlockchain(t *testing.T) {
 
 	go func() {
 		err := g.handleBridgeMessages(context.Background())
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}()
 
 	peerID := "go-ethereum-1"
@@ -578,7 +569,7 @@ func TestGateway_HandleTransactionHashesFromBlockchain(t *testing.T) {
 	g.TxStore.Add(hashes[1], types.TxContent{1, 2, 3}, types.ShortIDEmpty, networkNum, false, 0, time.Now(), 0, types.EmptySender)
 
 	err := bridge.AnnounceTransactionHashes(peerID, hashes, types.NodeEndpoint{})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	request := <-bridge.ReceiveTransactionHashesRequest()
 
@@ -617,17 +608,18 @@ func Test_HandleBlxrSubmitBundleFromRPC(t *testing.T) {
 			"builder1": "0x123",
 			"builder2": "0x456",
 		},
+		OriginalSenderAccountTier: sdnmessage.ATierUltra,
 	}
 
 	err := g.HandleMsg(&bundleMessage, connections.NewRPCConn("", "", networkNum, utils.Websocket), connections.RunForeground)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	msgBytes, err := mockTLS.MockAdvanceSent()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	var bundleSentToBDN bxmessage.MEVBundle
 	err = bundleSentToBDN.Unpack(msgBytes, relayConn.Protocol())
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	assert.Equal(t, bundleSentToBDN.BundleHash, bundleMessage.BundleHash)
 	assert.Equal(t, bundleSentToBDN.UUID, bundleMessage.UUID)
@@ -646,11 +638,11 @@ func TestGateway_HandleTransactionFromRPC(t *testing.T) {
 	bridge, g := setup(t, 1)
 	mockTLS, relayConn := addRelayConn(g)
 
-	ethTx, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0, nil)
+	ethTx, txMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0, big.NewInt(network.EthMainnetChainID))
 	txMessage.SetFlags(types.TFDeliverToNode)
 
 	err := g.HandleMsg(txMessage, connections.NewRPCConn("", "", networkNum, utils.Websocket), connections.RunForeground)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// transaction should be broadcast both to blockchain node and BDN
 	txsSentToBlockchain := <-bridge.ReceiveBDNTransactions()
@@ -658,11 +650,11 @@ func TestGateway_HandleTransactionFromRPC(t *testing.T) {
 	txSentToBlockchain := txsSentToBlockchain.Transactions[0]
 
 	msgBytes, err := mockTLS.MockAdvanceSent()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	var txSentToBDN bxmessage.Tx
 	err = txSentToBDN.Unpack(msgBytes, relayConn.Protocol())
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	assert.Equal(t, ethTx.Hash().Bytes(), txSentToBDN.Hash().Bytes())
 	assert.Equal(t, txSentToBlockchain.Hash(), txSentToBDN.Hash())
@@ -673,11 +665,11 @@ func TestGateway_HandleTransactionFromRelay(t *testing.T) {
 	_, relayConn1 := addRelayConn(g)
 	mockTLS2, _ := addRelayConn(g)
 
-	deliveredEthTx, deliveredTxMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0, nil)
+	deliveredEthTx, deliveredTxMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0, big.NewInt(network.EthMainnetChainID))
 	deliveredTxMessage.SetFlags(types.TFDeliverToNode)
 
 	err := g.HandleMsg(deliveredTxMessage, relayConn1, connections.RunForeground)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assertNoTransactionSentToRelay(t, mockTLS2)
 
 	bdnTxs := <-bridge.ReceiveBDNTransactions()
@@ -687,10 +679,10 @@ func TestGateway_HandleTransactionFromRelay(t *testing.T) {
 	bdnTx := bdnTxs.Transactions[0]
 	assert.Equal(t, deliveredEthTx.Hash().Bytes(), bdnTx.Hash().Bytes())
 
-	_, undeliveredTxMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0, nil)
+	_, undeliveredTxMessage := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0, big.NewInt(network.EthMainnetChainID))
 
 	err = g.HandleMsg(undeliveredTxMessage, relayConn1, connections.RunForeground)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	select {
 	case <-bridge.ReceiveBDNTransactions():
@@ -705,9 +697,9 @@ func TestGateway_ReprocessTransactionFromRelay(t *testing.T) {
 	mockTLS2, _ := addRelayConn(g)
 
 	// send new tx
-	ethTx, ethTxMsg := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0, nil)
+	ethTx, ethTxMsg := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0, big.NewInt(network.EthMainnetChainID))
 	err := g.HandleMsg(ethTxMsg, relayConn1, connections.RunForeground)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assertNoTransactionSentToRelay(t, mockTLS2)
 
 	hash, _ := types.NewSHA256HashFromString(ethTx.Hash().String())
@@ -715,10 +707,10 @@ func TestGateway_ReprocessTransactionFromRelay(t *testing.T) {
 	assert.True(t, exists)
 
 	// reprocess resent tx
-	resentTxMessage := ethTxMsg
+	resentTxMessage := ethTxMsg.Clone()
 	resentTxMessage.SetFlags(types.TFDeliverToNode)
 	err = g.HandleMsg(resentTxMessage, relayConn1, connections.RunForeground)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	bdnTxs := <-bridge.ReceiveBDNTransactions()
 	assert.Equal(t, 1, len(bdnTxs.Transactions))
@@ -728,8 +720,9 @@ func TestGateway_ReprocessTransactionFromRelay(t *testing.T) {
 	assert.Equal(t, ethTx.Hash().Bytes(), bdnTx.Hash().Bytes())
 
 	// only reprocess once
+	resentTxMessage = ethTxMsg.Clone()
 	err = g.HandleMsg(resentTxMessage, relayConn1, connections.RunForeground)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	select {
 	case <-bridge.ReceiveBDNTransactions():
 		assert.Fail(t, "unexpectedly reprocessed tx more than once")
@@ -742,14 +735,14 @@ func TestGateway_HandleTransactionFromRelayBlocksOnly(t *testing.T) {
 	_, relayConn := addRelayConn(g)
 	g.BxConfig.BlocksOnly = true
 
-	_, freeTx := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0, nil)
+	_, freeTx := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0, big.NewInt(network.EthMainnetChainID))
 	freeTx.SetFlags(types.TFDeliverToNode)
 
-	_, paidTx := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 2, nil, networkNum, 0, nil)
+	_, paidTx := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 2, nil, networkNum, 0, big.NewInt(network.EthMainnetChainID))
 	paidTx.SetFlags(types.TFPaidTx | types.TFDeliverToNode)
 
 	err := g.HandleMsg(paidTx, relayConn, connections.RunForeground)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	select {
 	case <-bridge.ReceiveBDNTransactions():
@@ -764,40 +757,30 @@ func TestGateway_HandleBlockFromBlockchain(t *testing.T) {
 
 	go func() {
 		err := g.handleBridgeMessages(context.Background())
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}()
 
 	g.BxConfig.WebsocketEnabled = true
 	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
 	g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
 	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
-	var count int32
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for v := range g.feedManagerChan {
-			fmt.Println(v)
-			atomic.AddInt32(&count, 1)
-		}
-	}()
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
 	bxBlock, err := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// send block over bridge from blockchain connection
 	err = bridge.SendBlockToBDN(bxBlock, blockchainIPEndpoint)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, int(ethBlock.Size()), bxBlock.Size())
 
 	msgBytes, err := mockTLS.MockAdvanceSent()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// block is broadcast to relays
 	var sentBroadcast bxmessage.Broadcast
 	err = sentBroadcast.Unpack(msgBytes, relayConn.Protocol())
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	assert.Equal(t, ethBlock.Hash().Bytes(), sentBroadcast.Hash().Bytes())
 	assert.Equal(t, networkNum, sentBroadcast.GetNetworkNum())
@@ -805,14 +788,12 @@ func TestGateway_HandleBlockFromBlockchain(t *testing.T) {
 
 	// try sending block again
 	err = bridge.SendBlockToBDN(bxBlock, blockchainIPEndpoint)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// times out, nothing sent (already processed)
 	msgBytes, err = mockTLS.MockAdvanceSent()
 	assert.NotNil(t, err, "unexpected bytes %v", string(msgBytes))
-	close(g.feedManagerChan)
-	wg.Wait()
-	assert.Equal(t, int32(4), atomic.LoadInt32(&count))
+	expectFeedNotificationCount(t, g.feedManagerChan, 4)
 }
 
 func TestGateway_HandleBlockFromInboundBlockchain(t *testing.T) {
@@ -821,41 +802,31 @@ func TestGateway_HandleBlockFromInboundBlockchain(t *testing.T) {
 
 	go func() {
 		err := g.handleBridgeMessages(context.Background())
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}()
 
 	g.BxConfig.WebsocketEnabled = true
 	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
 	g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
 	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
-	var count int32
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for v := range g.feedManagerChan {
-			fmt.Println(v.NotificationType())
-			atomic.AddInt32(&count, 1)
-		}
-	}()
 
 	blockchainIPEndpoint = types.NodeEndpoint{IP: "127.0.0.1", Port: 8001, Dynamic: true}
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
 	bxBlock, err := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// send block over bridge from blockchain connection
 	err = bridge.SendBlockToBDN(bxBlock, blockchainIPEndpoint)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, int(ethBlock.Size()), bxBlock.Size())
 
 	msgBytes, err := mockTLS.MockAdvanceSent()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// block is broadcast to relays
 	var sentBroadcast bxmessage.Broadcast
 	err = sentBroadcast.Unpack(msgBytes, relayConn.Protocol())
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	assert.Equal(t, ethBlock.Hash().Bytes(), sentBroadcast.Hash().Bytes())
 	assert.Equal(t, networkNum, sentBroadcast.GetNetworkNum())
@@ -863,14 +834,12 @@ func TestGateway_HandleBlockFromInboundBlockchain(t *testing.T) {
 
 	// try sending block again
 	err = bridge.SendBlockToBDN(bxBlock, blockchainIPEndpoint)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// times out, nothing sent (already processed)
 	msgBytes, err = mockTLS.MockAdvanceSent()
 	assert.NotNil(t, err, "unexpected bytes %v", string(msgBytes))
-	close(g.feedManagerChan)
-	wg.Wait()
-	assert.Equal(t, int32(3), atomic.LoadInt32(&count))
+	expectFeedNotificationCount(t, g.feedManagerChan, 3)
 }
 
 func TestGateway_HandleBlockFromBlockchain_TwoRelays(t *testing.T) {
@@ -880,30 +849,30 @@ func TestGateway_HandleBlockFromBlockchain_TwoRelays(t *testing.T) {
 
 	go func() {
 		err := g.handleBridgeMessages(context.Background())
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}()
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
 	bxBlock, err := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// send block over bridge from blockchain connection
 	err = bridge.SendBlockToBDN(bxBlock, blockchainIPEndpoint)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, int(ethBlock.Size()), bxBlock.Size())
 
 	msgBytes1, err := mockTLS1.MockAdvanceSent()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	msgBytes2, err := mockTLS2.MockAdvanceSent()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// block is broadcast to relays
 	var sentBlock1 bxmessage.Broadcast
 	var sentBlock2 bxmessage.Broadcast
 	err = sentBlock1.Unpack(msgBytes1, relayConn1.Protocol())
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	err = sentBlock2.Unpack(msgBytes2, relayConn2.Protocol())
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	assert.Equal(t, ethBlock.Hash().Bytes(), sentBlock1.Hash().Bytes())
 	assert.Equal(t, networkNum, sentBlock1.GetNetworkNum())
@@ -915,7 +884,7 @@ func TestGateway_HandleBlockFromBlockchain_TwoRelays(t *testing.T) {
 
 	// try sending block again
 	err = bridge.SendBlockToBDN(bxBlock, blockchainIPEndpoint)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// times out, nothing sent (already processed)
 	msgBytes1, err = mockTLS1.MockAdvanceSent()
@@ -942,10 +911,10 @@ func TestGateway_HandleBlockFromRelay(t *testing.T) {
 	g.TxStore.Add(bxTransaction.Hash(), bxTransaction.Content(), 1, networkNum, false, 0, time.Now(), 0, types.EmptySender)
 
 	broadcastMessage, _, err := bp.BxBlockToBroadcast(bxBlock, networkNum, g.sdn.MinTxAge())
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	err = g.HandleMsg(broadcastMessage, relayConn1, connections.RunForeground)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assertNoBlockSentToRelay(t, mockTLS2)
 	time.Sleep(1 * time.Millisecond)
 
@@ -961,7 +930,7 @@ func TestGateway_HandleBlockFromRelay(t *testing.T) {
 
 	// duplicate, no processing
 	err = g.HandleMsg(broadcastMessage, relayConn1, connections.RunForeground)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	select {
 	case <-bridge.ReceiveEthBlockFromBDN():
@@ -989,10 +958,10 @@ func TestGateway_HandleBeaconBlockFromRelay(t *testing.T) {
 	g.TxStore.Add(bxTransaction.Hash(), bxTransaction.Content(), 1, networkNum, false, 0, time.Now(), 0, types.EmptySender)
 
 	broadcastMessage, _, err := bp.BxBlockToBroadcast(bxBlock, networkNum, g.sdn.MinTxAge())
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	err = g.HandleMsg(broadcastMessage, relayConn1, connections.RunForeground)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assertNoBlockSentToRelay(t, mockTLS2)
 	time.Sleep(1 * time.Millisecond)
 
@@ -1015,7 +984,7 @@ func TestGateway_HandleBeaconBlockFromRelay(t *testing.T) {
 
 	// duplicate, no processing
 	err = g.HandleMsg(broadcastMessage, relayConn1, connections.RunForeground)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	assertNoBlockSentToRelay(t, mockTLS2)
 	time.Sleep(1 * time.Millisecond)
@@ -1030,13 +999,14 @@ func TestGateway_HandleBeaconBlockFromRelay(t *testing.T) {
 
 	// beacon block after eth block is not treated as duplicate
 	beaconBlock := bxmock.NewBellatrixBeaconBlock(t, 11, nil, ethBlock)
-	bxBlock, _ = bridge.BlockBlockchainToBDN(beaconBlock)
+	bxBlock, err = bridge.BlockBlockchainToBDN(beacon.NewWrappedReadOnlySignedBeaconBlock(beaconBlock))
+	assert.Nil(t, err)
 
 	broadcastMessage, _, err = bp.BxBlockToBroadcast(bxBlock, networkNum, g.sdn.MinTxAge())
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	err = g.HandleMsg(broadcastMessage, relayConn1, connections.RunForeground)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assertNoBlockSentToRelay(t, mockTLS2)
 	time.Sleep(1 * time.Millisecond)
 
@@ -1059,7 +1029,7 @@ func TestGateway_HandleBeaconBlockFromRelay(t *testing.T) {
 
 	// on other hand same beacon block is duplicate
 	err = g.HandleMsg(broadcastMessage, relayConn1, connections.RunForeground)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assertNoBlockSentToRelay(t, mockTLS2)
 	time.Sleep(1 * time.Millisecond)
 
@@ -1188,7 +1158,7 @@ func TestGateway_TestNoTxReceiptsWithoutSubscription(t *testing.T) {
 	ethBlock := bxmock.NewEthBlock(uint64(10), common.Hash{})
 	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
 	err := g.publishBlock(bxBlock, nil, nil, false)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	expectedNotifications := map[types.FeedType]struct{}{
 		types.BDNBlocksFeed: {},
@@ -1217,7 +1187,7 @@ func expectNoFeedNotification(t *testing.T, bridge blockchain.Bridge, g *gateway
 	ethBlock := bxmock.NewEthBlock(uint64(blockHeight), common.Hash{})
 	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
 	err := g.publishBlock(bxBlock, nil, nil, !isBDNBlock)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	select {
 	case <-g.feedManagerChan:
@@ -1232,7 +1202,7 @@ func expectFeedNotification(t *testing.T, bridge blockchain.Bridge, g *gateway, 
 	ethBlock := bxmock.NewEthBlock(uint64(blockHeight), common.Hash{})
 	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
 	err := g.publishBlock(bxBlock, nil, nil, !isBDNBlock)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	expectedNotifications := map[types.FeedType]struct{}{
 		types.BDNBlocksFeed:  {},
@@ -1265,29 +1235,44 @@ func expectFeedNotification(t *testing.T, bridge blockchain.Bridge, g *gateway, 
 	assert.Equal(t, expectedSkipBlockCount, g.bdnBlocksSkipCount)
 }
 
+func expectFeedNotificationCount(t *testing.T, feedChan chan types.Notification, expCount int) {
+	count := 0
+	func() {
+		for {
+			select {
+			case <-feedChan:
+				count++
+			default:
+				return
+			}
+		}
+	}()
+	assert.Equal(t, expCount, count, "did not receive expected feed notifications, got: %d expected %d", count, expCount)
+}
+
 func TestGateway_Status(t *testing.T) {
 	bridge, g := setup(t, 1)
 	mockTLS, relayConn := addRelayConn(g)
 
 	go func() {
 		err := g.handleBridgeMessages(context.Background())
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}()
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
 	bxBlock, err := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	err = bridge.SendBlockToBDN(bxBlock, blockchainIPEndpoint)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, int(ethBlock.Size()), bxBlock.Size())
 
 	msgBytes, err := mockTLS.MockAdvanceSent()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	var sentBroadcast bxmessage.Broadcast
 	err = sentBroadcast.Unpack(msgBytes, relayConn.Protocol())
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	assert.Equal(t, ethBlock.Hash().Bytes(), sentBroadcast.Hash().Bytes())
 	assert.Equal(t, networkNum, sentBroadcast.GetNetworkNum())
@@ -1301,7 +1286,7 @@ func TestGateway_Status(t *testing.T) {
 		g.bdnStats.NodeStats()[endpoint.IPPort()] = stats[endpoint.IPPort()]
 	}
 	err = g.bridge.SendBlockchainStatusResponse(endpoints)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	rsp, err := g.Status(context.Background(), &pb.StatusRequest{})
 	require.NoError(t, err)
@@ -1352,7 +1337,7 @@ func TestGateway_ConnectionStatus(t *testing.T) {
 	g.timeStarted = time.Now()
 
 	err := g.bridge.SendBlockchainConnectionStatus(blockchain.ConnectionStatus{IsConnected: true, PeerEndpoint: types.NodeEndpoint{IP: "123.45.6.78", Port: 1234}})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	wg.Wait()
 	require.True(t, g.bdnStats.NodeStats()["123.45.6.78 1234"].IsConnected)
 }
@@ -1430,7 +1415,7 @@ func createMockContextWithMetadata(accountIDHeaderVal string) context.Context {
 	return metadata.NewIncomingContext(context.Background(), md)
 }
 
-func TestretrieveOriginalSenderAccountID_BloxrouteAccountID(t *testing.T) {
+func TestRetrieveOriginalSenderAccountID_BloxrouteAccountID(t *testing.T) {
 	accountModel := &sdnmessage.Account{
 		AccountInfo: sdnmessage.AccountInfo{
 			AccountID: types.AccountID(types.BloxrouteAccountID),
@@ -1447,7 +1432,7 @@ func TestretrieveOriginalSenderAccountID_BloxrouteAccountID(t *testing.T) {
 	require.Equal(t, expectedAccountID, *accountID)
 }
 
-func TestretrieveOriginalSenderAccountID_NonBloxrouteAccountID(t *testing.T) {
+func TestRetrieveOriginalSenderAccountID_NonBloxrouteAccountID(t *testing.T) {
 	accountModel := &sdnmessage.Account{
 		AccountInfo: sdnmessage.AccountInfo{
 			AccountID: types.AccountID(testGatewayAccountID),
@@ -1464,7 +1449,7 @@ func TestretrieveOriginalSenderAccountID_NonBloxrouteAccountID(t *testing.T) {
 	require.Equal(t, expectedAccountID, *accountID)
 }
 
-func TestretrieveOriginalSenderAccountID_NoMetadata(t *testing.T) {
+func TestRetrieveOriginalSenderAccountID_NoMetadata(t *testing.T) {
 	accountModel := &sdnmessage.Account{
 		AccountInfo: sdnmessage.AccountInfo{
 			AccountID: types.BloxrouteAccountID,

@@ -28,11 +28,11 @@ func TestTxs_PackUnpack(t *testing.T) {
 	}
 
 	b, err := txs.Pack(0)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	var unpackedTxs Txs
 	err = unpackedTxs.Unpack(b, 0)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	assert.Equal(t, txs, unpackedTxs)
 }
@@ -47,7 +47,7 @@ func TestTxs_Fixture(t *testing.T) {
 
 	var txs Txs
 	err := txs.Unpack(b, 0)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	items := txs.Items()
 	assert.Equal(t, 2, len(items))
@@ -60,6 +60,6 @@ func TestTxs_Fixture(t *testing.T) {
 	assert.Equal(t, types.ShortID(fixtures.TxShortIDs2), items[1].ShortID)
 
 	output, err := txs.Pack(0)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, b, output)
 }

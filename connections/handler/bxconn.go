@@ -215,9 +215,17 @@ func (b *BxConn) ProcessMessage(msgBytes bxmessage.MessageBytes) {
 		if err != nil {
 			return
 		}
-		if b.Protocol() > helloMsg.Protocol {
+
+		// conn previous protocol version can be different from current
+		// thats why we need to compare it with current protocol
+		if bxmessage.CurrentProtocol > helloMsg.Protocol {
 			b.SetProtocol(helloMsg.Protocol)
+		} else {
+			// if protocol version is higher or equal than current, update with latest supported - current protocol
+			// conn can upgrade few versions at once
+			b.SetProtocol(bxmessage.CurrentProtocol)
 		}
+
 		b.networkNum = helloMsg.GetNetworkNum()
 		b.capabilities = helloMsg.Capabilities
 		b.clientVersion = helloMsg.ClientVersion
@@ -323,6 +331,22 @@ func (b *BxConn) ProcessMessage(msgBytes bxmessage.MessageBytes) {
 			return
 		}
 		_ = b.Node.HandleMsg(mevBundle, b, connections.RunForeground)
+	case bxmessage.IntentType:
+		intent, err := bxmessage.UnpackIntent(msg, b.Protocol())
+		if err != nil {
+			b.log.Warnf("failed to unpack intent message: %v", err)
+			return
+		}
+
+		_ = b.Node.HandleMsg(intent, b, connections.RunBackground) //nolint:errcheck
+	case bxmessage.IntentSolutionType:
+		solution, err := bxmessage.UnpackIntentSolution(msg, b.Protocol())
+		if err != nil {
+			b.log.Warnf("failed to unpack intent solution message: %v", err)
+			return
+		}
+
+		_ = b.Node.HandleMsg(solution, b, connections.RunBackground) //nolint:errcheck
 	default:
 		b.Log().Debugf("read %v (%d bytes)", msgType, len(msg))
 	}

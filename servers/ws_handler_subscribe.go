@@ -138,7 +138,7 @@ func (h *handlerObj) handleRPCSubscribeNotify(ctx context.Context, conn *jsonrpc
 					return h.sendNotification(ctx, subscriptionID, request, conn, notification)
 				}
 
-				err := handleEthOnBlock(h.FeedManager, block, *request.calls, sendEthOnBlockWsNotification)
+				err := handleEthOnBlock(h.FeedManager.nodeWSManager, h.FeedManager, block, *request.calls, sendEthOnBlockWsNotification)
 				if err != nil {
 					SendErrorMsg(ctx, jsonrpc.InvalidRequest, err.Error(), conn, reqID)
 					return
@@ -150,7 +150,7 @@ func (h *handlerObj) handleRPCSubscribeNotify(ctx context.Context, conn *jsonrpc
 
 // sendTxNotification - build a response according to client request and notify client
 func (h *handlerObj) sendTxNotification(ctx context.Context, subscriptionID string, clientReq *clientReq, conn *jsonrpc2.Conn, tx *types.NewTransactionNotification) error {
-	result := filterAndInclude(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
+	result := filterAndIncludeTx(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
 	if result == nil {
 		return nil
 	}
@@ -204,13 +204,13 @@ func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan types.
 			switch feedName {
 			case types.NewTxsFeed:
 				tx := (notification).(*types.NewTransactionNotification)
-				response := filterAndInclude(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
+				response := filterAndIncludeTx(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
 				if response != nil {
 					multiTxsResponse.Result = append(multiTxsResponse.Result, *response)
 				}
 			case types.PendingTxsFeed:
 				tx := (notification).(*types.PendingTransactionNotification)
-				response := filterAndInclude(clientReq, &tx.NewTransactionNotification, h.remoteAddress, h.connectionAccount.AccountID)
+				response := filterAndIncludeTx(clientReq, &tx.NewTransactionNotification, h.remoteAddress, h.connectionAccount.AccountID)
 				if response != nil {
 					multiTxsResponse.Result = append(multiTxsResponse.Result, *response)
 				}
@@ -229,13 +229,13 @@ func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan types.
 					switch feedName {
 					case types.NewTxsFeed:
 						tx := (notification).(*types.NewTransactionNotification)
-						response := filterAndInclude(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
+						response := filterAndIncludeTx(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
 						if response != nil {
 							multiTxsResponse.Result = append(multiTxsResponse.Result, *response)
 						}
 					case types.PendingTxsFeed:
 						tx := (notification).(*types.PendingTransactionNotification)
-						response := filterAndInclude(clientReq, &tx.NewTransactionNotification, h.remoteAddress, h.connectionAccount.AccountID)
+						response := filterAndIncludeTx(clientReq, &tx.NewTransactionNotification, h.remoteAddress, h.connectionAccount.AccountID)
 						if response != nil {
 							multiTxsResponse.Result = append(multiTxsResponse.Result, *response)
 						}

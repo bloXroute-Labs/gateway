@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"math/rand"
 	"testing"
-	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
@@ -22,82 +21,28 @@ func TestShouldLog(t *testing.T) {
 
 	stats := newStats("localhost", "node", &networks, false)
 	ft := stats.(FluentdStats)
-	assert.False(
-		t, ft.shouldLogEventForTx(
-			types.NewBxTransaction(generateRandTxHash(0xffff), 1, 0, time.Now()),
-		),
-	)
-	assert.False(
-		t, ft.shouldLogEventForTx(
-			types.NewBxTransaction(generateRandTxHash(0x7d00), 1, 0, time.Now()),
-		),
-	)
-	assert.False(
-		t, ft.shouldLogEventForTx(
-			types.NewBxTransaction(generateRandTxHash(0x3e80), 1, 0, time.Now()),
-		),
-	)
-	assert.False(
-		t, ft.shouldLogEventForTx(
-			types.NewBxTransaction(generateRandTxHash(0x05dc), 1, 0, time.Now()),
-		),
-	)
-	assert.True(
-		t, ft.shouldLogEventForTx(
-			types.NewBxTransaction(generateRandTxHash(0x0012), 1, 0, time.Now()),
-		),
-	)
+	assert.False(t, ft.shouldLogEvent(1, generateRandHash(0xffff)))
+	assert.False(t, ft.shouldLogEvent(1, generateRandHash(0x7d00)))
+	assert.False(t, ft.shouldLogEvent(1, generateRandHash(0x3e80)))
+	assert.False(t, ft.shouldLogEvent(1, generateRandHash(0x05dc)))
+	assert.True(t, ft.shouldLogEvent(2, generateRandHash(0x05dc)))
+	assert.True(t, ft.shouldLogEvent(1, generateRandHash(0x0012)))
+	assert.False(t, ft.shouldLogEvent(3, generateRandHash(0x000a)))
+	assert.True(t, ft.shouldLogEvent(3, generateRandHash(0x0000)))
+	assert.True(t, ft.shouldLogEvent(4, generateRandHash(0x0000)))
+	assert.True(t, ft.shouldLogEvent(4, generateRandHash(0x0010)))
+	assert.True(t, ft.shouldLogEvent(4, generateRandHash(0x000f)))
+	assert.False(t, ft.shouldLogEvent(4, generateRandHash(0x0011)))
 
-	assert.False(
-		t, ft.shouldLogEventForTx(
-			types.NewBxTransaction(generateRandTxHash(0x000a), 3, 0, time.Now()),
-		),
-	)
-	assert.True(
-		t, ft.shouldLogEventForTx(
-			types.NewBxTransaction(generateRandTxHash(0x0000), 3, 0, time.Now()),
-		),
-	)
-
-	assert.True(
-		t, ft.shouldLogEventForTx(
-			types.NewBxTransaction(generateRandTxHash(0x0000), 4, 0, time.Now()),
-		),
-	)
-
-	assert.True(
-		t, ft.shouldLogEventForTx(
-			types.NewBxTransaction(generateRandTxHash(0x0010), 4, 0, time.Now()),
-		),
-	)
-
-	assert.True(
-		t, ft.shouldLogEventForTx(
-			types.NewBxTransaction(generateRandTxHash(0x000f), 4, 0, time.Now()),
-		),
-	)
-
-	assert.False(
-		t, ft.shouldLogEventForTx(
-			types.NewBxTransaction(generateRandTxHash(0x0011), 4, 0, time.Now()),
-		),
-	)
-
-	hash, _ := types.NewSHA256HashFromString("fb0d50a5731201b9265c66444ce2d20973b4e16a540716d2d3be7f091d13b900")
-	assert.False(
-		t, ft.shouldLogEventForTx(
-			types.NewBxTransaction(hash, 4, 0, time.Now()),
-		),
-	)
-	hash, _ = types.NewSHA256HashFromString("fb0d50a5731201b9265c66444ce2d20973b4e16a540716d2d3be7f091d130010")
-	assert.True(
-		t, ft.shouldLogEventForTx(
-			types.NewBxTransaction(hash, 4, 0, time.Now()),
-		),
-	)
+	hash, err := types.NewSHA256HashFromString("fb0d50a5731201b9265c66444ce2d20973b4e16a540716d2d3be7f091d13b900")
+	assert.Nil(t, err)
+	assert.False(t, ft.shouldLogEvent(4, hash))
+	hash, err = types.NewSHA256HashFromString("fb0d50a5731201b9265c66444ce2d20973b4e16a540716d2d3be7f091d130010")
+	assert.Nil(t, err)
+	assert.True(t, ft.shouldLogEvent(4, hash))
 }
 
-func generateRandTxHash(tail uint16) types.SHA256Hash {
+func generateRandHash(tail uint16) types.SHA256Hash {
 	var hash types.SHA256Hash
 	if _, err := rand.Read(hash[:]); err != nil {
 		panic(err)

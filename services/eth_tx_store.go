@@ -100,10 +100,6 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 	if !result.NewContent || result.FailedValidation {
 		return result
 	}
-	// if reuseNonce is disabled or network disables sender extraction, we can leave
-	if !t.isReuseNonceActive(network) || sender == types.EmptySender {
-		return result
-	}
 
 	// sender should already be populated here (not EMPTY) so we will not extract it
 	if blockchainTx == nil {
@@ -117,6 +113,11 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 
 	ethTx := blockchainTx.(*types.EthTransaction)
 	result.Nonce = ethTx.Nonce()
+
+	// if reuseNonce is disabled or network disables sender extraction, we can leave
+	if !t.isReuseNonceActive(network) || sender == types.EmptySender {
+		return result
+	}
 
 	seenNonce, otherTx, err := t.track(ethTx, network)
 	if err != nil {

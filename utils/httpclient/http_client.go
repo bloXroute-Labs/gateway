@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	defaultClientTimeoutSec             = 10
+	defaultClientTimeoutSec             = 11 // slightly less than slot duration
 	defaultTransportTLSTimeoutSec       = 10
 	defaultTransportIdleConnTimeoutSec  = 90
 	defaultTransportMaxIdleConns        = 100

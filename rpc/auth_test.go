@@ -19,7 +19,7 @@ func TestEncodeUserSecret(t *testing.T) {
 
 func TestDecodeAuthHeader(t *testing.T) {
 	decodedUser, decodedSecret, err := DecodeAuthHeader(authHeader)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, user, decodedUser)
 	assert.Equal(t, secret, decodedSecret)
 }

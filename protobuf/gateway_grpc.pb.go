@@ -40,6 +40,11 @@ type GatewayClient interface {
 	BlockInfo(ctx context.Context, in *BlockInfoRequest, opts ...grpc.CallOption) (*BlockInfoReply, error)
 	ProposedBlockStats(ctx context.Context, in *ProposedBlockStatsRequest, opts ...grpc.CallOption) (*ProposedBlockStatsReply, error)
 	BlxrSubmitBundle(ctx context.Context, in *BlxrSubmitBundleRequest, opts ...grpc.CallOption) (*BlxrSubmitBundleReply, error)
+	//Intent Gateway functions
+	SubmitIntent(ctx context.Context, in *SubmitIntentRequest, opts ...grpc.CallOption) (*SubmitIntentReply, error)
+	SubmitIntentSolution(ctx context.Context, in *SubmitIntentSolutionRequest, opts ...grpc.CallOption) (*SubmitIntentSolutionReply, error)
+	Intents(ctx context.Context, in *IntentsRequest, opts ...grpc.CallOption) (Gateway_IntentsClient, error)
+	IntentSolutions(ctx context.Context, in *IntentSolutionsRequest, opts ...grpc.CallOption) (Gateway_IntentSolutionsClient, error)
 }
 
 type gatewayClient struct {
@@ -386,6 +391,88 @@ func (c *gatewayClient) BlxrSubmitBundle(ctx context.Context, in *BlxrSubmitBund
 	return out, nil
 }
 
+func (c *gatewayClient) SubmitIntent(ctx context.Context, in *SubmitIntentRequest, opts ...grpc.CallOption) (*SubmitIntentReply, error) {
+	out := new(SubmitIntentReply)
+	err := c.cc.Invoke(ctx, "/gateway.Gateway/SubmitIntent", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayClient) SubmitIntentSolution(ctx context.Context, in *SubmitIntentSolutionRequest, opts ...grpc.CallOption) (*SubmitIntentSolutionReply, error) {
+	out := new(SubmitIntentSolutionReply)
+	err := c.cc.Invoke(ctx, "/gateway.Gateway/SubmitIntentSolution", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayClient) Intents(ctx context.Context, in *IntentsRequest, opts ...grpc.CallOption) (Gateway_IntentsClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Gateway_ServiceDesc.Streams[6], "/gateway.Gateway/Intents", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &gatewayIntentsClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Gateway_IntentsClient interface {
+	Recv() (*IntentsReply, error)
+	grpc.ClientStream
+}
+
+type gatewayIntentsClient struct {
+	grpc.ClientStream
+}
+
+func (x *gatewayIntentsClient) Recv() (*IntentsReply, error) {
+	m := new(IntentsReply)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *gatewayClient) IntentSolutions(ctx context.Context, in *IntentSolutionsRequest, opts ...grpc.CallOption) (Gateway_IntentSolutionsClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Gateway_ServiceDesc.Streams[7], "/gateway.Gateway/IntentSolutions", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &gatewayIntentSolutionsClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Gateway_IntentSolutionsClient interface {
+	Recv() (*IntentSolutionsReply, error)
+	grpc.ClientStream
+}
+
+type gatewayIntentSolutionsClient struct {
+	grpc.ClientStream
+}
+
+func (x *gatewayIntentSolutionsClient) Recv() (*IntentSolutionsReply, error) {
+	m := new(IntentSolutionsReply)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // GatewayServer is the server API for Gateway service.
 // All implementations must embed UnimplementedGatewayServer
 // for forward compatibility
@@ -412,6 +499,11 @@ type GatewayServer interface {
 	BlockInfo(context.Context, *BlockInfoRequest) (*BlockInfoReply, error)
 	ProposedBlockStats(context.Context, *ProposedBlockStatsRequest) (*ProposedBlockStatsReply, error)
 	BlxrSubmitBundle(context.Context, *BlxrSubmitBundleRequest) (*BlxrSubmitBundleReply, error)
+	//Intent Gateway functions
+	SubmitIntent(context.Context, *SubmitIntentRequest) (*SubmitIntentReply, error)
+	SubmitIntentSolution(context.Context, *SubmitIntentSolutionRequest) (*SubmitIntentSolutionReply, error)
+	Intents(*IntentsRequest, Gateway_IntentsServer) error
+	IntentSolutions(*IntentSolutionsRequest, Gateway_IntentSolutionsServer) error
 	mustEmbedUnimplementedGatewayServer()
 }
 
@@ -484,6 +576,18 @@ func (UnimplementedGatewayServer) ProposedBlockStats(context.Context, *ProposedB
 }
 func (UnimplementedGatewayServer) BlxrSubmitBundle(context.Context, *BlxrSubmitBundleRequest) (*BlxrSubmitBundleReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method BlxrSubmitBundle not implemented")
+}
+func (UnimplementedGatewayServer) SubmitIntent(context.Context, *SubmitIntentRequest) (*SubmitIntentReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SubmitIntent not implemented")
+}
+func (UnimplementedGatewayServer) SubmitIntentSolution(context.Context, *SubmitIntentSolutionRequest) (*SubmitIntentSolutionReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SubmitIntentSolution not implemented")
+}
+func (UnimplementedGatewayServer) Intents(*IntentsRequest, Gateway_IntentsServer) error {
+	return status.Errorf(codes.Unimplemented, "method Intents not implemented")
+}
+func (UnimplementedGatewayServer) IntentSolutions(*IntentSolutionsRequest, Gateway_IntentSolutionsServer) error {
+	return status.Errorf(codes.Unimplemented, "method IntentSolutions not implemented")
 }
 func (UnimplementedGatewayServer) mustEmbedUnimplementedGatewayServer() {}
 
@@ -912,6 +1016,84 @@ func _Gateway_BlxrSubmitBundle_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Gateway_SubmitIntent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitIntentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServer).SubmitIntent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/gateway.Gateway/SubmitIntent",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServer).SubmitIntent(ctx, req.(*SubmitIntentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Gateway_SubmitIntentSolution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitIntentSolutionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServer).SubmitIntentSolution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/gateway.Gateway/SubmitIntentSolution",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServer).SubmitIntentSolution(ctx, req.(*SubmitIntentSolutionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Gateway_Intents_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(IntentsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(GatewayServer).Intents(m, &gatewayIntentsServer{stream})
+}
+
+type Gateway_IntentsServer interface {
+	Send(*IntentsReply) error
+	grpc.ServerStream
+}
+
+type gatewayIntentsServer struct {
+	grpc.ServerStream
+}
+
+func (x *gatewayIntentsServer) Send(m *IntentsReply) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _Gateway_IntentSolutions_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(IntentSolutionsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(GatewayServer).IntentSolutions(m, &gatewayIntentSolutionsServer{stream})
+}
+
+type Gateway_IntentSolutionsServer interface {
+	Send(*IntentSolutionsReply) error
+	grpc.ServerStream
+}
+
+type gatewayIntentSolutionsServer struct {
+	grpc.ServerStream
+}
+
+func (x *gatewayIntentSolutionsServer) Send(m *IntentSolutionsReply) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 // Gateway_ServiceDesc is the grpc.ServiceDesc for Gateway service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -983,6 +1165,14 @@ var Gateway_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "BlxrSubmitBundle",
 			Handler:    _Gateway_BlxrSubmitBundle_Handler,
 		},
+		{
+			MethodName: "SubmitIntent",
+			Handler:    _Gateway_SubmitIntent_Handler,
+		},
+		{
+			MethodName: "SubmitIntentSolution",
+			Handler:    _Gateway_SubmitIntentSolution_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -1013,6 +1203,16 @@ var Gateway_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "TxReceipts",
 			Handler:       _Gateway_TxReceipts_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "Intents",
+			Handler:       _Gateway_Intents_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "IntentSolutions",
+			Handler:       _Gateway_IntentSolutions_Handler,
 			ServerStreams: true,
 		},
 	},

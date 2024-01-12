@@ -30,6 +30,12 @@ service Gateway {
   rpc BlockInfo (BlockInfoRequest) returns (BlockInfoReply) {}
   rpc ProposedBlockStats (ProposedBlockStatsRequest) returns (ProposedBlockStatsReply) {}
   rpc BlxrSubmitBundle (BlxrSubmitBundleRequest) returns (BlxrSubmitBundleReply) {}
+
+  //Intent Gateway functions
+  rpc SubmitIntent(SubmitIntentRequest) returns (SubmitIntentReply){}
+  rpc SubmitIntentSolution(SubmitIntentSolutionRequest) returns (SubmitIntentSolutionReply){}
+  rpc Intents(IntentsRequest) returns (stream IntentsReply){}
+  rpc IntentSolutions(IntentSolutionsRequest) returns (stream IntentSolutionsReply){}
 }
 
 message TxLogs {
@@ -194,6 +200,7 @@ message Subscription{
   string filter = 7;
   uint64 age = 8;
   uint64 messages_sent = 9;
+  string conn_type = 10;
 }
 
 message SubscriptionsReply {
@@ -508,3 +515,54 @@ message ProposedBlockStatsReply {
   int64 validator_reply_time = 6;
 }
 
+
+// Intent Gateway Messages
+message SubmitIntentRequest {
+  string dappAddress = 1; // PubKey
+  bytes intent = 2; //The intent payload
+  bytes hash = 3; //Keccak256Hash of the Intent bytes
+  bytes signature = 4; //ECDSA signature of hash
+}
+
+message SubmitIntentReply {
+  string intentId = 1;
+  google.protobuf.Timestamp first_seen = 2;
+}
+
+message SubmitIntentSolutionRequest {
+  string solverAddress = 1;
+  string intentId = 2;
+  bytes intentSolution = 3; //The solution payload
+  bytes hash = 4; //Keccak256Hash of the IntentSolution bytes
+  bytes signature = 5; //ECDSA signature of the hash
+}
+
+message SubmitIntentSolutionReply {
+  string solutionId = 1;
+  google.protobuf.Timestamp first_seen = 2;
+}
+
+message IntentsRequest {
+  string solverAddress = 1;
+  bytes hash = 3; //Keccak256Hash of the solverAddress bytes
+  bytes signature = 4; //ECDSA signature
+  google.protobuf.Timestamp fromTimestamp = 5;
+}
+
+message IntentsReply {
+  string dappAddress = 1; // GUID expected
+  string intentId = 2;
+  bytes intent = 3; //The intent payload
+  google.protobuf.Timestamp timestamp = 4;
+}
+
+message IntentSolutionsRequest {
+  string dappAddress = 1;
+  bytes hash = 2; //Keccak256Hash of the dappAddress bytes
+  bytes signature = 3; //ECDSA signature of the hash
+}
+
+message IntentSolutionsReply {
+  string intentId = 1;
+  bytes intentSolution = 2; //The solution payload
+}

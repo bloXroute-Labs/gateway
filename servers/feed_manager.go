@@ -418,6 +418,7 @@ func (f *FeedManager) GetGrpcSubscriptionReply() *pb.SubscriptionsReply {
 			Filter:       clientData.Filters,
 			Age:          uint64(time.Since(clientData.timeOpenedFeed).Seconds()),
 			MessagesSent: clientData.messagesSent,
+			ConnType:     string(clientData.feedConnectionType),
 		}
 		resp.Subscriptions = append(resp.Subscriptions, subscribe)
 	}
@@ -496,7 +497,8 @@ func (f *FeedManager) UnlockPendingNextValidatorTxs() {
 	f.pendingBSCNextValidatorTxsMapLock.Unlock()
 }
 
-func (f *FeedManager) getSyncedWSProvider(preferredProviderEndpoint *types.NodeEndpoint) (blockchain.WSProvider, bool) {
+// GetSyncedWSProvider returns synced websocket provider
+func (f *FeedManager) GetSyncedWSProvider(preferredProviderEndpoint *types.NodeEndpoint) (blockchain.WSProvider, bool) {
 	if !f.nodeWSManager.Synced() {
 		return nil, false
 	}

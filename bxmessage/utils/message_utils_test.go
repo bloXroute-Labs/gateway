@@ -15,7 +15,7 @@ func TestUnpackIPPort(t *testing.T) {
 	ip, port, err := UnpackIPPort(ipPortBytes)
 	assert.Equal(t, ip, testIPV4)
 	assert.Equal(t, port, testPort)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 }
 
 func TestPackIPPort(t *testing.T) {

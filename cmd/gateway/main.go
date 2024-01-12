@@ -189,8 +189,13 @@ func runGateway(c *cli.Context) error {
 	startupBlockchainClient := startupBeaconAPIClients || startupBeaconNode || len(ethConfig.StaticEnodes()) > 0 || bxConfig.EnableDynamicPeers // if beacon node running we need to receive txs also
 	startupPrysmClient := bxConfig.GatewayMode.IsBDN() && prysmAddr != ""
 
-	// initialize bridge even if startupPrysmClient and startupBlockchainClient are false
-	bridge := blockchain.NewBxBridge(eth.Converter{}, startupBeaconNode || startupBeaconAPIClients)
+	var bridge blockchain.Bridge
+	if blockchainNetwork == bxgateway.Mainnet || startupBlockchainClient || startupPrysmClient {
+		// for ethereum initialize bridge even if startupPrysmClient and startupBlockchainClient are false
+		bridge = blockchain.NewBxBridge(eth.Converter{}, startupBeaconNode || startupBeaconAPIClients)
+	} else {
+		bridge = blockchain.NewNoOpBridge(eth.Converter{})
+	}
 
 	if bxConfig.ManageWSServer && !bxConfig.WebsocketEnabled && !bxConfig.WebsocketTLSEnabled {
 		return fmt.Errorf("websocket server must be enabled using --ws or --ws-tls if --manage-ws-server is enabled")

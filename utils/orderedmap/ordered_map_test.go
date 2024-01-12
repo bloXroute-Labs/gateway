@@ -316,25 +316,25 @@ func randomHexString(t *testing.T, length int) string {
 // 	var err error
 
 // 	err = om.MoveAfter(2, 3)
-// 	assert.Nil(t, err)
+// 	assert.NoError(t, err)
 // 	assertOrderedPairsEqual(t, om,
 // 		[]interface{}{"1", 3, 2, "4", 5, 6, "7", "8"},
 // 		[]interface{}{"bar", 100, 28, "baz", "28", "100", "baz", "baz"})
 
 // 	err = om.MoveBefore(6, "4")
-// 	assert.Nil(t, err)
+// 	assert.NoError(t, err)
 // 	assertOrderedPairsEqual(t, om,
 // 		[]interface{}{"1", 3, 2, 6, "4", 5, "7", "8"},
 // 		[]interface{}{"bar", 100, 28, "100", "baz", "28", "baz", "baz"})
 
 // 	err = om.MoveToBack(3)
-// 	assert.Nil(t, err)
+// 	assert.NoError(t, err)
 // 	assertOrderedPairsEqual(t, om,
 // 		[]interface{}{"1", 2, 6, "4", 5, "7", "8", 3},
 // 		[]interface{}{"bar", 28, "100", "baz", "28", "baz", "baz", 100})
 
 // 	err = om.MoveToFront(5)
-// 	assert.Nil(t, err)
+// 	assert.NoError(t, err)
 // 	assertOrderedPairsEqual(t, om,
 // 		[]interface{}{5, "1", 2, 6, "4", "7", "8", 3},
 // 		[]interface{}{"28", "bar", 28, "100", "baz", "baz", "baz", 100})

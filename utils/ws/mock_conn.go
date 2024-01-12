@@ -62,8 +62,6 @@ func (mockWS *mockConn) ReadJSON(ctx context.Context, v interface{}) error {
 }
 
 func (mockWS *mockConn) Close() error {
-	close(mockWS.currentRequestID)
-
 	return nil
 }
 

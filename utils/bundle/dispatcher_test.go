@@ -12,6 +12,7 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
+	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
 	"github.com/sourcegraph/jsonrpc2"
 	"github.com/stretchr/testify/assert"
 )
@@ -97,6 +98,32 @@ func TestDispatcher(t *testing.T) {
 			expBuilders: []string{"builder1", "builder2"},
 		},
 		{
+			name:                "all builders called",
+			builders:            []string{"builder1", "builder2"},
+			mevMaxProfitBuilder: false,
+			processMegaBundle:   false,
+			bundle: bxmessage.MEVBundle{
+				Method:          string(jsonrpc.RPCEthSendBundle),
+				Transactions:    []string{testTx1, testTx2},
+				UUID:            "e2a1c984-b31c-4bc6-a2eb-d2d903aab6d8",
+				BlockNumber:     fmt.Sprintf("0x%x", 123),
+				MinTimestamp:    1686120664,
+				MaxTimestamp:    1686120884,
+				RevertingHashes: []string{testTx1Hash},
+				MEVBuilders:     bxmessage.MEVBundleBuilders{"all": ""},
+				Frontrunning:    false,
+			},
+			expPayload: &jsonrpc.RPCSendBundle{
+				Txs:               []string{testTx1, testTx2},
+				UUID:              "e2a1c984-b31c-4bc6-a2eb-d2d903aab6d8",
+				BlockNumber:       fmt.Sprintf("0x%x", 123),
+				MinTimestamp:      1686120664,
+				MaxTimestamp:      1686120884,
+				RevertingTxHashes: []string{testTx1Hash},
+			},
+			expBuilders: []string{"builder1", "builder2"},
+		},
+		{
 			name:                "one builder of multiple called",
 			builders:            []string{"builder1", "builder2"},
 			mevMaxProfitBuilder: false,
@@ -121,6 +148,32 @@ func TestDispatcher(t *testing.T) {
 				RevertingTxHashes: []string{testTx1Hash},
 			},
 			expBuilders: []string{"builder2"},
+		},
+		{
+			name:                "partial intersection of builders called",
+			builders:            []string{"builder1", "builder2"},
+			mevMaxProfitBuilder: false,
+			processMegaBundle:   false,
+			bundle: bxmessage.MEVBundle{
+				Method:          string(jsonrpc.RPCEthSendBundle),
+				Transactions:    []string{testTx1, testTx2},
+				UUID:            "e2a1c984-b31c-4bc6-a2eb-d2d903aab6d8",
+				BlockNumber:     fmt.Sprintf("0x%x", 123),
+				MinTimestamp:    1686120664,
+				MaxTimestamp:    1686120884,
+				RevertingHashes: []string{testTx1Hash},
+				MEVBuilders:     bxmessage.MEVBundleBuilders{"builder1": "", "builder3": ""},
+				Frontrunning:    false,
+			},
+			expPayload: &jsonrpc.RPCSendBundle{
+				Txs:               []string{testTx1, testTx2},
+				UUID:              "e2a1c984-b31c-4bc6-a2eb-d2d903aab6d8",
+				BlockNumber:       fmt.Sprintf("0x%x", 123),
+				MinTimestamp:      1686120664,
+				MaxTimestamp:      1686120884,
+				RevertingTxHashes: []string{testTx1Hash},
+			},
+			expBuilders: []string{"builder1"},
 		},
 		{
 			name:                "no builders called if no configured",
@@ -155,6 +208,25 @@ func TestDispatcher(t *testing.T) {
 				MaxTimestamp:    1686120884,
 				RevertingHashes: []string{testTx1Hash},
 				MEVBuilders:     bxmessage.MEVBundleBuilders{"builder1": "", "builder2": ""},
+				Frontrunning:    false,
+			},
+			expPayload:  nil,
+			expBuilders: []string{},
+		},
+		{
+			name:                "no builders called if no builders provided",
+			builders:            []string{"builder1", "builder2"},
+			mevMaxProfitBuilder: false,
+			processMegaBundle:   false,
+			bundle: bxmessage.MEVBundle{
+				Method:          string(jsonrpc.RPCEthSendBundle),
+				Transactions:    []string{testTx1, testTx2},
+				UUID:            "e2a1c984-b31c-4bc6-a2eb-d2d903aab6d8",
+				BlockNumber:     fmt.Sprintf("0x%x", 123),
+				MinTimestamp:    1686120664,
+				MaxTimestamp:    1686120884,
+				RevertingHashes: []string{testTx1Hash},
+				MEVBuilders:     bxmessage.MEVBundleBuilders{},
 				Frontrunning:    false,
 			},
 			expPayload:  nil,
@@ -227,6 +299,7 @@ func TestDispatcher(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		bundle := tc.bundle
 		t.Run(tc.name, func(t *testing.T) {
 			mu := &sync.Mutex{}
 			wg := &sync.WaitGroup{}
@@ -258,8 +331,8 @@ func TestDispatcher(t *testing.T) {
 			}))
 			defer server.Close()
 
-			d := NewDispatcher(makeBuildersMap(fmt.Sprintf("%s/", server.URL), tc.builders), tc.mevMaxProfitBuilder, true)
-			err := d.Dispatch(&tc.bundle)
+			d := NewDispatcher(statistics.NoStats{}, makeBuildersMap(fmt.Sprintf("%s/", server.URL), tc.builders), tc.mevMaxProfitBuilder, true)
+			err := d.Dispatch(&bundle)
 			assert.NoError(t, err)
 
 			wg.Wait()

@@ -22,7 +22,7 @@ func NewSerialPeerQueue() SerialPeerQueue {
 // AddPeer - add peer to queue
 func (q *SerialPeerQueue) AddPeer(peerID types.NodeID, callback MessageQueueCallback) {
 	if q.queues.Has(peerID) {
-		log.Errorf("message queue for peer %s already exists", peerID)
+		log.Errorf("failed to add peer %s to message queue, message queue for peer already exists", peerID)
 		return
 	}
 
@@ -34,7 +34,7 @@ func (q *SerialPeerQueue) AddPeer(peerID types.NodeID, callback MessageQueueCall
 func (q *SerialPeerQueue) RemovePeer(peerID types.NodeID) {
 	queue, ok := q.queues.Load(peerID)
 	if !ok {
-		log.Errorf("message queue for peer %s does not exist", peerID)
+		log.Errorf("failed to remove peer %s from message queue, message queue for peer does not exist", peerID)
 		return
 	}
 
@@ -47,7 +47,7 @@ func (q *SerialPeerQueue) AddMessage(msg bxmessage.Message, source connections.C
 	nodeID := source.GetNodeID()
 	queue, ok := q.queues.Load(nodeID)
 	if !ok {
-		log.Errorf("message queue for peer %s does not exist", nodeID)
+		log.Errorf("failed to add message to message queue for peer %s, message queue for peer does not exist", nodeID)
 		return nil
 	}
 

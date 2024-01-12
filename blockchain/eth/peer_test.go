@@ -62,7 +62,7 @@ func TestPeer_Handshake(t *testing.T) {
 	// matching parameters
 	rw.QueueIncomingMessage(eth.StatusMsg, peerStatus)
 	ps, err := peer.Handshake(1, uint64(networkNum), new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, peerStatus, *ps)
 
 	// outgoing status message enqueued
@@ -82,7 +82,7 @@ func TestPeer_Handshake(t *testing.T) {
 	// head mismatch is ok
 	rw.QueueIncomingMessage(eth.StatusMsg, peerStatus)
 	_, err = peer.Handshake(1, uint64(networkNum), new(big.Int), common.Hash{3, 4, 5}, common.Hash{2, 3, 4}, executionLayerForks)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// genesis mismatch
 	rw.QueueIncomingMessage(eth.StatusMsg, peerStatus)
@@ -122,6 +122,8 @@ func TestPeer_SendNewBlock(t *testing.T) {
 	clock := peer.clock.(*utils.MockClock)
 	go peer.Start()
 
+	time.Sleep(15 * time.Millisecond)
+
 	block1a := bxmock.NewEthBlock(1, common.Hash{})
 	block1b := bxmock.NewEthBlock(1, common.Hash{})
 	block2a := bxmock.NewEthBlock(2, block1a.Hash())
@@ -142,7 +144,7 @@ func TestPeer_SendNewBlock(t *testing.T) {
 	var blockPacket1 eth.NewBlockPacket
 	assert.Equal(t, uint64(eth.NewBlockMsg), msg.Code)
 	err = msg.Decode(&blockPacket1)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, block1a.Hash(), blockPacket1.Block.Hash())
 
 	// confirm block 1b
@@ -170,7 +172,7 @@ func TestPeer_SendNewBlock(t *testing.T) {
 	msg = rw.WriteMessages[1]
 	assert.Equal(t, uint64(eth.NewBlockMsg), msg.Code)
 	err = msg.Decode(&blockPacket2)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, block2b.Hash(), blockPacket2.Block.Hash())
 
 	peer.QueueNewBlock(block4, big.NewInt(10))
@@ -186,7 +188,7 @@ func TestPeer_SendNewBlock(t *testing.T) {
 	msg = rw.WriteMessages[2]
 	assert.Equal(t, uint64(eth.NewBlockMsg), msg.Code)
 	err = msg.Decode(&blockPacket4)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, block4.Hash(), blockPacket4.Block.Hash())
 
 	// next block will never be released without confirmation
@@ -203,7 +205,7 @@ func TestPeer_SendNewBlock(t *testing.T) {
 	msg = rw.WriteMessages[3]
 	assert.Equal(t, uint64(eth.NewBlockMsg), msg.Code)
 	err = msg.Decode(&blockPacket5)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, block5b.Hash(), blockPacket5.Block.Hash())
 }
 
@@ -232,12 +234,13 @@ func TestPeer_SendNewBlock_HeadUpdates(t *testing.T) {
 	peer.QueueNewBlock(block5b, big.NewInt(52))
 
 	// process all queue entries first
-	time.Sleep(time.Millisecond)
+	time.Sleep(15 * time.Millisecond)
 
 	// queue before 5b should be cleared out
 	peer.UpdateHead(4, block4a.Hash())
 	assert.False(t, rw.ExpectWrite(maxWriteTimeout))
-	assert.Equal(t, 1, len(peer.queuedBlocks))
+
+	assert.Equal(t, 1, len(peer.getQueuedBlocks()))
 
 	// 5b queued since wrong parent, but once 4b confirmed should be released
 	peer.UpdateHead(4, block4b.Hash())
@@ -249,7 +252,7 @@ func TestPeer_SendNewBlock_HeadUpdates(t *testing.T) {
 	msg = rw.WriteMessages[0]
 	assert.Equal(t, uint64(eth.NewBlockMsg), msg.Code)
 	err = msg.Decode(&blockPacket)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, block5b.Hash(), blockPacket.Block.Hash())
 }
 
@@ -263,14 +266,14 @@ func TestPeer_RequestBlockHeaderNonBlocking(t *testing.T) {
 	peer.version = eth.ETH66
 
 	err = peer.RequestBlockHeader(common.Hash{})
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	assert.Equal(t, 1, len(rw.WriteMessages))
 
 	var getHeaders eth.GetBlockHeadersPacket66
 	msg = rw.WriteMessages[0]
 	err = msg.Decode(&getHeaders)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	requestID := getHeaders.RequestId
 	rw.QueueIncomingMessage(eth.BlockHeadersMsg, eth.BlockHeadersPacket66{
@@ -281,7 +284,7 @@ func TestPeer_RequestBlockHeaderNonBlocking(t *testing.T) {
 	// should not block, since no response needed
 	handled, err := peer.NotifyResponse66(requestID, nil)
 	assert.False(t, handled)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 }
 
 func TestPeer_BSC_SendFutureBlock_Pass(t *testing.T) {

@@ -10,7 +10,6 @@ require (
 	github.com/ethereum/go-ethereum v1.11.5
 	github.com/evalphobia/logrus_fluent v0.5.4
 	github.com/fluent/fluent-logger-golang v1.5.0
-	github.com/golang/mock v1.6.0
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/mux v1.8.0
 	github.com/gorilla/websocket v1.5.0
@@ -36,6 +35,7 @@ require (
 	github.com/wk8/go-ordered-map/v2 v2.1.6
 	github.com/zhouzhuojie/conditions v0.2.3
 	go.uber.org/atomic v1.10.0
+	go.uber.org/mock v0.3.0
 	golang.org/x/crypto v0.12.0
 	golang.org/x/sync v0.3.0
 	google.golang.org/grpc v1.55.0
@@ -85,6 +85,7 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.3.0 // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
+	github.com/golang/mock v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/go-cmp v0.5.9 // indirect

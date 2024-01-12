@@ -3,6 +3,7 @@ package bxmessage
 import (
 	"bytes"
 
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
@@ -18,8 +19,11 @@ const ValidControlByte = 0x01
 // HeaderLen is the byte length of the common bloxroute message headers
 const HeaderLen = 20
 
-// BroadcastHeaderLen is the byte length of the common bloxroute broadcast message headers
-const BroadcastHeaderLen = 72
+// BroadcastHeaderOffset is the byte offset of the common bloxroute broadcast message headers
+const BroadcastHeaderOffset = HeaderLen + types.SHA256HashLen + types.NetworkNumLen + SourceIDLen
+
+// BroadcastHeaderLen is the byte len of the common bloxroute broadcast message headers
+const BroadcastHeaderLen = BroadcastHeaderOffset + ControlByteLen
 
 // PayloadSizeOffset is the byte offset of the packed message size
 const PayloadSizeOffset = 16
@@ -62,6 +66,12 @@ const (
 	MEVBundleType                = "mevbundle"
 	MEVSearcherType              = "mevsearcher"
 	ErrorNotificationType        = "notify"
+	IntentType                   = "intent"
+	IntentSolutionType           = "intentsol"
+	IntentsSubscriptionType      = "intentssub"
+	IntentsUnsubscriptionType    = "intentsunsub"
+	SolutionsSubscriptionType    = "solssub"
+	SolutionsUnsubscriptionType  = "solsunsub"
 )
 
 // SenderLen is the byte length of sender
@@ -86,7 +96,16 @@ const EmptyProtocol = 0
 const MinProtocol = 19
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
-const CurrentProtocol = BundlesOverBDNPayoutProtocol
+const CurrentProtocol = BundlesOverBDNOriginalSenderTierProtocol
+
+// BundlesOverBDNOriginalSenderTierProtocol is the minimum protocol version that supports bundles over BDN with original tier
+const BundlesOverBDNOriginalSenderTierProtocol = 41
+
+// BundlesOverBDNOriginalSenderAccountProtocol is the minimum protocol version that supports bundles over BDN with original sender account
+const BundlesOverBDNOriginalSenderAccountProtocol = 40
+
+// IntentsProtocol is the minimum protocol version that supports Intents
+const IntentsProtocol = 39
 
 // BundlesOverBDNPayoutProtocol is the minimum protocol version that supports bundles over BDN with payout
 const BundlesOverBDNPayoutProtocol = 38
@@ -162,3 +181,15 @@ const ClientVersionLen = 100
 var NullByteAccountID = bytes.Repeat([]byte("\x00"), AccountIDLen)
 
 var clock utils.Clock = utils.RealClock{}
+
+// UUIDv4Len is the byte length of UUID V4
+const UUIDv4Len = 16
+
+// ETHAddressLen is the byte length of ETH Address
+const ETHAddressLen = 20
+
+// Keccak256HashLen is the byte length of Keccak256Hash
+const Keccak256HashLen = 32
+
+// ECDSASignatureLen is the byte length of ECDSASignature in Ethereum ecosystem
+const ECDSASignatureLen = 65
