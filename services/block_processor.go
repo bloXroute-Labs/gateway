@@ -8,16 +8,34 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
-// error constants for identifying special processing casess
+// error constants for identifying special processing cases
 var (
-	ErrAlreadyProcessed         = errors.New("already processed")
 	ErrMissingShortIDs          = errors.New("missing short IDs")
 	ErrUnknownBlockType         = errors.New("unknown block type")
-	ErrNotCompitableBeaconBlock = errors.New("not compitable beacon block")
+	ErrNotCompatibleBeaconBlock = errors.New("not compatible beacon block")
 )
+
+func (e *ErrAlreadyProcessed) Error() string {
+	return "already processed " + string(e.status)
+}
+
+// Status return ErrAlreadyProcessed status
+func (e *ErrAlreadyProcessed) Status() SeenStatus {
+	return e.status
+}
+
+func newErrAlreadyProcessed(status SeenStatus) error {
+	return &ErrAlreadyProcessed{status}
+}
+
+// ErrAlreadyProcessed represent ErrAlreadyProcessed error with status
+type ErrAlreadyProcessed struct {
+	status SeenStatus
+}
 
 // BxBlockConverter is the service interface for converting broadcast messages to/from bx blocks
 type BxBlockConverter interface {
@@ -28,22 +46,20 @@ type BxBlockConverter interface {
 // BlockProcessor is the service interface for processing broadcast messages
 type BlockProcessor interface {
 	BxBlockConverter
-
-	ShouldProcess(hash types.SHA256Hash) bool
 }
 
 // NewBlockProcessor returns a BlockProcessor for execution layer and consensus layer blocks encoded in broadcast messages
 func NewBlockProcessor(txStore TxStore) BlockProcessor {
 	bp := &blockProcessor{
 		txStore:         txStore,
-		processedBlocks: NewHashHistory("processedBlocks", 30*time.Minute),
+		processedBlocks: NewBlockHistory("processedBlocks", 30*time.Minute, utils.RealClock{}),
 	}
 	return bp
 }
 
 type blockProcessor struct {
 	txStore         TxStore
-	processedBlocks HashHistory
+	processedBlocks BlockHistory
 }
 
 type bxCompressedTransaction struct {
@@ -66,15 +82,22 @@ type bxBlockRLP struct {
 }
 
 func (bp *blockProcessor) BxBlockToBroadcast(block *types.BxBlock, networkNum types.NetworkNum, minTxAge time.Duration) (*bxmessage.Broadcast, types.ShortIDList, error) {
+	var blockHash string
 	switch block.Type {
 	case types.BxBlockTypeEth:
-		if !bp.ShouldProcess(block.Hash()) {
-			return nil, nil, ErrAlreadyProcessed
-		}
+		blockHash = block.Hash().String()
 	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella:
-		if !bp.ShouldProcess(block.BeaconHash()) {
-			return nil, nil, ErrAlreadyProcessed
-		}
+		blockHash = block.BeaconHash().String()
+	}
+	status := bp.processedBlocks.Status(blockHash)
+	switch status {
+	case SeenFromRelay:
+		bp.processedBlocks.AddOrUpdate(blockHash, SeenFromNode)
+		return nil, nil, newErrAlreadyProcessed(SeenFromRelay)
+	case SeenFromNode:
+		return nil, nil, newErrAlreadyProcessed(SeenFromNode)
+	case SeenFromBoth:
+		return nil, nil, newErrAlreadyProcessed(SeenFromBoth)
 	}
 
 	var usedShortIDs types.ShortIDList
@@ -95,9 +118,9 @@ func (bp *blockProcessor) BxBlockToBroadcast(block *types.BxBlock, networkNum ty
 
 	switch block.Type {
 	case types.BxBlockTypeEth:
-		bp.markProcessed(block.Hash())
+		bp.markProcessed(block.Hash(), SeenFromNode)
 	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella:
-		bp.markProcessed(block.BeaconHash())
+		bp.markProcessed(block.BeaconHash(), SeenFromNode)
 	}
 
 	return broadcastMessage, usedShortIDs, nil
@@ -105,21 +128,24 @@ func (bp *blockProcessor) BxBlockToBroadcast(block *types.BxBlock, networkNum ty
 
 // BxBlockFromBroadcast processes the encoded compressed block in a broadcast message, replacing all short IDs with their stored transaction contents
 func (bp *blockProcessor) BxBlockFromBroadcast(broadcast *bxmessage.Broadcast) (*types.BxBlock, types.ShortIDList, error) {
+	var blockHash string
+
 	switch broadcast.BlockType() {
 	case types.BxBlockTypeEth:
-		if !bp.ShouldProcess(broadcast.Hash()) {
-			return nil, nil, ErrAlreadyProcessed
-		}
+		blockHash = broadcast.Hash().String()
 	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella:
 		if broadcast.BeaconHash().Empty() {
-			return nil, nil, ErrNotCompitableBeaconBlock
+			return nil, nil, ErrNotCompatibleBeaconBlock
 		}
-
-		if !bp.ShouldProcess(broadcast.BeaconHash()) {
-			return nil, nil, ErrAlreadyProcessed
-		}
+		blockHash = broadcast.BeaconHash().String()
 	case types.BxBlockTypeUnknown:
 		return nil, nil, ErrUnknownBlockType
+	}
+
+	status := bp.processedBlocks.Status(blockHash)
+	if status != FirstTimeSeen {
+		bp.processedBlocks.AddOrUpdate(blockHash, SeenFromRelay)
+		return nil, nil, newErrAlreadyProcessed(SeenStatus(status))
 	}
 
 	shortIDs := broadcast.ShortIDs()
@@ -147,24 +173,20 @@ func (bp *blockProcessor) BxBlockFromBroadcast(broadcast *bxmessage.Broadcast) (
 		block, err = bp.newBxBlockFromRLPBroadcast(broadcast, bxTransactions)
 
 		if err == nil {
-			bp.markProcessed(broadcast.Hash())
+			bp.markProcessed(broadcast.Hash(), SeenFromRelay)
 		}
 	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella:
 		block, err = bp.newBxBlockFromSSZBroadcast(broadcast, bxTransactions)
 
 		if err == nil {
-			bp.markProcessed(broadcast.Hash())
-			bp.markProcessed(broadcast.BeaconHash())
+			bp.markProcessed(broadcast.Hash(), SeenFromRelay)
+			bp.markProcessed(broadcast.BeaconHash(), SeenFromRelay)
 		}
 	case types.BxBlockTypeUnknown:
 		return nil, nil, ErrUnknownBlockType
 	}
 
 	return block, missingShortIDs, err
-}
-
-func (bp *blockProcessor) ShouldProcess(hash types.SHA256Hash) bool {
-	return !bp.processedBlocks.Exists(hash.String())
 }
 
 func (bp *blockProcessor) newBxBlockFromRLPBroadcast(broadcast *bxmessage.Broadcast, bxTransactions []*types.BxTransaction) (*types.BxBlock, error) {
@@ -345,6 +367,6 @@ func (bp *blockProcessor) newSSZBlockBroadcast(block *types.BxBlock, networkNum 
 	return bxmessage.NewBlockBroadcast(block.Hash(), block.BeaconHash(), block.Type, encodedBlock, usedShortIDs, networkNum), usedShortIDs, nil
 }
 
-func (bp *blockProcessor) markProcessed(hash types.SHA256Hash) {
-	bp.processedBlocks.Add(hash.String(), 10*time.Minute)
+func (bp *blockProcessor) markProcessed(hash types.SHA256Hash, status SeenStatus) {
+	bp.processedBlocks.AddOrUpdate(hash.String(), status)
 }

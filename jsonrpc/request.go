@@ -24,6 +24,7 @@ const (
 	RPCBatchTx                    RPCRequestType = "blxr_batch_tx"
 	RPCQuotaUsage                 RPCRequestType = "quota_usage"
 	RPCBundleSubmission           RPCRequestType = "blxr_submit_bundle"
+	RPCEOBBundleSubmission        RPCRequestType = "blxr_submit_eob_bundle"
 	RPCBundleSimulation           RPCRequestType = "blxr_simulate_bundle"
 	RPCMegaBundleSubmission       RPCRequestType = "blxr_submit_mega_bundle"
 	RPCStartMonitoringTx          RPCRequestType = "start_monitor_transaction"

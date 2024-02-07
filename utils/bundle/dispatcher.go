@@ -66,6 +66,11 @@ func NewDispatcher(stats statistics.Stats, builders map[string]*Builder, mevMaxP
 
 // Dispatch dispatches the MEV bundle to the MEV builders
 func (d *Dispatcher) Dispatch(bundle *bxmessage.MEVBundle) error {
+	if len(bundle.MEVBuilders) == 0 {
+		bundle.MEVBuilders = map[string]string{
+			bxgateway.BloxrouteBuilderName: "",
+		}
+	}
 	if len(d.builders) == 0 {
 		log.Warnf("received mevBundle message, but mev-builders-file-path is empty. Message %v from %v in network %v", bundle.BundleHash, bundle.SourceID(), bundle.GetNetworkNum())
 		return nil
@@ -81,12 +86,12 @@ func (d *Dispatcher) Dispatch(bundle *bxmessage.MEVBundle) error {
 		return nil
 	}
 
-	json, err := d.bundleJSON(bundle)
+	bundleJSON, err := d.bundleJSON(bundle)
 	if err != nil {
 		return fmt.Errorf("failed to create new mevBundle http request for bundleHash: %v, err: %v", bundle.BundleHash, err)
 	}
 
-	d.makeRequests(bundle, json)
+	d.makeRequests(bundle, bundleJSON)
 
 	return nil
 }
@@ -199,18 +204,20 @@ func (d *Dispatcher) sendBundleToBuilder(endpoint string, builder *Builder, bund
 		lg.Tracef("sent CancelMEVBundle to MEVBuilder (request: %s, json: '%s') got response: %v, status code: %v", bundleRq, json, string(rsp.body), rsp.code)
 	} else {
 		lg.Tracef("sent MEVBundle to MEVBuilder (request: %s, json: '%s') got response: %v, status code: %v", bundleRq, json, string(rsp.body), rsp.code)
-		d.stats.AddBuilderGatewaySentBundleToMEVBuilderEvent(
-			rsp.estimatedBundleReceivedTime,
-			builder.Name,
-			bundle.BundleHash,
-			bundle.BlockNumber,
-			bundle.UUID,
-			endpoint,
-			bundle.GetNetworkNum(),
-			types.AccountID(bundle.OriginalSenderAccountID),
-			bundle.OriginalSenderAccountTier,
-			rsp.code,
-		)
+		if rsp.code != http.StatusOK {
+			d.stats.AddBuilderGatewaySentBundleToMEVBuilderEvent(
+				rsp.estimatedBundleReceivedTime,
+				builder.Name,
+				bundle.BundleHash,
+				bundle.BlockNumber,
+				bundle.UUID,
+				endpoint,
+				bundle.GetNetworkNum(),
+				types.AccountID(bundle.OriginalSenderAccountID),
+				bundle.OriginalSenderAccountTier,
+				rsp.code,
+			)
+		}
 	}
 }
 

@@ -28,12 +28,13 @@ func (g *GrpcHandler) IntentSolutions(req *pb.IntentSolutionsRequest, stream pb.
 func (g *GrpcHandler) SubmitIntent(req *pb.SubmitIntentRequest) (*types.UserIntent, error) {
 	intentID := utils.GenerateUUID()
 	intent := types.UserIntent{
-		ID:          intentID,
-		DappAddress: req.DappAddress,
-		Intent:      req.Intent,
-		Hash:        req.Hash,
-		Signature:   req.Signature,
-		Timestamp:   time.Now(),
+		ID:            intentID,
+		DappAddress:   req.DappAddress,
+		SenderAddress: req.SenderAddress,
+		Intent:        req.Intent,
+		Hash:          req.Hash,
+		Signature:     req.Signature,
+		Timestamp:     time.Now(),
 	}
 
 	// todo: need check if the intent is already in the cache to avoid spamming
@@ -84,10 +85,11 @@ func (g *GrpcHandler) handleIntents(_ *pb.IntentsRequest, stream pb.Gateway_Inte
 			intentNotification := (notification).(*types.UserIntentNotification)
 			intent := intentNotification.UserIntent
 			err = stream.Send(&pb.IntentsReply{
-				DappAddress: intent.DappAddress,
-				IntentId:    intent.ID,
-				Intent:      intent.Intent,
-				Timestamp:   timestamppb.New(intent.Timestamp),
+				DappAddress:   intent.DappAddress,
+				SenderAddress: intent.SenderAddress,
+				IntentId:      intent.ID,
+				Intent:        intent.Intent,
+				Timestamp:     timestamppb.New(intent.Timestamp),
 			})
 			if err != nil {
 				return status.Error(codes.Internal, err.Error())

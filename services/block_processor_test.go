@@ -60,14 +60,16 @@ func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 	// duplicate, skip this time
 	// assume the blockchain network MinTxAgeSecond is 2
 	_, _, err = bp.BxBlockToBroadcast(bxBlock, testNetworkNum, time.Second*2)
-	assert.Equal(t, ErrAlreadyProcessed, err)
+	assert.Equal(t, err.(*ErrAlreadyProcessed), err)
+	assert.Equal(t, string(err.(*ErrAlreadyProcessed).Status()), SeenFromNode)
 
 	// duplicate, skip from other direction too
 	_, _, err = bp.BxBlockFromBroadcast(broadcastMessage)
-	assert.Equal(t, ErrAlreadyProcessed, err)
+	assert.Equal(t, err.(*ErrAlreadyProcessed), err)
+	assert.Equal(t, string(err.(*ErrAlreadyProcessed).Status()), SeenFromNode)
 
-	// decompress same block works after clearing processed list
-	bp.(*blockProcessor).processedBlocks = NewHashHistory("processedBlocks", 30*time.Minute)
+	// decompress same block works after clearing a processed list
+	bp.(*blockProcessor).processedBlocks = NewBlockHistory("processedBlocks", 30*time.Minute, utils.NewMockClock())
 	decodedBxBlock, missingShortIDs, err := bp.BxBlockFromBroadcast(broadcastMessage)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(missingShortIDs))
@@ -94,7 +96,7 @@ func TestRLPBlockProcessor_BroadcastToBxBlockMissingShortIDs(t *testing.T) {
 
 	// ok to reprocess, not successfully seen yet
 	_, _, err = bp.BxBlockFromBroadcast(broadcast)
-	assert.NotEqual(t, ErrAlreadyProcessed, err)
+	assert.NotEqual(t, &ErrAlreadyProcessed{}, err)
 }
 
 func TestRLPBlockProcessor_BroadcastToBxBlockShortIDs(t *testing.T) {
@@ -146,7 +148,7 @@ func TestRLPBlockProcessor_BroadcastToBxBlockShortIDs(t *testing.T) {
 
 	// duplicate, skip this time
 	_, _, err = bp.BxBlockFromBroadcast(broadcast)
-	assert.Equal(t, ErrAlreadyProcessed, err)
+	assert.Equal(t, err.(*ErrAlreadyProcessed), err)
 }
 
 func TestRLPBlockProcessor_BroadcastToBxBlockFullTxs(t *testing.T) {
@@ -212,5 +214,31 @@ func TestRLPBlockProcessor_ProcessBroadcast(t *testing.T) {
 	assert.Equal(t, broadcast.Hash(), bxBlock.Hash())
 
 	_, _, err = bp.BxBlockFromBroadcast(broadcast)
-	assert.Equal(t, ErrAlreadyProcessed, err)
+	assert.Equal(t, err.(*ErrAlreadyProcessed), err)
+}
+
+func TestRLPBlockProcessor_ProcessBlockFromRelayAndNode(t *testing.T) {
+	broadcast := &bxmessage.Broadcast{}
+	_ = broadcast.Unpack(common.Hex2Bytes(fixtures.BroadcastMessageWithShortIDs), 0)
+	txHash1, _ := types.NewSHA256HashFromString(fixtures.BroadcastTransactionHash1)
+	txContent1 := common.Hex2Bytes(fixtures.BroadcastTransactionContent1)
+	txHash2, _ := types.NewSHA256HashFromString(fixtures.BroadcastTransactionHash2)
+	txContent2 := common.Hex2Bytes(fixtures.BroadcastTransactionContent2)
+
+	store := newTestBxTxStore()
+	store.Add(txHash1, txContent1, 1, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
+	store.Add(txHash2, txContent2, 2, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
+	bp := NewBlockProcessor(&store)
+	bxBlock, _, err := bp.BxBlockFromBroadcast(broadcast)
+	assert.NoError(t, err)
+	assert.NotNil(t, bxBlock)
+
+	_, _, err = bp.BxBlockToBroadcast(bxBlock, testNetworkNum, time.Second*2)
+	assert.Equal(t, err.(*ErrAlreadyProcessed), err)
+	assert.Equal(t, string(err.(*ErrAlreadyProcessed).Status()), SeenFromRelay)
+
+	// now it should be ErrAlreadyProcessed error because its second time we got the block from the node
+	_, _, err = bp.BxBlockToBroadcast(bxBlock, testNetworkNum, time.Second*2)
+	assert.Equal(t, err.(*ErrAlreadyProcessed), err)
+	assert.Equal(t, string(err.(*ErrAlreadyProcessed).Status()), SeenFromBoth)
 }

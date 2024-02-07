@@ -96,9 +96,6 @@ func (s *HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		payload := jsonrpc.RPCBundleSubmissionPayload{
-			MEVBuilders: map[string]string{
-				bxgateway.BloxrouteBuilderName: "",
-			},
 			Frontrunning:    bundlePayload[0].Frontrunning,
 			Transaction:     bundlePayload[0].Txs,
 			BlockNumber:     bundlePayload[0].BlockNumber,
@@ -156,13 +153,6 @@ func (s *HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 		if err = json.Unmarshal(*rpcRequest.Params, &params); err != nil {
 			writeErrorJSON(w, rpcRequest.ID, http.StatusInternalServerError, fmt.Errorf("failed to unmarshal params for %v request: %v", jsonrpc.RPCBundleSubmission, err))
 			return
-		}
-
-		// If MEVBuilders request parameter is empty, only send to default builders.
-		if len(params.MEVBuilders) == 0 {
-			params.MEVBuilders = map[string]string{
-				bxgateway.BloxrouteBuilderName: "",
-			}
 		}
 
 		mevBundle, bundleHash, err := mevBundleFromRequest(&params, s.feedManager.networkNum)

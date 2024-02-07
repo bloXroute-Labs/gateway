@@ -19,27 +19,29 @@ func UnpackIntent(b []byte, protocol Protocol) (*Intent, error) {
 }
 
 // NewIntent constructor for Intent bxmessage
-func NewIntent(id string, dAppAddr string, hash, signature []byte, timestamp time.Time, intent []byte) Message {
+func NewIntent(id string, dAppAddr, senderAddress string, hash, signature []byte, timestamp time.Time, intent []byte) Message {
 	return &Intent{
-		Header:      Header{},
-		ID:          id,
-		DAppAddress: dAppAddr,
-		Hash:        hash,
-		Signature:   signature,
-		Timestamp:   timestamp,
-		Intent:      intent,
+		Header:        Header{},
+		ID:            id,
+		DAppAddress:   dAppAddr,
+		SenderAddress: senderAddress,
+		Hash:          hash,
+		Signature:     signature,
+		Timestamp:     timestamp,
+		Intent:        intent,
 	}
 }
 
 // Intent bxmessage
 type Intent struct {
 	Header
-	ID          string    // UUID
-	DAppAddress string    // ETH Address
-	Hash        []byte    // Keccak256
-	Signature   []byte    // ECDSA signature
-	Timestamp   time.Time // Short timestamp
-	Intent      []byte    // Variable length
+	ID            string    // UUID
+	DAppAddress   string    // ETH Address
+	SenderAddress string    // ETH Address
+	Hash          []byte    // Keccak256
+	Signature     []byte    // ECDSA signature
+	Timestamp     time.Time // Short timestamp
+	Intent        []byte    // Variable length
 }
 
 // GetNetworkNum implements BroadcastMessage interface
@@ -54,6 +56,7 @@ func (i *Intent) Pack(protocol Protocol) ([]byte, error) {
 	bufLen, err := calcPackSize(
 		HeaderLen,
 		UUIDv4Len,
+		ETHAddressLen,
 		ETHAddressLen,
 		Keccak256HashLen,
 		ECDSASignatureLen,
@@ -107,9 +110,17 @@ func (i *Intent) Pack(protocol Protocol) ([]byte, error) {
 	}
 
 	offset += n
-	_, err = packRawBytes(buf[offset:], i.Intent)
+	n, err = packRawBytes(buf[offset:], i.Intent)
 	if err != nil {
 		return nil, fmt.Errorf("pack Intent: %v", err)
+	}
+
+	if protocol >= IntentsWithAnySenderProtocol {
+		offset += n
+		n, err = packETHAddressHex(buf[offset:], i.SenderAddress)
+		if err != nil {
+			return nil, fmt.Errorf("pack SenderAddress: %v", err)
+		}
 	}
 
 	return buf, nil
@@ -163,9 +174,20 @@ func (i *Intent) Unpack(buf []byte, protocol Protocol) error {
 	}
 
 	offset += n
-	i.Intent, _, err = unpackRawBytes(buf[offset:])
+	i.Intent, n, err = unpackRawBytes(buf[offset:])
 	if err != nil {
 		return fmt.Errorf("unpack Intent: %v", err)
+	}
+
+	if protocol < IntentsWithAnySenderProtocol {
+		// In older version of the protocol, the intent sender was always the DApp address
+		i.SenderAddress = i.DAppAddress
+	} else {
+		offset += n
+		i.SenderAddress, n, err = unpackETHAddressHex(buf[offset:])
+		if err != nil {
+			return fmt.Errorf("unpack SenderAddress: %v", err)
+		}
 	}
 
 	return nil

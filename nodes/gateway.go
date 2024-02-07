@@ -1333,12 +1333,13 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 		}
 	case *bxmessage.Intent:
 		userIntent := &types.UserIntent{
-			ID:          typedMsg.ID,
-			DappAddress: typedMsg.DAppAddress,
-			Intent:      typedMsg.Intent,
-			Hash:        typedMsg.Hash,
-			Signature:   typedMsg.Signature,
-			Timestamp:   typedMsg.Timestamp,
+			ID:            typedMsg.ID,
+			DappAddress:   typedMsg.DAppAddress,
+			SenderAddress: typedMsg.SenderAddress,
+			Intent:        typedMsg.Intent,
+			Hash:          typedMsg.Hash,
+			Signature:     typedMsg.Signature,
+			Timestamp:     typedMsg.Timestamp,
 		}
 
 		g.notify(types.NewUserIntentNotification(userIntent))
@@ -1384,9 +1385,11 @@ func (g *gateway) processBroadcast(broadcastMsg *bxmessage.Broadcast, source con
 	startTime := time.Now()
 	bxBlock, missingShortIDs, err := g.blockProcessor.BxBlockFromBroadcast(broadcastMsg)
 	if err != nil {
-		switch err {
-		case services.ErrAlreadyProcessed:
+		if _, ok := err.(*services.ErrAlreadyProcessed); ok {
 			source.Log().Debugf("received duplicate %v skipping", broadcastMsg)
+			return
+		}
+		switch err {
 		case services.ErrMissingShortIDs:
 			source.Log().Debugf("%v from BDN is missing %v short IDs", broadcastMsg, len(missingShortIDs))
 
@@ -1404,7 +1407,7 @@ func (g *gateway) processBroadcast(broadcastMsg *bxmessage.Broadcast, source con
 			}
 
 			g.stats.AddGatewayBlockEvent(eventName, source, broadcastMsg.Hash(), broadcastMsg.BeaconHash(), broadcastMsg.GetNetworkNum(), 1, startTime, 0, 0, len(broadcastMsg.Block()), len(broadcastMsg.ShortIDs()), 0, len(missingShortIDs), bxBlock)
-		case services.ErrNotCompitableBeaconBlock:
+		case services.ErrNotCompatibleBeaconBlock:
 			// Old relay version
 			source.Log().Debugf("received incompitable beacon block %v skipping", broadcastMsg)
 		default:
@@ -1768,8 +1771,19 @@ func (g *gateway) handleBlockFromBlockchain(blockchainBlock blockchain.BlockFrom
 
 	broadcastMessage, usedShortIDs, err := g.blockProcessor.BxBlockToBroadcast(bxBlock, g.sdn.NetworkNum(), g.sdn.MinTxAge())
 	if err != nil {
-		if err == services.ErrAlreadyProcessed {
-			source.Log().Debugf("received duplicate block %v, skipping", bxBlock.Hash())
+		if processedErr, ok := err.(*services.ErrAlreadyProcessed); ok {
+			switch processedErr.Status() {
+			case services.SeenFromRelay:
+				source.Log().Infof("received duplicate block %v from blockchain, block already seen from relay", bxBlock.Hash())
+			case services.SeenFromNode:
+				source.Log().Infof("received duplicate block %v from blockchain, block already seen from blockchain node, skipping", bxBlock.Hash())
+				return
+			case services.SeenFromBoth:
+				source.Log().Infof("received duplicate block %v from blockchain, block already seen from blockchain node and from relay, skipping", bxBlock.Hash())
+				return
+			default:
+				source.Log().Errorf("unexpected status %v", err)
+			}
 		} else {
 			source.Log().Errorf("could not compress block: %v", err)
 		}
@@ -1856,8 +1870,10 @@ func (g *gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source c
 	if fromRelay {
 		event = "GatewayReceivedBundleFromBDN"
 
-		if err := g.mevBundleDispatcher.Dispatch(&mevBundle); err != nil {
-			g.log.Errorf("failed to dispatch mev bundle %v: %v", mevBundle.BundleHash, err)
+		if mevBundle.UUID == "" {
+			if err := g.mevBundleDispatcher.Dispatch(&mevBundle); err != nil {
+				g.log.Errorf("failed to dispatch mev bundle %v: %v", mevBundle.BundleHash, err)
+			}
 		}
 
 		source.Log().Tracef("dispatching %s duration: %v ms, time in network: %v ms", mevBundle, time.Since(start).Milliseconds(), start.Sub(mevBundle.PerformanceTimestamp).Milliseconds())
@@ -2697,7 +2713,7 @@ func (g *gateway) OnConnEstablished(conn connections.Conn) error {
 			}
 		}
 
-		g.log.Infof("sent %d intents/solutions subscription message(s) to %s", len(messages), conn.GetPeerIP())
+		g.log.Debugf("sent %d intents/solutions subscription message(s) to %s", len(messages), conn.GetPeerIP())
 	}
 
 	return nil

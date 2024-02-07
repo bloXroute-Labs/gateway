@@ -77,10 +77,6 @@ func NewMEVBundle(
 	bundlePrice int64,
 	enforcePayout bool,
 ) (MEVBundle, error) {
-	if err := checkBuilderSize(len(mevBuilders)); err != nil {
-		return MEVBundle{}, err
-	}
-
 	if len(uuid) != 0 && len(uuid) != 36 {
 		return MEVBundle{}, errors.New("invalid uuid len")
 	}
@@ -101,7 +97,8 @@ func NewMEVBundle(
 
 // String returns a string representation of the MEVBundle
 func (m MEVBundle) String() string {
-	return fmt.Sprintf("mev bundle(sender account ID: %s, hash: %s, blockNumber: %s, builders: %v, frontrunning: %t, txs: %d)", m.OriginalSenderAccountID, m.BundleHash, m.BlockNumber, m.MEVBuilders, m.Frontrunning, len(m.Transactions))
+	return fmt.Sprintf("mev bundle(sender account ID: %s, hash: %s, blockNumber: %s, builders: %v, frontrunning: %t, txs: %d, sent from cloud api: %v, tier: %v, UUID: %s)",
+		m.OriginalSenderAccountID, m.BundleHash, m.BlockNumber, m.MEVBuilders, m.Frontrunning, len(m.Transactions), m.SentFromCloudAPI, m.OriginalSenderAccountTier, m.UUID)
 }
 
 // SetHash sets the hash based on the fields in BundleSubmission
@@ -607,10 +604,6 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 }
 
 func checkBuilderSize(builderSize int) error {
-	if builderSize == 0 {
-		return fmt.Errorf("at least 1 mev builder must be present")
-	}
-
 	if builderSize > maxAuthNames {
 		return fmt.Errorf("number of mev builders names %v exceeded the limit (%v)", builderSize, maxAuthNames)
 	}

@@ -30,10 +30,14 @@ func (g *gateway) SubmitIntent(ctx context.Context, req *pb.SubmitIntentRequest)
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
 
-	g.log.Infof("received SubmitIntent request, dAppAddress: %s", req.DappAddress)
+	g.log.Infof("received SubmitIntent request, dAppAddress: %s, senderAddress: %s", req.DappAddress, req.SenderAddress)
 
 	if !common.IsHexAddress(req.DappAddress) {
 		return nil, status.Errorf(codes.InvalidArgument, "DappAddress is invalid")
+	}
+
+	if (req.DappAddress != req.SenderAddress) && !common.IsHexAddress(req.SenderAddress) {
+		return nil, status.Errorf(codes.InvalidArgument, "SenderAddress is invalid")
 	}
 
 	if len(req.Intent) == 0 {
@@ -48,7 +52,7 @@ func (g *gateway) SubmitIntent(ctx context.Context, req *pb.SubmitIntentRequest)
 		return nil, status.Errorf(codes.InvalidArgument, "Signature is invalid")
 	}
 
-	ok, err := ValidateSignature(req.DappAddress, req.Hash, req.Signature)
+	ok, err := ValidateSignature(req.SenderAddress, req.Hash, req.Signature)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +67,7 @@ func (g *gateway) SubmitIntent(ctx context.Context, req *pb.SubmitIntentRequest)
 	}
 
 	// send intent to connected Relays
-	intentMsg := bxmessage.NewIntent(intent.ID, intent.DappAddress, intent.Hash, intent.Signature, intent.Timestamp, intent.Intent)
+	intentMsg := bxmessage.NewIntent(intent.ID, intent.DappAddress, intent.SenderAddress, intent.Hash, intent.Signature, intent.Timestamp, intent.Intent)
 	g.broadcast(intentMsg, nil, utils.Relay)
 
 	// send intent notification into FeedManager for propagation to subscribers if any
