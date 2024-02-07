@@ -518,10 +518,11 @@ message ProposedBlockStatsReply {
 
 // Intent Gateway Messages
 message SubmitIntentRequest {
-  string dappAddress = 1; // PubKey
-  bytes intent = 2; //The intent payload
-  bytes hash = 3; //Keccak256Hash of the Intent bytes
-  bytes signature = 4; //ECDSA signature of hash
+  string dappAddress = 1; // ETH address
+  string senderAddress = 2; // ETH address
+  bytes intent = 3; // The intent payload
+  bytes hash = 4; // Keccak256Hash of the Intent bytes
+  bytes signature = 5; // ECDSA signature of hash
 }
 
 message SubmitIntentReply {
@@ -551,9 +552,10 @@ message IntentsRequest {
 
 message IntentsReply {
   string dappAddress = 1; // GUID expected
-  string intentId = 2;
-  bytes intent = 3; //The intent payload
-  google.protobuf.Timestamp timestamp = 4;
+  string senderAddress = 2;
+  string intentId = 3;
+  bytes intent = 4; //The intent payload
+  google.protobuf.Timestamp timestamp = 5;
 }
 
 message IntentSolutionsRequest {

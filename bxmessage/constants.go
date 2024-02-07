@@ -96,7 +96,10 @@ const EmptyProtocol = 0
 const MinProtocol = 19
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
-const CurrentProtocol = BundlesOverBDNOriginalSenderTierProtocol
+const CurrentProtocol = IntentsWithAnySenderProtocol
+
+// IntentsWithAnySenderProtocol is the minimum protocol version that supports Intents with any intent sender
+const IntentsWithAnySenderProtocol = 42
 
 // BundlesOverBDNOriginalSenderTierProtocol is the minimum protocol version that supports bundles over BDN with original tier
 const BundlesOverBDNOriginalSenderTierProtocol = 41

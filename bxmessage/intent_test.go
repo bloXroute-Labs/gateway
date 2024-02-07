@@ -17,12 +17,13 @@ func TestIntent_Unpack(t *testing.T) {
 		Header: Header{
 			msgType: "intent",
 		},
-		ID:          uuid.New().String(),
-		DAppAddress: r.SolverAddress,
-		Hash:        r.Hash,
-		Signature:   r.Signature,
-		Timestamp:   time.Now(),
-		Intent:      []byte("testing intent"),
+		ID:            uuid.New().String(),
+		DAppAddress:   r.SolverAddress,
+		SenderAddress: "0xb794F5eA0ba39494cE839613fffBA74279579268",
+		Hash:          r.Hash,
+		Signature:     r.Signature,
+		Timestamp:     time.Now(),
+		Intent:        []byte("testing intent"),
 	}
 
 	bytes, err := intent.Pack(CurrentProtocol)
@@ -35,10 +36,17 @@ func TestIntent_Unpack(t *testing.T) {
 	require.Equal(t, intent.Header.msgType, intent2.Header.msgType)
 	require.Equal(t, intent.ID, intent2.ID)
 	require.Equal(t, intent.DAppAddress, intent2.DAppAddress)
+	require.Equal(t, intent.SenderAddress, intent2.SenderAddress)
 	require.Equal(t, intent.Hash, intent2.Hash)
 	require.Equal(t, intent.Signature, intent2.Signature)
 	require.Equal(t, intent.Timestamp.UnixMilli(), intent2.Timestamp.UnixMilli())
 	require.Equal(t, intent.Intent, intent2.Intent)
+
+	// Test unpacking with old protocol, should substitute DAppAddress with SenderAddress
+	intent3 := Intent{}
+	err = intent3.Unpack(bytes, IntentsProtocol)
+	require.NoError(t, err)
+	require.Equal(t, intent.DAppAddress, intent3.SenderAddress)
 }
 
 func genIntentsRequest() *gateway.IntentsRequest {

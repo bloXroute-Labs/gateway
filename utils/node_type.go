@@ -51,6 +51,9 @@ const (
 	// Blockchain represents a blockchain connection type
 	Blockchain
 
+	// SolanaRelay is a relay routing solana messages only
+	SolanaRelay
+
 	// Gateway collects all the various gateway types
 	Gateway = InternalGateway | ExternalGateway | GatewayGo
 
@@ -80,6 +83,7 @@ var nodeTypeNames = map[NodeType]string{
 	Websocket:        "WEBSOCKET",
 	GRPC:             "GRPC",
 	Blockchain:       "BLOCKCHAIN",
+	SolanaRelay:      "SOLANA_RELAY",
 }
 var nodeNameTypes = map[string]NodeType{
 	"INTERNAL_GATEWAY":    InternalGateway,
@@ -97,6 +101,7 @@ var nodeNameTypes = map[string]NodeType{
 	"GRPC":                GRPC,
 	"RELAY_PROXY":         RelayProxy,
 	"BLOCKCHAIN":          Blockchain,
+	"SOLANA_RELAY":        SolanaRelay,
 }
 
 // String returns the string representation of a node type for use (e.g. in JSON dumps)

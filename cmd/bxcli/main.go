@@ -472,18 +472,20 @@ func cmdVersion(ctx *cli.Context) error {
 }
 
 type txContent struct {
-	From     string `json:"from"`
-	Gas      string `json:"gas"`
-	GasPrice string `json:"gasPrice"`
-	Hash     string `json:"hash"`
-	Input    string `json:"input"`
-	Nonce    string `json:"nonce"`
-	Value    string `json:"value"`
-	V        string `json:"v"`
-	R        string `json:"r"`
-	S        string `json:"s"`
-	Type     string `json:"type"`
-	To       string `json:"to"`
+	From      string `json:"from"`
+	Gas       string `json:"gas"`
+	GasPrice  string `json:"gasPrice"`
+	GasFeeCap string `json:"gasFeeCap"`
+	GasTipCap string `json:"gasTipCap"`
+	Hash      string `json:"hash"`
+	Input     string `json:"input"`
+	Nonce     string `json:"nonce"`
+	Value     string `json:"value"`
+	V         string `json:"v"`
+	R         string `json:"r"`
+	S         string `json:"s"`
+	Type      string `json:"type"`
+	To        string `json:"to"`
 }
 
 type txReply struct {
@@ -512,19 +514,32 @@ func parseTxResponse(rawTxs []*pb.Tx) ([]txReply, error) {
 			from = "0x" + from
 		}
 
+		to := ethTx.To()
+		var toHex string
+		if to != nil {
+			toHex = strings.ToLower(to.Hex())
+		}
+
 		txContent := txContent{
-			From:     from,
-			Gas:      hexutil.EncodeUint64(ethTx.Gas()),
-			GasPrice: hexutil.EncodeBig(ethTx.GasPrice()),
-			Hash:     hash,
-			Input:    strings.ToLower(hexutil.Encode(ethTx.Data())),
-			Nonce:    strings.ToLower(hexutil.EncodeUint64(ethTx.Nonce())),
-			Value:    hexutil.EncodeBig(ethTx.Value()),
-			V:        hexutil.EncodeBig(v),
-			R:        hexutil.EncodeBig(r),
-			S:        hexutil.EncodeBig(s),
-			Type:     hexutil.EncodeUint64(uint64(ethTx.Type())),
-			To:       strings.ToLower(ethTx.To().Hex()),
+			From: from,
+			Gas:  hexutil.EncodeUint64(ethTx.Gas()),
+
+			Hash:  hash,
+			Input: strings.ToLower(hexutil.Encode(ethTx.Data())),
+			Nonce: strings.ToLower(hexutil.EncodeUint64(ethTx.Nonce())),
+			Value: hexutil.EncodeBig(ethTx.Value()),
+			V:     hexutil.EncodeBig(v),
+			R:     hexutil.EncodeBig(r),
+			S:     hexutil.EncodeBig(s),
+			Type:  hexutil.EncodeUint64(uint64(ethTx.Type())),
+			To:    strings.ToLower(toHex),
+		}
+
+		if ethTx.Type() == ethtypes.DynamicFeeTxType {
+			txContent.GasFeeCap = hexutil.EncodeBig(ethTx.GasFeeCap())
+			txContent.GasTipCap = hexutil.EncodeBig(ethTx.GasTipCap())
+		} else {
+			txContent.GasPrice = hexutil.EncodeBig(ethTx.GasPrice())
 		}
 
 		reply := txReply{

@@ -394,13 +394,6 @@ func ProcessNextValidatorTx(tx *bxmessage.Tx, fallback uint16, nextValidatorMap 
 
 // HandleMEVBundle handles the submission of a bundle and returns its hash, an error and the equivalent error code that we need to send in the response
 func HandleMEVBundle(feedManager *FeedManager, conn connections.Conn, connectionAccount sdnmessage.Account, params *jsonrpc.RPCBundleSubmissionPayload) (*GatewayBundleResponse, int, error) {
-	// If MEVBuilders request parameter is empty, only send to default builders.
-	if len(params.MEVBuilders) == 0 {
-		params.MEVBuilders = map[string]string{
-			bxgateway.BloxrouteBuilderName: "",
-		}
-	}
-
 	mevBundle, bundleHash, err := mevBundleFromRequest(params, feedManager.networkNum)
 	var result *GatewayBundleResponse
 	if params.UUID == "" {

@@ -7,12 +7,13 @@ import (
 
 // UserIntent describes user request for submitting intent
 type UserIntent struct {
-	ID          string
-	DappAddress string
-	Intent      []byte // The intent payload
-	Hash        []byte
-	Signature   []byte
-	Timestamp   time.Time
+	ID            string
+	DappAddress   string
+	SenderAddress string
+	Intent        []byte // The intent payload
+	Hash          []byte
+	Signature     []byte
+	Timestamp     time.Time
 }
 
 // UserIntentNotification describes user intent notification
