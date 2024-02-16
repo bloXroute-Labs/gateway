@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-IMAGE=bloxroute-gateway-go:${1:-latest}
+IMAGE=bloxroute/bloxroute-gateway-go:${1:-latest}
 # we should build public version for at least two platforms:
 # linux/x86_64 (default) and linux/arm64/v8
 PLATFORM=${2:-linux/x86_64}
