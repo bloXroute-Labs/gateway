@@ -166,6 +166,9 @@ const Zhejiang = "Zhejiang"
 // Goerli - for Goerli blockchain network name
 const Goerli = "Goerli"
 
+// Holesky - for Holesky testnet blockchain network name
+const Holesky = "Holesky"
+
 // PolygonMainnet - for Polygon main net blockchain network name
 const PolygonMainnet = "Polygon-Mainnet"
 
@@ -190,6 +193,9 @@ const PolygonChainID types.NetworkID = 137
 // BSCTestnetChainID - BSC Testnet chain ID
 const BSCTestnetChainID = 97
 
+// HoleskyChainID - Holesky Testnet chain ID
+const HoleskyChainID = 17000
+
 // PolygonMainnetNum - for Polygon main net blockchain network number
 const PolygonMainnetNum types.NetworkNum = 36
 
@@ -205,6 +211,9 @@ const GoerliNum types.NetworkNum = 45
 // BSCTestnetNum - for BSC-Testnet blockchain network number
 const BSCTestnetNum types.NetworkNum = 42
 
+// HoleskyNum - for Holesky Testnet network number
+const HoleskyNum types.NetworkNum = 49
+
 // BlockchainNetworkToNetworkNum converts blockchain network to number
 var BlockchainNetworkToNetworkNum = map[string]types.NetworkNum{
 	Mainnet:        MainnetNum,
@@ -214,11 +223,13 @@ var BlockchainNetworkToNetworkNum = map[string]types.NetworkNum{
 	Ropsten:        RopstenNum,
 	Goerli:         GoerliNum,
 	BSCTestnet:     BSCTestnetNum,
+	Holesky:        HoleskyNum,
 }
 
 // NetworkToBlockDuration defines block interval for each network
 var NetworkToBlockDuration = map[string]time.Duration{
 	Mainnet:        12 * time.Second,
+	Holesky:        12 * time.Second,
 	BSCMainnet:     3 * time.Second,
 	BSCTestnet:     3 * time.Second,
 	PolygonMainnet: 2 * time.Second,
@@ -231,6 +242,7 @@ var NetworkNumToChainID = map[types.NetworkNum]types.NetworkID{
 	BSCMainnetNum:     BSCChainID,
 	PolygonMainnetNum: PolygonChainID,
 	PolygonMumbaiNum:  PolygonChainID,
+	HoleskyNum:        HoleskyChainID,
 }
 
 // NetworkNumToBlockchainNetwork - Mapping from networkNum to blockchain network
@@ -242,4 +254,5 @@ var NetworkNumToBlockchainNetwork = map[types.NetworkNum]string{
 	RopstenNum:        Ropsten,
 	GoerliNum:         Goerli,
 	BSCTestnetNum:     BSCTestnet,
+	HoleskyNum:        Holesky,
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 const (
@@ -232,13 +233,14 @@ func (bn *Bx) Peers(_ context.Context, req *pbbase.PeersRequest) (*pbbase.PeersR
 		peer := &pbbase.Peer{
 			Ip:         conn.GetPeerIP(),
 			NodeId:     string(conn.GetNodeID()),
+			Protocol:   uint32(conn.Protocol()),
 			Type:       connType,
 			State:      conn.GetConnectionState(),
 			Network:    uint32(conn.GetNetworkNum()),
-			Initiator:  conn.IsInitiator(),
+			Initiator:  &wrapperspb.BoolValue{Value: conn.IsInitiator()},
 			AccountId:  string(accountID),
 			Port:       conn.GetLocalPort(),
-			Disabled:   conn.IsDisabled(),
+			Disabled:   &wrapperspb.BoolValue{Value: conn.IsDisabled()},
 			Capability: uint32(conn.GetCapabilities()),
 			Trusted:    trusted,
 		}

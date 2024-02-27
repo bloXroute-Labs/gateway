@@ -40,7 +40,6 @@ func TestDispatcher(t *testing.T) {
 		name                string
 		builders            []string
 		mevMaxProfitBuilder bool
-		processMegaBundle   bool
 		bundle              bxmessage.MEVBundle
 		expPayload          *jsonrpc.RPCSendBundle
 		expBuilders         []string
@@ -49,7 +48,6 @@ func TestDispatcher(t *testing.T) {
 			name:                "one builder called",
 			builders:            []string{"builder1"},
 			mevMaxProfitBuilder: false,
-			processMegaBundle:   false,
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
 				Transactions:    []string{testTx1, testTx2},
@@ -75,7 +73,6 @@ func TestDispatcher(t *testing.T) {
 			name:                "multiple builders called",
 			builders:            []string{"builder1", "builder2"},
 			mevMaxProfitBuilder: false,
-			processMegaBundle:   false,
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
 				Transactions:    []string{testTx1, testTx2},
@@ -101,7 +98,6 @@ func TestDispatcher(t *testing.T) {
 			name:                "all builders called",
 			builders:            []string{"builder1", "builder2"},
 			mevMaxProfitBuilder: false,
-			processMegaBundle:   false,
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
 				Transactions:    []string{testTx1, testTx2},
@@ -127,7 +123,6 @@ func TestDispatcher(t *testing.T) {
 			name:                "one builder of multiple called",
 			builders:            []string{"builder1", "builder2"},
 			mevMaxProfitBuilder: false,
-			processMegaBundle:   false,
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
 				Transactions:    []string{testTx1, testTx2},
@@ -153,7 +148,6 @@ func TestDispatcher(t *testing.T) {
 			name:                "partial intersection of builders called",
 			builders:            []string{"builder1", "builder2"},
 			mevMaxProfitBuilder: false,
-			processMegaBundle:   false,
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
 				Transactions:    []string{testTx1, testTx2},
@@ -179,7 +173,6 @@ func TestDispatcher(t *testing.T) {
 			name:                "default bloxroute builder called for empty builders if configured",
 			builders:            []string{"bloxroute", "builder2"},
 			mevMaxProfitBuilder: false,
-			processMegaBundle:   false,
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
 				Transactions:    []string{testTx1, testTx2},
@@ -205,7 +198,6 @@ func TestDispatcher(t *testing.T) {
 			name:                "default bloxroute builder not called for empty builders if not configured",
 			builders:            []string{},
 			mevMaxProfitBuilder: false,
-			processMegaBundle:   false,
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
 				Transactions:    []string{testTx1, testTx2},
@@ -231,7 +223,6 @@ func TestDispatcher(t *testing.T) {
 			name:                "no builders called if no configured",
 			builders:            []string{},
 			mevMaxProfitBuilder: false,
-			processMegaBundle:   false,
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
 				Transactions:    []string{testTx1, testTx2},
@@ -250,7 +241,6 @@ func TestDispatcher(t *testing.T) {
 			name:                "no builders called if no overlap",
 			builders:            []string{"builder3", "builder4"},
 			mevMaxProfitBuilder: false,
-			processMegaBundle:   false,
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
 				Transactions:    []string{testTx1, testTx2},
@@ -269,7 +259,6 @@ func TestDispatcher(t *testing.T) {
 			name:                "no builders called if no builders provided",
 			builders:            []string{"builder1", "builder2"},
 			mevMaxProfitBuilder: false,
-			processMegaBundle:   false,
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
 				Transactions:    []string{testTx1, testTx2},
@@ -288,54 +277,8 @@ func TestDispatcher(t *testing.T) {
 			name:                "frontrunning bundle disabled for non max profit builder",
 			builders:            []string{"builder1"},
 			mevMaxProfitBuilder: false,
-			processMegaBundle:   false,
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
-				Transactions:    []string{testTx1, testTx2},
-				UUID:            "e2a1c984-b31c-4bc6-a2eb-d2d903aab6d8",
-				BlockNumber:     fmt.Sprintf("0x%x", 123),
-				MinTimestamp:    1686120664,
-				MaxTimestamp:    1686120884,
-				RevertingHashes: []string{testTx1Hash},
-				MEVBuilders:     bxmessage.MEVBundleBuilders{"builder1": ""},
-				Frontrunning:    true,
-			},
-			expPayload:  nil,
-			expBuilders: []string{},
-		},
-		{
-			name:                "mega bundle enabled",
-			builders:            []string{"builder1"},
-			mevMaxProfitBuilder: false,
-			processMegaBundle:   true,
-			bundle: bxmessage.MEVBundle{
-				Method:          string(jsonrpc.RPCEthSendMegaBundle),
-				Transactions:    []string{testTx1, testTx2},
-				UUID:            "e2a1c984-b31c-4bc6-a2eb-d2d903aab6d8",
-				BlockNumber:     fmt.Sprintf("0x%x", 123),
-				MinTimestamp:    1686120664,
-				MaxTimestamp:    1686120884,
-				RevertingHashes: []string{testTx1Hash},
-				MEVBuilders:     bxmessage.MEVBundleBuilders{"builder1": ""},
-				Frontrunning:    false,
-			},
-			expPayload: &jsonrpc.RPCSendBundle{
-				Txs:               []string{testTx1, testTx2},
-				UUID:              "e2a1c984-b31c-4bc6-a2eb-d2d903aab6d8",
-				BlockNumber:       fmt.Sprintf("0x%x", 123),
-				MinTimestamp:      1686120664,
-				MaxTimestamp:      1686120884,
-				RevertingTxHashes: []string{testTx1Hash},
-			},
-			expBuilders: []string{"builder1"},
-		},
-		{
-			name:                "mega bundle disabled",
-			builders:            []string{"builder1"},
-			mevMaxProfitBuilder: false,
-			processMegaBundle:   false,
-			bundle: bxmessage.MEVBundle{
-				Method:          string(jsonrpc.RPCEthSendMegaBundle),
 				Transactions:    []string{testTx1, testTx2},
 				UUID:            "e2a1c984-b31c-4bc6-a2eb-d2d903aab6d8",
 				BlockNumber:     fmt.Sprintf("0x%x", 123),
@@ -383,7 +326,7 @@ func TestDispatcher(t *testing.T) {
 			}))
 			defer server.Close()
 
-			d := NewDispatcher(statistics.NoStats{}, makeBuildersMap(fmt.Sprintf("%s/", server.URL), tc.builders), tc.mevMaxProfitBuilder, true)
+			d := NewDispatcher(statistics.NoStats{}, makeBuildersMap(fmt.Sprintf("%s/", server.URL), tc.builders), tc.mevMaxProfitBuilder)
 			err := d.Dispatch(&bundle)
 			assert.NoError(t, err)
 

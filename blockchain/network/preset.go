@@ -33,6 +33,9 @@ const PolygonMainnetChainID = 137
 // PolygonMumbaiChainID Polygon testnet chain ID
 const PolygonMumbaiChainID = 80001
 
+// HoleskyChainID Holesky testnet chain ID
+const HoleskyChainID = 17000
+
 var networkMapping = map[string]EthConfig{
 	"Mainnet":         newEthereumMainnetConfig(),
 	"BSC-Mainnet":     newBSCMainnetConfig(),
@@ -41,6 +44,7 @@ var networkMapping = map[string]EthConfig{
 	"Polygon-Mumbai":  newPolygonMumbaiConfig(),
 	"Zhejiang":        newZhejiangEthereumConfig(),
 	"Goerli":          newGoerliConfig(),
+	"Holesky":         newHoleskyConfig(),
 }
 
 func newGoerliConfig() EthConfig {
@@ -281,6 +285,38 @@ func newPolygonMainnetConfig() EthConfig {
 		IgnoreBlockTimeout:      30 * time.Second,
 		BootstrapNodes:          bootNodes,
 		ProgramName:             "bor/v0.2.16-stable-f083705e/linux-amd64/go1.18.4",
+	}
+}
+
+func newHoleskyConfig() EthConfig {
+	td, ok := new(big.Int).SetString("1", 16)
+	if !ok {
+		panic("could not load Holesky configuration")
+	}
+
+	var err error
+	var bootNodes []*enode.Node
+
+	bootNodes, err = bootstrapNodes(enode.ValidSchemes, []string{
+		"enode://ac906289e4b7f12df423d654c5a962b6ebe5b3a74cc9e06292a85221f9a64a6f1cfdd6b714ed6dacef51578f92b34c60ee91e9ede9c7f8fadc4d347326d95e2b@146.190.13.128:30303",
+		"enode://a3435a0155a3e837c02f5e7f5662a2f1fbc25b48e4dc232016e1c51b544cb5b4510ef633ea3278c0e970fa8ad8141e2d4d0f9f95456c537ff05fdf9b31c15072@178.128.136.233:30303"})
+	if err != nil {
+		panic("could not set Holesky bootstrapNodes")
+	}
+
+	ttd, _ := big.NewInt(0).SetString("0", 0)
+
+	return EthConfig{
+		Network:                 HoleskyChainID,
+		TotalDifficulty:         td,
+		TerminalTotalDifficulty: ttd,
+		Head:                    common.HexToHash("0xb5f7f912443c940f21fd611f12828d75b534364ed9e95ca4e307729a4661bde4"),
+		Genesis:                 common.HexToHash("0xb5f7f912443c940f21fd611f12828d75b534364ed9e95ca4e307729a4661bde4"),
+		GenesisTime:             1695902400,
+		IgnoreBlockTimeout:      30 * time.Second,
+		BootstrapNodes:          bootNodes,
+		IgnoreSlotCount:         10,
+		ProgramName:             "Geth/v1.13.11-stable-8f7eb9cc/linux-amd64/go1.21.0",
 	}
 }
 

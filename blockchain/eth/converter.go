@@ -204,6 +204,36 @@ func (c Converter) beaconBlockBlockchainToBDN(wrappedBlock beacon.WrappedReadOnl
 
 		concreteBlock = b
 		bxBlockType = types.BxBlockTypeBeaconCapella
+	case version.Deneb:
+		b, err := block.PbDenebBlock()
+		if err != nil {
+			return nil, fmt.Errorf("could not get deneb block %v: %v", beaconHash, err)
+		}
+		copy(hash[:], b.GetBlock().GetBody().GetExecutionPayload().GetBlockHash())
+		number = b.GetBlock().GetBody().GetExecutionPayload().GetBlockNumber()
+
+		for i, tx := range b.GetBlock().GetBody().GetExecutionPayload().GetTransactions() {
+			t := new(ethtypes.Transaction)
+			if err := t.UnmarshalBinary(tx); err != nil {
+				return nil, fmt.Errorf("invalid transaction %d: %v", i, err)
+			}
+
+			// This is for back compatibility
+			// Beacon block encodes transaction using MarshalBinary instead of rlp.EncodeBytes
+			// For more info look at the comment of calcBeaconTransactionLength func
+			txBytes, err := rlp.EncodeToBytes(t)
+			if err != nil {
+				return nil, fmt.Errorf("could not encode transaction %d: %v", i, err)
+			}
+
+			txHash := NewSHA256Hash(t.Hash())
+			compressedTx := types.NewBxBlockTransaction(txHash, txBytes)
+			txs = append(txs, compressedTx)
+		}
+		b.Block.Body.ExecutionPayload.Transactions = nil
+
+		concreteBlock = b
+		bxBlockType = types.BxBlockTypeBeaconDeneb
 	default:
 		return nil, fmt.Errorf("unrecognized beacon block %v version %v", beaconHash, block.Version())
 	}
@@ -221,7 +251,7 @@ func (c Converter) BlockBDNtoBlockchain(block *types.BxBlock) (interface{}, erro
 	switch block.Type {
 	case types.BxBlockTypeEth:
 		return c.ethBlockBDNtoBlockchain(block)
-	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella:
+	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella, types.BxBlockTypeBeaconDeneb:
 		return c.beaconBlockBDNtoBlockchain(block)
 	default:
 		return nil, fmt.Errorf("could not convert block %v block type %v", block.Hash(), block.Type)
@@ -271,23 +301,9 @@ func (c Converter) beaconBlockBDNtoBlockchain(block *types.BxBlock) (interfaces.
 			return nil, fmt.Errorf("could not convert block %v body to blockchain format:%v", block.Hash(), err)
 		}
 
-		txs := make([][]byte, 0, len(block.Txs))
-		for i, tx := range block.Txs {
-			t := new(ethtypes.Transaction)
-			if err := rlp.DecodeBytes(tx.Content(), t); err != nil {
-				return nil, fmt.Errorf("could not decode transaction %d: %v", i, err)
-			}
-
-			// This is for back compatibility
-			// Beacon block encodes transaction using MarshalBinary instead of rlp.EncodeBytes
-			// For more info look at the comment of calcBeaconTransactionLength func
-			txBytes, err := t.MarshalBinary()
-			if err != nil {
-				return nil, fmt.Errorf("invalid transaction %d: %v", i, err)
-
-			}
-
-			txs = append(txs, txBytes)
+		txs, err := c.extractTransactionsFromBlock(block)
+		if err != nil {
+			return nil, err
 		}
 
 		b.Block.Body.ExecutionPayload.Transactions = txs
@@ -298,23 +314,23 @@ func (c Converter) beaconBlockBDNtoBlockchain(block *types.BxBlock) (interfaces.
 			return nil, fmt.Errorf("could not convert block %v body to blockchain format: %v", block.Hash(), err)
 		}
 
-		txs := make([][]byte, 0, len(block.Txs))
-		for i, tx := range block.Txs {
-			t := new(ethtypes.Transaction)
-			if err := rlp.DecodeBytes(tx.Content(), t); err != nil {
-				return nil, fmt.Errorf("could not decode transaction %d: %v", i, err)
-			}
+		txs, err := c.extractTransactionsFromBlock(block)
+		if err != nil {
+			return nil, err
+		}
 
-			// This is for back compatibility
-			// Beacon block encodes transaction using MarshalBinary instead of rlp.EncodeBytes
-			// For more info look at the comment of calcBeaconTransactionLength func
-			txBytes, err := t.MarshalBinary()
-			if err != nil {
-				return nil, fmt.Errorf("invalid transaction %d: %v", i, err)
+		b.Block.Body.ExecutionPayload.Transactions = txs
+		blk = b
+	case types.BxBlockTypeBeaconDeneb:
+		b := new(ethpb.SignedBeaconBlockDeneb)
+		if err := b.UnmarshalSSZ(block.Trailer); err != nil {
+			return nil, fmt.Errorf("could not convert block %v body to blockchain format: %v", block.Hash(), err)
 
-			}
+		}
 
-			txs = append(txs, txBytes)
+		txs, err := c.extractTransactionsFromBlock(block)
+		if err != nil {
+			return nil, err
 		}
 
 		b.Block.Body.ExecutionPayload.Transactions = txs
@@ -324,6 +340,28 @@ func (c Converter) beaconBlockBDNtoBlockchain(block *types.BxBlock) (interfaces.
 	}
 
 	return blocks.NewSignedBeaconBlock(blk)
+}
+func (c Converter) extractTransactionsFromBlock(block *types.BxBlock) ([][]byte, error) {
+	txs := make([][]byte, 0, len(block.Txs))
+	for i, tx := range block.Txs {
+		t := new(ethtypes.Transaction)
+		if err := rlp.DecodeBytes(tx.Content(), t); err != nil {
+			return nil, fmt.Errorf("could not decode transaction %d: %v", i, err)
+		}
+
+		// This is for back compatibility
+		// Beacon block encodes transaction using MarshalBinary instead of rlp.EncodeBytes
+		// For more info look at the comment of calcBeaconTransactionLength func
+		txBytes, err := t.MarshalBinary()
+		if err != nil {
+			return nil, fmt.Errorf("invalid transaction %d: %v", i, err)
+
+		}
+
+		txs = append(txs, txBytes)
+	}
+
+	return txs, nil
 }
 
 // BeaconBlockToEthBlock converts beacon block to ETH block
@@ -373,23 +411,48 @@ func BeaconBlockToEthBlock(block interfaces.ReadOnlySignedBeaconBlock) (*ethtype
 		withdrawalsHash = &wsHash
 	}
 
+	var blobGasUsed *uint64
+	var excessBlobGas *uint64
+
+	if block.Version() >= version.Deneb {
+		executionBlobGasUsed, err := execution.BlobGasUsed()
+		if err != nil {
+			return nil, fmt.Errorf("could not fetch blob gas used: %v", err)
+		}
+
+		executionExcessBlobGas, err := execution.ExcessBlobGas()
+		if err != nil {
+			return nil, fmt.Errorf("could not fetch excess blob gas: %v", err)
+		}
+
+		blobGasUsed = &executionBlobGasUsed
+		excessBlobGas = &executionExcessBlobGas
+	}
+
+	parentBeaconRootBytes := block.Block().ParentRoot()
+	parentBeaconRoot := ethcommon.BytesToHash(parentBeaconRootBytes[:])
+
 	header := &ethtypes.Header{
-		ParentHash:      ethcommon.BytesToHash(execution.ParentHash()),
-		UncleHash:       ethtypes.EmptyUncleHash,
-		Coinbase:        ethcommon.BytesToAddress(execution.FeeRecipient()),
-		Root:            ethcommon.BytesToHash(execution.StateRoot()),
-		TxHash:          ethtypes.DeriveSha(ethtypes.Transactions(txs), trie.NewStackTrie(nil)),
-		ReceiptHash:     ethcommon.BytesToHash(execution.ReceiptsRoot()),
-		Bloom:           ethtypes.BytesToBloom(execution.LogsBloom()),
-		Difficulty:      ethcommon.Big0,
-		Number:          new(big.Int).SetUint64(execution.BlockNumber()),
-		GasLimit:        execution.GasLimit(),
-		GasUsed:         execution.GasUsed(),
-		Time:            execution.Timestamp(),
-		BaseFee:         new(big.Int).SetBytes(bytesutil.ReverseByteOrder(execution.BaseFeePerGas())),
-		Extra:           execution.ExtraData(),
-		MixDigest:       ethcommon.BytesToHash(execution.PrevRandao()),
-		WithdrawalsHash: withdrawalsHash,
+		ParentHash:       ethcommon.BytesToHash(execution.ParentHash()),
+		UncleHash:        ethtypes.EmptyUncleHash,
+		Coinbase:         ethcommon.BytesToAddress(execution.FeeRecipient()),
+		Root:             ethcommon.BytesToHash(execution.StateRoot()),
+		TxHash:           ethtypes.DeriveSha(ethtypes.Transactions(txs), trie.NewStackTrie(nil)),
+		ReceiptHash:      ethcommon.BytesToHash(execution.ReceiptsRoot()),
+		Bloom:            ethtypes.BytesToBloom(execution.LogsBloom()),
+		Difficulty:       ethcommon.Big0,
+		Number:           new(big.Int).SetUint64(execution.BlockNumber()),
+		GasLimit:         execution.GasLimit(),
+		GasUsed:          execution.GasUsed(),
+		Time:             execution.Timestamp(),
+		Extra:            execution.ExtraData(),
+		MixDigest:        ethcommon.BytesToHash(execution.PrevRandao()),
+		Nonce:            ethtypes.BlockNonce{},
+		BaseFee:          new(big.Int).SetBytes(bytesutil.ReverseByteOrder(execution.BaseFeePerGas())),
+		WithdrawalsHash:  withdrawalsHash,
+		BlobGasUsed:      blobGasUsed,
+		ExcessBlobGas:    excessBlobGas,
+		ParentBeaconRoot: &parentBeaconRoot,
 	}
 
 	return ethtypes.NewBlockWithHeader(header).WithBody(txs, nil /* uncles */).WithWithdrawals(ethWithdrawals), nil

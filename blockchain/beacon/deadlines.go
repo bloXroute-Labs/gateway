@@ -9,8 +9,8 @@ import (
 	"github.com/prysmaticlabs/prysm/v4/config/params"
 )
 
-var defaultReadDuration = params.BeaconNetworkConfig().TtfbTimeout
-var defaultWriteDuration = params.BeaconNetworkConfig().RespTimeout // RESP_TIMEOUT
+var defaultReadDuration = params.BeaconConfig().TtfbTimeoutDuration()  // TTFB_TIMEOUT
+var defaultWriteDuration = params.BeaconConfig().RespTimeoutDuration() // RESP_TIMEOUT
 
 // SetRPCStreamDeadlines sets read and write deadlines for libp2p-based connection streams.
 func SetRPCStreamDeadlines(stream network.Stream) {

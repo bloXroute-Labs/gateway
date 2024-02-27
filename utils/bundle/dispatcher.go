@@ -38,11 +38,10 @@ type Dispatcher struct {
 	client              *http.Client
 	builders            map[string]*Builder
 	mevMaxProfitBuilder bool
-	processMegaBundle   bool
 }
 
 // NewDispatcher creates a new NewDispatcher
-func NewDispatcher(stats statistics.Stats, builders map[string]*Builder, mevMaxProfitBuilder bool, processMegaBundle bool) *Dispatcher {
+func NewDispatcher(stats statistics.Stats, builders map[string]*Builder, mevMaxProfitBuilder bool) *Dispatcher {
 	for name, builder := range builders {
 		builder.Name = name
 	}
@@ -60,13 +59,16 @@ func NewDispatcher(stats statistics.Stats, builders map[string]*Builder, mevMaxP
 		},
 		builders:            builders,
 		mevMaxProfitBuilder: mevMaxProfitBuilder,
-		processMegaBundle:   processMegaBundle,
 	}
 }
 
 // Dispatch dispatches the MEV bundle to the MEV builders
-func (d *Dispatcher) Dispatch(bundle *bxmessage.MEVBundle) error {
-	if len(bundle.MEVBuilders) == 0 {
+func (d *Dispatcher) Dispatch(mevBundle *bxmessage.MEVBundle) error {
+	//we create a bundle pointer, and if builders map is empty we create copy of the bundle,
+	//we change it because we use mevBundle pointer in go routine in other place
+	bundle := mevBundle
+	if len(mevBundle.MEVBuilders) == 0 {
+		bundle = mevBundle.Clone()
 		bundle.MEVBuilders = map[string]string{
 			bxgateway.BloxrouteBuilderName: "",
 		}
@@ -78,11 +80,6 @@ func (d *Dispatcher) Dispatch(bundle *bxmessage.MEVBundle) error {
 
 	if !d.mevMaxProfitBuilder && bundle.Frontrunning {
 		log.Warnf("MEV bundle %v is frontrunning, but max profit builder is not enabled. Skipping.", bundle.BundleHash)
-		return nil
-	}
-
-	if bundle.Method == string(jsonrpc.RPCEthSendMegaBundle) && !d.processMegaBundle {
-		log.Warnf("received megaBundle message. Message %v from %v in network %v", bundle.BundleHash, bundle.SourceID(), bundle.GetNetworkNum())
 		return nil
 	}
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
+	"github.com/bloXroute-Labs/gateway/v2/test"
 	httpclient "github.com/bloXroute-Labs/gateway/v2/utils/httpclient"
 	httpmock "github.com/jarcoal/httpmock"
 	fieldparams "github.com/prysmaticlabs/prysm/v4/config/fieldparams"
@@ -277,11 +278,14 @@ func TestAPIClient_broadcastBlock(t *testing.T) {
 	client, err := NewAPIClient(ctx, httpClient, config, bridge, url, blockchainNetwork)
 	assert.NoError(t, err)
 	client.Start()
-	time.Sleep(time.Second)
+
+	test.WaitUntilTrueOrFail(t, client.initialized.Load)
+
 	// Test Case 1: Successful broadcast ssz
 	block := validBlock
 	mockRawBlock, _ := validBlock.MarshalSSZ()
 
+	httpmock.Reset()
 	httpmock.RegisterResponder(http.MethodPost, fmt.Sprintf("http://%s/eth/v1/beacon/blocks", url),
 		func(req *http.Request) (*http.Response, error) {
 			if req.Header.Get("Content-Type") != "application/octet-stream" {

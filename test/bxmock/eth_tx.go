@@ -6,9 +6,10 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/holiman/uint256"
 )
 
 // ChainID ethereum chain ID
@@ -33,11 +34,13 @@ func NewSignedEthTx(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey, ch
 		unsignedTx = newEthAccessListTx(nonce, privateKey, chainID)
 	case ethtypes.DynamicFeeTxType:
 		unsignedTx = newEthDynamicFeeTx(nonce, privateKey, chainID)
+	case ethtypes.BlobTxType:
+		unsignedTx = newEthBlobTx(nonce, privateKey, uint256.MustFromBig(chainID))
 	default:
 		panic("provided tx type does not exist")
 	}
 
-	signer := ethtypes.NewLondonSigner(chainID)
+	signer := ethtypes.NewCancunSigner(chainID)
 	hash := signer.Hash(unsignedTx)
 	signature, _ := crypto.Sign(hash.Bytes(), privateKey)
 
@@ -48,21 +51,10 @@ func NewSignedEthTx(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey, ch
 // NewSignedEthTxBytes generates a valid Ethereum transaction, and packs it into RLP encoded bytes
 func NewSignedEthTxBytes(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey, chainID *big.Int) (*ethtypes.Transaction, []byte) {
 	tx := NewSignedEthTx(txType, nonce, privateKey, chainID)
-	var b []byte
-	var err error
-	switch txType {
-	case ethtypes.LegacyTxType:
-		b, err = rlp.EncodeToBytes(tx)
-		if err != nil {
-			panic(err)
-		}
-	case ethtypes.DynamicFeeTxType, ethtypes.AccessListTxType:
-		b, err = tx.MarshalBinary()
-		if err != nil {
-			panic(err)
-		}
-	default:
-		panic("provided tx type does not exist")
+
+	b, err := tx.MarshalBinary()
+	if err != nil {
+		panic(err)
 	}
 
 	return tx, b
@@ -103,6 +95,28 @@ func newEthAccessListTx(nonce uint64, privateKey *ecdsa.PrivateKey, chainID *big
 		To:         &address,
 		Value:      big.NewInt(1),
 		Data:       []byte{},
+		AccessList: nil,
+		V:          nil,
+		R:          nil,
+		S:          nil,
+	})
+	return unsignedTx
+}
+
+// newEthBlobTx generates a valid signed Ethereum transaction from a provided private key. nil can be specified to use a hardcoded private key.
+func newEthBlobTx(nonce uint64, privateKey *ecdsa.PrivateKey, chainID *uint256.Int) *ethtypes.Transaction {
+	address := crypto.PubkeyToAddress(privateKey.PublicKey)
+	unsignedTx := ethtypes.NewTx(&ethtypes.BlobTx{
+		ChainID:    chainID,
+		Nonce:      nonce,
+		GasTipCap:  uint256.NewInt(100),
+		GasFeeCap:  uint256.NewInt(100),
+		Gas:        0,
+		To:         address,
+		Value:      uint256.NewInt(1),
+		Data:       []byte{},
+		BlobFeeCap: uint256.NewInt(100),
+		BlobHashes: []common.Hash{},
 		AccessList: nil,
 		V:          nil,
 		R:          nil,

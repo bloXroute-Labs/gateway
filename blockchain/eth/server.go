@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path"
@@ -111,8 +112,8 @@ func NewServer(parent context.Context, port int, externalIP net.IP, config *netw
 // NewServerWithEthLogger returns the p2p server preconfigured with the default Ethereum logger
 func NewServerWithEthLogger(ctx context.Context, port int, externalIP net.IP, config *network.EthConfig,
 	chain *Chain, bridge blockchain.Bridge, dataDir string, ws blockchain.WSManager, dynamicPeers, dialRatio int, recommendedPeers map[string]struct{}) (*Server, error) {
-	l := log.New()
-	l.SetHandler(log.StreamHandler(os.Stdout, log.TerminalFormat(true)))
+	l := log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stdout, log.LevelTrace, true))
+	log.SetDefault(l)
 
 	return NewServer(ctx, port, externalIP, config, chain, bridge, dataDir, l, ws, dynamicPeers, dialRatio, recommendedPeers)
 }
@@ -133,15 +134,25 @@ func (s *Server) Stop() {
 
 // AddEthLoggerFileHandler registers additional file handler by file path
 func (s *Server) AddEthLoggerFileHandler(path string) error {
-	fileHandler, err := log.FileHandler(path, log.TerminalFormat(false))
-	if err != nil {
+	var err error
+	var logOutputFile *os.File
+	if logOutputFile, err = os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644); err != nil {
 		return err
 	}
+	output := io.MultiWriter(logOutputFile)
+	handler := log.LogfmtHandler(output)
+
+	glogger := log.NewGlogHandler(handler)
+
 	if s.dynamicPeerDisabled {
-		s.p2pServer.Logger.SetHandler(log.LvlFilterHandler(log.LvlTrace, log.MultiHandler(fileHandler, s.p2pServer.Logger.GetHandler())))
+		glogger.Verbosity(log.LvlTrace)
 	} else {
-		s.p2pServer.Logger.SetHandler(log.LvlFilterHandler(log.LvlInfo, log.MultiHandler(fileHandler, s.p2pServer.Logger.GetHandler())))
+		glogger.Verbosity(log.LvlInfo)
 	}
+
+	glogger.Vmodule("p2p")
+
+	log.SetDefault(log.NewLogger(glogger))
 
 	return nil
 }

@@ -154,7 +154,7 @@ var sanctionList = map[string]bool{
 
 // ShouldBlockTransaction checks the sanction list to see if 'from' or 'to' are on block list and returns any blocked addresses for stats
 func ShouldBlockTransaction(transaction *ethtypes.Transaction) ([]string, bool) {
-	sender, err := ethtypes.NewLondonSigner(transaction.ChainId()).Sender(transaction)
+	sender, err := ethtypes.NewCancunSigner(transaction.ChainId()).Sender(transaction)
 	if err != nil {
 		return nil, false
 	}

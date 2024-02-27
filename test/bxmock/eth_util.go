@@ -46,9 +46,16 @@ func (h *TestHasher) Reset() {
 }
 
 // Update updates test hasher values
-func (h *TestHasher) Update(key, val []byte) {
-	h.hasher.Write(key)
-	h.hasher.Write(val)
+func (h *TestHasher) Update(key, val []byte) error {
+	_, err := h.hasher.Write(key)
+	if err != nil {
+		return err
+	}
+	_, err = h.hasher.Write(val)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Hash returns an Ethereum common hash

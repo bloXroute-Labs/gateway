@@ -2,6 +2,7 @@ syntax = "proto3";
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
 
 option go_package = "github.com/bloXroute-Labs/gateway/gateway";
 
@@ -24,12 +25,13 @@ service Gateway {
   rpc BdnBlocks (BlocksRequest) returns (stream BlocksReply){}
   rpc EthOnBlock (EthOnBlockRequest) returns (stream EthOnBlockReply){}
   rpc TxReceipts (TxReceiptsRequest) returns (stream TxReceiptsReply){}
-  rpc ShortIDs (TxHashListRequest) returns (ShortIDListReply) {}
-  rpc ProposedBlock (ProposedBlockRequest) returns (ProposedBlockReply) {}
   rpc TxsFromShortIDs (ShortIDListRequest) returns (TxListReply) {}
-  rpc BlockInfo (BlockInfoRequest) returns (BlockInfoReply) {}
-  rpc ProposedBlockStats (ProposedBlockStatsRequest) returns (ProposedBlockStatsReply) {}
   rpc BlxrSubmitBundle (BlxrSubmitBundleRequest) returns (BlxrSubmitBundleReply) {}
+
+  // BSC Validator gateway functions
+  rpc ShortIDs (ShortIDsRequest) returns (ShortIDsReply);
+  rpc ProposedBlock (ProposedBlockRequest) returns (ProposedBlockReply);
+  rpc ProposedBlockStats (ProposedBlockStatsRequest) returns (ProposedBlockStatsReply);
 
   //Intent Gateway functions
   rpc SubmitIntent(SubmitIntentRequest) returns (SubmitIntentReply){}
@@ -71,6 +73,8 @@ message TxReceiptsReply {
   string transaction_index = 13;
   string type = 14;
   string txs_count = 15;
+  string blob_gas_used = 16;
+  string blob_gas_price = 17;
 }
 
 message CallParams {
@@ -151,6 +155,9 @@ message BlockHeader{
   string nonce = 15;
   string base_fee_per_gas = 16;
   string withdrawals_root = 17;
+  string blob_gas_used = 18;
+  string excess_blob_gas = 19;
+  string parent_beacon_root = 20;
 }
 
 message FutureValidatorInfo{
@@ -240,7 +247,7 @@ message Peer {
   string type = 3;
   string state = 4;
   uint32 network = 5;
-  bool initiator = 6;
+  google.protobuf.BoolValue initiator = 6;
   int64 min_us_from_peer = 7;
   int64 min_us_to_peer = 8;
   int64 slow_traffic_count = 9;
@@ -248,7 +255,7 @@ message Peer {
   string account_id = 11;
   string account_tier = 12;
   int64 port = 13;
-  bool disabled = 14;
+  google.protobuf.BoolValue disabled = 14;
   string mev_miner = 15;
   string mev_builder = 16; // Deprecated
   uint32 capability = 17;
@@ -262,6 +269,7 @@ message Peer {
   repeated string mev_builders = 25;
   int64 new_txs = 26;
   int64 already_seen_txs = 27;
+  uint32 protocol = 28;
 }
 
 message PeersReply {
@@ -444,15 +452,6 @@ message TxResult {
   string rawTx = 5;
 }
 
-message TxHashListRequest {
-  string auth_header = 1 [deprecated = true];
-  repeated bytes txHashes = 2;
-}
-
-message ShortIDListReply {
-  repeated uint32 shortIDs = 1;
-}
-
 message ShortIDListRequest {
   string auth_header = 1 [deprecated = true];
   repeated uint32 shortIDs = 2;
@@ -462,19 +461,26 @@ message TxListReply {
   repeated bytes txs = 1;
 }
 
+message ShortIDsRequest {
+  repeated bytes tx_hashes = 1;
+}
+
+message ShortIDsReply {
+  repeated uint32 short_ids = 1;
+}
+
 message ProposedBlockRequest {
-  string auth_header = 1 [deprecated = true];
-  string validator_http_address = 2;
-  string namespace = 3;
-  uint64 block_number = 4;
-  string prev_block_hash = 5;
-  string block_reward = 6;
-  uint64 gas_limit = 7;
-  uint64 gas_used = 8;
-  repeated CompressTx payload = 9;
-  bool process_blocks_on_gateway = 10;
-  string id = 11;
-  repeated bytes un_reverted_hashes = 12;
+  string validator_http_address = 1;
+  string namespace = 2;
+  uint64 block_number = 3;
+  string prev_block_hash = 4;
+  string block_reward = 5;
+  uint64 gas_limit = 6;
+  uint64 gas_used = 7;
+  repeated CompressTx payload = 8;
+  bool process_blocks_on_gateway = 9;
+  string id = 10;
+  repeated bytes un_reverted_hashes = 11;
 }
 
 message CompressTx {
@@ -487,23 +493,15 @@ message ProposedBlockReply {
   int64 validator_reply_time = 2;
 }
 
-message BlockInfoRequest {
-  string auth_header = 1;
-
-  google.protobuf.Timestamp start_sending_time = 2;
-
-  uint64 block_number = 3;
-}
-
-message BlockInfoReply {}
-
 message ProposedBlockStatsRequest {
-  string auth_header = 1;
-
-  uint64 block_number = 2;
+  uint64 block_number = 1;
 }
 
 message ProposedBlockStatsReply {
+  repeated ProposedBlockStatsRecord records = 1;
+}
+
+message ProposedBlockStatsRecord {
   string id = 1;
 
   google.protobuf.Duration sending_duration = 2;

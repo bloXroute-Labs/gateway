@@ -435,7 +435,7 @@ func TestGatewayGRPCNewBlocks(t *testing.T) {
 		assert.NotNil(t, newBlocksNotification.Header)
 		assert.Equal(t, ethBlock.Hash().String(), newBlocksNotification.Hash)
 		assert.NotNil(t, newBlocksNotification.SubscriptionID)
-		assert.Equal(t, 3, len(ethBlock.Transactions()))
+		assert.Equal(t, 4, len(ethBlock.Transactions()))
 
 		return newBlocksNotification, err
 	})
@@ -495,7 +495,7 @@ func TestGatewayGRPCBdnBlocks(t *testing.T) {
 		require.NotNil(t, bdnBlocksNotification.Header)
 		require.Equal(t, ethBlock.Hash().String(), bdnBlocksNotification.Hash)
 		require.NotNil(t, bdnBlocksNotification.SubscriptionID)
-		require.Equal(t, 3, len(ethBlock.Transactions()))
+		require.Equal(t, 4, len(ethBlock.Transactions()))
 
 		return bdnBlocksNotification, err
 	})

@@ -33,7 +33,7 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *jsonrpc2.Conn
 
 	if len(h.FeedManager.nodeWSManager.Providers()) == 0 && feedName == types.NewBlocksFeed &&
 		h.FeedManager.networkNum != bxgateway.RopstenNum && h.FeedManager.networkNum != bxgateway.GoerliNum &&
-		h.FeedManager.networkNum != bxgateway.MainnetNum {
+		h.FeedManager.networkNum != bxgateway.MainnetNum && h.FeedManager.networkNum != bxgateway.HoleskyNum {
 		errMsg := fmt.Sprintf("%v feed requires a websockets endpoint to be specifed via either --eth-ws-uri or --multi-node startup parameter", feedName)
 		SendErrorMsg(ctx, jsonrpc.InvalidParams, errMsg, conn, req.ID)
 		return

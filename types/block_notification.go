@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/ethereum/go-ethereum/common"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -47,9 +48,125 @@ func NewBeaconBlockNotification(block interfaces.ReadOnlySignedBeaconBlock) (Blo
 			Hash:                     hex.EncodeToString(hash[:]),
 			SignedBeaconBlockCapella: blk,
 		}, nil
+	case version.Deneb:
+		blk, err := block.PbDenebBlock()
+		if err != nil {
+			return nil, err
+		}
+		hash, err := blk.GetBlock().HashTreeRoot()
+		if err != nil {
+			return nil, err
+		}
+
+		return &DenebBlockNotification{
+			Hash:                   hex.EncodeToString(hash[:]),
+			SignedBeaconBlockDeneb: blk,
+		}, nil
 	default:
 		return nil, fmt.Errorf("not supported %s", version.String(block.Version()))
 	}
+}
+
+// DenebBlockNotification represents deneb beacon block notification
+type DenebBlockNotification struct {
+	*ethpb.SignedBeaconBlockDeneb
+
+	Hash string `json:"hash"`
+
+	notificationType FeedType      `json:"-"`
+	source           *NodeEndpoint `json:"-"`
+}
+
+// WithFields returns notification with specified fields
+func (beaconBlockNotification *DenebBlockNotification) WithFields(fields []string) Notification {
+	block := DenebBlockNotification{}
+	for _, param := range fields {
+		switch param {
+		case "hash":
+			block.Hash = beaconBlockNotification.Hash
+		case "header":
+			if block.SignedBeaconBlockDeneb == nil {
+				block.SignedBeaconBlockDeneb = &ethpb.SignedBeaconBlockDeneb{}
+			}
+
+			if block.Block == nil {
+				block.Block = &ethpb.BeaconBlockDeneb{}
+			}
+
+			block.Block.Slot = beaconBlockNotification.GetBlock().GetSlot()
+			block.Block.ProposerIndex = beaconBlockNotification.GetBlock().GetProposerIndex()
+			block.Block.ParentRoot = beaconBlockNotification.GetBlock().GetParentRoot()
+			block.Block.StateRoot = beaconBlockNotification.GetBlock().GetStateRoot()
+		case "slot":
+			if block.SignedBeaconBlockDeneb == nil {
+				block.SignedBeaconBlockDeneb = &ethpb.SignedBeaconBlockDeneb{}
+			}
+
+			if block.SignedBeaconBlockDeneb.Block == nil {
+				block.Block = &ethpb.BeaconBlockDeneb{}
+			}
+
+			block.Block.Slot = beaconBlockNotification.GetBlock().GetSlot()
+		case "body":
+			if block.SignedBeaconBlockDeneb == nil {
+				block.SignedBeaconBlockDeneb = &ethpb.SignedBeaconBlockDeneb{}
+			}
+
+			if block.SignedBeaconBlockDeneb.Block == nil {
+				block.Block = &ethpb.BeaconBlockDeneb{}
+			}
+
+			block.Block.Body = beaconBlockNotification.GetBlock().GetBody()
+		}
+	}
+
+	return &block
+}
+
+// Filters converts filters as field value map
+func (beaconBlockNotification *DenebBlockNotification) Filters(filters []string) map[string]interface{} {
+	return nil
+}
+
+// LocalRegion -
+func (beaconBlockNotification *DenebBlockNotification) LocalRegion() bool {
+	return false
+}
+
+// GetHash returns block hash
+func (beaconBlockNotification *DenebBlockNotification) GetHash() string {
+	return beaconBlockNotification.Hash
+}
+
+// SetNotificationType - set feed name
+func (beaconBlockNotification *DenebBlockNotification) SetNotificationType(feedName FeedType) {
+	beaconBlockNotification.notificationType = feedName
+}
+
+// NotificationType - feed name
+func (beaconBlockNotification *DenebBlockNotification) NotificationType() FeedType {
+	return beaconBlockNotification.notificationType
+}
+
+// SetSource - source blockchain node endpoint
+func (beaconBlockNotification *DenebBlockNotification) SetSource(source *NodeEndpoint) {
+	beaconBlockNotification.source = source
+}
+
+// Source - source blockchain node endpoint
+func (beaconBlockNotification *DenebBlockNotification) Source() *NodeEndpoint {
+	return beaconBlockNotification.source
+}
+
+// IsNil returns true if nil
+func (beaconBlockNotification *DenebBlockNotification) IsNil() bool {
+	return beaconBlockNotification == nil
+}
+
+// Clone clones notification
+func (beaconBlockNotification *DenebBlockNotification) Clone() BlockNotification {
+	n := *beaconBlockNotification
+	return &n
 }
 
 // CapellaBlockNotification represents capella beacon block notification
@@ -297,7 +414,7 @@ func NewEthBlockNotification(hash ethcommon.Hash, block *ethtypes.Block, info []
 		}
 
 		// todo: calculate gasPrice for DynamicFeeTxType properly
-		if ethTx.Type() == ethtypes.DynamicFeeTxType {
+		if ethTx.Type() >= ethtypes.DynamicFeeTxType {
 			fields["gasPrice"] = fields["maxFeePerGas"]
 		}
 		ethTxs = append(ethTxs, fields)
@@ -352,6 +469,9 @@ type Header struct {
 	Nonce            string             `json:"nonce"`
 	BaseFee          *int               `json:"baseFeePerGas,omitempty"`
 	WithdrawalsHash  *ethcommon.Hash    `json:"withdrawalsRoot,omitempty"`
+	BlobGasUsed      string             `json:"blobGasUsed,omitempty"`
+	ExcessBlobGas    string             `json:"excessBlobGas,omitempty"`
+	ParentBeaconRoot *common.Hash       `json:"parentBeaconBlockRoot,omitempty"`
 	hexNumber        uint64
 }
 
@@ -367,6 +487,19 @@ func (h *Header) UpdateNumber(number uint64) {
 
 // ConvertEthHeaderToBlockNotificationHeader converts Ethereum header to bloxroute Ethereum Header
 func ConvertEthHeaderToBlockNotificationHeader(ethHeader *ethtypes.Header) *Header {
+
+	var blobGasUsed, excessBlobGas string
+	var parentBeaconRoot *common.Hash
+	if ethHeader.BlobGasUsed != nil {
+		blobGasUsed = hexutil.EncodeUint64(*ethHeader.BlobGasUsed)
+	}
+	if ethHeader.ExcessBlobGas != nil {
+		excessBlobGas = hexutil.EncodeUint64(*ethHeader.ExcessBlobGas)
+	}
+	if ethHeader.ParentBeaconRoot != nil {
+		parentBeaconRoot = ethHeader.ParentBeaconRoot
+	}
+
 	newHeader := Header{
 		ParentHash:       ethHeader.ParentHash,
 		Sha3Uncles:       ethHeader.UncleHash,
@@ -385,6 +518,9 @@ func ConvertEthHeaderToBlockNotificationHeader(ethHeader *ethtypes.Header) *Head
 		MixHash:          ethHeader.MixDigest,
 		Nonce:            fmt.Sprintf("0x%016s", hexutil.EncodeUint64(ethHeader.Nonce.Uint64())[2:]),
 		WithdrawalsHash:  ethHeader.WithdrawalsHash,
+		BlobGasUsed:      blobGasUsed,
+		ExcessBlobGas:    excessBlobGas,
+		ParentBeaconRoot: parentBeaconRoot,
 	}
 	if ethHeader.BaseFee != nil {
 		baseFee := int(ethHeader.BaseFee.Int64())

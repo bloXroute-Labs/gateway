@@ -1,10 +1,9 @@
 package utils
 
 import (
-	"time"
+	"github.com/urfave/cli/v2"
 
 	"github.com/bloXroute-Labs/gateway/v2"
-	"github.com/urfave/cli/v2"
 )
 
 // CLI flag variable definitions
@@ -338,11 +337,6 @@ var (
 		Value:  false,
 		Hidden: true,
 	}
-	MegaBundleProcessing = &cli.BoolFlag{
-		Name:  "mega-bundle-processing",
-		Usage: "enabling mega-bundle processing",
-		Value: false,
-	}
 	AuthHeaderFlag = &cli.StringFlag{
 		Name:  "auth-header",
 		Usage: "Authentication header for cloud services",
@@ -470,6 +464,54 @@ var (
 		Usage: "provide the minimum gwei gas fee needed for a BSC bundle",
 		Value: 3,
 	}
+
+	BSCProposeBlocks = &cli.BoolFlag{
+		Name:  "bsc-propose-blocks",
+		Usage: "enable block proposing for BSC",
+		Value: false,
+	}
+	BSCRegularBlockSendDelayInitialMSFlag = &cli.IntFlag{
+		Name: "bsc-regular-block-send-delay-initial-ms",
+		Usage: "How long the builder waits each block before sending initial ProposedBlocks to validators " +
+			"(in milliseconds) under regular load",
+		Value: DefaultRegularBlockSendDelayInitialMS,
+	}
+	BSCRegularBlockSendDelaySecondMSFlag = &cli.IntFlag{
+		Name: "bsc-regular-block-send-delay-second-ms",
+		Usage: "How long the builder waits each block before sending second block to validators " +
+			"(in milliseconds) under regular load",
+		Value: DefaultRegularBlockSendDelaySecondMS,
+	}
+	BSCRegularBlockSendDelayIntervalMSFlag = &cli.IntFlag{
+		Name: "bsc-regular-block-send-delay-interval-ms",
+		Usage: "How long the builder waits each block before sending block after second one periodically to validators " +
+			"(in milliseconds) under regular load",
+		Value: DefaultRegularBlockSendDelayIntervalMS,
+	}
+	BSCHighLoadBlockSendDelayInitialMSFlag = &cli.IntFlag{
+		Name: "bsc-highload-block-send-delay-initial-ms",
+		Usage: "How long the builder waits each block before sending initial ProposedBlocks to validators " +
+			"(in milliseconds) under high load",
+		Value: DefaultHighLoadBlockSendDelayInitialMS,
+	}
+	BSCHighLoadBlockSendDelaySecondMSFlag = &cli.IntFlag{
+		Name: "bsc-highload-block-send-delay-second-ms",
+		Usage: "How long the builder waits each block before sending second block to validators " +
+			"(in milliseconds) under high load",
+		Value: DefaultHighLoadBlockSendDelaySecondMS,
+	}
+	BSCHighLoadBlockSendDelayIntervalMSFlag = &cli.IntFlag{
+		Name: "bsc-highload-block-send-delay-interval-ms",
+		Usage: "How long the builder waits each block before sending block after second one periodically to validators " +
+			"(in milliseconds) under high load",
+		Value: DefaultHighLoadBlockSendDelayIntervalMS,
+	}
+	BSCHighLoadTxNumThresholdFlag = &cli.IntFlag{
+		Name:  "bsc-highload-txnum-threshold",
+		Usage: "Number of txs included in the block that indicates there is a network high load",
+		Value: DefaultHighLoadTxNumThreshold,
+	}
+
 	DatabaseFlag = &cli.StringFlag{
 		Name:     "dbdsn",
 		Usage:    "Database DSN string <username:password@tcp(dns:port)/schema>",
@@ -479,17 +521,11 @@ var (
 		Name:  "bloxroute-accounts",
 		Usage: "enable detailed bundle trace response for these accounts",
 	}
-	BlocksToCacheWhileProposing = &cli.IntFlag{
+	BlocksToCacheWhileProposing = &cli.Int64Flag{
 		Name:   "blocks-to-cache-while-proposing",
 		Usage:  "number of blocks to cache while proposing for statistics",
 		Hidden: true,
 		Value:  3,
-	}
-	ProposingInterval = &cli.DurationFlag{
-		Name:   "proposing-interval",
-		Usage:  "interval between proposing blocks after the last block is proposed",
-		Hidden: true,
-		Value:  50 * time.Millisecond,
 	}
 	TxIncludeSenderInFeed = &cli.BoolFlag{
 		Name:   "tx-include-sender-in-feed",
