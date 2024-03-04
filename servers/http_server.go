@@ -83,7 +83,7 @@ func (s *HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch jsonrpc.RPCRequestType(rpcRequest.Method) {
-	case jsonrpc.RPCEthSendBundle, jsonrpc.RPCEthSendMegaBundle:
+	case jsonrpc.RPCEthSendBundle:
 		var bundlePayload []jsonrpc.RPCSendBundle
 		if err = json.Unmarshal(*rpcRequest.Params, &bundlePayload); err != nil {
 			writeErrorJSON(w, rpcRequest.ID, http.StatusBadRequest, fmt.Errorf("failed to unmarshal mev bundle params: %v", err))

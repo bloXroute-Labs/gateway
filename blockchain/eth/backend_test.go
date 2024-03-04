@@ -59,7 +59,7 @@ func TestHandler_HandleStatus(t *testing.T) {
 	nextBlock := bxmock.NewEthBlock(2, head)
 
 	err := handler.Handle(peer, &eth.StatusPacket{
-		ProtocolVersion: eth.ETH66,
+		ProtocolVersion: ETH66,
 		NetworkID:       1,
 		TD:              headDifficulty,
 		Head:            head,
@@ -136,7 +136,7 @@ func TestHandler_HandleTransactionsFromNode(t *testing.T) {
 	}
 
 	// pooled txs should have exact same behavior
-	pooledTxsPacket := eth.PooledTransactionsPacket(txs)
+	pooledTxsPacket := eth.PooledTransactionsResponse(txs)
 	err = handler.Handle(peer, &pooledTxsPacket)
 	assert.NoError(t, err)
 
@@ -202,7 +202,7 @@ func TestHandler_HandleTransactionHashes(t *testing.T) {
 		types.GenerateSHA256Hash(),
 		types.GenerateSHA256Hash(),
 	}
-	txHashesPacket := make(eth.NewPooledTransactionHashesPacket66, 0)
+	txHashesPacket := make(eth.NewPooledTransactionHashesPacket67, 0)
 	for _, txHash := range txHashes {
 		txHashesPacket = append(txHashesPacket, common.BytesToHash(txHash[:]))
 	}
@@ -457,38 +457,78 @@ func TestHandler_HandleNewBlock_TooFarInFuture(t *testing.T) {
 	assertNoBlockSentToBDN(t, bridge)
 }
 
-func TestHandler_HandleNewBlockHashes(t *testing.T) {
+func TestHandler_HandleGetBlockHeaders(t *testing.T) {
+	_, handler, _ := setup()
+	peer, _, _ := testPeer(1, 1)
+
+	peer.checkpointPassed = true
+
+	_ = handler.peers.register(peer)
+	peer.Start()
+	time.Sleep(15 * time.Millisecond)
+	peerRW := peer.rw.(*test.MsgReadWriter)
+
+	block1 := bxmock.NewEthBlock(1, common.Hash{})
+
+	block2 := bxmock.NewEthBlock(2, block1.Hash())
+	bi := NewBlockInfo(block2, big.NewInt(1))
+	_ = handler.chain.SetTotalDifficulty(bi)
+	handler.chain.AddBlock(bi, BSBlockchain)
+
+	block3 := bxmock.NewEthBlock(3, block2.Hash())
+	bi = NewBlockInfo(block3, big.NewInt(1))
+	_ = handler.chain.SetTotalDifficulty(bi)
+	handler.chain.AddBlock(bi, BSBlockchain)
+
+	peerRW.QueueIncomingMessage(uint64(eth.GetBlockHeadersMsg), eth.GetBlockHeadersPacket{
+		RequestId: 1,
+		GetBlockHeadersRequest: &eth.GetBlockHeadersRequest{
+			Origin: eth.HashOrNumber{
+				// Requesting number 1 to receive ErrAncientHeaders (we have tail 2 and head 3)
+				Number: 1,
+			},
+			Amount:  1,
+			Skip:    0,
+			Reverse: false,
+		},
+	})
+
+	handleMessage(handler, peer)
+
+	// need to switch the context and background goroutine to handle the response
+	time.Sleep(1 * time.Millisecond)
+
+	// Need take the requestId of the initial request. It was randomly generated in the process
+	// of handling GetBlockHeadersMsg message.
+	require.True(t, len(peer.responseQueue.Keys()) == 1)
+	requestID := peer.responseQueue.Keys()[0]
+
+	// creating answer for the request
+	blockHeaders := eth.BlockHeadersPacket{
+		RequestId: requestID,
+		BlockHeadersRequest: eth.BlockHeadersRequest{
+			block1.Header(),
+		},
+	}
+
+	updatePeerHeadFromHeaders(blockHeaders, peer)
+	handled, err := peer.NotifyResponse(blockHeaders.RequestId, &blockHeaders.BlockHeadersRequest)
+	require.NoError(t, err)
+	require.True(t, handled)
+}
+
+func TestHandler_HandleNewBlockHashes66(t *testing.T) {
 	bridge, handler, _ := setup()
 	peer, _, _ := testPeer(2, 1)
 	_ = handler.peers.register(peer)
 	peer.Start()
 	peerRW := peer.rw.(*test.MsgReadWriter)
 
-	// process parent block for calculating difficulty
-	parentBlock := bxmock.NewEthBlock(9, common.Hash{})
-	parentHash := parentBlock.Hash()
-	parentTD := big.NewInt(1000)
+	blockHeight := uint64(1)
+	block := bxmock.NewEthBlock(blockHeight, common.Hash{})
+	err := testHandleNewBlockHashes(handler, peer, block.Hash(), blockHeight)
 
-	err := handler.processBlock(peer, NewBlockInfo(parentBlock, parentTD))
-	assert.NoError(t, err)
-
-	assertBlockSentToBDN(t, bridge, parentHash)
-
-	// start message handling goroutines
-	go func() {
-		for {
-			if err := handleMessage(handler, peer); err != nil {
-				assert.Fail(t, "unexpected message handling failure")
-			}
-		}
-	}()
-
-	// process new block request
-	blockHeight := uint64(10)
-	block := bxmock.NewEthBlock(blockHeight, parentHash)
-
-	err = testHandleNewBlockHashes(handler, peer, block.Hash(), blockHeight)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// expect get headers + get bodies request to peer
 	assert.True(t, peerRW.ExpectWrite(time.Millisecond))
@@ -509,121 +549,26 @@ func TestHandler_HandleNewBlockHashes(t *testing.T) {
 	assert.Equal(t, uint64(0), getHeaders.Skip)
 	assert.Equal(t, false, getHeaders.Reverse)
 
-	assert.NoError(t, err)
-
 	var getBodies eth.GetBlockBodiesPacket
 	err = getBodiesMsg.Decode(&getBodies)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(getBodies))
-	assert.Equal(t, block.Hash(), getBodies[0])
-
-	// send header/body from peer
-	peerRW.QueueIncomingMessage(uint64(eth.BlockHeadersMsg), eth.BlockHeadersPacket{block.Header()})
-	peerRW.QueueIncomingMessage(uint64(eth.BlockBodiesMsg), eth.BlockBodiesPacket{&eth.BlockBody{
-		Transactions: block.Transactions(),
-		Uncles:       block.Uncles(),
-	}})
-
-	expectedDifficulty := new(big.Int).Add(parentTD, block.Difficulty())
-	expectedBlock, _ := bridge.BlockBlockchainToBDN(NewBlockInfo(block, expectedDifficulty))
-	newBlock := assertBlockSentToBDN(t, bridge, block.Hash())
-	assert.True(t, expectedBlock.Equals(newBlock.Block))
-
-	// difficulty is unknown from header/body handling, but still set by stored difficulties
-	assert.Equal(t, expectedDifficulty, newBlock.Block.TotalDifficulty)
-
-	// check peer internal state is cleaned up
-	assert.Equal(t, 0, len(peer.responseQueue))
-}
-
-func TestHandler_HandleNewBlockHashes_HandlingError(t *testing.T) {
-	bridge, handler, _ := setup()
-	peer, _, _ := testPeer(2, 1)
-	_ = handler.peers.register(peer)
-	peer.Start()
-	peerRW := peer.rw.(*test.MsgReadWriter)
-
-	blockHeight := uint64(1)
-	block := bxmock.NewEthBlock(blockHeight, common.Hash{})
-	err := testHandleNewBlockHashes(handler, peer, block.Hash(), blockHeight)
-
-	// expect get headers + get bodies request to peer
-	assert.True(t, peerRW.ExpectWrite(time.Millisecond))
-	assert.True(t, peerRW.ExpectWrite(time.Millisecond))
-	assert.Equal(t, 2, len(peerRW.WriteMessages))
-
-	getHeadersMsg := peerRW.WriteMessages[0]
-	getBodiesMsg := peerRW.WriteMessages[1]
-
-	assert.Equal(t, uint64(eth.GetBlockHeadersMsg), getHeadersMsg.Code)
-	assert.Equal(t, uint64(eth.GetBlockBodiesMsg), getBodiesMsg.Code)
-
-	peerRW.QueueIncomingMessage(uint64(eth.BlockBodiesMsg), eth.BlockBodiesPacket{&eth.BlockBody{
-		Transactions: block.Transactions(),
-		Uncles:       block.Uncles(),
-	}})
-
-	// handle bad block body
-	err = handleMessage(handler, peer)
-	assert.NoError(t, err)
-
-	assertNoBlockSentToBDN(t, bridge)
-
-	time.Sleep(1 * time.Millisecond)
-	assert.True(t, peer.isDisconnected())
-}
-
-func TestHandler_HandleNewBlockHashes66(t *testing.T) {
-	bridge, handler, _ := setup()
-	peer, _, _ := testPeer(2, 1)
-	_ = handler.peers.register(peer)
-	peer.version = eth.ETH66
-	peer.Start()
-	peerRW := peer.rw.(*test.MsgReadWriter)
-
-	blockHeight := uint64(1)
-	block := bxmock.NewEthBlock(blockHeight, common.Hash{})
-	err := testHandleNewBlockHashes(handler, peer, block.Hash(), blockHeight)
-
-	// expect get headers + get bodies request to peer
-	assert.True(t, peerRW.ExpectWrite(time.Millisecond))
-	assert.True(t, peerRW.ExpectWrite(time.Millisecond))
-	assert.Equal(t, 2, len(peerRW.WriteMessages))
-
-	getHeadersMsg := peerRW.WriteMessages[0]
-	getBodiesMsg := peerRW.WriteMessages[1]
-
-	assert.Equal(t, uint64(eth.GetBlockHeadersMsg), getHeadersMsg.Code)
-	assert.Equal(t, uint64(eth.GetBlockBodiesMsg), getBodiesMsg.Code)
-
-	var getHeaders eth.GetBlockHeadersPacket66
-	err = getHeadersMsg.Decode(&getHeaders)
-	assert.NoError(t, err)
-	assert.Equal(t, block.Hash(), getHeaders.Origin.Hash)
-	assert.Equal(t, uint64(1), getHeaders.Amount)
-	assert.Equal(t, uint64(0), getHeaders.Skip)
-	assert.Equal(t, false, getHeaders.Reverse)
-
-	var getBodies eth.GetBlockBodiesPacket66
-	err = getBodiesMsg.Decode(&getBodies)
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(getBodies.GetBlockBodiesPacket))
-	assert.Equal(t, block.Hash(), getBodies.GetBlockBodiesPacket[0])
+	assert.Equal(t, 1, len(getBodies.GetBlockBodiesRequest))
+	assert.Equal(t, block.Hash(), getBodies.GetBlockBodiesRequest[0])
 
 	headersID := getHeaders.RequestId
 	bodiesID := getBodies.RequestId
 
 	// send header/body from peer (out of order with request IDs)
-	peerRW.QueueIncomingMessage(uint64(eth.BlockBodiesMsg), eth.BlockBodiesPacket66{
+	peerRW.QueueIncomingMessage(uint64(eth.BlockBodiesMsg), eth.BlockBodiesPacket{
 		RequestId: bodiesID,
-		BlockBodiesPacket: eth.BlockBodiesPacket{&eth.BlockBody{
+		BlockBodiesResponse: []*eth.BlockBody{&eth.BlockBody{
 			Transactions: block.Transactions(),
 			Uncles:       block.Uncles(),
 		}},
 	})
-	peerRW.QueueIncomingMessage(uint64(eth.BlockHeadersMsg), eth.BlockHeadersPacket66{
-		RequestId:          headersID,
-		BlockHeadersPacket: eth.BlockHeadersPacket{block.Header()},
+	peerRW.QueueIncomingMessage(uint64(eth.BlockHeadersMsg), eth.BlockHeadersPacket{
+		RequestId:           headersID,
+		BlockHeadersRequest: eth.BlockHeadersRequest{block.Header()},
 	})
 
 	// expect bodies message, then peer message
@@ -641,7 +586,7 @@ func TestHandler_HandleNewBlockHashes66(t *testing.T) {
 	assert.Equal(t, big.NewInt(0), newBlock.Block.TotalDifficulty)
 
 	// check peer state is cleaned up
-	assert.Equal(t, 0, len(peer.responseQueue66.Keys()))
+	assert.Equal(t, 0, len(peer.responseQueue.Keys()))
 }
 
 func TestHandler_processBDNBlock(t *testing.T) {
@@ -683,7 +628,7 @@ func TestHandler_processBDNBlock(t *testing.T) {
 	}
 
 	// confirm block, should send back to BDN and update head
-	err := handler.Handle(peer, &eth.BlockHeadersPacket{ethBlock.Header()})
+	err := handler.Handle(peer, &eth.BlockHeadersRequest{ethBlock.Header()})
 	assert.NoError(t, err)
 	assertBlockSentToBDN(t, bridge, ethBlock.Hash())
 }
@@ -748,7 +693,7 @@ func TestHandler_processBDNBlock_MultiNode(t *testing.T) {
 	}
 
 	// confirm block, should send back to BDN and update head
-	err := handler.Handle(peer, &eth.BlockHeadersPacket{ethBlock.Header()})
+	err := handler.Handle(peer, &eth.BlockHeadersRequest{ethBlock.Header()})
 	assert.NoError(t, err)
 	assertBlockSentToBDN(t, bridge, ethBlock.Hash())
 }

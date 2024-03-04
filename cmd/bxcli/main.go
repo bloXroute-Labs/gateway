@@ -14,6 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/urfave/cli/v2"
+
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
@@ -22,10 +27,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/urfave/cli/v2"
 )
 
 func main() {
@@ -472,20 +473,23 @@ func cmdVersion(ctx *cli.Context) error {
 }
 
 type txContent struct {
-	From      string `json:"from"`
-	Gas       string `json:"gas"`
-	GasPrice  string `json:"gasPrice"`
-	GasFeeCap string `json:"gasFeeCap"`
-	GasTipCap string `json:"gasTipCap"`
-	Hash      string `json:"hash"`
-	Input     string `json:"input"`
-	Nonce     string `json:"nonce"`
-	Value     string `json:"value"`
-	V         string `json:"v"`
-	R         string `json:"r"`
-	S         string `json:"s"`
-	Type      string `json:"type"`
-	To        string `json:"to"`
+	From                string   `json:"from"`
+	Gas                 string   `json:"gas"`
+	GasPrice            string   `json:"gasPrice"`
+	GasFeeCap           string   `json:"gasFeeCap"`
+	GasTipCap           string   `json:"gasTipCap"`
+	MaxFeePerBlobGas    string   `json:"maxFeePerBlobGas"`
+	BlobVersionedHashes []string `json:"blobVersionedHashes"`
+	Hash                string   `json:"hash"`
+	Input               string   `json:"input"`
+	Nonce               string   `json:"nonce"`
+	Value               string   `json:"value"`
+	V                   string   `json:"v"`
+	R                   string   `json:"r"`
+	S                   string   `json:"s"`
+	YParity             string   `json:"yParity"`
+	Type                string   `json:"type"`
+	To                  string   `json:"to"`
 }
 
 type txReply struct {
@@ -535,7 +539,19 @@ func parseTxResponse(rawTxs []*pb.Tx) ([]txReply, error) {
 			To:    strings.ToLower(toHex),
 		}
 
-		if ethTx.Type() == ethtypes.DynamicFeeTxType {
+		if ethTx.Type() != ethtypes.LegacyTxType {
+			txContent.YParity = hexutil.Uint64(v.Sign()).String()
+		}
+
+		if ethTx.Type() == ethtypes.BlobTxType {
+			txContent.MaxFeePerBlobGas = ethTx.BlobGasFeeCap().String()
+			txContent.BlobVersionedHashes = make([]string, len(ethTx.BlobHashes()))
+			for i, hash := range ethTx.BlobHashes() {
+				txContent.BlobVersionedHashes[i] = strings.ToLower(hash.String())
+			}
+		}
+
+		if ethTx.Type() >= ethtypes.DynamicFeeTxType {
 			txContent.GasFeeCap = hexutil.EncodeBig(ethTx.GasFeeCap())
 			txContent.GasTipCap = hexutil.EncodeBig(ethTx.GasTipCap())
 		} else {
@@ -847,7 +863,7 @@ func cmdBlxrBatchTX(ctx *cli.Context) error {
 			}
 		}
 
-		ethSender, err := ethtypes.Sender(ethtypes.NewLondonSigner(ethTx.ChainId()), &ethTx)
+		ethSender, err := ethtypes.Sender(ethtypes.NewCancunSigner(ethTx.ChainId()), &ethTx)
 		if err != nil {
 			fmt.Printf("Error - failed to get sender from the transaction %v: %v. continue..", transaction, err)
 		}
@@ -937,9 +953,7 @@ func cmdShortIDs(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
 		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
-			return client.ShortIDs(callCtx, &pb.TxHashListRequest{
-				TxHashes: txHashes,
-			})
+			return client.ShortIDs(callCtx, &pb.ShortIDsRequest{TxHashes: txHashes})
 		},
 	)
 	if err != nil {

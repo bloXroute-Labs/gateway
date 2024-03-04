@@ -20,9 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -41,7 +38,9 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc/blockproposer"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc/caller/rpc"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc/ticker"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/polygon"
@@ -50,6 +49,9 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/connections/handler"
+	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	bxrpc "github.com/bloXroute-Labs/gateway/v2/rpc"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/servers"
@@ -123,7 +125,7 @@ type gateway struct {
 
 	mevBundleDispatcher *bundle.Dispatcher
 
-	blockProposer services.BlockProposer
+	blockProposer bsc.BlockProposer
 
 	bscTxClient      *http.Client
 	gatewayPeers     string
@@ -194,9 +196,9 @@ func NewGateway(parent context.Context,
 	transactionSlotStartDuration int,
 	transactionSlotEndDuration int,
 	enableBloomFilter bool,
-	blocksToCacheWhileProposing int,
-	proposingInterval time.Duration,
+	blocksToCacheWhileProposing int64,
 	txIncludeSenderInFeed bool,
+	blockProposerSendingConfig *blockproposer.SendingConfig,
 ) (Node, error) {
 	clock := utils.RealClock{}
 	blockTime, _ := bxgateway.NetworkToBlockDuration[bxConfig.BlockchainNetwork]
@@ -234,7 +236,7 @@ func NewGateway(parent context.Context,
 	}
 	g.chainID = int64(bxgateway.NetworkNumToChainID[sdn.NetworkNum()])
 
-	g.blockProposer = services.NewNoopBlockProposer(&g.TxStore, log.WithField("service", "noop-block-proposer"))
+	g.blockProposer = bsc.NewNoopBlockProposer(&g.TxStore, log.WithField("service", "noop-block-proposer"))
 
 	if polygonHeimdallEndpoints != "" {
 		g.polygonValidatorInfoManager = bor.NewSprintManager(parent, &g.wsManager, bor.NewHeimdallSpanner(parent, polygonHeimdallEndpoints))
@@ -260,7 +262,55 @@ func NewGateway(parent context.Context,
 			Timeout: 60 * time.Second,
 		}
 
-		g.blockProposer = bsc.NewBlockProposer(g.clock, &g.TxStore, blocksToCacheWhileProposing, log.WithField("service", "bsc-block-proposer"), rpc.NewManager(), proposingInterval)
+		if err := func() error {
+			if !blockProposerSendingConfig.Enabled {
+				return nil
+			}
+
+			blockProposerLog := log.WithField("service", "bsc-block-proposer")
+			blockProposerSendingConfig.Validate(blockProposerLog)
+
+			regularBlockProposerTicker, err := ticker.New(&ticker.Args{
+				Clock: g.clock,
+				Delays: []time.Duration{
+					blockProposerSendingConfig.RegularBlockSendDelayInitial,
+					blockProposerSendingConfig.RegularBlockSendDelaySecond,
+				},
+				Interval: blockProposerSendingConfig.RegularBlockSendDelayInterval,
+				Log:      blockProposerLog.WithField("ticker", "regular"),
+			})
+			if err != nil {
+				return err
+			}
+
+			highLoadBlockProposerTicker, err := ticker.New(&ticker.Args{
+				Clock: g.clock,
+				Delays: []time.Duration{
+					blockProposerSendingConfig.HighLoadBlockSendDelayInitial,
+					blockProposerSendingConfig.HighLoadBlockSendDelaySecond,
+				},
+				Interval: blockProposerSendingConfig.HighLoadBlockSendDelayInterval,
+				Log:      blockProposerLog.WithField("ticker", "high-load"),
+			})
+			if err != nil {
+				return err
+			}
+
+			g.blockProposer = blockproposer.New(&blockproposer.Config{
+				Clock:          g.clock,
+				TxStore:        &g.TxStore,
+				Log:            blockProposerLog,
+				CallerManager:  rpc.NewManager(), /* TODO: (mk) ensure that caller manager has keep-alive */
+				SendingInfo:    blockProposerSendingConfig,
+				RegularTicker:  regularBlockProposerTicker,
+				HighLoadTicker: highLoadBlockProposerTicker,
+				BlocksToCache:  blocksToCacheWhileProposing,
+			})
+
+			return nil
+		}(); err != nil {
+			return nil, err
+		}
 	}
 
 	g.asyncMsgChannel = services.NewAsyncMsgChannel(g)
@@ -275,7 +325,7 @@ func NewGateway(parent context.Context,
 		g.stats = statistics.NewStats(g.BxConfig.FluentDEnabled, g.BxConfig.FluentDHost, g.sdn.NodeID(), g.sdn.Networks(), g.BxConfig.LogNetworkContent)
 	}
 
-	g.mevBundleDispatcher = bundle.NewDispatcher(g.stats, bxConfig.MEVBuilders, bxConfig.MEVMaxProfitBuilder, bxConfig.ProcessMegaBundle)
+	g.mevBundleDispatcher = bundle.NewDispatcher(g.stats, bxConfig.MEVBuilders, bxConfig.MEVMaxProfitBuilder)
 	g.txsQueue = services.NewMsgQueue(runtime.NumCPU()*2, bxgateway.ParallelQueueChannelSize, g.msgAdapter)
 	g.txsOrderQueue = services.NewMsgQueue(1, bxgateway.ParallelQueueChannelSize, g.msgAdapter)
 
@@ -393,7 +443,7 @@ func InitSDN(bxConfig *config.Bx, blockchainPeers []types.NodeEndpoint, gatewayP
 		OsVersion:            runtime.GOOS,
 		ProtocolVersion:      bxmessage.CurrentProtocol,
 		IsGatewayMiner:       bxConfig.BlocksOnly,
-		NodeStartTime:        time.Now().Format(bxgateway.TimeLayoutISO),
+		NodeStartTime:        time.Now().String(),
 		StartupArgs:          strings.Join(os.Args[1:], " "),
 		BlockchainRPCEnabled: bxConfig.EnableBlockchainRPC,
 	}
@@ -1874,9 +1924,9 @@ func (g *gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source c
 			if err := g.mevBundleDispatcher.Dispatch(&mevBundle); err != nil {
 				g.log.Errorf("failed to dispatch mev bundle %v: %v", mevBundle.BundleHash, err)
 			}
-		}
 
-		source.Log().Tracef("dispatching %s duration: %v ms, time in network: %v ms", mevBundle, time.Since(start).Milliseconds(), start.Sub(mevBundle.PerformanceTimestamp).Milliseconds())
+			source.Log().Tracef("dispatching %s duration: %v ms, time in network: %v ms", mevBundle, time.Since(start).Milliseconds(), start.Sub(mevBundle.PerformanceTimestamp).Milliseconds())
+		}
 	} else {
 		event = "GatewayReceivedBundleFromFeed"
 
@@ -2419,11 +2469,13 @@ func (g *gateway) EthOnBlock(req *pb.EthOnBlockRequest, stream pb.Gateway_EthOnB
 	return g.grpcHandler.EthOnBlock(req, stream, *accountModel)
 }
 
-func (g *gateway) ShortIDs(ctx context.Context, req *pb.TxHashListRequest) (*pb.ShortIDListReply, error) {
-	authHeader := retrieveAuthHeader(ctx, req.AuthHeader)
-
-	_, err := g.validateAuthHeader(authHeader, false, false, servers.GetPeerAddr(ctx))
+func (g *gateway) ShortIDs(ctx context.Context, req *pb.ShortIDsRequest) (*pb.ShortIDsReply, error) {
+	authHeader, err := bxrpc.ReadAuthMetadata(ctx)
 	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+
+	if _, err = g.validateAuthHeader(authHeader, false, false, servers.GetPeerAddr(ctx)); err != nil {
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
 
@@ -2431,26 +2483,25 @@ func (g *gateway) ShortIDs(ctx context.Context, req *pb.TxHashListRequest) (*pb.
 }
 
 func (g *gateway) ProposedBlock(ctx context.Context, req *pb.ProposedBlockRequest) (*pb.ProposedBlockReply, error) {
-	authHeader := retrieveAuthHeader(ctx, req.AuthHeader)
-
-	_, err := g.validateAuthHeader(authHeader, false, false, servers.GetPeerAddr(ctx))
+	authHeader, err := bxrpc.ReadAuthMetadata(ctx)
 	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+
+	if _, err = g.validateAuthHeader(authHeader, false, false, servers.GetPeerAddr(ctx)); err != nil {
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
 
 	return g.blockProposer.ProposedBlock(ctx, req)
 }
 
-func (g *gateway) BlockInfo(ctx context.Context, req *pb.BlockInfoRequest) (*pb.BlockInfoReply, error) {
-	if _, err := g.validateAuthHeaderWithContext(ctx, req.AuthHeader, false, false); err != nil {
+func (g *gateway) ProposedBlockStats(ctx context.Context, req *pb.ProposedBlockStatsRequest) (*pb.ProposedBlockStatsReply, error) {
+	authHeader, err := bxrpc.ReadAuthMetadata(ctx)
+	if err != nil {
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
 
-	return g.blockProposer.BlockInfo(ctx, req)
-}
-
-func (g *gateway) ProposedBlockStats(ctx context.Context, req *pb.ProposedBlockStatsRequest) (*pb.ProposedBlockStatsReply, error) {
-	if _, err := g.validateAuthHeaderWithContext(ctx, req.AuthHeader, false, false); err != nil {
+	if _, err = g.validateAuthHeaderWithContext(ctx, authHeader, false, false); err != nil {
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
 
@@ -2665,9 +2716,7 @@ func (g *gateway) forwardBSCTx(conn *http.Client, txHash string, tx string, endp
 }
 
 func (g *gateway) TxsFromShortIDs(ctx context.Context, req *pb.ShortIDListRequest) (*pb.TxListReply, error) {
-	authHeader := retrieveAuthHeader(ctx, req.AuthHeader)
-
-	_, err := g.validateAuthHeader(authHeader, false, false, servers.GetPeerAddr(ctx))
+	_, err := g.validateAuthHeader(retrieveAuthHeader(ctx, req.AuthHeader), false, false, servers.GetPeerAddr(ctx))
 	if err != nil {
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}

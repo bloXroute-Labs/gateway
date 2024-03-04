@@ -1,4 +1,4 @@
-package bsc
+package blockproposer
 
 import (
 	"context"
@@ -6,16 +6,20 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc/caller"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
+
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc/caller"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/bloXroute-Labs/gateway/v2/utils/ptr"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
+// proposedBlockArgs is the arguments for the proposed block
 type proposedBlockArgs struct {
 	MEVRelay         string          `json:"mevRelay,omitempty"`
 	BlockNumber      rpc.BlockNumber `json:"blockNumber"`
@@ -27,6 +31,7 @@ type proposedBlockArgs struct {
 	UnRevertedHashes []common.Hash   `json:"unRevertedHashes,omitempty"`
 }
 
+// proposedBlockRequest is a request to propose a block
 type proposedBlockRequest struct {
 	sent *atomic.Bool
 
@@ -42,18 +47,22 @@ type proposedBlockRequest struct {
 	method             string
 }
 
+// newProposedBlockRequest creates a new proposedBlockRequest
 func newProposedBlockRequest() *proposedBlockRequest {
 	return &proposedBlockRequest{sent: atomic.NewBool(false)}
 }
 
+// submit submits the request to the validator
 func (r *proposedBlockRequest) submit(ctx context.Context, clock utils.Clock, callerManager caller.Manager) error {
-	if r.isSent() {
-		return errAlreadySent
+	if err := r.compareAndSetIsSent(); err != nil {
+		return err
 	}
 
-	// setting to is sent to prevent updating the block in memory
-	r.setIsSent()
+	return r.send(ctx, clock, callerManager)
+}
 
+// send sends the request to the validator
+func (r *proposedBlockRequest) send(ctx context.Context, clock utils.Clock, callerManager caller.Manager) error {
 	client, err := callerManager.GetClient(ctx, r.addr)
 	if err != nil {
 		return errors.WithMessagef(err, "error getting client for %s", r.addr)
@@ -81,11 +90,9 @@ func (r *proposedBlockRequest) submit(ctx context.Context, clock utils.Clock, ca
 	return nil
 }
 
+// update updates the request with the new one
 func (r *proposedBlockRequest) update(req *proposedBlockRequest) error {
-	switch {
-	case r.isSent():
-		r.clearSendInfo()
-	case req.cmp(r) != 1:
+	if req.cmp(r) != 1 {
 		return errors.WithMessagef(errLowerBlockReward, "blockReward(%s) is lower than the one is in memory(%s)", req.args.BlockReward, r.args.BlockReward)
 	}
 
@@ -99,21 +106,17 @@ func (r *proposedBlockRequest) update(req *proposedBlockRequest) error {
 	return nil
 }
 
-func (r *proposedBlockRequest) clearSendInfo() {
-	r.sentTime = time.Time{}
-	r.sendingDuration = 0
-	r.validatorReply = ""
-	r.validatorReplyTime = 0
-
-	r.sent.Store(false)
-}
-
+// isSent returns true if the block was sent
 func (r *proposedBlockRequest) isSent() bool {
 	return r.sent.Load()
 }
 
-func (r *proposedBlockRequest) setIsSent() {
-	r.sent.Store(true)
+func (r *proposedBlockRequest) compareAndSetIsSent() (err error) {
+	if !r.sent.CompareAndSwap(false, true) {
+		err = errAlreadySent
+	}
+
+	return
 }
 
 // cmp compares r and req and returns:
@@ -146,20 +149,67 @@ func (r *proposedBlockRequest) compareBlockReward(blockReward *big.Int) int {
 	return compareBlockReward(requestBR, blockReward)
 }
 
-// compareBlockReward compares x and y and returns:
-//
-//	-1 if x <  y
-//	 0 if x == y
-//	+1 if x >  y
-func compareBlockReward(x, y *big.Int) int {
-	switch {
-	case x == nil && y == nil:
-		return 0
-	case x == nil:
-		return -1
-	case y == nil:
-		return 1
+// String returns a string representation of the proposedBlockRequest
+func (r *proposedBlockRequest) String() string {
+	return "{" +
+		"ID: " + r.id + ", " +
+		"sendingDuration: " + r.sendingDuration.String() + ", " +
+		"receivedTime: " + r.receivedTime.Format(bsc.BlockProposingDateFormat) + ", " +
+		"sentTime: " + r.sentTime.Format(bsc.BlockProposingDateFormat) + ", " +
+		"validatorReply: " + r.validatorReply + ", " +
+		"validatorReplyTime: " + time.UnixMilli(r.validatorReplyTime).Format(bsc.BlockProposingDateFormat) + ", " +
+		"}"
+}
+
+// ProposedBlockRequests is a list of proposedBlockRequest
+type ProposedBlockRequests struct {
+	sendingState *atomic.Pointer[sendingState]
+	requests     []*proposedBlockRequest
+}
+
+// NewProposedBlockRequests creates a new ProposedBlockRequests
+func NewProposedBlockRequests(requests ...*proposedBlockRequest) *ProposedBlockRequests {
+	r := &ProposedBlockRequests{
+		sendingState: atomic.NewPointer(ptr.New(sendingStateNotSent)),
+		requests:     make([]*proposedBlockRequest, len(requests)),
+	}
+
+	for _, req := range requests {
+		r.add(req)
+	}
+
+	return r
+}
+
+// len returns the length of the list
+func (r *ProposedBlockRequests) len() int { return len(r.requests) }
+
+// get returns the requests
+func (r *ProposedBlockRequests) get() []*proposedBlockRequest { return r.requests }
+
+// tail returns the last request in the list
+func (r *ProposedBlockRequests) tail() *proposedBlockRequest {
+	return r.requests[len(r.requests)-1]
+}
+
+// add adds a new request to the list
+func (r *ProposedBlockRequests) add(req *proposedBlockRequest) {
+	r.requests = append(r.requests, req)
+}
+
+// setSendingState sets the sending state
+func (r *ProposedBlockRequests) setSendingState(state sendingState) {
+	r.sendingState.Store(ptr.New(state))
+}
+
+// requireSent returns an error if the block was not sent or was replaced with a higher reward
+func (r *ProposedBlockRequests) requireSent() error {
+	switch *r.sendingState.Load() {
+	case sendingStateNotSent:
+		return errBlockNotSent
+	case sendingStateReplacedWithHigherReward:
+		return errBlockReplacedWithNew
 	default:
-		return x.Cmp(y)
+		return nil
 	}
 }

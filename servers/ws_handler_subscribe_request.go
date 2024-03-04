@@ -21,7 +21,7 @@ var (
 	txContentFields = []string{"tx_contents.nonce", "tx_contents.tx_hash",
 		"tx_contents.gas_price", "tx_contents.gas", "tx_contents.to", "tx_contents.value", "tx_contents.input",
 		"tx_contents.v", "tx_contents.r", "tx_contents.s", "tx_contents.type", "tx_contents.access_list",
-		"tx_contents.chain_id", "tx_contents.max_priority_fee_per_gas", "tx_contents.max_fee_per_gas"}
+		"tx_contents.chain_id", "tx_contents.max_priority_fee_per_gas", "tx_contents.max_fee_per_gas", "tx_contents.max_fee_per_blob_gas", "tx_contents.blob_versioned_hashes", "tx_contents.yParity"}
 
 	defaultTxParams = append(txContentFields, "tx_hash", "local_region", "time")
 

@@ -96,6 +96,8 @@ func (c *PrysmClient) run() {
 					blk, err = blocks.NewSignedBeaconBlock(b.BellatrixBlock)
 				case *ethpb.StreamBlocksResponse_CapellaBlock:
 					blk, err = blocks.NewSignedBeaconBlock(b.CapellaBlock)
+				case *ethpb.StreamBlocksResponse_DenebBlock:
+					blk, err = blocks.NewSignedBeaconBlock(b.DenebBlock)
 				}
 
 				if err != nil {

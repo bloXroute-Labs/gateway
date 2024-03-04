@@ -57,6 +57,11 @@ func (at AccountTier) GetRequestPriority() int {
 	return priority
 }
 
+// IsAtLeast indicates whether the account tier is higher or equal to minimumTier
+func (at AccountTier) IsAtLeast(minimumTier AccountTier) bool {
+	return at.GetRequestPriority() >= minimumTier.GetRequestPriority()
+}
+
 // IsUltra indicates whether the account tier is ultra
 func (at AccountTier) IsUltra() bool {
 	return at == ATierUltra
@@ -270,6 +275,8 @@ type Account struct {
 	PrivateOrdersStreaming BDNFeedService `json:"private_orders_streaming"`
 
 	Bundles BDNBundlesService `json:"bundles"`
+
+	EthValidatorGateway BDNQuotaService `json:"eth_validator_gateway"`
 }
 
 // Validate verifies the response that the response from bxapi is well understood
@@ -506,6 +513,12 @@ func GetDefaultEliteAccount(now time.Time) Account {
 					},
 					TxsLenLimit: 30,
 				},
+			},
+		},
+		EthValidatorGateway: BDNQuotaService{
+			MsgQuota: BDNService{
+				TimeInterval: TimeIntervalWithout,
+				Limit:        0,
 			},
 		},
 	}

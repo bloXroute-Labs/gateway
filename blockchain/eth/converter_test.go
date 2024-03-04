@@ -18,6 +18,7 @@ func TestConverter_Transactions(t *testing.T) {
 	testTransactionType(t, ethtypes.LegacyTxType)
 	testTransactionType(t, ethtypes.AccessListTxType)
 	testTransactionType(t, ethtypes.DynamicFeeTxType)
+	testTransactionType(t, ethtypes.BlobTxType)
 }
 
 func testTransactionType(t *testing.T, txType uint8) {

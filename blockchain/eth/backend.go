@@ -380,9 +380,9 @@ func (h *Handler) processDisconnectEvent(endpoint types.NodeEndpoint) {
 	log.Debugf("Peer was not found %v", endpoint)
 }
 
-func (h *Handler) awaitBlockResponse(peer *Peer, blockHash ethcommon.Hash, headersCh chan eth.Packet, bodiesCh chan eth.Packet, fetchResponse func(peer *Peer, blockHash ethcommon.Hash, headersCh chan eth.Packet, bodiesCh chan eth.Packet) (*eth.BlockHeadersPacket, *eth.BlockBodiesPacket, error)) {
+func (h *Handler) awaitBlockResponse(peer *Peer, blockHash ethcommon.Hash, headersCh chan eth.Packet, bodiesCh chan eth.Packet) {
 	startTime := time.Now()
-	headers, bodies, err := fetchResponse(peer, blockHash, headersCh, bodiesCh)
+	headers, bodies, err := h.fetchBlockResponse(peer, blockHash, headersCh, bodiesCh)
 	if err != nil {
 		if peer.disconnected {
 			peer.Log().Tracef("block %v response timed out for disconnected peer", blockHash.String())
@@ -408,9 +408,9 @@ func (h *Handler) awaitBlockResponse(peer *Peer, blockHash ethcommon.Hash, heade
 	}
 }
 
-func (h *Handler) fetchBlockResponse66(peer *Peer, blockHash ethcommon.Hash, headersCh chan eth.Packet, bodiesCh chan eth.Packet) (*eth.BlockHeadersPacket, *eth.BlockBodiesPacket, error) {
+func (h *Handler) fetchBlockResponse(peer *Peer, blockHash ethcommon.Hash, headersCh chan eth.Packet, bodiesCh chan eth.Packet) (*eth.BlockHeadersRequest, *eth.BlockBodiesPacket, error) {
 	var (
-		headers *eth.BlockHeadersPacket
+		headers *eth.BlockHeadersRequest
 		bodies  *eth.BlockBodiesPacket
 		errCh   = make(chan error, 2)
 	)
@@ -420,7 +420,7 @@ func (h *Handler) fetchBlockResponse66(peer *Peer, blockHash ethcommon.Hash, hea
 
 		select {
 		case rawHeaders := <-headersCh:
-			headers, ok = rawHeaders.(*eth.BlockHeadersPacket)
+			headers, ok = rawHeaders.(*eth.BlockHeadersRequest)
 			peer.Log().Debugf("received header for block %v", blockHash.String())
 			if !ok {
 				log.Errorf("could not convert headers for block %v to the expected packet type, got %T", blockHash.String(), rawHeaders)
@@ -458,56 +458,20 @@ func (h *Handler) fetchBlockResponse66(peer *Peer, blockHash ethcommon.Hash, hea
 		}
 	}
 
-	if len(*headers) != 1 || len(*bodies) != 1 {
-		return nil, nil, fmt.Errorf("received %v headers and %v bodies, instead of 1 of each", len(*headers), len(*bodies))
+	if len(*headers) != 1 || len(bodies.BlockBodiesResponse) != 1 {
+		return nil, nil, fmt.Errorf("received %v headers and %v bodies, instead of 1 of each", len(*headers), len(bodies.BlockBodiesResponse))
 	}
 
 	return headers, bodies, nil
 }
 
-func (h *Handler) fetchBlockResponse(peer *Peer, blockHash ethcommon.Hash, headersCh chan eth.Packet, bodiesCh chan eth.Packet) (*eth.BlockHeadersPacket, *eth.BlockBodiesPacket, error) {
-	var (
-		headers *eth.BlockHeadersPacket
-		bodies  *eth.BlockBodiesPacket
-		ok      bool
-	)
-
-	select {
-	case rawHeaders := <-headersCh:
-		headers, ok = rawHeaders.(*eth.BlockHeadersPacket)
-		if !ok {
-			log.Errorf("could not convert headers for block %v to the expected packet type, got %T", blockHash.String(), rawHeaders)
-			return nil, nil, ErrInvalidPacketType
-		}
-	case <-time.After(responseTimeout):
-		return nil, nil, ErrResponseTimeout
-	}
-
-	peer.Log().Debugf("received header for block %v", blockHash.String())
-
-	select {
-	case rawBodies := <-bodiesCh:
-		bodies, ok = rawBodies.(*eth.BlockBodiesPacket)
-		if !ok {
-			log.Errorf("could not convert headers for block %v to the expected packet type, got %T", blockHash.String(), rawBodies)
-			return nil, nil, ErrInvalidPacketType
-		}
-	case <-time.After(responseTimeout):
-		return nil, nil, ErrResponseTimeout
-	}
-
-	peer.Log().Debugf("received body for block %v", blockHash)
-
-	return headers, bodies, nil
-}
-
-func (h *Handler) processBlockComponents(peer *Peer, headers *eth.BlockHeadersPacket, bodies *eth.BlockBodiesPacket) error {
-	if len(*headers) != 1 || len(*bodies) != 1 {
-		return fmt.Errorf("received %v headers and %v bodies, instead of 1 of each", len(*headers), len(*bodies))
+func (h *Handler) processBlockComponents(peer *Peer, headers *eth.BlockHeadersRequest, bodies *eth.BlockBodiesPacket) error {
+	if len(*headers) != 1 || len(bodies.BlockBodiesResponse) != 1 {
+		return fmt.Errorf("received %v headers and %v bodies, instead of 1 of each", len(*headers), len(bodies.BlockBodiesResponse))
 	}
 
 	header := (*headers)[0]
-	body := (*bodies)[0]
+	body := bodies.BlockBodiesResponse[0]
 	block := ethtypes.NewBlockWithHeader(header).WithBody(body.Transactions, body.Uncles)
 	blockInfo := NewBlockInfo(block, nil)
 	_ = h.chain.SetTotalDifficulty(blockInfo)
@@ -525,7 +489,8 @@ func (h *Handler) Handle(peer *Peer, packet eth.Packet) error {
 		case eth.ETH68:
 			msg = eth.NewPooledTransactionHashesPacket68{}
 		default:
-			msg = eth.NewPooledTransactionHashesPacket66{}
+			// eth.NewPooledTransactionHashesPacket67 the same as eth.NewPooledTransactionHashesPacket66
+			msg = eth.NewPooledTransactionHashesPacket67{}
 		}
 		if err := peer.send(eth.NewPooledTransactionHashesMsg, &msg); err != nil {
 			peer.Log().Errorf("error sending empty NewPooledTransactionHashesMsg message after handshake %v", err)
@@ -533,9 +498,9 @@ func (h *Handler) Handle(peer *Peer, packet eth.Packet) error {
 		return nil
 	case *eth.TransactionsPacket:
 		return h.processTransactions(peer, *p)
-	case *eth.PooledTransactionsPacket:
+	case *eth.PooledTransactionsResponse:
 		return h.processTransactions(peer, *p)
-	case *eth.NewPooledTransactionHashesPacket66:
+	case *eth.NewPooledTransactionHashesPacket67:
 		return h.processTransactionHashes(peer, *p)
 	case *eth.NewPooledTransactionHashesPacket68:
 		return h.processTransactionHashes(peer, (*p).Hashes)
@@ -543,7 +508,7 @@ func (h *Handler) Handle(peer *Peer, packet eth.Packet) error {
 		return h.processBlock(peer, NewBlockInfo(p.Block, p.TD))
 	case *eth.NewBlockHashesPacket:
 		return h.processBlockAnnouncement(peer, *p)
-	case *eth.BlockHeadersPacket:
+	case *eth.BlockHeadersRequest:
 		return h.processBlockHeaders(peer, *p)
 	default:
 		return fmt.Errorf("unexpected eth packet type: %v", packet)
@@ -762,21 +727,12 @@ func (h *Handler) processBlockAnnouncement(peer *Peer, newBlocks eth.NewBlockHas
 			headersCh := make(chan eth.Packet)
 			bodiesCh := make(chan eth.Packet)
 
-			if peer.isVersion66() {
-				err := peer.RequestBlock66(block.Hash, headersCh, bodiesCh)
-				if err != nil {
-					peer.Log().Errorf("could not request block %v: %v", block.Hash, err)
-					return err
-				}
-				go h.awaitBlockResponse(peer, block.Hash, headersCh, bodiesCh, h.fetchBlockResponse66)
-			} else {
-				err := peer.RequestBlock(block.Hash, headersCh, bodiesCh)
-				if err != nil {
-					peer.Log().Errorf("could not request block %v: %v", block.Hash, err)
-					return err
-				}
-				go h.awaitBlockResponse(peer, block.Hash, headersCh, bodiesCh, h.fetchBlockResponse)
+			err := peer.RequestBlock(block.Hash, headersCh, bodiesCh)
+			if err != nil {
+				peer.Log().Errorf("could not request block %v: %v", block.Hash, err)
+				return err
 			}
+			go h.awaitBlockResponse(peer, block.Hash, headersCh, bodiesCh)
 		} else {
 			h.confirmBlock(block.Hash, peer.IPEndpoint())
 		}
@@ -785,7 +741,7 @@ func (h *Handler) processBlockAnnouncement(peer *Peer, newBlocks eth.NewBlockHas
 	return nil
 }
 
-func (h *Handler) processBlockHeaders(peer *Peer, blockHeaders eth.BlockHeadersPacket) error {
+func (h *Handler) processBlockHeaders(peer *Peer, blockHeaders eth.BlockHeadersRequest) error {
 	// expected to only be called when header is not expected to be part of a get block headers in response to a new block hashes message
 	for _, blockHeader := range blockHeaders {
 		h.confirmBlock(blockHeader.Hash(), peer.IPEndpoint())

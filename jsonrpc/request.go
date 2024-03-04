@@ -26,7 +26,6 @@ const (
 	RPCBundleSubmission           RPCRequestType = "blxr_submit_bundle"
 	RPCEOBBundleSubmission        RPCRequestType = "blxr_submit_eob_bundle"
 	RPCBundleSimulation           RPCRequestType = "blxr_simulate_bundle"
-	RPCMegaBundleSubmission       RPCRequestType = "blxr_submit_mega_bundle"
 	RPCStartMonitoringTx          RPCRequestType = "start_monitor_transaction"
 	RPCStopMonitoringTx           RPCRequestType = "stop_monitor_transaction"
 	RPCFeeBumpTx                  RPCRequestType = "blxr_tx_fee_bump"
@@ -38,10 +37,9 @@ const (
 
 // External RPCRequestType enumeration
 const (
-	RPCEthSendBundle     RPCRequestType = "eth_sendBundle"
-	RPCEthSendMegaBundle RPCRequestType = "eth_sendMegabundle"
-	RPCEthCallBundle     RPCRequestType = "eth_callBundle"
-	RPCEthCancelBundle   RPCRequestType = "eth_cancelBundle"
+	RPCEthSendBundle   RPCRequestType = "eth_sendBundle"
+	RPCEthCallBundle   RPCRequestType = "eth_callBundle"
+	RPCEthCancelBundle RPCRequestType = "eth_cancelBundle"
 )
 
 // RPCMethodToRPCRequestType maps gRPC methods to RPCRequestType
@@ -130,6 +128,7 @@ type RPCBundleSubmissionPayload struct {
 	UUID                    string            `json:"uuid"`
 	BundlePrice             int64             `json:"bundlePrice,omitempty"` // in wei
 	EnforcePayout           bool              `json:"enforcePayout,omitempty"`
+	AvoidMixedBundles       bool              `json:"avoidMixedBundles,omitempty"`
 	OriginalSenderAccountID string            `json:"original_sender_account_id"`
 }
 

@@ -57,7 +57,7 @@ type APIClient struct {
 	httpClient   *http.Client
 	nodeEndpoint *types.NodeEndpoint
 	blockEncoder consensusBlockEncoder
-	initilized   atomic.Bool
+	initialized  atomic.Bool
 }
 
 // NewAPIClient creates a new APIClient with the specified URL.
@@ -185,10 +185,12 @@ func (c *APIClient) processResponse(respBodyRaw []byte, v, hash string) (interfa
 		rawBlock = &ethpb.SignedBeaconBlockAltair{}
 	case version.String(version.Phase0):
 		rawBlock = &ethpb.SignedBeaconBlock{}
+	case version.String(version.Capella):
+		rawBlock = &ethpb.SignedBeaconBlockCapella{}
 	default:
 		// Not all the clients support the block's version in the HTTP header of the response.
 		// If version didn't mention - use the last one.
-		rawBlock = &ethpb.SignedBeaconBlockCapella{}
+		rawBlock = &ethpb.SignedBeaconBlockDeneb{}
 	}
 	if err := rawBlock.UnmarshalSSZ(respBodyRaw); err != nil {
 		return nil, fmt.Errorf("[hash=%s,version=%s], failed to unmarshal response body: %s, err: %v", hash, v, string(respBodyRaw), err)
@@ -227,15 +229,13 @@ func (c *APIClient) requestClientVersionUntilSuccess() {
 		c.blockEncoder = newSSZConsensusBlockEncoder()
 	}
 
-	c.initilized.Store(true)
+	c.initialized.Store(true)
 }
 
 // Start listens for events from the Beacon API event stream.
 func (c *APIClient) Start() {
-	go func() {
-		c.requestClientVersionUntilSuccess()
-		c.subscribeToEvents()
-	}()
+	go c.requestClientVersionUntilSuccess()
+	go c.subscribeToEvents()
 }
 
 // subscribeToEvents sets up a subscription to server-sent events from the beacon chain API.
@@ -247,6 +247,10 @@ func (c *APIClient) subscribeToEvents() {
 		case <-c.ctx.Done():
 			return
 		default:
+			if !c.initialized.Load() {
+				c.log.Debugf("Waiting for beacon API client to be initialized...")
+				break
+			}
 			c.log.Info("subscribing to head events ", eventsURL)
 
 			err := client.SubscribeRawWithContext(c.ctx, c.eventHandler())
@@ -327,7 +331,7 @@ func (c *APIClient) isOldBlock(block interfaces.ReadOnlySignedBeaconBlock) bool 
 
 // BroadcastBlock sends the block in octet-stream format to the beacon API endpoint
 func (c *APIClient) BroadcastBlock(block interfaces.ReadOnlySignedBeaconBlock) error {
-	if !c.initilized.Load() {
+	if !c.initialized.Load() {
 		return fmt.Errorf("unknown client version")
 	}
 

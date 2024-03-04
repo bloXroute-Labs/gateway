@@ -217,7 +217,7 @@ func newEthTransaction(nonce uint64, gasFee, gasTip int64) (*types.EthTransactio
 	})
 
 	// Sign the transaction with same private key
-	signedTx, err := ethtypes.SignTx(rawTx, ethtypes.NewLondonSigner(rawTx.ChainId()), privateKey)
+	signedTx, err := ethtypes.SignTx(rawTx, ethtypes.NewCancunSigner(rawTx.ChainId()), privateKey)
 	if err != nil {
 		return nil, err
 	}

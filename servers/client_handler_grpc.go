@@ -83,6 +83,11 @@ func (*GrpcHandler) generateBlockReplyHeader(h *types.Header) *pb.BlockHeader {
 	if h.BaseFee != nil {
 		blockReplyHeader.BaseFeePerGas = strconv.FormatInt(int64(*h.BaseFee), 10)
 	}
+	blockReplyHeader.BlobGasUsed = h.BlobGasUsed
+	blockReplyHeader.ExcessBlobGas = h.ExcessBlobGas
+	if h.ParentBeaconRoot != nil {
+		blockReplyHeader.ParentBeaconRoot = h.ParentBeaconRoot.String()
+	}
 	return &blockReplyHeader
 }
 
@@ -142,6 +147,8 @@ func generateTxReceiptReply(n *types.TxReceipt) *pb.TxReceiptsReply {
 		TransactionIndex:  n.TransactionIndex,
 		Type:              n.TxType,
 		TxsCount:          n.TxsCount,
+		BlobGasUsed:       n.BlobGasUsed,
+		BlobGasPrice:      n.BlobGasPrice,
 	}
 
 	for _, receiptLog := range n.Logs {
@@ -153,11 +160,7 @@ func generateTxReceiptReply(n *types.TxReceipt) *pb.TxReceiptsReply {
 		txReceiptsReply.Logs = append(txReceiptsReply.Logs, &pb.TxLogs{
 			Address: interfaceToString(receiptLogMap["address"]),
 			Topics: func(topics []string) []string {
-				var stringTopics []string
-				for _, topic := range topics {
-					stringTopics = append(stringTopics, topic)
-				}
-				return stringTopics
+				return append([]string(nil), topics...)
 			}(interfaceToStringArray(receiptLogMap["topics"])),
 			Data:             interfaceToString(receiptLogMap["data"]),
 			BlockNumber:      interfaceToString(receiptLogMap["blockNumber"]),

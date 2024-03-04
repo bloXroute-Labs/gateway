@@ -46,6 +46,7 @@ func NewEthBlockWithHeader(header *ethtypes.Header) *ethtypes.Block {
 		NewSignedEthTx(ethtypes.LegacyTxType, 1, nil, nil),
 		NewSignedEthTx(ethtypes.AccessListTxType, 2, nil, nil),
 		NewSignedEthTx(ethtypes.DynamicFeeTxType, 3, nil, nil),
+		NewSignedEthTx(ethtypes.BlobTxType, 4, nil, nil),
 	}
 	uncles := []*ethtypes.Header{
 		NewEthBlockHeader(header.Number.Uint64(), common.Hash{}),

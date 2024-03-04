@@ -12,7 +12,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
-	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/ethereum/go-ethereum/common"
@@ -25,7 +24,7 @@ import (
 func testPeer(writeChannelSize int, peerCount int) (*Peer, *test.MsgReadWriter, *utils.MockClock) {
 	clock := &utils.MockClock{}
 	rw := test.NewMsgReadWriter(100, writeChannelSize)
-	peer := newPeer(context.Background(), p2p.NewPeerPipe(test.GenerateEnodeID(), fmt.Sprintf("test peer_%v", peerCount), []p2p.Cap{}, nil), rw, bxmessage.CurrentProtocol, clock, 1)
+	peer := newPeer(context.Background(), p2p.NewPeerPipe(test.GenerateEnodeID(), fmt.Sprintf("test peer_%v", peerCount), []p2p.Cap{}, nil), rw, ETH66, clock, 1)
 	return peer, rw, clock
 }
 
@@ -193,16 +192,20 @@ func TestPeer_SendNewBlock(t *testing.T) {
 
 	// next block will never be released without confirmation
 	clock.IncTime(100 * time.Second)
-	assert.False(t, rw.ExpectWrite(maxWriteTimeout))
+
+	// check that next block wasn't released and block headers were requested
+	assert.True(t, rw.ExpectWrite(maxWriteTimeout))
+	msg = rw.WriteMessages[3]
+	assert.Equal(t, uint64(eth.GetBlockHeadersMsg), msg.Code)
 
 	// confirm block 4, 5b should be released (even though it's queued second at height 5)
 	peer.UpdateHead(4, block4.Hash())
 
 	assert.True(t, rw.ExpectWrite(maxWriteTimeout))
-	assert.Equal(t, 4, len(rw.WriteMessages))
+	assert.Equal(t, 5, len(rw.WriteMessages))
 
 	var blockPacket5 eth.NewBlockPacket
-	msg = rw.WriteMessages[3]
+	msg = rw.WriteMessages[4]
 	assert.Equal(t, uint64(eth.NewBlockMsg), msg.Code)
 	err = msg.Decode(&blockPacket5)
 	assert.NoError(t, err)
@@ -263,26 +266,25 @@ func TestPeer_RequestBlockHeaderNonBlocking(t *testing.T) {
 	)
 
 	peer, rw, _ := testPeer(-1, 1)
-	peer.version = eth.ETH66
 
 	err = peer.RequestBlockHeader(common.Hash{})
 	assert.NoError(t, err)
 
 	assert.Equal(t, 1, len(rw.WriteMessages))
 
-	var getHeaders eth.GetBlockHeadersPacket66
+	var getHeaders eth.GetBlockHeadersPacket
 	msg = rw.WriteMessages[0]
 	err = msg.Decode(&getHeaders)
 	assert.NoError(t, err)
 
 	requestID := getHeaders.RequestId
-	rw.QueueIncomingMessage(eth.BlockHeadersMsg, eth.BlockHeadersPacket66{
-		RequestId:          requestID,
-		BlockHeadersPacket: nil,
+	rw.QueueIncomingMessage(eth.BlockHeadersMsg, eth.BlockHeadersPacket{
+		RequestId:           requestID,
+		BlockHeadersRequest: nil,
 	})
 
 	// should not block, since no response needed
-	handled, err := peer.NotifyResponse66(requestID, nil)
+	handled, err := peer.NotifyResponse(requestID, nil)
 	assert.False(t, handled)
 	assert.NoError(t, err)
 }

@@ -62,8 +62,7 @@ type Peer struct {
 	disconnected     bool
 	checkpointPassed bool
 
-	responseQueue   chan chan eth.Packet // chan is used as a concurrency safe queue
-	responseQueue66 *syncmap.SyncMap[uint64, chan eth.Packet]
+	responseQueue *syncmap.SyncMap[uint64, chan eth.Packet]
 
 	newHeadCh           chan blockRef
 	newBlockCh          chan *eth.NewBlockPacket
@@ -95,8 +94,7 @@ func newPeer(parent context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version 
 		newBlockCh:           make(chan *eth.NewBlockPacket, blockChannelBacklog),
 		blockConfirmationCh:  make(chan common.Hash, blockConfirmationChannelBacklog),
 		queuedBlocks:         make([]*eth.NewBlockPacket, 0),
-		responseQueue:        make(chan chan eth.Packet, responseQueueSize),
-		responseQueue66:      syncmap.NewIntegerMapOf[uint64, chan eth.Packet](),
+		responseQueue:        syncmap.NewIntegerMapOf[uint64, chan eth.Packet](),
 		RequestConfirmations: true,
 	}
 	peer.endpoint = types.NodeEndpoint{IP: p.Node().IP().String(), Port: p.Node().TCP(), PublicKey: p.Info().Enode, Dynamic: !p.Info().Network.Static, ID: p.ID().String()}
@@ -176,7 +174,7 @@ func (ep *Peer) getQueuedBlocks() []*eth.NewBlockPacket {
 }
 
 func (ep *Peer) isVersion66() bool {
-	return ep.version >= eth.ETH66
+	return ep.version >= ETH66
 }
 
 func (ep *Peer) blockLoop() {
@@ -352,6 +350,10 @@ func (ep *Peer) Handshake(version uint32, networkChain uint64, td *big.Int, head
 		Genesis:         genesis,
 		ForkID:          peerStatus.ForkID,
 	})
+
+	if err != nil {
+		return peerStatus, err
+	}
 
 	if version >= eth.ETH67 {
 		// Relevant only for BSC
@@ -546,17 +548,8 @@ func (ep *Peer) readStatus() (*eth.StatusPacket, error) {
 }
 
 // NotifyResponse informs any listeners dependent on a request/response call to this peer, indicating if any channels were waiting for the message
-func (ep *Peer) NotifyResponse(packet eth.Packet) bool {
-	responseCh := <-ep.responseQueue
-	if responseCh != nil {
-		responseCh <- packet
-	}
-	return responseCh != nil
-}
-
-// NotifyResponse66 informs any listeners dependent on a request/response call to this ETH66 peer, indicating if any channels were waiting for the message
-func (ep *Peer) NotifyResponse66(requestID uint64, packet eth.Packet) (bool, error) {
-	responseCh, ok := ep.responseQueue66.LoadAndDelete(requestID)
+func (ep *Peer) NotifyResponse(requestID uint64, packet eth.Packet) (bool, error) {
+	responseCh, ok := ep.responseQueue.LoadAndDelete(requestID)
 	if !ok {
 		return false, ErrUnknownRequestID
 	}
@@ -595,27 +588,22 @@ func (ep *Peer) AnnounceBlock(hash common.Hash, number uint64) error {
 
 // SendBlockBodies sends a batch of block bodies to the peer
 func (ep *Peer) SendBlockBodies(bodies []*eth.BlockBody) error {
-	return ep.send(eth.BlockBodiesMsg, eth.BlockBodiesPacket(bodies))
+	return ep.send(eth.BlockBodiesMsg, eth.BlockBodiesResponse(bodies))
 }
 
-// ReplyBlockBodies sends a batch of requested block bodies to the peer (ETH66)
+// ReplyBlockBodies sends a batch of requested block bodies to the peer
 func (ep *Peer) ReplyBlockBodies(id uint64, bodies []*eth.BlockBody) error {
-	return ep.send(eth.BlockBodiesMsg, eth.BlockBodiesPacket66{
-		RequestId:         id,
-		BlockBodiesPacket: bodies,
+	return ep.send(eth.BlockBodiesMsg, eth.BlockBodiesPacket{
+		RequestId:           id,
+		BlockBodiesResponse: bodies,
 	})
 }
 
-// SendBlockHeaders sends a batch of block headers to the peer
-func (ep *Peer) SendBlockHeaders(headers []*ethtypes.Header) error {
-	return ep.send(eth.BlockHeadersMsg, eth.BlockHeadersPacket(headers))
-}
-
-// ReplyBlockHeaders sends batch of requested block headers to the peer (ETH66)
+// ReplyBlockHeaders sends batch of requested block headers to the peer
 func (ep *Peer) ReplyBlockHeaders(id uint64, headers []*ethtypes.Header) error {
-	return ep.send(eth.BlockHeadersMsg, eth.BlockHeadersPacket66{
-		RequestId:          id,
-		BlockHeadersPacket: headers,
+	return ep.send(eth.BlockHeadersMsg, eth.BlockHeadersPacket{
+		RequestId:           id,
+		BlockHeadersRequest: headers,
 	})
 }
 
@@ -626,68 +614,40 @@ func (ep *Peer) SendTransactions(txs ethtypes.Transactions) error {
 
 // RequestTransactions requests a batch of announced transactions from the peer
 func (ep *Peer) RequestTransactions(txHashes []common.Hash) error {
-	packet := eth.GetPooledTransactionsPacket(txHashes)
-	if ep.isVersion66() {
-		return ep.send(eth.GetPooledTransactionsMsg, eth.GetPooledTransactionsPacket66{
-			RequestId:                   rand.Uint64(),
-			GetPooledTransactionsPacket: packet,
-		})
-	}
-	return ep.send(eth.GetPooledTransactionsMsg, packet)
+	packet := eth.GetPooledTransactionsRequest(txHashes)
+	return ep.send(eth.GetPooledTransactionsMsg, eth.GetPooledTransactionsPacket{
+		RequestId:                    rand.Uint64(),
+		GetPooledTransactionsRequest: packet,
+	})
 }
 
-// RequestBlock fetches the specified block from the peer, pushing the components to the channels upon request/response completion.
+// RequestBlock fetches the specified block from the ETH66 peer, pushing the components to the channels upon request/response completion.
 func (ep *Peer) RequestBlock(blockHash common.Hash, headersCh chan eth.Packet, bodiesCh chan eth.Packet) error {
-	if ep.isVersion66() {
-		panic("unexpected call to request block for a ETH66 peer")
-	}
-
-	getHeadersPacket := &eth.GetBlockHeadersPacket{
-		Origin:  eth.HashOrNumber{Hash: blockHash},
-		Amount:  1,
-		Skip:    0,
-		Reverse: false,
-	}
-
-	getBodiesPacket := eth.GetBlockBodiesPacket{blockHash}
-
-	ep.registerForResponse(headersCh)
-	ep.registerForResponse(bodiesCh)
-
-	if err := ep.send(eth.GetBlockHeadersMsg, getHeadersPacket); err != nil {
-		return err
-	}
-
-	return ep.send(eth.GetBlockBodiesMsg, getBodiesPacket)
-}
-
-// RequestBlock66 fetches the specified block from the ETH66 peer, pushing the components to the channels upon request/response completion.
-func (ep *Peer) RequestBlock66(blockHash common.Hash, headersCh chan eth.Packet, bodiesCh chan eth.Packet) error {
 	if !ep.isVersion66() {
 		panic("unexpected call to request block 66 for a <ETH66 peer")
 	}
 
-	getHeadersPacket := &eth.GetBlockHeadersPacket{
+	getHeadersPacket := &eth.GetBlockHeadersRequest{
 		Origin:  eth.HashOrNumber{Hash: blockHash},
 		Amount:  1,
 		Skip:    0,
 		Reverse: false,
 	}
-	getBodiesPacket := eth.GetBlockBodiesPacket{blockHash}
+	getBodiesPacket := eth.GetBlockBodiesRequest{blockHash}
 
 	getHeadersRequestID := rand.Uint64()
-	getHeadersPacket66 := eth.GetBlockHeadersPacket66{
-		RequestId:             getHeadersRequestID,
-		GetBlockHeadersPacket: getHeadersPacket,
+	getHeadersPacket66 := eth.GetBlockHeadersPacket{
+		RequestId:              getHeadersRequestID,
+		GetBlockHeadersRequest: getHeadersPacket,
 	}
 	getBodiesRequestID := rand.Uint64()
-	getBodiesPacket66 := eth.GetBlockBodiesPacket66{
-		RequestId:            getBodiesRequestID,
-		GetBlockBodiesPacket: getBodiesPacket,
+	getBodiesPacket66 := eth.GetBlockBodiesPacket{
+		RequestId:             getBodiesRequestID,
+		GetBlockBodiesRequest: getBodiesPacket,
 	}
 
-	ep.registerForResponse66(getHeadersRequestID, headersCh)
-	ep.registerForResponse66(getBodiesRequestID, bodiesCh)
+	ep.registerForResponse(getHeadersRequestID, headersCh)
+	ep.registerForResponse(getBodiesRequestID, bodiesCh)
 
 	if err := ep.send(eth.GetBlockHeadersMsg, getHeadersPacket66); err != nil {
 		return err
@@ -705,25 +665,20 @@ func (ep *Peer) RequestBlockHeader(hash common.Hash) error {
 
 // RequestBlockHeaderRaw dispatches a generalized GetHeaders message to the Ethereum peer
 func (ep *Peer) RequestBlockHeaderRaw(origin eth.HashOrNumber, amount, skip uint64, reverse bool, responseCh chan eth.Packet) error {
-	packet := eth.GetBlockHeadersPacket{
+	packet := eth.GetBlockHeadersRequest{
 		Origin:  origin,
 		Amount:  amount,
 		Skip:    skip,
 		Reverse: reverse,
 	}
-	if ep.isVersion66() {
-		requestID := rand.Uint64()
-		ep.registerForResponse66(requestID, responseCh)
 
-		return ep.send(eth.GetBlockHeadersMsg, eth.GetBlockHeadersPacket66{
-			RequestId:             requestID,
-			GetBlockHeadersPacket: &packet,
-		})
-	}
+	requestID := rand.Uint64()
+	ep.registerForResponse(requestID, responseCh)
 
-	// intercept and discard handler on response
-	ep.registerForResponse(responseCh)
-	return ep.send(eth.GetBlockHeadersMsg, packet)
+	return ep.send(eth.GetBlockHeadersMsg, eth.GetBlockHeadersPacket{
+		RequestId:              requestID,
+		GetBlockHeadersRequest: &packet,
+	})
 }
 
 func (ep *Peer) sendNewBlock(packet *eth.NewBlockPacket) error {
@@ -789,12 +744,8 @@ func (ep *Peer) sendNewBlock(packet *eth.NewBlockPacket) error {
 	return nil
 }
 
-func (ep *Peer) registerForResponse(responseCh chan eth.Packet) {
-	ep.responseQueue <- responseCh
-}
-
-func (ep *Peer) registerForResponse66(requestID uint64, responseCh chan eth.Packet) {
-	ep.responseQueue66.Store(requestID, responseCh)
+func (ep *Peer) registerForResponse(requestID uint64, responseCh chan eth.Packet) {
+	ep.responseQueue.Store(requestID, responseCh)
 }
 
 func (ep *Peer) isDisconnected() bool {
