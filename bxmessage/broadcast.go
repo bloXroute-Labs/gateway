@@ -15,6 +15,7 @@ const (
 	broadcastTypeBeaconAltair    broadcastType = "bcna"
 	broadcastTypeBeaconBellatrix broadcastType = "bcnb"
 	broadcastTypeBeaconCapella   broadcastType = "bcnc"
+	broadcastTypeBeaconDeneb     broadcastType = "bcnd"
 )
 
 // Broadcast - represent the "broadcast" message
@@ -37,6 +38,8 @@ func blockToBroadcastType(blockType types.BxBlockType) broadcastType {
 		return broadcastTypeBeaconBellatrix
 	case types.BxBlockTypeBeaconCapella:
 		return broadcastTypeBeaconCapella
+	case types.BxBlockTypeBeaconDeneb:
+		return broadcastTypeBeaconDeneb
 	case types.BxBlockTypeEth:
 		fallthrough
 	default:
@@ -73,7 +76,7 @@ func (b Broadcast) String() string {
 // IsBeaconBlock returns true if block is beacon
 func (b *Broadcast) IsBeaconBlock() bool {
 	switch broadcastType(b.broadcastType[:]) {
-	case broadcastTypeBeaconPhase0, broadcastTypeBeaconAltair, broadcastTypeBeaconBellatrix, broadcastTypeBeaconCapella:
+	case broadcastTypeBeaconPhase0, broadcastTypeBeaconAltair, broadcastTypeBeaconBellatrix, broadcastTypeBeaconCapella, broadcastTypeBeaconDeneb:
 		return true
 	default:
 		return false
@@ -91,6 +94,8 @@ func (b Broadcast) BlockType() types.BxBlockType {
 		return types.BxBlockTypeBeaconBellatrix
 	case broadcastTypeBeaconCapella:
 		return types.BxBlockTypeBeaconCapella
+	case broadcastTypeBeaconDeneb:
+		return types.BxBlockTypeBeaconDeneb
 	default:
 		return types.BxBlockTypeUnknown
 	}

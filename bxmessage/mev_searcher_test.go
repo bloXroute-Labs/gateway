@@ -88,7 +88,7 @@ func TestMEVSearcherPackSuccess(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mevSearcher, err := NewMEVSearcher(
-				"eth_sendMegabundle",
+				"eth_sendMessage",
 				tt.fields.auth,
 				tt.fields.uuid,
 				tt.fields.frontrunning,
@@ -102,10 +102,15 @@ func TestMEVSearcherPackSuccess(t *testing.T) {
 			packPayload, err := mevSearcher.Pack(tt.fields.protocol)
 			require.NoError(t, err)
 
+			ss := hex.EncodeToString(packPayload)
+			_ = ss
+
+			fmt.Println(ss)
+
 			err = mevSearcher.Unpack(packPayload, tt.fields.protocol)
 			require.NoError(t, err)
 			assert.Equal(t, string(tt.fields.params), string(mevSearcher.Params))
-			assert.Equal(t, "eth_sendMegabundle", mevSearcher.Method)
+			assert.Equal(t, "eth_sendMessage", mevSearcher.Method)
 			assert.Equal(t, tt.fields.uuid, mevSearcher.UUID)
 			assert.Equal(t, len(tt.fields.auth), len(mevSearcher.Auth()))
 			assert.Equal(t, tt.fields.frontrunning, mevSearcher.Frontrunning)
@@ -121,7 +126,7 @@ func TestMEVSearcherPackFailedAuthToLong(t *testing.T) {
 		mevSearchersAuthorization[strconv.Itoa(i)] = strconv.Itoa(i)
 	}
 	params := []byte("content test")
-	_, err := NewMEVSearcher("eth_sendMegabundle", mevSearchersAuthorization, "", false, big.Int{}, big.Int{}, params)
+	_, err := NewMEVSearcher("eth_sendMessage", mevSearchersAuthorization, "", false, big.Int{}, big.Int{}, params)
 	require.Error(t, err)
 	assert.Equal(t, fmt.Sprintf("number of mev builders names %v exceeded the limit (%v)", len(mevSearchersAuthorization), maxAuthNames), err.Error())
 }
@@ -132,7 +137,7 @@ func TestMEVSearcherNewFailedInvalidUUID(t *testing.T) {
 		mevSearchersAuthorization[strconv.Itoa(i)] = strconv.Itoa(i)
 	}
 	params := []byte("content test")
-	_, err := NewMEVSearcher("eth_sendMegabundle", mevSearchersAuthorization, "invalid", false, big.Int{}, big.Int{}, params)
+	_, err := NewMEVSearcher("eth_sendMessage", mevSearchersAuthorization, "invalid", false, big.Int{}, big.Int{}, params)
 	require.Error(t, err)
 	assert.Equal(t, fmt.Sprintf("number of mev builders names %v exceeded the limit (%v)", len(mevSearchersAuthorization), maxAuthNames), err.Error())
 }
@@ -140,7 +145,7 @@ func TestMEVSearcherNewFailedInvalidUUID(t *testing.T) {
 func TestMEVSearcherPackFailedAuthLengthNotEnough(t *testing.T) {
 	mevSearchersAuthorization := MEVSearcherAuth{}
 	params := []byte("content test")
-	_, err := NewMEVSearcher("eth_sendMegabundle", mevSearchersAuthorization, "", false, big.Int{}, big.Int{}, params)
+	_, err := NewMEVSearcher("eth_sendMessage", mevSearchersAuthorization, "", false, big.Int{}, big.Int{}, params)
 	require.Error(t, err)
 	assert.Equal(t, "at least 1 mev builder must be present", err.Error())
 }
@@ -222,7 +227,7 @@ func TestMEVSearcherUnpackSuccess(t *testing.T) {
 			err = mevSearcher.Unpack(buf, tt.fields.protocol)
 			require.NoError(t, err)
 			assert.Equal(t, string(tt.fields.params), string(mevSearcher.Params))
-			assert.Equal(t, "eth_sendMegabundle", mevSearcher.Method)
+			assert.Equal(t, "eth_sendMessage", mevSearcher.Method)
 			assert.Equal(t, tt.fields.auth, mevSearcher.Auth())
 			assert.Equal(t, tt.fields.frontrunning, mevSearcher.Frontrunning)
 			assert.Equal(t, tt.fields.coinbaseProfit, mevSearcher.CoinbaseProfit)

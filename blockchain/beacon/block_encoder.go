@@ -6,12 +6,14 @@ import (
 	"strconv"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/prysmaticlabs/prysm/v4/beacon-chain/rpc/apimiddleware"
+	"github.com/pkg/errors"
+	"github.com/prysmaticlabs/prysm/v4/beacon-chain/rpc/eth/shared"
 	"github.com/prysmaticlabs/prysm/v4/consensus-types/interfaces"
 	"github.com/prysmaticlabs/prysm/v4/consensus-types/primitives"
 	"github.com/prysmaticlabs/prysm/v4/encoding/bytesutil"
 	enginev1 "github.com/prysmaticlabs/prysm/v4/proto/engine/v1"
 	ethpb "github.com/prysmaticlabs/prysm/v4/proto/prysm/v1alpha1"
+	"github.com/prysmaticlabs/prysm/v4/runtime/version"
 )
 
 type consensusBlockEncoder interface {
@@ -48,15 +50,44 @@ func (c *jsonConsensusBlockEncoder) contentType() string {
 }
 
 func (c *jsonConsensusBlockEncoder) encodeBlock(block interfaces.ReadOnlySignedBeaconBlock) ([]byte, error) {
-	var signedCapella *ethpb.SignedBeaconBlockCapella
-	signedCapella, err := block.PbCapellaBlock()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get generic capella: %v", err)
+	var rawBlock []byte
+
+	switch block.Version() {
+	case version.Capella:
+		var signedCapella *ethpb.SignedBeaconBlockCapella
+		signedCapella, err := block.PbCapellaBlock()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get generic capella: %v", err)
+		}
+		rawBlock, err = marshallBeaconBlockCapella(signedCapella)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshall blinded capella beacon block: %v", err)
+		}
+	case version.Deneb:
+		denebBlock, err := block.PbDenebBlock()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get generic deneb: %v", err)
+		}
+
+		signedDenebBlock := &ethpb.SignedBeaconBlockContentsDeneb{
+			Block:     denebBlock,
+			KzgProofs: make([][]byte, 0),
+			Blobs:     make([][]byte, 0),
+		}
+
+		signedBlockFromConsensus, err := shared.SignedBeaconBlockContentsDenebFromConsensus(signedDenebBlock)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to convert deneb beacon block contents")
+		}
+
+		rawBlock, err = json.Marshal(signedBlockFromConsensus)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to marshal deneb beacon block contents")
+		}
+	default:
+		return nil, fmt.Errorf("unsupported block version: %v", block.Version())
 	}
-	rawBlock, err := marshallBeaconBlockCapella(signedCapella)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshall blinded capella beacon block: %v", err)
-	}
+
 	return rawBlock, nil
 }
 
@@ -65,14 +96,15 @@ func uint64ToString[T uint64 | primitives.Slot | primitives.ValidatorIndex | pri
 }
 
 func marshallBeaconBlockCapella(block *ethpb.SignedBeaconBlockCapella) ([]byte, error) {
-	signedBeaconBlockCapellaJSON := &apimiddleware.SignedBeaconBlockCapellaContainerJson{
+	signedBeaconBlockCapella := &shared.SignedBeaconBlockCapella{
+
 		Signature: hexutil.Encode(block.Signature),
-		Message: &apimiddleware.BeaconBlockCapellaJson{
+		Message: &shared.BeaconBlockCapella{
 			ParentRoot:    hexutil.Encode(block.Block.ParentRoot),
 			ProposerIndex: uint64ToString(block.Block.ProposerIndex),
 			Slot:          uint64ToString(block.Block.Slot),
 			StateRoot:     hexutil.Encode(block.Block.StateRoot),
-			Body: &apimiddleware.BeaconBlockBodyCapellaJson{
+			Body: &shared.BeaconBlockBodyCapella{
 				Attestations:      jsonifyAttestations(block.Block.Body.Attestations),
 				AttesterSlashings: jsonifyAttesterSlashings(block.Block.Body.AttesterSlashings),
 				Deposits:          jsonifyDeposits(block.Block.Body.Deposits),
@@ -80,12 +112,12 @@ func marshallBeaconBlockCapella(block *ethpb.SignedBeaconBlockCapella) ([]byte, 
 				Graffiti:          hexutil.Encode(block.Block.Body.Graffiti),
 				ProposerSlashings: jsonifyProposerSlashings(block.Block.Body.ProposerSlashings),
 				RandaoReveal:      hexutil.Encode(block.Block.Body.RandaoReveal),
-				VoluntaryExits:    JsonifySignedVoluntaryExits(block.Block.Body.VoluntaryExits),
-				SyncAggregate: &apimiddleware.SyncAggregateJson{
+				VoluntaryExits:    ifySignedVoluntaryExits(block.Block.Body.VoluntaryExits),
+				SyncAggregate: &shared.SyncAggregate{
 					SyncCommitteeBits:      hexutil.Encode(block.Block.Body.SyncAggregate.SyncCommitteeBits),
 					SyncCommitteeSignature: hexutil.Encode(block.Block.Body.SyncAggregate.SyncCommitteeSignature),
 				},
-				ExecutionPayload: &apimiddleware.ExecutionPayloadCapellaJson{
+				ExecutionPayload: &shared.ExecutionPayloadCapella{
 					BaseFeePerGas: bytesutil.LittleEndianBytesToBigInt(block.Block.Body.ExecutionPayload.BaseFeePerGas).String(),
 					BlockHash:     hexutil.Encode(block.Block.Body.ExecutionPayload.BlockHash),
 					BlockNumber:   uint64ToString(block.Block.Body.ExecutionPayload.BlockNumber),
@@ -98,7 +130,7 @@ func marshallBeaconBlockCapella(block *ethpb.SignedBeaconBlockCapella) ([]byte, 
 					PrevRandao:    hexutil.Encode(block.Block.Body.ExecutionPayload.PrevRandao),
 					ReceiptsRoot:  hexutil.Encode(block.Block.Body.ExecutionPayload.ReceiptsRoot),
 					StateRoot:     hexutil.Encode(block.Block.Body.ExecutionPayload.StateRoot),
-					TimeStamp:     uint64ToString(block.Block.Body.ExecutionPayload.Timestamp),
+					Timestamp:     uint64ToString(block.Block.Body.ExecutionPayload.Timestamp),
 					Transactions:  jsonifyTransactions(block.Block.Body.ExecutionPayload.Transactions),
 					Withdrawals:   jsonifyWithdrawals(block.Block.Body.ExecutionPayload.Withdrawals),
 				},
@@ -107,7 +139,7 @@ func marshallBeaconBlockCapella(block *ethpb.SignedBeaconBlockCapella) ([]byte, 
 		},
 	}
 
-	return json.Marshal(signedBeaconBlockCapellaJSON)
+	return json.Marshal(signedBeaconBlockCapella)
 }
 
 func jsonifyTransactions(transactions [][]byte) []string {
@@ -119,15 +151,15 @@ func jsonifyTransactions(transactions [][]byte) []string {
 	return jsonTransactions
 }
 
-func jsonifyBlsToExecutionChanges(blsToExecutionChanges []*ethpb.SignedBLSToExecutionChange) []*apimiddleware.SignedBLSToExecutionChangeJson {
-	jsonBlsToExecutionChanges := make([]*apimiddleware.SignedBLSToExecutionChangeJson, len(blsToExecutionChanges))
+func jsonifyBlsToExecutionChanges(blsToExecutionChanges []*ethpb.SignedBLSToExecutionChange) []*shared.SignedBLSToExecutionChange {
+	jsonBlsToExecutionChanges := make([]*shared.SignedBLSToExecutionChange, len(blsToExecutionChanges))
 	for index, signedBlsToExecutionChange := range blsToExecutionChanges {
-		blsToExecutionChangeJSON := &apimiddleware.BLSToExecutionChangeJson{
+		blsToExecutionChangeJSON := &shared.BLSToExecutionChange{
 			ValidatorIndex:     uint64ToString(signedBlsToExecutionChange.Message.ValidatorIndex),
 			FromBLSPubkey:      hexutil.Encode(signedBlsToExecutionChange.Message.FromBlsPubkey),
 			ToExecutionAddress: hexutil.Encode(signedBlsToExecutionChange.Message.ToExecutionAddress),
 		}
-		signedJSON := &apimiddleware.SignedBLSToExecutionChangeJson{
+		signedJSON := &shared.SignedBLSToExecutionChange{
 			Message:   blsToExecutionChangeJSON,
 			Signature: hexutil.Encode(signedBlsToExecutionChange.Signature),
 		}
@@ -136,46 +168,46 @@ func jsonifyBlsToExecutionChanges(blsToExecutionChanges []*ethpb.SignedBLSToExec
 	return jsonBlsToExecutionChanges
 }
 
-func jsonifyEth1Data(eth1Data *ethpb.Eth1Data) *apimiddleware.Eth1DataJson {
-	return &apimiddleware.Eth1DataJson{
+func jsonifyEth1Data(eth1Data *ethpb.Eth1Data) *shared.Eth1Data {
+	return &shared.Eth1Data{
 		BlockHash:    hexutil.Encode(eth1Data.BlockHash),
 		DepositCount: uint64ToString(eth1Data.DepositCount),
 		DepositRoot:  hexutil.Encode(eth1Data.DepositRoot),
 	}
 }
 
-func jsonifyAttestations(attestations []*ethpb.Attestation) []*apimiddleware.AttestationJson {
-	jsonAttestations := make([]*apimiddleware.AttestationJson, len(attestations))
+func jsonifyAttestations(attestations []*ethpb.Attestation) []*shared.Attestation {
+	jsonAttestations := make([]*shared.Attestation, len(attestations))
 	for index, attestation := range attestations {
 		jsonAttestations[index] = jsonifyAttestation(attestation)
 	}
 	return jsonAttestations
 }
 
-func jsonifyAttesterSlashings(attesterSlashings []*ethpb.AttesterSlashing) []*apimiddleware.AttesterSlashingJson {
-	jsonAttesterSlashings := make([]*apimiddleware.AttesterSlashingJson, len(attesterSlashings))
+func jsonifyAttesterSlashings(attesterSlashings []*ethpb.AttesterSlashing) []*shared.AttesterSlashing {
+	jsonAttesterSlashings := make([]*shared.AttesterSlashing, len(attesterSlashings))
 	for index, attesterSlashing := range attesterSlashings {
-		jsonAttesterSlashing := &apimiddleware.AttesterSlashingJson{
-			Attestation_1: jsonifyIndexedAttestation(attesterSlashing.Attestation_1),
-			Attestation_2: jsonifyIndexedAttestation(attesterSlashing.Attestation_2),
+		jsonAttesterSlashing := &shared.AttesterSlashing{
+			Attestation1: jsonifyIndexedAttestation(attesterSlashing.Attestation_1),
+			Attestation2: jsonifyIndexedAttestation(attesterSlashing.Attestation_2),
 		}
 		jsonAttesterSlashings[index] = jsonAttesterSlashing
 	}
 	return jsonAttesterSlashings
 }
 
-func jsonifyDeposits(deposits []*ethpb.Deposit) []*apimiddleware.DepositJson {
-	jsonDeposits := make([]*apimiddleware.DepositJson, len(deposits))
+func jsonifyDeposits(deposits []*ethpb.Deposit) []*shared.Deposit {
+	jsonDeposits := make([]*shared.Deposit, len(deposits))
 	for depositIndex, deposit := range deposits {
 		proofs := make([]string, len(deposit.Proof))
 		for proofIndex, proof := range deposit.Proof {
 			proofs[proofIndex] = hexutil.Encode(proof)
 		}
 
-		jsonDeposit := &apimiddleware.DepositJson{
-			Data: &apimiddleware.Deposit_DataJson{
+		jsonDeposit := &shared.Deposit{
+			Data: &shared.DepositData{
 				Amount:                uint64ToString(deposit.Data.Amount),
-				PublicKey:             hexutil.Encode(deposit.Data.PublicKey),
+				Pubkey:                hexutil.Encode(deposit.Data.PublicKey),
 				Signature:             hexutil.Encode(deposit.Data.Signature),
 				WithdrawalCredentials: hexutil.Encode(deposit.Data.WithdrawalCredentials),
 			},
@@ -186,24 +218,24 @@ func jsonifyDeposits(deposits []*ethpb.Deposit) []*apimiddleware.DepositJson {
 	return jsonDeposits
 }
 
-func jsonifyProposerSlashings(proposerSlashings []*ethpb.ProposerSlashing) []*apimiddleware.ProposerSlashingJson {
-	jsonProposerSlashings := make([]*apimiddleware.ProposerSlashingJson, len(proposerSlashings))
+func jsonifyProposerSlashings(proposerSlashings []*ethpb.ProposerSlashing) []*shared.ProposerSlashing {
+	jsonProposerSlashings := make([]*shared.ProposerSlashing, len(proposerSlashings))
 	for index, proposerSlashing := range proposerSlashings {
-		jsonProposerSlashing := &apimiddleware.ProposerSlashingJson{
-			Header_1: jsonifySignedBeaconBlockHeader(proposerSlashing.Header_1),
-			Header_2: jsonifySignedBeaconBlockHeader(proposerSlashing.Header_2),
+		jsonProposerSlashing := &shared.ProposerSlashing{
+			SignedHeader1: jsonifySignedBeaconBlockHeader(proposerSlashing.Header_1),
+			SignedHeader2: jsonifySignedBeaconBlockHeader(proposerSlashing.Header_2),
 		}
 		jsonProposerSlashings[index] = jsonProposerSlashing
 	}
 	return jsonProposerSlashings
 }
 
-// JsonifySignedVoluntaryExits converts an array of voluntary exit structs to a JSON hex string compatible format.
-func JsonifySignedVoluntaryExits(voluntaryExits []*ethpb.SignedVoluntaryExit) []*apimiddleware.SignedVoluntaryExitJson {
-	jsonSignedVoluntaryExits := make([]*apimiddleware.SignedVoluntaryExitJson, len(voluntaryExits))
+// ifySignedVoluntaryExits converts an array of voluntary exit structs to a JSON hex string compatible format.
+func ifySignedVoluntaryExits(voluntaryExits []*ethpb.SignedVoluntaryExit) []*shared.SignedVoluntaryExit {
+	jsonSignedVoluntaryExits := make([]*shared.SignedVoluntaryExit, len(voluntaryExits))
 	for index, signedVoluntaryExit := range voluntaryExits {
-		jsonSignedVoluntaryExit := &apimiddleware.SignedVoluntaryExitJson{
-			Exit: &apimiddleware.VoluntaryExitJson{
+		jsonSignedVoluntaryExit := &shared.SignedVoluntaryExit{
+			Message: &shared.VoluntaryExit{
 				Epoch:          uint64ToString(signedVoluntaryExit.Exit.Epoch),
 				ValidatorIndex: uint64ToString(signedVoluntaryExit.Exit.ValidatorIndex),
 			},
@@ -214,9 +246,9 @@ func JsonifySignedVoluntaryExits(voluntaryExits []*ethpb.SignedVoluntaryExit) []
 	return jsonSignedVoluntaryExits
 }
 
-func jsonifySignedBeaconBlockHeader(signedBeaconBlockHeader *ethpb.SignedBeaconBlockHeader) *apimiddleware.SignedBeaconBlockHeaderJson {
-	return &apimiddleware.SignedBeaconBlockHeaderJson{
-		Header: &apimiddleware.BeaconBlockHeaderJson{
+func jsonifySignedBeaconBlockHeader(signedBeaconBlockHeader *ethpb.SignedBeaconBlockHeader) *shared.SignedBeaconBlockHeader {
+	return &shared.SignedBeaconBlockHeader{
+		Message: &shared.BeaconBlockHeader{
 			BodyRoot:      hexutil.Encode(signedBeaconBlockHeader.Header.BodyRoot),
 			ParentRoot:    hexutil.Encode(signedBeaconBlockHeader.Header.ParentRoot),
 			ProposerIndex: uint64ToString(signedBeaconBlockHeader.Header.ProposerIndex),
@@ -227,48 +259,48 @@ func jsonifySignedBeaconBlockHeader(signedBeaconBlockHeader *ethpb.SignedBeaconB
 	}
 }
 
-func jsonifyIndexedAttestation(indexedAttestation *ethpb.IndexedAttestation) *apimiddleware.IndexedAttestationJson {
+func jsonifyIndexedAttestation(indexedAttestation *ethpb.IndexedAttestation) *shared.IndexedAttestation {
 	attestingIndices := make([]string, len(indexedAttestation.AttestingIndices))
 	for index, attestingIndex := range indexedAttestation.AttestingIndices {
 		attestingIndex := uint64ToString(attestingIndex)
 		attestingIndices[index] = attestingIndex
 	}
 
-	return &apimiddleware.IndexedAttestationJson{
+	return &shared.IndexedAttestation{
 		AttestingIndices: attestingIndices,
 		Data:             jsonifyAttestationData(indexedAttestation.Data),
 		Signature:        hexutil.Encode(indexedAttestation.Signature),
 	}
 }
 
-func jsonifyAttestationData(attestationData *ethpb.AttestationData) *apimiddleware.AttestationDataJson {
-	return &apimiddleware.AttestationDataJson{
+func jsonifyAttestationData(attestationData *ethpb.AttestationData) *shared.AttestationData {
+	return &shared.AttestationData{
 		BeaconBlockRoot: hexutil.Encode(attestationData.BeaconBlockRoot),
 		CommitteeIndex:  uint64ToString(attestationData.CommitteeIndex),
 		Slot:            uint64ToString(attestationData.Slot),
-		Source: &apimiddleware.CheckpointJson{
+		Source: &shared.Checkpoint{
 			Epoch: uint64ToString(attestationData.Source.Epoch),
 			Root:  hexutil.Encode(attestationData.Source.Root),
 		},
-		Target: &apimiddleware.CheckpointJson{
+		Target: &shared.Checkpoint{
 			Epoch: uint64ToString(attestationData.Target.Epoch),
 			Root:  hexutil.Encode(attestationData.Target.Root),
 		},
 	}
 }
 
-func jsonifyAttestation(attestation *ethpb.Attestation) *apimiddleware.AttestationJson {
-	return &apimiddleware.AttestationJson{
+func jsonifyAttestation(attestation *ethpb.Attestation) *shared.Attestation {
+	return &shared.Attestation{
 		AggregationBits: hexutil.Encode(attestation.AggregationBits),
 		Data:            jsonifyAttestationData(attestation.Data),
 		Signature:       hexutil.Encode(attestation.Signature),
 	}
 }
 
-func jsonifyWithdrawals(withdrawals []*enginev1.Withdrawal) []*apimiddleware.WithdrawalJson {
-	jsonWithdrawals := make([]*apimiddleware.WithdrawalJson, len(withdrawals))
+func jsonifyWithdrawals(withdrawals []*enginev1.Withdrawal) []*shared.Withdrawal {
+	jsonWithdrawals := make([]*shared.Withdrawal, len(withdrawals))
 	for index, withdrawal := range withdrawals {
-		jsonWithdrawals[index] = &apimiddleware.WithdrawalJson{
+		jsonWithdrawals[index] = &shared.Withdrawal{
 			WithdrawalIndex:  strconv.FormatUint(withdrawal.Index, 10),
 			ValidatorIndex:   strconv.FormatUint(uint64(withdrawal.ValidatorIndex), 10),
 			ExecutionAddress: hexutil.Encode(withdrawal.Address),

@@ -1083,6 +1083,30 @@ func TestisFiltersSupportedByTxType(t *testing.T) {
 			expected: true,
 		},
 		{
+			name:     "BlobTxType with gas_price filter",
+			txType:   ethtypes.BlobTxType,
+			filters:  []string{"gas_price"},
+			expected: false,
+		},
+		{
+			name:     "BlobTxType with gas_price and max_fee_per_gas filters",
+			txType:   ethtypes.BlobTxType,
+			filters:  []string{"gas_price", "max_fee_per_gas"},
+			expected: true,
+		},
+		{
+			name:     "BlobTxType with gas_price and max_priority_fee_per_gas filters",
+			txType:   ethtypes.BlobTxType,
+			filters:  []string{"gas_price", "max_priority_fee_per_gas"},
+			expected: true,
+		},
+		{
+			name:     "BlobTxType with gas_price and max_priority_fee_per_gas filters",
+			txType:   ethtypes.BlobTxType,
+			filters:  []string{"gas_price", "max_fee_per_gas", "max_priority_fee_per_gas"},
+			expected: true,
+		},
+		{
 			name:     "Non-DynamicFeeTxType with max_fee_per_gas filter",
 			txType:   ethtypes.LegacyTxType,
 			filters:  []string{"max_fee_per_gas"},

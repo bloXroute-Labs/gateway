@@ -17,7 +17,7 @@ import (
 var (
 	operators        = []string{"=", ">", "<", "!=", ">=", "<=", "in"}
 	operands         = []string{"and", "or"}
-	availableFilters = []string{"gas", "gas_price", "value", "to", "from", "method_id", "type", "chain_id", "max_fee_per_gas", "max_priority_fee_per_gas"}
+	availableFilters = []string{"gas", "gas_price", "value", "to", "from", "method_id", "type", "chain_id", "max_fee_per_gas", "max_priority_fee_per_gas", "max_fee_per_blob_gas"}
 )
 
 // This function is used to skip the evaluation of txs which are not supported by the filters.
@@ -32,12 +32,18 @@ func isFiltersSupportedByTxType(txType uint8, filters []string) bool {
 	gasPriceExists := utils.Exists("gas_price", filters)
 	maxFeePerGasExists := utils.Exists("max_fee_per_gas", filters)
 	maxPriorityFeePerGasExists := utils.Exists("max_priority_fee_per_gas", filters)
+	maxFeePerBlobGasExists := utils.Exists("max_fee_per_blob_gas", filters)
 
-	if txType == ethtypes.DynamicFeeTxType {
+	switch txType {
+	case ethtypes.BlobTxType:
+		if gasPriceExists && !maxFeePerGasExists && !maxPriorityFeePerGasExists && !maxFeePerBlobGasExists {
+			return false
+		}
+	case ethtypes.DynamicFeeTxType:
 		if gasPriceExists && !maxFeePerGasExists && !maxPriorityFeePerGasExists {
 			return false
 		}
-	} else {
+	case ethtypes.AccessListTxType, ethtypes.LegacyTxType:
 		if !gasPriceExists && (maxFeePerGasExists || maxPriorityFeePerGasExists) {
 			return false
 		}
@@ -84,9 +90,10 @@ func IsCorrectGasPriceFilters(filters []string) bool {
 	gasPriceExists := utils.Exists("gas_price", filters)
 	maxFeePerGasExists := utils.Exists("max_fee_per_gas", filters)
 	maxPriorityFeePerGasExists := utils.Exists("max_priority_fee_per_gas", filters)
+	maxFeePerBlobGas := utils.Exists("max_fee_per_blob_gas", filters)
 	txType := utils.Exists("type", filters)
 
-	if gasPriceExists && (maxFeePerGasExists || maxPriorityFeePerGasExists) && !txType {
+	if gasPriceExists && (maxFeePerGasExists || maxPriorityFeePerGasExists || maxFeePerBlobGas) && !txType {
 		return false
 	}
 	return true

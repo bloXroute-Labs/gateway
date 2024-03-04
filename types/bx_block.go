@@ -22,6 +22,7 @@ const (
 	BxBlockTypeBeaconAltair
 	BxBlockTypeBeaconBellatrix
 	BxBlockTypeBeaconCapella
+	BxBlockTypeBeaconDeneb
 )
 
 // String implements Stringer interface
@@ -37,6 +38,8 @@ func (t BxBlockType) String() string {
 		return "bellatrix"
 	case BxBlockTypeBeaconCapella:
 		return "capella"
+	case BxBlockTypeBeaconDeneb:
+		return "deneb"
 	default:
 		return ""
 	}
@@ -128,7 +131,7 @@ func (b BxBlock) String() string {
 // IsBeaconBlock returns true if block is beacon
 func (b *BxBlock) IsBeaconBlock() bool {
 	switch b.Type {
-	case BxBlockTypeBeaconPhase0, BxBlockTypeBeaconAltair, BxBlockTypeBeaconBellatrix, BxBlockTypeBeaconCapella:
+	case BxBlockTypeBeaconPhase0, BxBlockTypeBeaconAltair, BxBlockTypeBeaconBellatrix, BxBlockTypeBeaconCapella, BxBlockTypeBeaconDeneb:
 		return true
 	default:
 		return false

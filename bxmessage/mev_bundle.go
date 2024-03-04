@@ -645,3 +645,32 @@ func (m *MEVBundle) decodeRevertingHashes() ([][]byte, error) {
 
 	return decoded, nil
 }
+
+// Clone bundle and deep copy builders map
+func (m *MEVBundle) Clone() *MEVBundle {
+	copyBuilders := make(MEVBundleBuilders)
+	for key, value := range m.MEVBuilders {
+		copyBuilders[key] = value
+	}
+	return &MEVBundle{
+		BroadcastHeader:           m.BroadcastHeader,
+		ID:                        m.ID,
+		JSONRPC:                   m.JSONRPC,
+		Method:                    m.Method,
+		UUID:                      m.UUID,
+		Transactions:              m.Transactions,
+		BlockNumber:               m.BlockNumber,
+		MinTimestamp:              m.MinTimestamp,
+		MaxTimestamp:              m.MaxTimestamp,
+		RevertingHashes:           m.RevertingHashes,
+		Frontrunning:              m.Frontrunning,
+		PerformanceTimestamp:      m.PerformanceTimestamp,
+		BundleHash:                m.BundleHash,
+		MEVBuilders:               copyBuilders,
+		BundlePrice:               m.BundlePrice,
+		EnforcePayout:             m.EnforcePayout,
+		OriginalSenderAccountID:   m.OriginalSenderAccountID,
+		OriginalSenderAccountTier: m.OriginalSenderAccountTier,
+		SentFromCloudAPI:          m.SentFromCloudAPI,
+	}
+}

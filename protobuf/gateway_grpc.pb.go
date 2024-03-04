@@ -34,12 +34,12 @@ type GatewayClient interface {
 	BdnBlocks(ctx context.Context, in *BlocksRequest, opts ...grpc.CallOption) (Gateway_BdnBlocksClient, error)
 	EthOnBlock(ctx context.Context, in *EthOnBlockRequest, opts ...grpc.CallOption) (Gateway_EthOnBlockClient, error)
 	TxReceipts(ctx context.Context, in *TxReceiptsRequest, opts ...grpc.CallOption) (Gateway_TxReceiptsClient, error)
-	ShortIDs(ctx context.Context, in *TxHashListRequest, opts ...grpc.CallOption) (*ShortIDListReply, error)
-	ProposedBlock(ctx context.Context, in *ProposedBlockRequest, opts ...grpc.CallOption) (*ProposedBlockReply, error)
 	TxsFromShortIDs(ctx context.Context, in *ShortIDListRequest, opts ...grpc.CallOption) (*TxListReply, error)
-	BlockInfo(ctx context.Context, in *BlockInfoRequest, opts ...grpc.CallOption) (*BlockInfoReply, error)
-	ProposedBlockStats(ctx context.Context, in *ProposedBlockStatsRequest, opts ...grpc.CallOption) (*ProposedBlockStatsReply, error)
 	BlxrSubmitBundle(ctx context.Context, in *BlxrSubmitBundleRequest, opts ...grpc.CallOption) (*BlxrSubmitBundleReply, error)
+	// BSC Validator gateway functions
+	ShortIDs(ctx context.Context, in *ShortIDsRequest, opts ...grpc.CallOption) (*ShortIDsReply, error)
+	ProposedBlock(ctx context.Context, in *ProposedBlockRequest, opts ...grpc.CallOption) (*ProposedBlockReply, error)
+	ProposedBlockStats(ctx context.Context, in *ProposedBlockStatsRequest, opts ...grpc.CallOption) (*ProposedBlockStatsReply, error)
 	//Intent Gateway functions
 	SubmitIntent(ctx context.Context, in *SubmitIntentRequest, opts ...grpc.CallOption) (*SubmitIntentReply, error)
 	SubmitIntentSolution(ctx context.Context, in *SubmitIntentSolutionRequest, opts ...grpc.CallOption) (*SubmitIntentSolutionReply, error)
@@ -337,8 +337,26 @@ func (x *gatewayTxReceiptsClient) Recv() (*TxReceiptsReply, error) {
 	return m, nil
 }
 
-func (c *gatewayClient) ShortIDs(ctx context.Context, in *TxHashListRequest, opts ...grpc.CallOption) (*ShortIDListReply, error) {
-	out := new(ShortIDListReply)
+func (c *gatewayClient) TxsFromShortIDs(ctx context.Context, in *ShortIDListRequest, opts ...grpc.CallOption) (*TxListReply, error) {
+	out := new(TxListReply)
+	err := c.cc.Invoke(ctx, "/gateway.Gateway/TxsFromShortIDs", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayClient) BlxrSubmitBundle(ctx context.Context, in *BlxrSubmitBundleRequest, opts ...grpc.CallOption) (*BlxrSubmitBundleReply, error) {
+	out := new(BlxrSubmitBundleReply)
+	err := c.cc.Invoke(ctx, "/gateway.Gateway/BlxrSubmitBundle", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayClient) ShortIDs(ctx context.Context, in *ShortIDsRequest, opts ...grpc.CallOption) (*ShortIDsReply, error) {
+	out := new(ShortIDsReply)
 	err := c.cc.Invoke(ctx, "/gateway.Gateway/ShortIDs", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -355,36 +373,9 @@ func (c *gatewayClient) ProposedBlock(ctx context.Context, in *ProposedBlockRequ
 	return out, nil
 }
 
-func (c *gatewayClient) TxsFromShortIDs(ctx context.Context, in *ShortIDListRequest, opts ...grpc.CallOption) (*TxListReply, error) {
-	out := new(TxListReply)
-	err := c.cc.Invoke(ctx, "/gateway.Gateway/TxsFromShortIDs", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *gatewayClient) BlockInfo(ctx context.Context, in *BlockInfoRequest, opts ...grpc.CallOption) (*BlockInfoReply, error) {
-	out := new(BlockInfoReply)
-	err := c.cc.Invoke(ctx, "/gateway.Gateway/BlockInfo", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *gatewayClient) ProposedBlockStats(ctx context.Context, in *ProposedBlockStatsRequest, opts ...grpc.CallOption) (*ProposedBlockStatsReply, error) {
 	out := new(ProposedBlockStatsReply)
 	err := c.cc.Invoke(ctx, "/gateway.Gateway/ProposedBlockStats", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *gatewayClient) BlxrSubmitBundle(ctx context.Context, in *BlxrSubmitBundleRequest, opts ...grpc.CallOption) (*BlxrSubmitBundleReply, error) {
-	out := new(BlxrSubmitBundleReply)
-	err := c.cc.Invoke(ctx, "/gateway.Gateway/BlxrSubmitBundle", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -493,12 +484,12 @@ type GatewayServer interface {
 	BdnBlocks(*BlocksRequest, Gateway_BdnBlocksServer) error
 	EthOnBlock(*EthOnBlockRequest, Gateway_EthOnBlockServer) error
 	TxReceipts(*TxReceiptsRequest, Gateway_TxReceiptsServer) error
-	ShortIDs(context.Context, *TxHashListRequest) (*ShortIDListReply, error)
-	ProposedBlock(context.Context, *ProposedBlockRequest) (*ProposedBlockReply, error)
 	TxsFromShortIDs(context.Context, *ShortIDListRequest) (*TxListReply, error)
-	BlockInfo(context.Context, *BlockInfoRequest) (*BlockInfoReply, error)
-	ProposedBlockStats(context.Context, *ProposedBlockStatsRequest) (*ProposedBlockStatsReply, error)
 	BlxrSubmitBundle(context.Context, *BlxrSubmitBundleRequest) (*BlxrSubmitBundleReply, error)
+	// BSC Validator gateway functions
+	ShortIDs(context.Context, *ShortIDsRequest) (*ShortIDsReply, error)
+	ProposedBlock(context.Context, *ProposedBlockRequest) (*ProposedBlockReply, error)
+	ProposedBlockStats(context.Context, *ProposedBlockStatsRequest) (*ProposedBlockStatsReply, error)
 	//Intent Gateway functions
 	SubmitIntent(context.Context, *SubmitIntentRequest) (*SubmitIntentReply, error)
 	SubmitIntentSolution(context.Context, *SubmitIntentSolutionRequest) (*SubmitIntentSolutionReply, error)
@@ -559,23 +550,20 @@ func (UnimplementedGatewayServer) EthOnBlock(*EthOnBlockRequest, Gateway_EthOnBl
 func (UnimplementedGatewayServer) TxReceipts(*TxReceiptsRequest, Gateway_TxReceiptsServer) error {
 	return status.Errorf(codes.Unimplemented, "method TxReceipts not implemented")
 }
-func (UnimplementedGatewayServer) ShortIDs(context.Context, *TxHashListRequest) (*ShortIDListReply, error) {
+func (UnimplementedGatewayServer) TxsFromShortIDs(context.Context, *ShortIDListRequest) (*TxListReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TxsFromShortIDs not implemented")
+}
+func (UnimplementedGatewayServer) BlxrSubmitBundle(context.Context, *BlxrSubmitBundleRequest) (*BlxrSubmitBundleReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BlxrSubmitBundle not implemented")
+}
+func (UnimplementedGatewayServer) ShortIDs(context.Context, *ShortIDsRequest) (*ShortIDsReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ShortIDs not implemented")
 }
 func (UnimplementedGatewayServer) ProposedBlock(context.Context, *ProposedBlockRequest) (*ProposedBlockReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ProposedBlock not implemented")
 }
-func (UnimplementedGatewayServer) TxsFromShortIDs(context.Context, *ShortIDListRequest) (*TxListReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method TxsFromShortIDs not implemented")
-}
-func (UnimplementedGatewayServer) BlockInfo(context.Context, *BlockInfoRequest) (*BlockInfoReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method BlockInfo not implemented")
-}
 func (UnimplementedGatewayServer) ProposedBlockStats(context.Context, *ProposedBlockStatsRequest) (*ProposedBlockStatsReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ProposedBlockStats not implemented")
-}
-func (UnimplementedGatewayServer) BlxrSubmitBundle(context.Context, *BlxrSubmitBundleRequest) (*BlxrSubmitBundleReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method BlxrSubmitBundle not implemented")
 }
 func (UnimplementedGatewayServer) SubmitIntent(context.Context, *SubmitIntentRequest) (*SubmitIntentReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SubmitIntent not implemented")
@@ -908,8 +896,44 @@ func (x *gatewayTxReceiptsServer) Send(m *TxReceiptsReply) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _Gateway_TxsFromShortIDs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ShortIDListRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServer).TxsFromShortIDs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/gateway.Gateway/TxsFromShortIDs",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServer).TxsFromShortIDs(ctx, req.(*ShortIDListRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Gateway_BlxrSubmitBundle_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BlxrSubmitBundleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServer).BlxrSubmitBundle(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/gateway.Gateway/BlxrSubmitBundle",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServer).BlxrSubmitBundle(ctx, req.(*BlxrSubmitBundleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Gateway_ShortIDs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(TxHashListRequest)
+	in := new(ShortIDsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -921,7 +945,7 @@ func _Gateway_ShortIDs_Handler(srv interface{}, ctx context.Context, dec func(in
 		FullMethod: "/gateway.Gateway/ShortIDs",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(GatewayServer).ShortIDs(ctx, req.(*TxHashListRequest))
+		return srv.(GatewayServer).ShortIDs(ctx, req.(*ShortIDsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -944,42 +968,6 @@ func _Gateway_ProposedBlock_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Gateway_TxsFromShortIDs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ShortIDListRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(GatewayServer).TxsFromShortIDs(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/gateway.Gateway/TxsFromShortIDs",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(GatewayServer).TxsFromShortIDs(ctx, req.(*ShortIDListRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Gateway_BlockInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(BlockInfoRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(GatewayServer).BlockInfo(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/gateway.Gateway/BlockInfo",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(GatewayServer).BlockInfo(ctx, req.(*BlockInfoRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _Gateway_ProposedBlockStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ProposedBlockStatsRequest)
 	if err := dec(in); err != nil {
@@ -994,24 +982,6 @@ func _Gateway_ProposedBlockStats_Handler(srv interface{}, ctx context.Context, d
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(GatewayServer).ProposedBlockStats(ctx, req.(*ProposedBlockStatsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Gateway_BlxrSubmitBundle_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(BlxrSubmitBundleRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(GatewayServer).BlxrSubmitBundle(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/gateway.Gateway/BlxrSubmitBundle",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(GatewayServer).BlxrSubmitBundle(ctx, req.(*BlxrSubmitBundleRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1142,6 +1112,14 @@ var Gateway_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Gateway_DisconnectInboundPeer_Handler,
 		},
 		{
+			MethodName: "TxsFromShortIDs",
+			Handler:    _Gateway_TxsFromShortIDs_Handler,
+		},
+		{
+			MethodName: "BlxrSubmitBundle",
+			Handler:    _Gateway_BlxrSubmitBundle_Handler,
+		},
+		{
 			MethodName: "ShortIDs",
 			Handler:    _Gateway_ShortIDs_Handler,
 		},
@@ -1150,20 +1128,8 @@ var Gateway_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Gateway_ProposedBlock_Handler,
 		},
 		{
-			MethodName: "TxsFromShortIDs",
-			Handler:    _Gateway_TxsFromShortIDs_Handler,
-		},
-		{
-			MethodName: "BlockInfo",
-			Handler:    _Gateway_BlockInfo_Handler,
-		},
-		{
 			MethodName: "ProposedBlockStats",
 			Handler:    _Gateway_ProposedBlockStats_Handler,
-		},
-		{
-			MethodName: "BlxrSubmitBundle",
-			Handler:    _Gateway_BlxrSubmitBundle_Handler,
 		},
 		{
 			MethodName: "SubmitIntent",

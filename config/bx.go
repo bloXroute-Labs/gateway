@@ -50,7 +50,6 @@ type Bx struct {
 	MEVMaxProfitBuilder bool
 	MEVBuilders         map[string]*bundle.Builder
 
-	ProcessMegaBundle            bool
 	MevMinerSendBundleMethodName string
 	ForwardTransactionEndpoint   string
 	ForwardTransactionMethod     string
@@ -135,7 +134,6 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		MEVBuilders:         mevBuilders,
 		MEVMaxProfitBuilder: ctx.Bool(utils.MEVMaxProfitBuilder.Name),
 
-		ProcessMegaBundle:          ctx.Bool(utils.MegaBundleProcessing.Name),
 		ForwardTransactionEndpoint: ctx.String(utils.ForwardTransactionEndpoint.Name),
 		ForwardTransactionMethod:   ctx.String(utils.ForwardTransactionMethod.Name),
 		EnableDynamicPeers:         ctx.Bool(utils.EnableDynamicPeers.Name),

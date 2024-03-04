@@ -18,6 +18,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc/blockproposer"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/config"
@@ -84,7 +85,6 @@ func main() {
 			utils.MEVMaxProfitBuilder,
 			utils.MEVBundleMethodNameFlag,
 			utils.SendBlockConfirmation,
-			utils.MegaBundleProcessing,
 			utils.TerminalTotalDifficulty,
 			utils.EnableDynamicPeers,
 			utils.ForwardTransactionEndpoint,
@@ -100,7 +100,14 @@ func main() {
 			utils.NoStats,
 			utils.EnableBloomFilter,
 			utils.BlocksToCacheWhileProposing,
-			utils.ProposingInterval,
+			utils.BSCProposeBlocks,
+			utils.BSCRegularBlockSendDelayInitialMSFlag,
+			utils.BSCRegularBlockSendDelaySecondMSFlag,
+			utils.BSCRegularBlockSendDelayIntervalMSFlag,
+			utils.BSCHighLoadBlockSendDelayInitialMSFlag,
+			utils.BSCHighLoadBlockSendDelaySecondMSFlag,
+			utils.BSCHighLoadBlockSendDelayIntervalMSFlag,
+			utils.BSCHighLoadTxNumThresholdFlag,
 			utils.TxIncludeSenderInFeed,
 		},
 		Action: runGateway,
@@ -230,9 +237,18 @@ func runGateway(c *cli.Context) error {
 		c.Int(utils.TransactionHoldDuration.Name),
 		c.Int(utils.TransactionPassedDueDuration.Name),
 		c.Bool(utils.EnableBloomFilter.Name),
-		c.Int(utils.BlocksToCacheWhileProposing.Name),
-		c.Duration(utils.ProposingInterval.Name),
+		c.Int64(utils.BlocksToCacheWhileProposing.Name),
 		c.Bool(utils.TxIncludeSenderInFeed.Name),
+		&blockproposer.SendingConfig{
+			Enabled:                        c.Bool(utils.BSCProposeBlocks.Name),
+			RegularBlockSendDelayInitial:   time.Duration(c.Int(utils.BSCRegularBlockSendDelayInitialMSFlag.Name)) * time.Millisecond,
+			RegularBlockSendDelaySecond:    time.Duration(c.Int(utils.BSCRegularBlockSendDelaySecondMSFlag.Name)) * time.Millisecond,
+			RegularBlockSendDelayInterval:  time.Duration(c.Int(utils.BSCRegularBlockSendDelayIntervalMSFlag.Name)) * time.Millisecond,
+			HighLoadBlockSendDelayInitial:  time.Duration(c.Int(utils.BSCHighLoadBlockSendDelayInitialMSFlag.Name)) * time.Millisecond,
+			HighLoadBlockSendDelaySecond:   time.Duration(c.Int(utils.BSCHighLoadBlockSendDelaySecondMSFlag.Name)) * time.Millisecond,
+			HighLoadBlockSendDelayInterval: time.Duration(c.Int(utils.BSCHighLoadBlockSendDelayIntervalMSFlag.Name)) * time.Millisecond,
+			HighLoadTxNumThreshold:         c.Int(utils.BSCHighLoadTxNumThresholdFlag.Name),
+		},
 	)
 	if err != nil {
 		return err
@@ -365,6 +381,8 @@ func downloadGenesisFile(network, genesisFilePath string) (string, error) {
 		genesisFileURL = "https://github.com/ethpandaops/withdrawals-testnet/raw/master/withdrawal-mainnet-shadowfork-3/custom_config_data/genesis.ssz"
 	case bxgateway.Goerli:
 		genesisFileURL = "https://github.com/eth-clients/goerli/raw/main/prater/genesis.ssz"
+	case bxgateway.Holesky:
+		genesisFileURL = "https://github.com/eth-clients/holesky/raw/main/custom_config_data/genesis.ssz"
 
 	default:
 		return "", fmt.Errorf("beacon node is only supported on Ethereum")

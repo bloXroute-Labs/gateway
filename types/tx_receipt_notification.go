@@ -35,6 +35,8 @@ type TxReceipt struct {
 	TransactionIndex  string        `json:"transaction_index,omitempty"`
 	TxType            string        `json:"type,omitempty"`
 	TxsCount          string        `json:"txs_count,omitempty"`
+	BlobGasUsed       string        `json:"blobGasUsed,omitempty"`
+	BlobGasPrice      string        `json:"blobGasPrice,omitempty"`
 }
 
 // NewTxReceipt returns a new tx receipt object created from a map
@@ -112,6 +114,16 @@ func NewTxReceipt(receiptMap map[string]interface{}, txsCount string) *TxReceipt
 	}
 
 	txReceipt.TxsCount = txsCount
+
+	blobGasUsed, ok := receiptMap["blobGasUsed"]
+	if ok {
+		txReceipt.BlobGasUsed = blobGasUsed.(string)
+	}
+
+	blobGasPrice, ok := receiptMap["blobGasPrice"]
+	if ok {
+		txReceipt.BlobGasPrice = blobGasPrice.(string)
+	}
 
 	return &txReceipt
 }

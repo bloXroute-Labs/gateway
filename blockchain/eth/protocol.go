@@ -4,9 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
-
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -14,23 +13,31 @@ import (
 )
 
 const (
-	// ETH65 declares dropped by go-ethereum version of ethereum which still should be supported
-	ETH65 = 65
+	// ETH66 declares dropped by go-ethereum version of ethereum which still should be supported
+	ETH66 = 66
+)
+
+const (
+	// GetNodeDataMsg is the code of the GetNodeData message that was dropped by go-ethereum
+	GetNodeDataMsg = 0x0d
+	// NodeDataMsg is the code of the NodeData message that was dropped by go-ethereum
+	NodeDataMsg = 0x0e
 )
 
 // supportedProtocols is the map of networks to devp2p protocols supported by this client
 var supportedProtocols = map[uint64][]uint{
-	network.BSCMainnetChainID:     {eth.ETH66, eth.ETH67, eth.ETH68},
-	network.BSCTestnetChainID:     {eth.ETH66, eth.ETH67, eth.ETH68},
-	network.PolygonMainnetChainID: {ETH65, eth.ETH66},
-	network.PolygonMumbaiChainID:  {ETH65, eth.ETH66},
-	network.EthMainnetChainID:     {eth.ETH66, eth.ETH67, eth.ETH68},
-	network.GoerliChainID:         {eth.ETH66, eth.ETH67, eth.ETH68},
-	network.ZhejiangChainID:       {eth.ETH66, eth.ETH67, eth.ETH68},
+	network.BSCMainnetChainID:     {ETH66, eth.ETH67, eth.ETH68},
+	network.BSCTestnetChainID:     {ETH66, eth.ETH67, eth.ETH68},
+	network.PolygonMainnetChainID: {ETH66},
+	network.PolygonMumbaiChainID:  {ETH66},
+	network.EthMainnetChainID:     {ETH66, eth.ETH67, eth.ETH68},
+	network.GoerliChainID:         {ETH66, eth.ETH67, eth.ETH68},
+	network.ZhejiangChainID:       {ETH66, eth.ETH67, eth.ETH68},
+	network.HoleskyChainID:        {eth.ETH67, eth.ETH68},
 }
 
 // protocolLengths is a mapping of each supported devp2p protocol to its message version length
-var protocolLengths = map[uint]uint64{ETH65: 17, eth.ETH66: 17, eth.ETH67: 17, eth.ETH68: 17}
+var protocolLengths = map[uint]uint64{ETH66: 17, eth.ETH67: 17, eth.ETH68: 17}
 
 // MakeProtocols generates the set of supported protocols structs for the p2p server
 func MakeProtocols(ctx context.Context, backend Backend) []p2p.Protocol {
@@ -110,39 +117,22 @@ type Decoder interface {
 	Decode(val interface{}) error
 }
 
-var eth65 = map[uint64]msgHandler{
-	eth.GetBlockHeadersMsg:            handleGetBlockHeaders,
-	eth.BlockHeadersMsg:               handleBlockHeaders,
-	eth.GetBlockBodiesMsg:             handleGetBlockBodies,
-	eth.BlockBodiesMsg:                handleBlockBodies,
-	eth.GetNodeDataMsg:                handleUnimplemented,
-	eth.NodeDataMsg:                   handleUnimplemented,
-	eth.GetReceiptsMsg:                handleUnimplemented,
-	eth.ReceiptsMsg:                   handleUnimplemented,
-	eth.NewBlockHashesMsg:             handleNewBlockHashes,
-	eth.NewBlockMsg:                   handleNewBlockMsg,
-	eth.TransactionsMsg:               handleTransactions,
-	eth.NewPooledTransactionHashesMsg: handleNewPooledTransactionHashes,
-	eth.GetPooledTransactionsMsg:      handleUnimplemented,
-	eth.PooledTransactionsMsg:         handlePooledTransactions,
-}
-
 var eth66 = map[uint64]msgHandler{
 	eth.NewBlockHashesMsg:             handleNewBlockHashes,
 	eth.NewBlockMsg:                   handleNewBlockMsg,
 	eth.TransactionsMsg:               handleTransactions,
 	eth.NewPooledTransactionHashesMsg: handleNewPooledTransactionHashes,
 	// eth66 messages have request-id
-	eth.GetBlockHeadersMsg:       handleGetBlockHeaders66,
-	eth.BlockHeadersMsg:          handleBlockHeaders66,
-	eth.GetBlockBodiesMsg:        handleGetBlockBodies66,
-	eth.BlockBodiesMsg:           handleBlockBodies66,
-	eth.GetNodeDataMsg:           handleUnimplemented,
-	eth.NodeDataMsg:              handleUnimplemented,
+	eth.GetBlockHeadersMsg:       handleGetBlockHeaders,
+	eth.BlockHeadersMsg:          handleBlockHeaders,
+	eth.GetBlockBodiesMsg:        handleGetBlockBodies,
+	eth.BlockBodiesMsg:           handleBlockBodies,
+	GetNodeDataMsg:               handleUnimplemented,
+	NodeDataMsg:                  handleUnimplemented,
 	eth.GetReceiptsMsg:           handleUnimplemented,
 	eth.ReceiptsMsg:              handleUnimplemented,
 	eth.GetPooledTransactionsMsg: handleUnimplemented,
-	eth.PooledTransactionsMsg:    handlePooledTransactions66,
+	eth.PooledTransactionsMsg:    handlePooledTransactions,
 }
 
 var eth67 = map[uint64]msgHandler{
@@ -150,14 +140,14 @@ var eth67 = map[uint64]msgHandler{
 	eth.NewBlockMsg:                   handleNewBlockMsg,
 	eth.TransactionsMsg:               handleTransactions,
 	eth.NewPooledTransactionHashesMsg: handleNewPooledTransactionHashes,
-	eth.GetBlockHeadersMsg:            handleGetBlockHeaders66,
-	eth.BlockHeadersMsg:               handleBlockHeaders66,
-	eth.GetBlockBodiesMsg:             handleGetBlockBodies66,
-	eth.BlockBodiesMsg:                handleBlockBodies66,
+	eth.GetBlockHeadersMsg:            handleGetBlockHeaders,
+	eth.BlockHeadersMsg:               handleBlockHeaders,
+	eth.GetBlockBodiesMsg:             handleGetBlockBodies,
+	eth.BlockBodiesMsg:                handleBlockBodies,
 	eth.GetReceiptsMsg:                handleUnimplemented,
 	eth.ReceiptsMsg:                   handleUnimplemented,
 	eth.GetPooledTransactionsMsg:      handleUnimplemented,
-	eth.PooledTransactionsMsg:         handlePooledTransactions66,
+	eth.PooledTransactionsMsg:         handlePooledTransactions,
 }
 
 var eth68 = map[uint64]msgHandler{
@@ -165,14 +155,14 @@ var eth68 = map[uint64]msgHandler{
 	eth.NewBlockMsg:                   handleNewBlockMsg,
 	eth.TransactionsMsg:               handleTransactions,
 	eth.NewPooledTransactionHashesMsg: handleNewPooledTransactionHashes68,
-	eth.GetBlockHeadersMsg:            handleGetBlockHeaders66,
-	eth.BlockHeadersMsg:               handleBlockHeaders66,
-	eth.GetBlockBodiesMsg:             handleGetBlockBodies66,
-	eth.BlockBodiesMsg:                handleBlockBodies66,
+	eth.GetBlockHeadersMsg:            handleGetBlockHeaders,
+	eth.BlockHeadersMsg:               handleBlockHeaders,
+	eth.GetBlockBodiesMsg:             handleGetBlockBodies,
+	eth.BlockBodiesMsg:                handleBlockBodies,
 	eth.GetReceiptsMsg:                handleUnimplemented,
 	eth.ReceiptsMsg:                   handleUnimplemented,
 	eth.GetPooledTransactionsMsg:      handleUnimplemented,
-	eth.PooledTransactionsMsg:         handlePooledTransactions66,
+	eth.PooledTransactionsMsg:         handlePooledTransactions,
 }
 
 func handleMessage(backend Backend, peer *Peer) error {
@@ -187,9 +177,9 @@ func handleMessage(backend Backend, peer *Peer) error {
 		log.Tracef("%v: handling message with code: %v took %v", peer, msg.Code, time.Since(startTime))
 	}()
 
-	handlers := eth65
+	handlers := eth66
 	switch peer.version {
-	case eth.ETH66:
+	case ETH66:
 		handlers = eth66
 	case eth.ETH67:
 		handlers = eth67

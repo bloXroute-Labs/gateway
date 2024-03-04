@@ -86,7 +86,7 @@ func (bp *blockProcessor) BxBlockToBroadcast(block *types.BxBlock, networkNum ty
 	switch block.Type {
 	case types.BxBlockTypeEth:
 		blockHash = block.Hash().String()
-	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella:
+	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella, types.BxBlockTypeBeaconDeneb:
 		blockHash = block.BeaconHash().String()
 	}
 	status := bp.processedBlocks.Status(blockHash)
@@ -106,7 +106,7 @@ func (bp *blockProcessor) BxBlockToBroadcast(block *types.BxBlock, networkNum ty
 	switch block.Type {
 	case types.BxBlockTypeEth:
 		broadcastMessage, usedShortIDs, err = bp.newRLPBlockBroadcast(block, networkNum, minTxAge)
-	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella:
+	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella, types.BxBlockTypeBeaconDeneb:
 		broadcastMessage, usedShortIDs, err = bp.newSSZBlockBroadcast(block, networkNum, minTxAge)
 	case types.BxBlockTypeUnknown:
 		return nil, nil, ErrUnknownBlockType
@@ -119,7 +119,7 @@ func (bp *blockProcessor) BxBlockToBroadcast(block *types.BxBlock, networkNum ty
 	switch block.Type {
 	case types.BxBlockTypeEth:
 		bp.markProcessed(block.Hash(), SeenFromNode)
-	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella:
+	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella, types.BxBlockTypeBeaconDeneb:
 		bp.markProcessed(block.BeaconHash(), SeenFromNode)
 	}
 
@@ -133,7 +133,7 @@ func (bp *blockProcessor) BxBlockFromBroadcast(broadcast *bxmessage.Broadcast) (
 	switch broadcast.BlockType() {
 	case types.BxBlockTypeEth:
 		blockHash = broadcast.Hash().String()
-	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella:
+	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella, types.BxBlockTypeBeaconDeneb:
 		if broadcast.BeaconHash().Empty() {
 			return nil, nil, ErrNotCompatibleBeaconBlock
 		}
@@ -175,7 +175,7 @@ func (bp *blockProcessor) BxBlockFromBroadcast(broadcast *bxmessage.Broadcast) (
 		if err == nil {
 			bp.markProcessed(broadcast.Hash(), SeenFromRelay)
 		}
-	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella:
+	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella, types.BxBlockTypeBeaconDeneb:
 		block, err = bp.newBxBlockFromSSZBroadcast(broadcast, bxTransactions)
 
 		if err == nil {

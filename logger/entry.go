@@ -98,6 +98,11 @@ func (entry *Entry) Info(args ...interface{}) {
 	entry.Log(InfoLevel, args...)
 }
 
+// Warn logs warn level
+func (entry *Entry) Warn(args ...interface{}) {
+	entry.Log(WarnLevel, args...)
+}
+
 // Error logs error level
 func (entry *Entry) Error(args ...interface{}) {
 	entry.Log(ErrorLevel, args...)

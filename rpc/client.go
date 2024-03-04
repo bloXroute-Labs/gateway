@@ -2,11 +2,13 @@ package rpc
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
+	"github.com/golang/protobuf/jsonpb"
+
+	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc"
 )
 
@@ -65,10 +67,20 @@ func GatewayConsoleCall(grpcConfig *config.GRPC, call func(ctx context.Context, 
 		return err
 	}
 
-	b, err := json.MarshalIndent(result, "", "    ")
+	msg, ok := result.(proto.Message)
+	if !ok {
+		return fmt.Errorf("result is not a protobuf message")
+	}
+
+	jsm := &jsonpb.Marshaler{
+		Indent:   "    ",
+		OrigName: true, // Use the original snake case name of the fields
+	}
+
+	jstr, err := jsm.MarshalToString(msg)
 	if err != nil {
 		return fmt.Errorf("could not marshal JSON: %v", err)
 	}
-	fmt.Println(string(b))
+	fmt.Println(jstr)
 	return nil
 }
