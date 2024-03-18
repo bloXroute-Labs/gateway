@@ -272,6 +272,11 @@ func (h *Handler) processBDNTransactions(bdnTxs blockchain.Transactions) {
 			continue
 		}
 
+		// Blob transactions should be send via PoolTransactions message
+		if ethTx.Type() == ethtypes.BlobTxType {
+			continue
+		}
+
 		// allow sending tx to inbound node only if it's paid tx or marked as deliver to node, but it cannot be next_validator tx or validators only
 		p.Add(ethTx, (bdnTx.Flags().IsPaidTx() || bdnTx.Flags().IsDeliverToNode()) && !bdnTx.Flags().IsNextValidator() && !bdnTx.Flags().IsValidatorsOnly())
 	}

@@ -36,9 +36,31 @@ func (c *sszConsensusBlockEncoder) contentType() string {
 }
 
 func (c *sszConsensusBlockEncoder) encodeBlock(block interfaces.ReadOnlySignedBeaconBlock) ([]byte, error) {
-	rawBlock, err := block.MarshalSSZ()
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal block %v", err)
+	var rawBlock []byte
+	var err error
+
+	switch block.Version() {
+	case version.Capella:
+		rawBlock, err = block.MarshalSSZ()
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal block %v", err)
+		}
+	case version.Deneb:
+		denebBlock, err := block.PbDenebBlock()
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get generic deneb")
+		}
+
+		signedDenebBlock := &ethpb.SignedBeaconBlockContentsDeneb{
+			Block:     denebBlock,
+			KzgProofs: make([][]byte, 0),
+			Blobs:     make([][]byte, 0),
+		}
+
+		rawBlock, err = signedDenebBlock.MarshalSSZ()
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to marshal deneb beacon block")
+		}
 	}
 	return rawBlock, nil
 }
