@@ -20,6 +20,18 @@ type TransactionAnnouncement struct {
 	PeerEndpoint types.NodeEndpoint
 }
 
+// TransactionsRequest is used to request transactions from the gateway
+type TransactionsRequest struct {
+	Hashes    types.SHA256HashList
+	RequestID string
+}
+
+// TransactionsResponse is used to pass transactions between a node and the BDN
+type TransactionsResponse struct {
+	Transactions []*types.BxTransaction
+	RequestID    string
+}
+
 // Transactions is used to pass transactions between a node and the BDN
 type Transactions struct {
 	Transactions   []*types.BxTransaction
@@ -80,6 +92,14 @@ type Bridge interface {
 	ReceiveTransactionHashesAnnouncement() <-chan TransactionAnnouncement
 	ReceiveTransactionHashesRequest() <-chan TransactionAnnouncement
 
+	// pooled transactions request
+	RequestTransactionsFromBDN(string, types.SHA256HashList) error
+	ReceiveTransactionHashesRequestFromNode() <-chan TransactionsRequest
+
+	// pooled transactions response
+	SendRequestedTransactionsToNode(string, []*types.BxTransaction) error
+	ReceiveRequestedTransactionsFromBDN() <-chan TransactionsResponse
+
 	SendBlockToBDN(*types.BxBlock, types.NodeEndpoint) error
 	SendBlockToNode(*types.BxBlock) error
 	SendConfirmedBlockToGateway(block *types.BxBlock, peerEndpoint types.NodeEndpoint) error
@@ -124,11 +144,13 @@ type ValidatorListInfo struct {
 // BxBridge is a channel based implementation of the Bridge interface
 type BxBridge struct {
 	Converter
-	config                    chan network.EthConfig
-	transactionsFromNode      chan Transactions
-	transactionsFromBDN       chan Transactions
-	transactionHashesFromNode chan TransactionAnnouncement
-	transactionHashesRequests chan TransactionAnnouncement
+	config                           chan network.EthConfig
+	transactionsFromNode             chan Transactions
+	transactionsFromBDN              chan Transactions
+	transactionHashesFromNode        chan TransactionAnnouncement
+	transactionHashesRequests        chan TransactionAnnouncement
+	transactionHashesRequestsFromBDN chan TransactionsRequest
+	requestedTransactions            chan TransactionsResponse
 
 	beaconBlock bool
 
@@ -152,25 +174,27 @@ type BxBridge struct {
 // NewBxBridge returns a BxBridge instance
 func NewBxBridge(converter Converter, beaconBlock bool) Bridge {
 	return &BxBridge{
-		config:                      make(chan network.EthConfig, 1),
-		transactionsFromNode:        make(chan Transactions, transactionBacklog),
-		transactionsFromBDN:         make(chan Transactions, transactionBacklog),
-		transactionHashesFromNode:   make(chan TransactionAnnouncement, transactionHashesBacklog),
-		transactionHashesRequests:   make(chan TransactionAnnouncement, transactionHashesBacklog),
-		beaconBlock:                 beaconBlock,
-		blocksFromNode:              make(chan BlockFromNode, blockBacklog),
-		ethBlocksFromBDN:            make(chan *types.BxBlock, blockBacklog),
-		beaconBlocksFromBDN:         make(chan *types.BxBlock, blockBacklog),
-		confirmedBlockFromNode:      make(chan BlockFromNode, blockBacklog),
-		noActiveBlockchainPeers:     make(chan NoActiveBlockchainPeersAlert),
-		blockchainStatusRequest:     make(chan struct{}, statusBacklog),
-		blockchainStatusResponse:    make(chan []*types.NodeEndpoint, statusBacklog),
-		nodeConnectionCheckRequest:  make(chan struct{}, statusBacklog),
-		nodeConnectionCheckResponse: make(chan types.NodeEndpoint, statusBacklog),
-		blockchainConnectionStatus:  make(chan ConnectionStatus, transactionBacklog),
-		disconnectEvent:             make(chan types.NodeEndpoint, statusBacklog),
-		Converter:                   converter,
-		validatorInfo:               make(chan *ValidatorListInfo, 1),
+		config:                           make(chan network.EthConfig, 1),
+		transactionsFromNode:             make(chan Transactions, transactionBacklog),
+		transactionsFromBDN:              make(chan Transactions, transactionBacklog),
+		transactionHashesFromNode:        make(chan TransactionAnnouncement, transactionHashesBacklog),
+		transactionHashesRequests:        make(chan TransactionAnnouncement, transactionHashesBacklog),
+		transactionHashesRequestsFromBDN: make(chan TransactionsRequest, transactionHashesBacklog),
+		requestedTransactions:            make(chan TransactionsResponse, transactionBacklog),
+		beaconBlock:                      beaconBlock,
+		blocksFromNode:                   make(chan BlockFromNode, blockBacklog),
+		ethBlocksFromBDN:                 make(chan *types.BxBlock, blockBacklog),
+		beaconBlocksFromBDN:              make(chan *types.BxBlock, blockBacklog),
+		confirmedBlockFromNode:           make(chan BlockFromNode, blockBacklog),
+		noActiveBlockchainPeers:          make(chan NoActiveBlockchainPeersAlert),
+		blockchainStatusRequest:          make(chan struct{}, statusBacklog),
+		blockchainStatusResponse:         make(chan []*types.NodeEndpoint, statusBacklog),
+		nodeConnectionCheckRequest:       make(chan struct{}, statusBacklog),
+		nodeConnectionCheckResponse:      make(chan types.NodeEndpoint, statusBacklog),
+		blockchainConnectionStatus:       make(chan ConnectionStatus, transactionBacklog),
+		disconnectEvent:                  make(chan types.NodeEndpoint, statusBacklog),
+		Converter:                        converter,
+		validatorInfo:                    make(chan *ValidatorListInfo, 1),
 	}
 }
 
@@ -203,6 +227,36 @@ func (b BxBridge) RequestTransactionsFromNode(peerID string, hashes types.SHA256
 	default:
 		return ErrChannelFull
 	}
+}
+
+// RequestTransactionsFromBDN requests a series of transactions from the BDN
+func (b BxBridge) RequestTransactionsFromBDN(requestID string, hashes types.SHA256HashList) error {
+	select {
+	case b.transactionHashesRequestsFromBDN <- TransactionsRequest{Hashes: hashes, RequestID: requestID}:
+		return nil
+	default:
+		return ErrChannelFull
+	}
+}
+
+// ReceiveTransactionHashesRequestFromNode provides a channel that pushes requests for transaction hashes from a node
+func (b BxBridge) ReceiveTransactionHashesRequestFromNode() <-chan TransactionsRequest {
+	return b.transactionHashesRequestsFromBDN
+}
+
+// SendRequestedTransactionsToNode sends a set of requested transaction to the node
+func (b BxBridge) SendRequestedTransactionsToNode(requestID string, transactions []*types.BxTransaction) error {
+	select {
+	case b.requestedTransactions <- TransactionsResponse{Transactions: transactions, RequestID: requestID}:
+		return nil
+	default:
+		return ErrChannelFull
+	}
+}
+
+// ReceiveRequestedTransactionsFromBDN provides a channel that pushes requested transactions from the BDN
+func (b BxBridge) ReceiveRequestedTransactionsFromBDN() <-chan TransactionsResponse {
+	return b.requestedTransactions
 }
 
 // SendTransactionsFromBDN sends a set of transactions from the BDN for distribution to nodes

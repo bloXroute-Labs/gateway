@@ -81,29 +81,6 @@ func (bs *BdnPerformanceStats) GetConnectionsCount() (int64, int64) {
 	return bs.dynamicConnections, bs.staticConnections
 }
 
-// IsGatewayAllow checks if gateway connected with too many peers
-func (bs *BdnPerformanceStats) IsGatewayAllow(minAllowedNodes uint64, maxAllowedNodes uint64, protocol Protocol) bool {
-	var countEnodes uint64
-
-	switch {
-	case protocol < IsBeaconProtocol:
-		// TODO when we upgrade all go gateways less than `IsBeaconProtocol`, can remove this block
-		for _, nodeStats := range bs.nodeStats {
-			if nodeStats.NewBlocksReceivedFromBlockchainNode > 0 || nodeStats.NewTxReceivedFromBlockchainNode > 0 {
-				countEnodes++
-			}
-		}
-	default:
-		for _, nodeStats := range bs.nodeStats {
-			if !nodeStats.IsBeacon {
-				countEnodes++
-			}
-		}
-	}
-
-	return countEnodes >= minAllowedNodes && countEnodes <= maxAllowedNodes
-}
-
 // CloseInterval sets the closing interval end time, starts new interval with cleared stats, and returns BdnPerformanceStats of closed interval
 func (bs *BdnPerformanceStats) CloseInterval() *BdnPerformanceStats {
 	bs.lock.Lock()
@@ -580,8 +557,6 @@ func (bs *BdnPerformanceStats) Unpack(buf []byte, protocol Protocol) error {
 
 // Log logs stats
 func (bs *BdnPerformanceStats) Log() {
-	bs.lock.Lock()
-	defer bs.lock.Unlock()
 	for endpoint, nodeStats := range bs.NodeStats() {
 		log.Infof("%v [%v - %v]: Received %v blocks and %v transactions from the BDN. Received transactions from node: %v, is connected %v", endpoint, bs.StartTime().Format(bxgateway.TimeLayoutISO), bs.EndTime().Format(bxgateway.TimeLayoutISO), nodeStats.NewBlocksReceivedFromBdn, nodeStats.NewTxReceivedFromBdn, nodeStats.NewTxReceivedFromBlockchainNode, nodeStats.IsConnected)
 	}

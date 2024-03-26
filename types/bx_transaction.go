@@ -182,3 +182,17 @@ func (bt *BxTransaction) Protobuf() *pbbase.BxTransaction {
 		AddTime:  ts,
 	}
 }
+
+// CloneWithEmptyContent returns a new transaction with the same data but no content
+func (bt *BxTransaction) CloneWithEmptyContent() *BxTransaction {
+	bt.m.RLock()
+	defer bt.m.RUnlock()
+
+	clone := NewBxTransaction(bt.hash, bt.networkNum, bt.flags, bt.addTime)
+	clone.content = make(TxContent, 0)
+	clone.shortIDs = make(ShortIDList, len(bt.shortIDs))
+	copy(clone.shortIDs, bt.shortIDs)
+	copy(clone.sender[:], bt.sender[:])
+
+	return clone
+}

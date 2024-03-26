@@ -14,6 +14,7 @@ import (
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -21,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/google/uuid"
 )
 
 const (
@@ -36,6 +38,7 @@ type Backend interface {
 	GetHeaders(start eth.HashOrNumber, count int, skip int, reverse bool) ([]*ethtypes.Header, error)
 	GetBodies(hashes []ethcommon.Hash) ([]*ethtypes.Body, error)
 	GetBridge() blockchain.Bridge
+	RequestTransactions(hashes []ethcommon.Hash) ([]rlp.RawValue, error)
 }
 
 // Handler is the Ethereum backend implementation. It passes transactions and blocks to the BDN bridge and tracks received blocks and transactions from peers.
@@ -47,6 +50,7 @@ type Handler struct {
 	config           *network.EthConfig
 	wsManager        blockchain.WSManager
 	recommendedPeers map[string]struct{}
+	responseQueue    *syncmap.SyncMap[string, chan interface{}]
 }
 
 // NewHandler returns a new Handler and starts its processing go routines
@@ -60,6 +64,7 @@ func NewHandler(parent context.Context, config *network.EthConfig, chain *Chain,
 		cancel:           cancel,
 		wsManager:        wsManager,
 		recommendedPeers: recommendedPeers,
+		responseQueue:    syncmap.NewStringMapOf[chan interface{}](),
 	}
 	go h.checkInitialBlockchainLiveliness(100 * time.Second)
 	go h.handleBDNBridge(ctx)
@@ -219,6 +224,10 @@ func (h *Handler) RunPeer(ep *Peer, handler func(*Peer) error) error {
 func (h *Handler) handleBDNBridge(ctx context.Context) {
 	for {
 		select {
+		case bdnTxs := <-h.bridge.ReceiveRequestedTransactionsFromBDN():
+			if err := h.notifyResponse(bdnTxs.RequestID, bdnTxs.Transactions); err != nil {
+				log.Warnf("could not send requested transactions to peer: %v", err)
+			}
 		case bdnTxs := <-h.bridge.ReceiveBDNTransactions():
 			readMore := true
 			endpointToTxs := make(map[types.NodeEndpoint]*blockchain.Transactions)
@@ -257,7 +266,49 @@ func (h *Handler) handleBDNBridge(ctx context.Context) {
 	}
 }
 
+// RequestTransactions requests transactions from the BDN
+func (h *Handler) RequestTransactions(hashes []ethcommon.Hash) ([]rlp.RawValue, error) {
+	respChan := make(chan interface{})
+
+	requestID := uuid.New().String()
+	h.responseQueue.Store(requestID, respChan)
+
+	bxHashes := make(types.SHA256HashList, len(hashes))
+	for i, hash := range hashes {
+		bxHashes[i] = types.SHA256Hash(hash)
+	}
+
+	if err := h.bridge.RequestTransactionsFromBDN(requestID, bxHashes); err != nil {
+		return nil, fmt.Errorf("could not request transactions from BDN: %v", err)
+	}
+
+	bdnTxs := (<-respChan).([]*types.BxTransaction)
+	txs := make([]rlp.RawValue, len(bdnTxs))
+	for i, bdnTx := range bdnTxs {
+		txs[i] = rlp.RawValue(bdnTx.Content())
+	}
+
+	return txs, nil
+}
+
+func (h *Handler) notifyResponse(requestID string, data interface{}) error {
+	responseCh, ok := h.responseQueue.LoadAndDelete(requestID)
+	if !ok {
+		return ErrUnknownRequestID
+	}
+
+	responseCh <- data
+
+	return nil
+}
+
 func (h *Handler) processBDNTransactions(bdnTxs blockchain.Transactions) {
+	var (
+		pooledTransactionHashes []ethcommon.Hash
+		pooledTypes             []byte
+		pooledSizes             []uint32
+	)
+
 	p := datatype.NewProcessingETHTransaction(len(bdnTxs.Transactions))
 	for _, bdnTx := range bdnTxs.Transactions {
 		blockchainTx, err := h.bridge.TransactionBDNToBlockchain(bdnTx)
@@ -274,6 +325,15 @@ func (h *Handler) processBDNTransactions(bdnTxs blockchain.Transactions) {
 
 		// Blob transactions should be send via PoolTransactions message
 		if ethTx.Type() == ethtypes.BlobTxType {
+			// For some reason blob tx with a missed sidecar passes the tx store check
+			if ethTx.BlobTxSidecar() != nil {
+				pooledTransactionHashes = append(pooledTransactionHashes, ethTx.Hash())
+				pooledTypes = append(pooledTypes, ethTx.Type())
+				pooledSizes = append(pooledSizes, uint32(ethTx.Size()))
+			} else {
+				log.Debugf("blob tx from BDN %s has no sidecar data", ethTx.Hash())
+			}
+
 			continue
 		}
 
@@ -282,6 +342,10 @@ func (h *Handler) processBDNTransactions(bdnTxs blockchain.Transactions) {
 	}
 
 	h.broadcastTransactions(p, bdnTxs.PeerEndpoint, bdnTxs.ConnectionType)
+
+	if len(pooledTransactionHashes) > 0 {
+		h.broadcastPooledTransactionHashes(pooledTransactionHashes, pooledTypes, pooledSizes)
+	}
 }
 
 func (h *Handler) processBDNTransactionRequests(request blockchain.TransactionAnnouncement) {
@@ -546,6 +610,21 @@ func (h *Handler) broadcastTransactions(p *datatype.ProcessingETHTransaction, so
 	}
 }
 
+func (h *Handler) broadcastPooledTransactionHashes(txHashes []ethcommon.Hash, types []byte, sizes []uint32) {
+	for _, peer := range h.peers.getAll() {
+		if peer.version >= eth.ETH68 {
+			if err := peer.SendPooledTransactionHashes(txHashes, types, sizes); err != nil {
+				peer.Log().Errorf("could not announce %v transaction hashes: %v", len(txHashes), err)
+			}
+			continue
+		}
+
+		if err := peer.SendPooledTransactionHashes67(txHashes); err != nil {
+			peer.Log().Errorf("could not announce %v transaction hashes: %v", len(txHashes), err)
+		}
+	}
+}
+
 func (h *Handler) broadcastBlock(block *ethtypes.Block, totalDifficulty *big.Int, sourceBlockchainPeer *Peer) {
 	source := "BDN"
 	if sourceBlockchainPeer != nil {
@@ -586,6 +665,11 @@ func (h *Handler) isChainIDMatch(txChainID uint64) bool {
 func (h *Handler) processTransactions(peer *Peer, txs []*ethtypes.Transaction) error {
 	bdnTxs := make([]*types.BxTransaction, 0, len(txs))
 	for _, tx := range txs {
+		if tx.Type() == ethtypes.BlobTxType && tx.BlobTxSidecar() == nil {
+			log.Debugf("blob tx from blockchain peer %v has no sidecar data", peer.endpoint.IPPort())
+			continue
+		}
+
 		if !h.isChainIDMatch(tx.ChainId().Uint64()) {
 			log.Debugf("tx %v from blockchain peer %v has invalid chain id", tx.Hash().String(), peer.endpoint.IPPort())
 			continue

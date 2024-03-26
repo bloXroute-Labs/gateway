@@ -151,6 +151,21 @@ func handleNewPooledTransactionHashes(backend Backend, msg Decoder, peer *Peer) 
 	return backend.Handle(peer, &txHashes)
 }
 
+func handleGetPooledTransactions(backend Backend, msg Decoder, peer *Peer) error {
+	// Decode the pooled transactions retrieval message
+	var query eth.GetPooledTransactionsPacket
+	if err := msg.Decode(&query); err != nil {
+		return fmt.Errorf("could not decode mesage: %v: %v", msg, err)
+	}
+
+	txs, err := backend.RequestTransactions(query.GetPooledTransactionsRequest)
+	if err != nil {
+		return fmt.Errorf("could not retrieve pooled transactions: %v", err)
+	}
+
+	return peer.ReplyPooledTransaction(query.RequestId, txs)
+}
+
 func handleNewPooledTransactionHashes68(backend Backend, msg Decoder, peer *Peer) error {
 	var txs eth.NewPooledTransactionHashesPacket68
 	if err := msg.Decode(&txs); err != nil {

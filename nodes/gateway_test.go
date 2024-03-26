@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -230,6 +231,28 @@ func assertNoTransactionSentToRelay(t *testing.T, relayTLS *bxmock.MockTLS) {
 func assertNoBlockSentToRelay(t *testing.T, relayTLS *bxmock.MockTLS) {
 	_, err := relayTLS.MockAdvanceSent()
 	assert.NotNil(t, err)
+}
+
+func TestGateway_HandleBridgeTransactionsRequest(t *testing.T) {
+	bridge, g := setup(t, 1)
+	go func() {
+		err := g.handleBridgeMessages(context.Background())
+		assert.NoError(t, err)
+	}()
+
+	requestID := uuid.New().String()
+	tx, content := bxmock.NewSignedEthTxBytes(ethtypes.BlobTxType, 1, nil, big.NewInt(network.EthMainnetChainID))
+
+	hash := types.SHA256Hash(tx.Hash())
+	txResult := g.TxStore.Add(types.SHA256Hash(tx.Hash()), content, 1, networkNum, false, 0, time.Now(), 0, types.EmptySender)
+
+	err := bridge.RequestTransactionsFromBDN(requestID, types.SHA256HashList{hash})
+	require.NoError(t, err)
+
+	resp := <-bridge.ReceiveRequestedTransactionsFromBDN()
+
+	require.Equal(t, requestID, resp.RequestID)
+	require.Equal(t, []*types.BxTransaction{txResult.Transaction}, resp.Transactions)
 }
 
 func TestGateway_PushBlockchainConfig(t *testing.T) {
@@ -1461,4 +1484,21 @@ func TestRetrieveOriginalSenderAccountID_NoMetadata(t *testing.T) {
 	_, err := retrieveOriginalSenderAccountID(ctx, accountModel)
 
 	require.NotNil(t, err)
+}
+
+func TestGateway_SendStatsOnInterval(t *testing.T) {
+	_, g := setup(t, 1)
+	done := make(chan bool)
+	go func() {
+		g.sendStats()
+		done <- true
+	}()
+
+	select {
+	case <-done:
+		// sendStats returned successfully
+	case <-time.After(5 * time.Second):
+		t.Fatal("sendStats did not return within the expected time")
+	}
+
 }

@@ -131,7 +131,7 @@ var eth66 = map[uint64]msgHandler{
 	NodeDataMsg:                  handleUnimplemented,
 	eth.GetReceiptsMsg:           handleUnimplemented,
 	eth.ReceiptsMsg:              handleUnimplemented,
-	eth.GetPooledTransactionsMsg: handleUnimplemented,
+	eth.GetPooledTransactionsMsg: handleGetPooledTransactions,
 	eth.PooledTransactionsMsg:    handlePooledTransactions,
 }
 
@@ -146,7 +146,7 @@ var eth67 = map[uint64]msgHandler{
 	eth.BlockBodiesMsg:                handleBlockBodies,
 	eth.GetReceiptsMsg:                handleUnimplemented,
 	eth.ReceiptsMsg:                   handleUnimplemented,
-	eth.GetPooledTransactionsMsg:      handleUnimplemented,
+	eth.GetPooledTransactionsMsg:      handleGetPooledTransactions,
 	eth.PooledTransactionsMsg:         handlePooledTransactions,
 }
 
@@ -161,7 +161,7 @@ var eth68 = map[uint64]msgHandler{
 	eth.BlockBodiesMsg:                handleBlockBodies,
 	eth.GetReceiptsMsg:                handleUnimplemented,
 	eth.ReceiptsMsg:                   handleUnimplemented,
-	eth.GetPooledTransactionsMsg:      handleUnimplemented,
+	eth.GetPooledTransactionsMsg:      handleGetPooledTransactions,
 	eth.PooledTransactionsMsg:         handlePooledTransactions,
 }
 

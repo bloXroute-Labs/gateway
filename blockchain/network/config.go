@@ -20,7 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	libp2pPeer "github.com/libp2p/go-libp2p/core/peer"
-	ecdsaprysm "github.com/prysmaticlabs/prysm/v4/crypto/ecdsa"
+	ecdsaprysm "github.com/prysmaticlabs/prysm/v5/crypto/ecdsa"
 )
 
 // PeerInfo contains the enode and websockets endpoint for an Ethereum peer

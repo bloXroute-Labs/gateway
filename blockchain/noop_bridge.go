@@ -47,6 +47,26 @@ func (n NoOpBxBridge) RequestTransactionsFromNode(s string, list types.SHA256Has
 	return nil
 }
 
+// RequestTransactionsFromBDN is no-op
+func (n NoOpBxBridge) RequestTransactionsFromBDN(requestID string, hashes types.SHA256HashList) error {
+	return nil
+}
+
+// ReceiveTransactionHashesRequestFromNode is no-op
+func (n NoOpBxBridge) ReceiveTransactionHashesRequestFromNode() <-chan TransactionsRequest {
+	return make(chan TransactionsRequest)
+}
+
+// SendRequestedTransactionsToNode is no-op
+func (n NoOpBxBridge) SendRequestedTransactionsToNode(requestID string, transactions []*types.BxTransaction) error {
+	return nil
+}
+
+// ReceiveRequestedTransactionsFromBDN is no-op
+func (n NoOpBxBridge) ReceiveRequestedTransactionsFromBDN() <-chan TransactionsResponse {
+	return make(chan TransactionsResponse)
+}
+
 // ReceiveNodeTransactions is a no-op
 func (n NoOpBxBridge) ReceiveNodeTransactions() <-chan Transactions {
 	return make(chan Transactions)

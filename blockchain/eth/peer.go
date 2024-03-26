@@ -621,6 +621,28 @@ func (ep *Peer) RequestTransactions(txHashes []common.Hash) error {
 	})
 }
 
+// SendPooledTransactionHashes67 sends transaction hashes to the peer
+func (ep *Peer) SendPooledTransactionHashes67(txHashes []common.Hash) error {
+	return ep.send(eth.NewPooledTransactionHashesMsg, eth.NewPooledTransactionHashesPacket67(txHashes))
+}
+
+// SendPooledTransactionHashes sends transaction hashes to the peer
+func (ep *Peer) SendPooledTransactionHashes(txHashes []common.Hash, types []byte, sizes []uint32) error {
+	return ep.send(eth.NewPooledTransactionHashesMsg, eth.NewPooledTransactionHashesPacket68{
+		Hashes: txHashes,
+		Types:  types,
+		Sizes:  sizes,
+	})
+}
+
+// ReplyPooledTransaction sends a batch of pooled transactions to the peer
+func (ep *Peer) ReplyPooledTransaction(id uint64, txs []rlp.RawValue) error {
+	return ep.send(eth.PooledTransactionsMsg, eth.PooledTransactionsRLPPacket{
+		RequestId:                     id,
+		PooledTransactionsRLPResponse: txs,
+	})
+}
+
 // RequestBlock fetches the specified block from the ETH66 peer, pushing the components to the channels upon request/response completion.
 func (ep *Peer) RequestBlock(blockHash common.Hash, headersCh chan eth.Packet, bodiesCh chan eth.Packet) error {
 	if !ep.isVersion66() {

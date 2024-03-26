@@ -6,7 +6,7 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/prysmaticlabs/prysm/v4/consensus-types/interfaces"
+	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
 )
 
 // HandleBDNBlocksBridge waits for block from BDN and broadcast it to the connected nodes using P2P and Beacon API
