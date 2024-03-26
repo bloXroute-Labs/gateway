@@ -102,6 +102,11 @@ func NewEthTransaction(h SHA256Hash, rawEthTx *ethtypes.Transaction, sender Send
 	return ethTx, nil
 }
 
+// Tx returns the underlying Ethereum transaction
+func (et *EthTransaction) Tx() *ethtypes.Transaction {
+	return et.tx
+}
+
 // From returns the sender of the transaction
 func (et *EthTransaction) From() (*common.Address, error) {
 	et.lock.Lock()

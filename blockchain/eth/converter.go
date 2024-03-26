@@ -12,11 +12,11 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
 	ssz "github.com/prysmaticlabs/fastssz"
-	"github.com/prysmaticlabs/prysm/v4/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v4/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v4/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v4/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v4/runtime/version"
+	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
+	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
+	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
+	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
+	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 )
 
 type bxBlockRLP struct {
@@ -349,10 +349,16 @@ func (c Converter) extractTransactionsFromBlock(block *types.BxBlock) ([][]byte,
 			return nil, fmt.Errorf("could not decode transaction %d: %v", i, err)
 		}
 
+		// Transaction inside block should not have sidecar.
+		// This function works with any type of transaction.
+		// [TODO] This should be removed when BDN will be synced and broadcast
+		// bxmessages with sidecar flag
+		txWithoutBlobs := t.WithoutBlobTxSidecar()
+
 		// This is for back compatibility
 		// Beacon block encodes transaction using MarshalBinary instead of rlp.EncodeBytes
 		// For more info look at the comment of calcBeaconTransactionLength func
-		txBytes, err := t.MarshalBinary()
+		txBytes, err := txWithoutBlobs.MarshalBinary()
 		if err != nil {
 			return nil, fmt.Errorf("invalid transaction %d: %v", i, err)
 

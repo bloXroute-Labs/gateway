@@ -26,7 +26,7 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v4/consensus-types/interfaces"
+	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
 	"github.com/sirupsen/logrus"
 	"github.com/sourcegraph/jsonrpc2"
 	"go.uber.org/atomic"
@@ -1173,6 +1173,23 @@ func (g *gateway) handleBridgeMessages(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
+		case request := <-g.bridge.ReceiveTransactionHashesRequestFromNode():
+			txs := make([]*types.BxTransaction, 0)
+			for _, hash := range request.Hashes {
+				bxTx, exists := g.TxStore.Get(hash)
+				if !exists {
+					continue
+				}
+
+				txs = append(txs, bxTx)
+			}
+
+			err = g.bridge.SendRequestedTransactionsToNode(request.RequestID, txs)
+			if err == blockchain.ErrChannelFull {
+				g.log.Warningf("requested transactions channel is full, skipping request")
+			} else if err != nil {
+				panic(fmt.Errorf("could not send requested transactions over bridge: %v", err))
+			}
 		case txsFromNode := <-g.bridge.ReceiveNodeTransactions():
 			g.traceIfSlow(func() {
 				// if we are not yet synced with relay - ignore the transactions from the node

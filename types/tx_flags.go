@@ -19,7 +19,7 @@ const (
 	TFNextValidator
 	TFNextValidatorRebroadcast
 	TFFrontRunningProtection
-	_
+	TFWithSidecar
 	_ // [NOTICE] last flag
 
 	TFStatusTrack = TFStatusMonitoring | TFPaidTx
@@ -69,4 +69,9 @@ func (f TxFlags) IsNextValidatorRebroadcast() bool {
 // IsFrontRunningProtection return true if transaction is enabled with front runnig protection
 func (f TxFlags) IsFrontRunningProtection() bool {
 	return f&TFFrontRunningProtection != 0
+}
+
+// IsWithSidecar return true if transaction is have blobs sidecar
+func (f TxFlags) IsWithSidecar() bool {
+	return f&TFWithSidecar != 0
 }

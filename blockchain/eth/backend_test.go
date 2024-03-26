@@ -50,6 +50,36 @@ func setupEthMainnet() (blockchain.Bridge, *Handler, []types.NodeEndpoint) {
 	return bridge, handler, blockchainPeers
 }
 
+func TestHandler_ReceiveRequestedTransactions(t *testing.T) {
+	bridge, handler, _ := setup()
+
+	var hash types.SHA256Hash
+	hashRes, _ := hex.DecodeString("da605de1ee226fd20ba7e82745c742af5255284f8362d66fd8bcf89a318ac5f1")
+	copy(hash[:], hashRes)
+	content, _ := hex.DecodeString("f8678201d785012a05f20082520894bbdef5f330f08afd93a7696f4ea79af4a41d0f8080808194a0d0f839e1efadc7f1f1cbba67a5dcee50e3c49d3b8b6bc5ebebcf4886d04260a7a07b4e4849bc016cbf17cd27e4fcbb301c5b25a14cc3c9d0b3c244567d7fbad6fc")
+
+	bxTxs := []*types.BxTransaction{
+		types.NewRawBxTransaction(hash, content),
+	}
+
+	go func() {
+		// Simulating gateway layer
+		req := <-bridge.ReceiveTransactionHashesRequestFromNode()
+
+		bridge.SendRequestedTransactionsToNode(req.RequestID, bxTxs)
+	}()
+
+	rlpTxs, err := handler.RequestTransactions([]common.Hash{common.Hash(hash.Bytes())})
+
+	contents := make([][]byte, len(rlpTxs))
+	for i, rlpTx := range rlpTxs {
+		contents[i] = rlpTx
+	}
+
+	require.NoError(t, err)
+	require.Equal(t, [][]byte{content}, contents)
+}
+
 func TestHandler_HandleStatus(t *testing.T) {
 	_, handler, _ := setup()
 	peer, _, _ := testPeer(1, 1)

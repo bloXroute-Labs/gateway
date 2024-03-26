@@ -28,19 +28,19 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
 	"github.com/pkg/errors"
 	fastssz "github.com/prysmaticlabs/fastssz"
-	"github.com/prysmaticlabs/prysm/v4/beacon-chain/core/blocks"
-	"github.com/prysmaticlabs/prysm/v4/beacon-chain/p2p"
-	"github.com/prysmaticlabs/prysm/v4/beacon-chain/p2p/encoder"
-	"github.com/prysmaticlabs/prysm/v4/beacon-chain/p2p/types"
-	"github.com/prysmaticlabs/prysm/v4/beacon-chain/state"
-	state_native "github.com/prysmaticlabs/prysm/v4/beacon-chain/state/state-native"
-	"github.com/prysmaticlabs/prysm/v4/config/params"
-	"github.com/prysmaticlabs/prysm/v4/consensus-types/interfaces"
-	prysmTypes "github.com/prysmaticlabs/prysm/v4/consensus-types/primitives"
-	ecdsaprysm "github.com/prysmaticlabs/prysm/v4/crypto/ecdsa"
-	"github.com/prysmaticlabs/prysm/v4/network/forks"
-	ethpb "github.com/prysmaticlabs/prysm/v4/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v4/time/slots"
+	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/blocks"
+	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
+	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/encoder"
+	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/types"
+	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
+	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
+	"github.com/prysmaticlabs/prysm/v5/config/params"
+	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
+	prysmTypes "github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
+	ecdsaprysm "github.com/prysmaticlabs/prysm/v5/crypto/ecdsa"
+	"github.com/prysmaticlabs/prysm/v5/network/forks"
+	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
+	"github.com/prysmaticlabs/prysm/v5/time/slots"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -85,16 +85,7 @@ const (
 
 var networkInitMapping = map[string]func(){
 	// Mainnet is default and has required values
-	"Mainnet": func() {
-		// TODO: remove this when prysm 5.0.0 is released
-		cfg := params.MainnetConfig().Copy()
-		cfg.DenebForkEpoch = 269568
-		cfg.DenebForkVersion = []byte{0x50, 0x00, 0x00, 0x48}
-		cfg.InitializeForkSchedule()
-		params.OverrideBeaconConfig(cfg)
-		types.InitializeDataMaps()
-		// TODO: remove this when prysm 5.0.0 is released
-	},
+	"Mainnet": func() {},
 	"Goerli": func() {
 		params.UsePraterNetworkConfig()
 		params.OverrideBeaconConfig(params.PraterConfig())
@@ -215,7 +206,7 @@ func newNode(parent context.Context, networkName string, config *network.EthConf
 		return nil, err
 	}
 	host, err := libp2p.New(
-		libp2p.UserAgent("Prysm/4.2.1/59b310a2216c57fcf67ea0fdec739dad07aeec8b"),
+		libp2p.UserAgent("Prysm/5.0.0/b7b017f5b607f04d4e9056a1ec8a6851a9c7da29"),
 		libp2p.Identity(ifaceKey),
 		libp2p.Transport(tcp.NewTCPTransport),
 		libp2p.Muxer("/mplex/6.7.0", mplex.DefaultTransport),

@@ -13,6 +13,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 	"github.com/ethereum/go-ethereum/common"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
 // TODO : move ethtxstore and related tests outside of bxgateway package
@@ -74,6 +75,16 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 		}
 
 		ethTx := blockchainTx.(*types.EthTransaction)
+
+		if ethTx.Type() == ethtypes.BlobTxType {
+			if ethTx.Tx().BlobTxSidecar() == nil {
+				errEmptySidecar := fmt.Errorf("missing sidecar for hash %v", hash)
+				log.Error(errEmptySidecar)
+				return TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: errEmptySidecar}
+			}
+			transaction.AddFlags(types.TFWithSidecar)
+		}
+
 		txChainID := ethTx.ChainID().Int64()
 		if networkChainID != 0 && txChainID != 0 && networkChainID != txChainID {
 			errChainIDMismatch := fmt.Errorf("chainID mismatch for hash %v - content chainID %v networkNum %v networkChainID %v", hash, txChainID, network, networkChainID)

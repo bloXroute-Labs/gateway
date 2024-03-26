@@ -13,6 +13,8 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
 )
 
 // BxTxStore represents the storage of transaction info for a given node
@@ -125,10 +127,36 @@ func (t *BxTxStore) RemoveShortIDs(shortIDs *types.ShortIDList, reEntryProtectio
 func (t *BxTxStore) GetTxByShortID(shortID types.ShortID) (*types.BxTransaction, error) {
 	if hash, ok := t.shortIDToHash.Load(shortID); ok {
 		if tx, exists := t.hashToContent.Load(string(hash[:])); exists {
+			if tx.Flags().IsWithSidecar() {
+
+				var ethTx ethtypes.Transaction
+
+				err := rlp.DecodeBytes(tx.Content(), &ethTx)
+
+				if err != nil {
+					log.Errorf("could not decode Ethereum transaction: %v", err)
+					return nil, fmt.Errorf("could not decode Ethereum transaction: %v", err)
+				}
+
+				// get transaction content without the blobs sidecars
+				log.Debug("Transaction has sidecar, removing it, short id: ", shortID)
+				newTx := ethTx.WithoutBlobTxSidecar()
+
+				newContent, err := rlp.EncodeToBytes(newTx)
+				if err != nil {
+					log.Errorf("could not encode Ethereum transaction: %v", err)
+					return nil, fmt.Errorf("could not encode Ethereum transaction: %v", err)
+				}
+
+				txCopy := tx.CloneWithEmptyContent()
+				txCopy.SetContent(newContent)
+				return txCopy, nil
+			}
 			return tx, nil
 		}
 		return nil, fmt.Errorf("transaction content for shortID %v and hash %v does not exist", shortID, hash)
 	}
+
 	return nil, fmt.Errorf("transaction with shortID %v does not exist", shortID)
 }
 
