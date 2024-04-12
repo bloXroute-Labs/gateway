@@ -14,6 +14,12 @@ func NewEthBlockHeader(height uint64, parentHash common.Hash) *ethtypes.Header {
 	if parentHash == (common.Hash{}) {
 		parentHash = common.BytesToHash(types.GenerateSHA256Hash().Bytes())
 	}
+
+	blobGasUsed := uint64(0x1f256)
+	excessBlobGas := uint64(0x11f256)
+	parentBeaconRoot := common.BytesToHash(types.GenerateSHA256Hash().Bytes())
+	withdrawalsHash := common.BytesToHash(types.GenerateSHA256Hash().Bytes())
+
 	header := ethtypes.Header{
 		ParentHash:  parentHash,
 		UncleHash:   common.BytesToHash(types.GenerateSHA256Hash().Bytes()),
@@ -36,6 +42,10 @@ func NewEthBlockHeader(height uint64, parentHash common.Hash) *ethtypes.Header {
 			0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 			0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 		}),
+		BlobGasUsed:      &blobGasUsed,
+		ExcessBlobGas:    &excessBlobGas,
+		ParentBeaconRoot: &parentBeaconRoot,
+		WithdrawalsHash:  &withdrawalsHash,
 	}
 	return &header
 }

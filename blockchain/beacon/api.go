@@ -3,6 +3,7 @@ package beacon
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ssz "github.com/prysmaticlabs/fastssz"
+	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
 	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
 	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
 	prysmTypes "github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
@@ -30,7 +32,10 @@ import (
 
 // For the lighthouse client, we make different block encoding for now
 // (JSON instead of SSZ), cause it doesn't support the SZZ.
-const lighthouse = "lighthouse"
+const (
+	lighthouse       = "lighthouse"
+	keepAliveMessage = ""
+)
 
 type nodeVersionResponse struct {
 	Data struct {
@@ -38,26 +43,48 @@ type nodeVersionResponse struct {
 	} `json:"data"`
 }
 
-// Used Beacon API routes
 const (
+	// Beacon API routes
 	requestBlockRoute         = "http://%s/eth/v2/beacon/blocks/%s"
+	requestBlobSidecarRoute   = "http://%s/eth/v1/beacon/blob_sidecars/%s?indices=%s"
 	requestClientVersionRoute = "http://%s/eth/v1/node/version"
-	subscribeBlockEventRoute  = "http://%s/eth/v1/events?topics=head"
+	subscribeEventRoute       = "http://%s/eth/v1/events?topics=%s"
 	broadcastBlockRoute       = "http://%s/eth/v1/beacon/blocks"
+
+	// topics for the event stream
+	topicsNewBlockHead    = "head"
+	topicsNewBlobsSidecar = "blob_sidecar"
 )
+
+type blobDecoder interface {
+	decodeBlobSidecar([]byte) (*ethpb.BlobSidecars, error)
+}
+
+func newDefaultBlobDecoder() blobDecoder {
+	return &defaultBlobDecoder{}
+}
+
+type defaultBlobDecoder struct{}
+
+func newLightHouseBlobDecoder() blobDecoder {
+	return &lightHouseBlobDecoder{}
+}
+
+type lightHouseBlobDecoder struct{}
 
 // APIClient represents the client for subscribing to the Beacon API event stream.
 type APIClient struct {
-	URL          string
-	log          *log.Entry
-	bridge       blockchain.Bridge
-	config       *network.EthConfig
-	clock        utils.Clock
-	ctx          context.Context
-	httpClient   *http.Client
-	nodeEndpoint *types.NodeEndpoint
-	blockEncoder consensusBlockEncoder
-	initialized  atomic.Bool
+	URL                              string
+	log                              *log.Entry
+	bridge                           blockchain.Bridge
+	config                           *network.EthConfig
+	clock                            utils.Clock
+	ctx                              context.Context
+	httpClient                       *http.Client
+	nodeEndpoint                     *types.NodeEndpoint
+	lastBlobsByBeaconHashSuccessSlot atomic.Int64
+	blobDecoder                      blobDecoder
+	initialized                      atomic.Bool
 }
 
 // NewAPIClient creates a new APIClient with the specified URL.
@@ -68,14 +95,15 @@ func NewAPIClient(ctx context.Context, httpClient *http.Client, config *network.
 	})
 
 	client := &APIClient{
-		ctx:          ctx,
-		URL:          url,
-		log:          log,
-		bridge:       bridge,
-		config:       config,
-		clock:        utils.RealClock{},
-		httpClient:   httpClient,
-		blockEncoder: nil,
+		ctx:                              ctx,
+		URL:                              url,
+		log:                              log,
+		bridge:                           bridge,
+		config:                           config,
+		clock:                            utils.RealClock{},
+		httpClient:                       httpClient,
+		blobDecoder:                      newDefaultBlobDecoder(),
+		lastBlobsByBeaconHashSuccessSlot: atomic.Int64{},
 	}
 
 	var err error
@@ -139,10 +167,18 @@ func (c *APIClient) requestBlock(hash string) (interfaces.ReadOnlySignedBeaconBl
 		return nil, fmt.Errorf("failed to make new request to Beacon API route: %v", err)
 	}
 
-	respBodyRaw, version, err := c.doRequest(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to request the Beacon API route: %v", err)
+		return nil, err
 	}
+	defer resp.Body.Close()
+
+	respBodyRaw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	version := resp.Header.Get("Eth-Consensus-Version")
 
 	block, err := c.processResponse(respBodyRaw, version, hash)
 	if err != nil {
@@ -159,21 +195,6 @@ func (c *APIClient) newRequest(uri string) (*http.Request, error) {
 	}
 	req.Header.Set("Accept", "application/octet-stream")
 	return req, nil
-}
-
-func (c *APIClient) doRequest(req *http.Request) ([]byte, string, error) {
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, "", err
-	}
-	defer resp.Body.Close()
-
-	respBodyRaw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to read response body: %v", err)
-	}
-
-	return respBodyRaw, resp.Header.Get("Eth-Consensus-Version"), nil
 }
 
 func (c *APIClient) processResponse(respBodyRaw []byte, v, hash string) (interfaces.ReadOnlySignedBeaconBlock, error) {
@@ -208,6 +229,7 @@ type headEventData struct {
 // Trying to request client version until success.
 // Until then, don't process anything that related to this
 // client connection.
+
 func (c *APIClient) requestClientVersionUntilSuccess() {
 	var version string
 	var err error
@@ -224,9 +246,7 @@ func (c *APIClient) requestClientVersionUntilSuccess() {
 	}
 
 	if strings.Contains(version, lighthouse) {
-		c.blockEncoder = newJSONConsensusBlockEncoder()
-	} else {
-		c.blockEncoder = newSSZConsensusBlockEncoder()
+		c.blobDecoder = newLightHouseBlobDecoder()
 	}
 
 	c.initialized.Store(true)
@@ -235,12 +255,12 @@ func (c *APIClient) requestClientVersionUntilSuccess() {
 // Start listens for events from the Beacon API event stream.
 func (c *APIClient) Start() {
 	go c.requestClientVersionUntilSuccess()
-	go c.subscribeToEvents()
+	go c.subscribeToEvents(fmt.Sprintf(subscribeEventRoute, c.URL, topicsNewBlockHead), c.blockHeadEventHandler())
+	go c.subscribeToEvents(fmt.Sprintf(subscribeEventRoute, c.URL, topicsNewBlobsSidecar), c.blobSidecarEventHandler())
 }
 
 // subscribeToEvents sets up a subscription to server-sent events from the beacon chain API.
-func (c *APIClient) subscribeToEvents() {
-	eventsURL := fmt.Sprintf(subscribeBlockEventRoute, c.URL)
+func (c *APIClient) subscribeToEvents(eventsURL string, handler func(msg *sse.Event)) {
 	client := sse.NewClient(eventsURL)
 	for {
 		select {
@@ -253,7 +273,7 @@ func (c *APIClient) subscribeToEvents() {
 			}
 			c.log.Info("subscribing to head events ", eventsURL)
 
-			err := client.SubscribeRawWithContext(c.ctx, c.eventHandler())
+			err := client.SubscribeRawWithContext(c.ctx, handler)
 
 			// If the context was canceled, we're shutting down.
 			if errors.Is(err, context.Canceled) {
@@ -271,11 +291,156 @@ func (c *APIClient) subscribeToEvents() {
 	}
 }
 
-// eventHandler returns a function to handle server-sent events.
-// The returned function processes head events, gets blocks and sends them to BDN.
-func (c *APIClient) eventHandler() func(msg *sse.Event) {
+func (defaultBlobDecoder) decodeBlobSidecar(responseBody []byte) (*ethpb.BlobSidecars, error) {
+	blobSidecar := new(ethpb.BlobSidecars)
+
+	if err := blobSidecar.UnmarshalSSZ(responseBody); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response body: %v", err)
+	}
+
+	return blobSidecar, nil
+}
+
+func (lightHouseBlobDecoder) decodeBlobSidecar(responseBody []byte) (*ethpb.BlobSidecars, error) {
+	// Check if the response is missing the offset
+	// Currently LightHouse doesn't include the offset in the response, but it's required for SSZ unmarshalling
+	var offset uint64
+
+	if offset = ssz.ReadOffset(responseBody[0:4]); offset > uint64(len(responseBody)) {
+		return nil, ssz.ErrInvalidVariableOffset
+	}
+
+	responseBody = append([]byte{4, 0, 0, 0}, responseBody...)
+
+	return defaultBlobDecoder{}.decodeBlobSidecar(responseBody)
+}
+
+func (c *APIClient) retry(fn func() error, maxTry int, sleep time.Duration) (int, error) {
+	var err error
+
+	for attempt := 1; ; attempt++ {
+		if err = fn(); err == nil {
+			// success, return number of attempts till success
+			return attempt, nil
+		}
+
+		if attempt == maxTry {
+			return attempt, err
+		}
+
+		time.Sleep(sleep)
+	}
+}
+
+func (c *APIClient) requestBlobSidecarWithRetries(beaconHash string, index string) (*ethpb.BlobSidecars, error) {
+	uri := fmt.Sprintf(requestBlobSidecarRoute, c.URL, beaconHash, index)
+	req, err := c.newRequest(uri)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make new request to Beacon API route: %v", err)
+	}
+
+	var respBodyRaw []byte
+
+	requestBlobSidecar := func() error {
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		respBodyRaw, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to read response body: %v", err)
+		}
+
+		if resp.StatusCode == http.StatusNotFound {
+			return fmt.Errorf("blob sidecars not found yet for hash: %s, index: %s", beaconHash, index)
+		}
+		return nil
+	}
+
+	attempt, err := c.retry(requestBlobSidecar, 10, time.Millisecond*40)
+	if err != nil {
+		return nil, err
+	}
+
+	c.log.Tracef("received blob sidecar from Beacon API for [hash: %s, index: %s] after %d attempts", beaconHash, index, attempt)
+
+	return c.blobDecoder.decodeBlobSidecar(respBodyRaw)
+}
+
+// blobSidecarEventHandler returns a function to handle server-sent events.
+func (c *APIClient) blobSidecarEventHandler() func(msg *sse.Event) {
 	return func(msg *sse.Event) {
-		data, err := c.unmarshalEvent(msg.Data)
+		if string(msg.Data) == keepAliveMessage {
+			return
+		}
+
+		c.log.Tracef("received blob sidecar event: %s", string(msg.Data))
+
+		var blobSidecarEvent structs.BlobSidecarEvent
+
+		err := json.Unmarshal(msg.Data, &blobSidecarEvent)
+		if err != nil {
+			c.log.Errorf("could not unmarshal blob sidecar event: %s, err: %v ", string(msg.Data), err)
+			return
+		}
+
+		eventSlot, err := strconv.ParseInt(blobSidecarEvent.Slot, 10, 64)
+		if err != nil {
+			c.log.Errorf("could not parse slot from blob sidecar event: %s, err: %v ", string(msg.Data), err)
+			return
+		}
+
+		// if the blob sidecar is already processed, ignore it
+
+		if c.lastBlobsByBeaconHashSuccessSlot.Load() > eventSlot {
+			c.log.Tracef("blob sidecar request already processed: %s", blobSidecarEvent.BlockRoot)
+			return
+		}
+
+		// retry to request blob sidecars in case of failure
+		blobSidecars, err := c.requestBlobSidecarWithRetries(blobSidecarEvent.BlockRoot, blobSidecarEvent.Index)
+		if err != nil {
+			c.log.Tracef("failed to request blob sidecar: %v", err)
+			return
+		}
+
+		c.lastBlobsByBeaconHashSuccessSlot.Store(eventSlot)
+
+		for _, sidecar := range blobSidecars.Sidecars {
+			// validate the blob sidecar
+			bdnSidecar, err := c.bridge.BeaconMessageToBDN(sidecar)
+			if err != nil {
+				c.log.Errorf("could not convert blob sidecar to BDN: %v", err)
+				continue
+			}
+
+			if err := c.bridge.SendBeaconMessageToBDN(bdnSidecar, *c.nodeEndpoint); err != nil {
+				c.log.Errorf("could not send blob sidecar to BDN: %v", err)
+				continue
+			}
+
+			headerRoot, err := sidecar.SignedBlockHeader.Header.HashTreeRoot()
+			if err != nil {
+				c.log.Errorf("could not get header root: %v", err)
+				continue
+			}
+
+			c.log.Tracef("propagated blob sidecar from Beacon API to BDN: index %v, slot %v, kzgCommitment %v, block hash %s", sidecar.Index, sidecar.SignedBlockHeader.Header.Slot, hex.EncodeToString(sidecar.KzgCommitment), hex.EncodeToString(headerRoot[:]))
+		}
+	}
+}
+
+// blockHeadEventHandler returns a function to handle server-sent events.
+// The returned function processes head events, gets blocks and sends them to BDN.
+func (c *APIClient) blockHeadEventHandler() func(msg *sse.Event) {
+	return func(msg *sse.Event) {
+		// if data is empty, its keep alive msg and we ignore it
+		if string(msg.Data) == keepAliveMessage {
+			return
+		}
+		data, err := c.unmarshalHeadEvent(msg.Data)
 		if err != nil {
 			c.log.Errorf("could not unmarshal head event: %s, err: %v ", string(msg.Data), err)
 			return
@@ -308,8 +473,8 @@ func (c *APIClient) eventHandler() func(msg *sse.Event) {
 	}
 }
 
-// unmarshalEvent unmarshals a server-sent event into a headEventData instance.
-func (c *APIClient) unmarshalEvent(eventData []byte) (headEventData, error) {
+// unmarshalHeadEvent unmarshals a server-sent event into a headEventData instance.
+func (c *APIClient) unmarshalHeadEvent(eventData []byte) (headEventData, error) {
 	var data headEventData
 	err := json.Unmarshal(eventData, &data)
 	return data, err
@@ -330,14 +495,14 @@ func (c *APIClient) isOldBlock(block interfaces.ReadOnlySignedBeaconBlock) bool 
 }
 
 // BroadcastBlock sends the block in octet-stream format to the beacon API endpoint
-func (c *APIClient) BroadcastBlock(block interfaces.ReadOnlySignedBeaconBlock) error {
+func (c *APIClient) BroadcastBlock(block *ethpb.SignedBeaconBlockContentsDeneb) error {
 	if !c.initialized.Load() {
 		return fmt.Errorf("unknown client version")
 	}
 
 	uri := fmt.Sprintf(broadcastBlockRoute, c.URL)
 
-	rawBlock, err := c.blockEncoder.encodeBlock(block)
+	rawBlock, err := block.MarshalSSZ()
 	if err != nil {
 		return fmt.Errorf("failed to prepare block: %v", err)
 	}
@@ -347,8 +512,8 @@ func (c *APIClient) BroadcastBlock(block interfaces.ReadOnlySignedBeaconBlock) e
 		return fmt.Errorf("failed to create new request: %v", err)
 	}
 
-	req.Header.Set("Eth-Consensus-Version", version.String(block.Version()))
-	req.Header.Set("Content-Type", c.blockEncoder.contentType())
+	req.Header.Set("Eth-Consensus-Version", version.String(version.Deneb))
+	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("Accept", "application/octet-stream")
 
 	resp, err := c.httpClient.Do(req)

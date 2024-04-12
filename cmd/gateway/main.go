@@ -82,7 +82,6 @@ func main() {
 			utils.LogNetworkContentFlag,
 			utils.WSTLSFlag,
 			utils.MEVBuildersFilePathFlag,
-			utils.MEVMaxProfitBuilder,
 			utils.MEVBundleMethodNameFlag,
 			utils.SendBlockConfirmation,
 			utils.TerminalTotalDifficulty,
@@ -109,6 +108,8 @@ func main() {
 			utils.BSCHighLoadBlockSendDelayIntervalMSFlag,
 			utils.BSCHighLoadTxNumThresholdFlag,
 			utils.TxIncludeSenderInFeed,
+			utils.BeaconTrustedPeersFileFlag,
+			utils.BeaconPort,
 		},
 		Action: runGateway,
 	}
@@ -191,7 +192,7 @@ func runGateway(c *cli.Context) error {
 	// create a set of recommended peers
 	recommendedPeers := make(map[string]struct{})
 
-	startupBeaconNode := bxConfig.GatewayMode.IsBDN() && len(ethConfig.BeaconNodes()) > 0
+	startupBeaconNode := bxConfig.GatewayMode.IsBDN() && len(ethConfig.BeaconNodes()) > 0 || c.Int(utils.BeaconPort.Name) != 0
 	startupBeaconAPIClients := bxConfig.GatewayMode.IsBDN() && len(ethConfig.BeaconAPIEndpoints()) > 0
 	startupBlockchainClient := startupBeaconAPIClients || startupBeaconNode || len(ethConfig.StaticEnodes()) > 0 || bxConfig.EnableDynamicPeers // if beacon node running we need to receive txs also
 	startupPrysmClient := bxConfig.GatewayMode.IsBDN() && prysmAddr != ""
@@ -221,11 +222,65 @@ func runGateway(c *cli.Context) error {
 		return fmt.Errorf("if blockchan rpc is enabled, a valid websocket address must be provided")
 	}
 
+	var beaconNode *beacon.Node
+	if startupBeaconNode {
+		var genesisPath string
+		localGenesisFile := path.Join(dataDir, "genesis.ssz")
+		if c.IsSet(utils.GensisFilePath.Name) {
+			localGenesisFile = c.String(utils.GensisFilePath.Name)
+			genesisPath = localGenesisFile
+		} else {
+			genesisPath, err = downloadGenesisFile(c.String(utils.BlockchainNetworkFlag.Name), localGenesisFile)
+			if err != nil {
+				return err
+			}
+		}
+		log.Info("connecting to beacon node using ", genesisPath)
+
+		beaconNode, err = beacon.NewNode(beacon.NodeParams{
+			ParentContext:        ctx,
+			NetworkName:          c.String(utils.BlockchainNetworkFlag.Name),
+			EthConfig:            ethConfig,
+			TrustedPeersFilePath: c.String(utils.BeaconTrustedPeersFileFlag.Name),
+			GenesisFilePath:      localGenesisFile,
+			Bridge:               bridge,
+			Port:                 c.Int(utils.BeaconPort.Name),
+			InboundLimit:         int(sdn.AccountModel().InboundNodeConnections.MsgQuota.Limit),
+		})
+		if err != nil {
+			return err
+		}
+
+		if err = beaconNode.Start(); err != nil {
+			return err
+		}
+	}
+
+	beaconAPIClients := make([]*beacon.APIClient, 0)
+	if startupBeaconAPIClients {
+		for _, endpoint := range ethConfig.BeaconAPIEndpoints() {
+			client, err := beacon.NewAPIClient(ctx, httpclient.Client(nil), ethConfig, bridge, endpoint, blockchainNetwork)
+			if err != nil {
+				return fmt.Errorf("error creating new beacon api client: %v", err)
+			}
+			client.Start()
+			beaconAPIClients = append(beaconAPIClients, client)
+		}
+	}
+
+	var blobsManager *beacon.BlobSidecarCacheManager
+	if startupBeaconNode || startupBeaconAPIClients {
+		blobsManager = beacon.NewBlobSidecarCacheManager(ethConfig.GenesisTime)
+		go beacon.HandleBDNBeaconMessages(ctx, bridge, beaconNode, blobsManager)
+		go beacon.HandleBDNBlocks(ctx, bridge, beaconNode, beaconAPIClients, blobsManager)
+	}
+
 	gateway, err := nodes.NewGateway(
 		ctx,
 		bxConfig,
 		bridge,
 		wsManager,
+		blobsManager,
 		blockchainPeers,
 		ethConfig.StaticPeers,
 		recommendedPeers,
@@ -289,48 +344,6 @@ func runGateway(c *cli.Context) error {
 		}
 	} else {
 		log.Infof("skipping starting blockchain client as no enodes have been provided")
-	}
-
-	var beaconNode *beacon.Node
-
-	if startupBeaconNode {
-		var genesisPath string
-		localGenesisFile := path.Join(dataDir, "genesis.ssz")
-		if c.IsSet(utils.GensisFilePath.Name) {
-			localGenesisFile = c.String(utils.GensisFilePath.Name)
-			genesisPath = localGenesisFile
-		} else {
-			genesisPath, err = downloadGenesisFile(c.String(utils.BlockchainNetworkFlag.Name), localGenesisFile)
-			if err != nil {
-				return err
-			}
-		}
-		log.Info("connecting to beacon node using ", genesisPath)
-
-		beaconNode, err = beacon.NewNode(ctx, c.String(utils.BlockchainNetworkFlag.Name), ethConfig, localGenesisFile, bridge)
-		if err != nil {
-			return err
-		}
-
-		if err = beaconNode.Start(); err != nil {
-			return err
-		}
-	}
-
-	beaconAPIClients := make([]*beacon.APIClient, 0)
-	if startupBeaconAPIClients {
-		for _, endpoint := range ethConfig.BeaconAPIEndpoints() {
-			client, err := beacon.NewAPIClient(ctx, httpclient.Client(nil), ethConfig, bridge, endpoint, blockchainNetwork)
-			if err != nil {
-				return fmt.Errorf("error creating new beacon api client: %v", err)
-			}
-			client.Start()
-			beaconAPIClients = append(beaconAPIClients, client)
-		}
-	}
-
-	if startupBeaconNode || startupBeaconAPIClients {
-		go beacon.HandleBDNBlocksBridge(ctx, bridge, beaconNode, beaconAPIClients)
 	}
 
 	var prysmClient *beacon.PrysmClient

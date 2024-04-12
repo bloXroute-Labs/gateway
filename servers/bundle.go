@@ -199,6 +199,11 @@ func mevBundleFromRequest(payload *jsonrpc.RPCBundleSubmissionPayload, networkNu
 		return nil, parsedBundle.bundleHash, errBlockedTxHashes
 	}
 
+	var avoidMixedBundles bool
+	if networkNum == bxgateway.BSCMainnetNum {
+		avoidMixedBundles = payload.AvoidMixedBundles
+	}
+
 	mevBundle, err := bxmessage.NewMEVBundle(
 		parsedBundle.rawTxHexStrings,
 		payload.UUID,
@@ -206,11 +211,11 @@ func mevBundleFromRequest(payload *jsonrpc.RPCBundleSubmissionPayload, networkNu
 		payload.MinTimestamp,
 		payload.MaxTimestamp,
 		payload.RevertingHashes,
-		payload.Frontrunning,
 		payload.MEVBuilders,
 		parsedBundle.bundleHash,
 		payload.BundlePrice,
 		payload.EnforcePayout,
+		avoidMixedBundles,
 	)
 	if err != nil {
 		// Validated before, should not happen

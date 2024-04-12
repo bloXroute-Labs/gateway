@@ -24,7 +24,7 @@ func EnodeToNodeEndpoint(node *enode.Node, blockchainNetwork string) types.NodeE
 
 // MultiaddrToNodeEndoint converts a multiaddr to a NodeEndpoint
 func MultiaddrToNodeEndoint(ma multiaddr.Multiaddr, blockchainNetwork string) types.NodeEndpoint {
-	var ip, port, pubKey string
+	var ip, dns, port, pubKey string
 	multiaddr.ForEach(ma, func(c multiaddr.Component) bool {
 		switch c.Protocol().Code {
 		case multiaddr.P_IP6:
@@ -32,6 +32,9 @@ func MultiaddrToNodeEndoint(ma multiaddr.Multiaddr, blockchainNetwork string) ty
 			return true
 		case multiaddr.P_IP4:
 			ip = c.Value()
+			return true
+		case multiaddr.P_DNS:
+			dns = c.Value()
 			return true
 		case multiaddr.P_TCP:
 			port = c.Value()
@@ -49,6 +52,7 @@ func MultiaddrToNodeEndoint(ma multiaddr.Multiaddr, blockchainNetwork string) ty
 
 	return types.NodeEndpoint{
 		IP:                ip,
+		DNS:               dns,
 		Port:              p,
 		PublicKey:         pubKey,
 		IsBeacon:          true,

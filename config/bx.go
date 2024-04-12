@@ -44,11 +44,10 @@ type Bx struct {
 	ManageWSServer      bool
 	HTTPPort            int
 
-	BlocksOnly          bool
-	AllTransactions     bool
-	SendConfirmation    bool
-	MEVMaxProfitBuilder bool
-	MEVBuilders         map[string]*bundle.Builder
+	BlocksOnly       bool
+	AllTransactions  bool
+	SendConfirmation bool
+	MEVBuilders      map[string]*bundle.Builder
 
 	MevMinerSendBundleMethodName string
 	ForwardTransactionEndpoint   string
@@ -131,8 +130,7 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		SendConfirmation: ctx.Bool(utils.SendBlockConfirmation.Name),
 		AllTransactions:  ctx.Bool(utils.AllTransactionsFlag.Name),
 
-		MEVBuilders:         mevBuilders,
-		MEVMaxProfitBuilder: ctx.Bool(utils.MEVMaxProfitBuilder.Name),
+		MEVBuilders: mevBuilders,
 
 		ForwardTransactionEndpoint: ctx.String(utils.ForwardTransactionEndpoint.Name),
 		ForwardTransactionMethod:   ctx.String(utils.ForwardTransactionMethod.Name),

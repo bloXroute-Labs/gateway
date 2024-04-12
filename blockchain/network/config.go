@@ -383,7 +383,7 @@ func multiaddrFromStr(multiAddr string) (multiaddr.Multiaddr, error) {
 }
 
 func validateMultiaddr(multiAddr multiaddr.Multiaddr) error {
-	var ip, port, pubKey string
+	var ip, dns, port, pubKey string
 	multiaddr.ForEach(multiAddr, func(c multiaddr.Component) bool {
 		switch c.Protocol().Code {
 		case multiaddr.P_IP6:
@@ -391,6 +391,9 @@ func validateMultiaddr(multiAddr multiaddr.Multiaddr) error {
 			return true
 		case multiaddr.P_IP4:
 			ip = c.Value()
+			return true
+		case multiaddr.P_DNS:
+			dns = c.Value()
 			return true
 		case multiaddr.P_TCP:
 			port = c.Value()
@@ -403,8 +406,15 @@ func validateMultiaddr(multiAddr multiaddr.Multiaddr) error {
 		return false
 	})
 
-	if ip == "" {
-		return errors.New("IP address is missing")
+	if ip == "" && dns == "" {
+		return errors.New("IP or DNS address is missing")
+	}
+
+	if dns != "" {
+		_, err := net.ResolveIPAddr("", dns)
+		if err != nil {
+			return fmt.Errorf("DNS address '%s' is not valid: %v", dns, err)
+		}
 	}
 
 	if port == "" {

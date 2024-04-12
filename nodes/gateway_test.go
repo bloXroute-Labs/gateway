@@ -102,6 +102,7 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 			eth.NewMockWSProvider,
 			bxgateway.WSProviderTimeout,
 			false),
+		beacon.NewBlobSidecarCacheManager(1606824023),
 		blockchainPeers,
 		blockchainPeersInfo,
 		make(map[string]struct{}),
@@ -627,7 +628,6 @@ func Test_HandleBlxrSubmitBundleFromRPC(t *testing.T) {
 			"0xa74b582bd1505262d2b9154d87b181600f5a6fe7b49bd7f0b0192407773f0143",
 			"0x2d283f3b4bfc4a7fe37ec935566b92e9255d1413a2d0c814125e43750d952ecd",
 		},
-		Frontrunning: true,
 		MEVBuilders: map[string]string{
 			"builder1": "0x123",
 			"builder2": "0x456",
@@ -650,7 +650,6 @@ func Test_HandleBlxrSubmitBundleFromRPC(t *testing.T) {
 	assert.Equal(t, bundleSentToBDN.MinTimestamp, bundleMessage.MinTimestamp)
 	assert.Equal(t, bundleSentToBDN.MaxTimestamp, bundleMessage.MaxTimestamp)
 	assert.Equal(t, bundleSentToBDN.BlockNumber, bundleMessage.BlockNumber)
-	assert.Equal(t, bundleSentToBDN.Frontrunning, bundleMessage.Frontrunning)
 	assert.Equal(t, bundleSentToBDN.Hash(), bundleMessage.Hash())
 	assert.True(t, test.MapsEqual(bundleSentToBDN.MEVBuilders, bundleMessage.MEVBuilders))
 	assert.Equal(t, bundleSentToBDN.Transactions[0], bundleMessage.Transactions[0])
@@ -1022,7 +1021,7 @@ func TestGateway_HandleBeaconBlockFromRelay(t *testing.T) {
 	}
 
 	// beacon block after eth block is not treated as duplicate
-	beaconBlock := bxmock.NewBellatrixBeaconBlock(t, 11, nil, ethBlock)
+	beaconBlock := bxmock.NewDenebBeaconBlock(t, 11, nil, ethBlock)
 	bxBlock, err = bridge.BlockBlockchainToBDN(beacon.NewWrappedReadOnlySignedBeaconBlock(beaconBlock))
 	assert.Nil(t, err)
 

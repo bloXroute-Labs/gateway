@@ -26,10 +26,7 @@ func (h *handlerObj) handleRPCBundleSubmission(ctx context.Context, conn *jsonrp
 		return
 	}
 
-	// Defaults
-	params := jsonrpc.RPCBundleSubmissionPayload{
-		Frontrunning: true,
-	}
+	var params jsonrpc.RPCBundleSubmissionPayload
 
 	if err := json.Unmarshal(*req.Params, &params); err != nil {
 		SendErrorMsg(ctx, jsonrpc.InvalidParams, fmt.Sprintf("failed to unmarshal params for %v request: %v",

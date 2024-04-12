@@ -43,6 +43,9 @@ const IsBeaconLen = 1
 // BroadcastTypeLen is the byte length of the broadcastType byte
 const BroadcastTypeLen = 4
 
+// BeaconMessageTypeLen is the byte length of the beacon message type
+const BeaconMessageTypeLen = 4
+
 // Message type constants
 const (
 	HelloType                    = "hello"
@@ -72,6 +75,7 @@ const (
 	IntentsUnsubscriptionType    = "intentsunsub"
 	SolutionsSubscriptionType    = "solssub"
 	SolutionsUnsubscriptionType  = "solsunsub"
+	BeaconMessageType            = "beaconmsg"
 )
 
 // SenderLen is the byte length of sender
@@ -96,7 +100,13 @@ const EmptyProtocol = 0
 const MinProtocol = 19
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
-const CurrentProtocol = IntentsWithAnySenderProtocol
+const CurrentProtocol = BeaconMessagesProtocol
+
+// BeaconMessagesProtocol is the minimum protocol version that supports beacon messages
+const BeaconMessagesProtocol = 44
+
+// AvoidMixedBundleProtocol is the minimum protocol version that supports avoiding mixed bundles
+const AvoidMixedBundleProtocol = 43
 
 // IntentsWithAnySenderProtocol is the minimum protocol version that supports Intents with any intent sender
 const IntentsWithAnySenderProtocol = 42

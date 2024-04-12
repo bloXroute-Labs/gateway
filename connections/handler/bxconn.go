@@ -347,6 +347,13 @@ func (b *BxConn) ProcessMessage(msgBytes bxmessage.MessageBytes) {
 		}
 
 		_ = b.Node.HandleMsg(solution, b, connections.RunBackground) //nolint:errcheck
+	case bxmessage.BeaconMessageType:
+		beaconMessage := &bxmessage.BeaconMessage{}
+		if err := beaconMessage.Unpack(msg, b.Protocol()); err != nil {
+			b.log.Warnf("Failed to unpack beacon message: %v", err)
+			return
+		}
+		_ = b.Node.HandleMsg(beaconMessage, b, connections.RunForeground)
 	default:
 		b.Log().Debugf("read %v (%d bytes)", msgType, len(msg))
 	}

@@ -591,7 +591,7 @@ func TestHandler_HandleNewBlockHashes66(t *testing.T) {
 	// send header/body from peer (out of order with request IDs)
 	peerRW.QueueIncomingMessage(uint64(eth.BlockBodiesMsg), eth.BlockBodiesPacket{
 		RequestId: bodiesID,
-		BlockBodiesResponse: []*eth.BlockBody{&eth.BlockBody{
+		BlockBodiesResponse: eth.BlockBodiesResponse{&eth.BlockBody{
 			Transactions: block.Transactions(),
 			Uncles:       block.Uncles(),
 		}},

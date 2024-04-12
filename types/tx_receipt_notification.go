@@ -203,6 +203,10 @@ func (r *TxReceiptsNotification) WithFields(fields []string) Notification {
 				newReceipt.TxType = receipt.TxType
 			case "txs_count":
 				newReceipt.TxsCount = receipt.TxsCount
+			case "blob_gas_used":
+				newReceipt.BlobGasUsed = receipt.BlobGasUsed
+			case "blob_gas_price":
+				newReceipt.BlobGasPrice = receipt.BlobGasPrice
 			}
 		}
 

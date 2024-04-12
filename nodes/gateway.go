@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/pkg/errors"
 	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
+	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 	"github.com/sirupsen/logrus"
 	"github.com/sourcegraph/jsonrpc2"
 	"go.uber.org/atomic"
@@ -37,6 +38,7 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc/blockproposer"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc/caller/rpc"
@@ -122,6 +124,7 @@ type gateway struct {
 	seenMEVMinerBundles   services.HashHistory
 	seenMEVSearchers      services.HashHistory
 	seenBlockConfirmation services.HashHistory
+	seenBeaconMessages    services.HashHistory
 
 	mevBundleDispatcher *bundle.Dispatcher
 
@@ -160,6 +163,8 @@ type gateway struct {
 
 	accountsCacheManager *utils.Cache[types.AccountID, accountResult]
 	intentsManager       IntentsManager
+
+	blobsManager *beacon.BlobSidecarCacheManager
 }
 
 // GeneratePeers generate string peers separated by coma
@@ -185,6 +190,7 @@ func NewGateway(parent context.Context,
 	bxConfig *config.Bx,
 	bridge blockchain.Bridge,
 	wsManager blockchain.WSManager,
+	blobsManager *beacon.BlobSidecarCacheManager,
 	blockchainPeers []types.NodeEndpoint,
 	peersInfo []network.PeerInfo,
 	recommendedPeers map[string]struct{},
@@ -218,6 +224,7 @@ func NewGateway(parent context.Context,
 		seenMEVMinerBundles:          services.NewHashHistory("mevMinerBundle", 30*time.Minute),
 		seenMEVSearchers:             services.NewHashHistory("mevSearcher", 30*time.Minute),
 		seenBlockConfirmation:        services.NewHashHistory("blockConfirmation", 30*time.Minute),
+		seenBeaconMessages:           services.NewHashHistory("beaconMessages", 30*time.Minute),
 		clock:                        clock,
 		timeStarted:                  clock.Now(),
 		gatewayPeers:                 GeneratePeers(peersInfo),
@@ -233,6 +240,7 @@ func NewGateway(parent context.Context,
 			"component": "gateway",
 		}),
 		intentsManager: newIntentsManager(),
+		blobsManager:   blobsManager,
 	}
 	g.chainID = int64(bxgateway.NetworkNumToChainID[sdn.NetworkNum()])
 
@@ -325,7 +333,7 @@ func NewGateway(parent context.Context,
 		g.stats = statistics.NewStats(g.BxConfig.FluentDEnabled, g.BxConfig.FluentDHost, g.sdn.NodeID(), g.sdn.Networks(), g.BxConfig.LogNetworkContent)
 	}
 
-	g.mevBundleDispatcher = bundle.NewDispatcher(g.stats, bxConfig.MEVBuilders, bxConfig.MEVMaxProfitBuilder)
+	g.mevBundleDispatcher = bundle.NewDispatcher(g.stats, bxConfig.MEVBuilders)
 	g.txsQueue = services.NewMsgQueue(runtime.NumCPU()*2, bxgateway.ParallelQueueChannelSize, g.msgAdapter)
 	g.txsOrderQueue = services.NewMsgQueue(1, bxgateway.ParallelQueueChannelSize, g.msgAdapter)
 
@@ -1288,8 +1296,52 @@ func (g *gateway) handleBridgeMessages(ctx context.Context) error {
 				g.traceIfSlow(func() { g.handleBlockFromBlockchain(blockchainBlock) },
 					fmt.Sprintf("handleBlockFromBlockchain hash=[%s]", blockchainBlock.Block.Hash()), blockchainBlock.PeerEndpoint.String(), 1)
 			}
+		case beaconMessage := <-g.bridge.ReceiveBeaconMessageFromNode():
+			bMessage := bxmessage.NewBeaconMessage(
+				beaconMessage.Message.Hash,
+				beaconMessage.Message.BlockHash,
+				beaconMessage.Message.Type,
+				beaconMessage.Message.Data,
+				beaconMessage.Message.Index,
+				beaconMessage.Message.Slot,
+				g.sdn.NetworkNum(),
+			)
+
+			source := connections.NewBlockchainConn(beaconMessage.PeerEndpoint)
+			g.traceIfSlow(func() {
+				g.handleBeaconMessageFromBlockchain(bMessage, source)
+			},
+				fmt.Sprintf("handleBeaconMessageFromBlockchain hash=[%s]", beaconMessage.Message.Hash), beaconMessage.PeerEndpoint.String(), 1)
 		}
 	}
+}
+
+func (g *gateway) handleBeaconMessageFromBlockchain(beaconMessage *bxmessage.BeaconMessage, source connections.Blockchain) error {
+	if !g.seenBeaconMessages.SetIfAbsent(beaconMessage.Hash().String(), 30*time.Minute) {
+		g.log.Tracef("skipping beacon message %v, already seen", beaconMessage.Hash())
+		return eth.ErrAlreadySeen
+	}
+
+	results := g.broadcast(beaconMessage, source, utils.Relay)
+
+	switch beaconMessage.Type() {
+	case types.BxBeaconMessageTypeBlob:
+		blobSidecar := new(ethpb.BlobSidecar)
+		err := blobSidecar.UnmarshalSSZ(beaconMessage.Data())
+		if err != nil {
+			return err
+		}
+
+		err = g.blobsManager.AddBlobSidecar(blobSidecar)
+		if err != nil {
+			g.log.Errorf("failed to add blob sidecar: %v", err)
+		}
+	default:
+		g.log.Errorf("unknown beacon message type %v", beaconMessage.Type())
+	}
+
+	g.log.Tracef("broadcasted beacon message from Blockchain to BDN %v, from %v to peers[%v]", beaconMessage, source, results)
+	return nil
 }
 
 func (g *gateway) NodeStatus() connections.NodeStatus {
@@ -1423,11 +1475,36 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 		}
 
 		g.notify(types.NewUserIntentSolutionNotification(solution))
+	case *bxmessage.BeaconMessage:
+		go g.processBeaconMessage(typedMsg, source)
 	default:
 		err = g.Bx.HandleMsg(msg, source)
 	}
 
 	return err
+}
+
+func (g *gateway) processBeaconMessage(beaconMessage *bxmessage.BeaconMessage, source connections.Conn) {
+	if !g.seenBeaconMessages.SetIfAbsent(beaconMessage.Hash().String(), 30*time.Minute) {
+		g.log.Tracef("skipping beacon message %v, already seen", beaconMessage.Hash())
+		return
+	}
+
+	bxBeaconMessage := types.NewBxBeaconMessage(
+		beaconMessage.Hash(),
+		beaconMessage.BlockHash(),
+		beaconMessage.Type(),
+		beaconMessage.Data(),
+		beaconMessage.Index(),
+		beaconMessage.Slot(),
+	)
+
+	if err := g.bridge.SendBeaconMessageToBlockchain(bxBeaconMessage); err != nil {
+		g.log.Errorf("could not send beacon message %v to blockchain: %v", beaconMessage, err)
+		return
+	}
+
+	source.Log().Tracef("sent beacon message %v to blockchain", beaconMessage)
 }
 
 func (g *gateway) gatewayHasBlockchainConnection() bool {
@@ -1821,6 +1898,8 @@ func getRawBytesStringFromTXMsg(tx *bxmessage.Tx) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
+const maxBlockAgeSinceNow = time.Minute * 10
+
 func (g *gateway) handleBlockFromBlockchain(blockchainBlock blockchain.BlockFromNode) {
 	startTime := time.Now()
 
@@ -1833,6 +1912,14 @@ func (g *gateway) handleBlockFromBlockchain(blockchainBlock blockchain.BlockFrom
 
 	g.onBlock(blockInfo)
 	source := connections.NewBlockchainConn(blockchainBlock.PeerEndpoint)
+
+	if blockInfo != nil {
+		blockTime := time.Unix(int64(blockInfo.Block.Time()), 0)
+		if !blockTime.IsZero() && startTime.Sub(blockTime) > maxBlockAgeSinceNow {
+			source.Log().Warnf("received block %v from blockchain node with time %v, which is older than %v", bxBlock.Hash(), blockTime, maxBlockAgeSinceNow)
+			return
+		}
+	}
 
 	g.bdnStats.LogNewBlockMessageFromNode(source.NodeEndpoint())
 
@@ -1929,7 +2016,7 @@ func (g *gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source c
 		}
 
 		source.Log().Tracef("ignoring %s duration: %v ms, time in network: %v ms", mevBundle, time.Since(start).Milliseconds(), start.Sub(mevBundle.PerformanceTimestamp).Milliseconds())
-		g.stats.AddGatewayBundleEvent(eventName, source, start, mevBundle.BundleHash, mevBundle.GetNetworkNum(), mevBundle.Names(), mevBundle.Frontrunning, mevBundle.UUID, uint64(blockNumber), mevBundle.MinTimestamp, mevBundle.MaxTimestamp, mevBundle.BundlePrice, mevBundle.EnforcePayout)
+		g.stats.AddGatewayBundleEvent(eventName, source, start, mevBundle.BundleHash, mevBundle.GetNetworkNum(), mevBundle.Names(), mevBundle.UUID, uint64(blockNumber), mevBundle.MinTimestamp, mevBundle.MaxTimestamp, mevBundle.BundlePrice, mevBundle.EnforcePayout)
 		return
 	}
 
@@ -1954,7 +2041,7 @@ func (g *gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source c
 		source.Log().Tracef("broadcasting %s %s duration: %v ms, time in network: %v ms", mevBundle, broadcastRes, time.Since(start).Milliseconds(), start.Sub(mevBundle.PerformanceTimestamp).Milliseconds())
 	}
 
-	g.stats.AddGatewayBundleEvent(event, source, start, mevBundle.BundleHash, mevBundle.GetNetworkNum(), mevBundle.Names(), mevBundle.Frontrunning, mevBundle.UUID, uint64(blockNumber), mevBundle.MinTimestamp, mevBundle.MaxTimestamp, mevBundle.BundlePrice, mevBundle.EnforcePayout)
+	g.stats.AddGatewayBundleEvent(event, source, start, mevBundle.BundleHash, mevBundle.GetNetworkNum(), mevBundle.Names(), mevBundle.UUID, uint64(blockNumber), mevBundle.MinTimestamp, mevBundle.MaxTimestamp, mevBundle.BundlePrice, mevBundle.EnforcePayout)
 }
 
 func retrieveAuthHeader(ctx context.Context, authFromRequestBody string) string {
@@ -2325,16 +2412,16 @@ func (g *gateway) BlxrSubmitBundle(ctx context.Context, req *pb.BlxrSubmitBundle
 	}
 
 	mevBundleParams := &jsonrpc.RPCBundleSubmissionPayload{
-		MEVBuilders:     req.MevBuilders,
-		Frontrunning:    true,
-		Transaction:     req.Transactions,
-		BlockNumber:     req.BlockNumber,
-		MinTimestamp:    int(req.MinTimestamp),
-		MaxTimestamp:    int(req.MaxTimestamp),
-		RevertingHashes: req.RevertingHashes,
-		UUID:            req.Uuid,
-		BundlePrice:     req.BundlePrice,
-		EnforcePayout:   req.EnforcePayout,
+		MEVBuilders:       req.MevBuilders,
+		Transaction:       req.Transactions,
+		BlockNumber:       req.BlockNumber,
+		MinTimestamp:      int(req.MinTimestamp),
+		MaxTimestamp:      int(req.MaxTimestamp),
+		RevertingHashes:   req.RevertingHashes,
+		UUID:              req.Uuid,
+		BundlePrice:       req.BundlePrice,
+		EnforcePayout:     req.EnforcePayout,
+		AvoidMixedBundles: req.AvoidMixedBundles,
 	}
 
 	grpc := connections.NewRPCConn(*accountID, servers.GetPeerAddr(ctx), g.sdn.NetworkNum(), utils.GRPC)

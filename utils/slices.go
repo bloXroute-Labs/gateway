@@ -43,3 +43,32 @@ func RemoveItemFromList(itemList []string, item string) ([]string, error) {
 
 	return itemList, fmt.Errorf("item %v does not exist", item)
 }
+
+// CompareLists compares two lists and returns the unique elements in each list
+func CompareLists[K comparable](l1 []K, l2 []K) ([]K, []K) {
+	l1Set := make(map[K]struct{})
+	for _, el := range l1 {
+		l1Set[el] = struct{}{}
+	}
+
+	l2Set := make(map[K]struct{})
+	for _, el := range l2 {
+		l2Set[el] = struct{}{}
+	}
+
+	l1Uniq := make([]K, 0)
+	for _, el := range l1 {
+		if _, ok := l2Set[el]; !ok {
+			l1Uniq = append(l1Uniq, el)
+		}
+	}
+
+	l2Uniq := make([]K, 0)
+	for _, el := range l2 {
+		if _, ok := l1Set[el]; !ok {
+			l2Uniq = append(l2Uniq, el)
+		}
+	}
+
+	return l1Uniq, l2Uniq
+}

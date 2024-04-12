@@ -116,13 +116,13 @@ func (b *bxCompressedTransaction) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 	return
 }
 
-// MarshalSSZ ssz marshals the bxBlockSSZ object
-func (b *bxBlockSSZ) MarshalSSZ() ([]byte, error) {
+// MarshalSSZ ssz marshals the BxBlockSSZ object
+func (b *BxBlockSSZ) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(b)
 }
 
-// MarshalSSZTo ssz marshals the bxBlockSSZ object to a target array
-func (b *bxBlockSSZ) MarshalSSZTo(buf []byte) (dst []byte, err error) {
+// MarshalSSZTo ssz marshals the BxBlockSSZ object to a target array
+func (b *BxBlockSSZ) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 	offset := int(16)
 
@@ -168,8 +168,8 @@ func (b *bxBlockSSZ) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the bxBlockSSZ object
-func (b *bxBlockSSZ) UnmarshalSSZ(buf []byte) error {
+// UnmarshalSSZ ssz unmarshals the BxBlockSSZ object
+func (b *BxBlockSSZ) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
 	if size < 16 {
@@ -232,8 +232,8 @@ func (b *bxBlockSSZ) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the bxBlockSSZ object
-func (b *bxBlockSSZ) SizeSSZ() (size int) {
+// SizeSSZ returns the ssz encoded size in bytes for the BxBlockSSZ object
+func (b *BxBlockSSZ) SizeSSZ() (size int) {
 	size = 16
 
 	// Field (0) 'Block'
@@ -248,13 +248,13 @@ func (b *bxBlockSSZ) SizeSSZ() (size int) {
 	return
 }
 
-// HashTreeRoot ssz hashes the bxBlockSSZ object
-func (b *bxBlockSSZ) HashTreeRoot() ([32]byte, error) {
+// HashTreeRoot ssz hashes the BxBlockSSZ object
+func (b *BxBlockSSZ) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(b)
 }
 
-// HashTreeRootWith ssz hashes the bxBlockSSZ object with a hasher
-func (b *bxBlockSSZ) HashTreeRootWith(hh *ssz.Hasher) (err error) {
+// HashTreeRootWith ssz hashes the BxBlockSSZ object with a hasher
+func (b *BxBlockSSZ) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 	indx := hh.Index()
 
 	// Field (0) 'Block'

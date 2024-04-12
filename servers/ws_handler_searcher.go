@@ -29,9 +29,7 @@ func (h *handlerObj) handleRPCMevSearcher(ctx context.Context, conn *jsonrpc2.Co
 		return
 	}
 
-	params := jsonrpc.RPCMEVSearcherPayload{
-		Frontrunning: true,
-	}
+	var params jsonrpc.RPCMEVSearcherPayload
 	if err := json.Unmarshal(*req.Params, &params); err != nil {
 		SendErrorMsg(ctx, jsonrpc.InvalidParams, fmt.Sprintf("failed to unmarshal params for %v request: %v",
 			jsonrpc.RPCMEVSearcher, err), conn, req.ID)
@@ -47,7 +45,6 @@ func (h *handlerObj) handleRPCMevSearcher(ctx context.Context, conn *jsonrpc2.Co
 
 	mevBundleParams := &jsonrpc.RPCBundleSubmissionPayload{
 		MEVBuilders:     params.MEVBuilders,
-		Frontrunning:    params.Frontrunning,
 		Transaction:     params.Payload[0].Txs,
 		BlockNumber:     params.Payload[0].BlockNumber,
 		MinTimestamp:    params.Payload[0].MinTimestamp,

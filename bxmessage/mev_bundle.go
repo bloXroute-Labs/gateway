@@ -41,7 +41,6 @@ type MEVBundle struct {
 	MinTimestamp    int      `json:"minTimestamp,omitempty"`
 	MaxTimestamp    int      `json:"maxTimestamp,omitempty"`
 	RevertingHashes []string `json:"revertingTxHashes,omitempty"`
-	Frontrunning    bool     `json:"frontrunning,omitempty"`
 
 	// used for tracking performance (gateway to receiving relay, followed by
 	// overriding in relay handler (after logging),
@@ -61,6 +60,9 @@ type MEVBundle struct {
 	// From protocol version 41
 	OriginalSenderAccountTier sdnmessage.AccountTier
 	SentFromCloudAPI          bool
+
+	// From protocol version 43
+	AvoidMixedBundles bool
 }
 
 // NewMEVBundle creates a new MEVBundle
@@ -71,34 +73,34 @@ func NewMEVBundle(
 	minTimestamp int,
 	maxTimestamp int,
 	revertingHashes []string,
-	frontrunning bool,
 	mevBuilders MEVBundleBuilders,
 	bundleHash string,
 	bundlePrice int64,
-	enforcePayout bool,
+	enforcePayout,
+	avoidMixedBundles bool,
 ) (MEVBundle, error) {
 	if len(uuid) != 0 && len(uuid) != 36 {
 		return MEVBundle{}, errors.New("invalid uuid len")
 	}
 	return MEVBundle{
-		Transactions:    transaction,
-		UUID:            uuid,
-		BlockNumber:     blockNumber,
-		MinTimestamp:    minTimestamp,
-		MaxTimestamp:    maxTimestamp,
-		RevertingHashes: revertingHashes,
-		Frontrunning:    frontrunning,
-		MEVBuilders:     mevBuilders,
-		BundleHash:      bundleHash,
-		BundlePrice:     bundlePrice,
-		EnforcePayout:   enforcePayout,
+		Transactions:      transaction,
+		UUID:              uuid,
+		BlockNumber:       blockNumber,
+		MinTimestamp:      minTimestamp,
+		MaxTimestamp:      maxTimestamp,
+		RevertingHashes:   revertingHashes,
+		MEVBuilders:       mevBuilders,
+		BundleHash:        bundleHash,
+		BundlePrice:       bundlePrice,
+		EnforcePayout:     enforcePayout,
+		AvoidMixedBundles: avoidMixedBundles,
 	}, nil
 }
 
 // String returns a string representation of the MEVBundle
 func (m MEVBundle) String() string {
-	return fmt.Sprintf("mev bundle(sender account ID: %s, hash: %s, blockNumber: %s, builders: %v, frontrunning: %t, txs: %d, sent from cloud api: %v, tier: %v, UUID: %s)",
-		m.OriginalSenderAccountID, m.BundleHash, m.BlockNumber, m.MEVBuilders, m.Frontrunning, len(m.Transactions), m.SentFromCloudAPI, m.OriginalSenderAccountTier, m.UUID)
+	return fmt.Sprintf("mev bundle(sender account ID: %s, hash: %s, blockNumber: %s, builders: %v, txs: %d, sent from cloud api: %v, tier: %v, allowMixedBundles: %v, UUID: %s)",
+		m.OriginalSenderAccountID, m.BundleHash, m.BlockNumber, m.MEVBuilders, len(m.Transactions), m.SentFromCloudAPI, m.OriginalSenderAccountTier, m.AvoidMixedBundles, m.UUID)
 }
 
 // SetHash sets the hash based on the fields in BundleSubmission
@@ -122,11 +124,9 @@ func (m *MEVBundle) SetHash() {
 	for _, hash := range m.RevertingHashes {
 		buf = append(buf, []byte(hash)...)
 	}
-	if m.Frontrunning {
-		buf = append(buf, []uint8{1}...)
-	} else {
-		buf = append(buf, []uint8{0}...)
-	}
+
+	// 1 bytes frontrunning legacy support
+	buf = append(buf, []uint8{0}...)
 
 	// Convert map to a sorted slice of key-value pairs
 	builders := make([]string, 0, len(m.MEVBuilders))
@@ -194,6 +194,11 @@ func (m MEVBundle) size(protocol Protocol, txs [][]byte) uint32 {
 		size += types.UInt16Len                          // OriginalSenderAccountTier size-prefix
 		size += uint32(len(m.OriginalSenderAccountTier)) // OriginalSenderAccountTier content
 		size += types.UInt8Len                           // SentFromCloudAPI bool
+	}
+
+	// From protocol version 43: AvoidMixedBundles
+	if protocol >= AvoidMixedBundleProtocol {
+		size += types.UInt8Len // AvoidMixedBundles bool
 	}
 
 	return size
@@ -288,12 +293,8 @@ func (m MEVBundle) Pack(protocol Protocol) ([]byte, error) {
 	copy(buf[offset:], decodedBundleHash)
 	offset += types.SHA256HashLen
 
-	// Frontrunning
-	if m.Frontrunning {
-		buf[offset] = 1
-	} else {
-		buf[offset] = 0
-	}
+	// frontrunning legacy support
+	buf[offset] = 0
 	offset += types.UInt8Len
 
 	// MEVBuilders
@@ -360,6 +361,15 @@ func (m MEVBundle) Pack(protocol Protocol) ([]byte, error) {
 		offset += len(m.OriginalSenderAccountTier)
 
 		if m.SentFromCloudAPI {
+			buf[offset] = 1
+		} else {
+			buf[offset] = 0
+		}
+		offset += types.UInt8Len //nolint:ineffassign
+	}
+
+	if protocol >= AvoidMixedBundleProtocol {
+		if m.AvoidMixedBundles {
 			buf[offset] = 1
 		} else {
 			buf[offset] = 0
@@ -487,8 +497,7 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 		return err
 	}
 
-	// Frontrunning
-	m.Frontrunning = data[offset] == 1
+	// frontrunning legacy support
 	offset += types.UInt8Len
 
 	if err := checkBufSize(&data, offset, types.UInt16Len); err != nil {
@@ -600,6 +609,15 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 		offset += types.UInt8Len //nolint:ineffassign
 	}
 
+	if protocol >= AvoidMixedBundleProtocol {
+		if err := checkBufSize(&data, offset, types.UInt8Len); err != nil {
+			return err
+		}
+
+		m.AvoidMixedBundles = data[offset] == 1
+		offset += types.UInt8Len //nolint:ineffassign
+	}
+
 	return nil
 }
 
@@ -663,7 +681,6 @@ func (m *MEVBundle) Clone() *MEVBundle {
 		MinTimestamp:              m.MinTimestamp,
 		MaxTimestamp:              m.MaxTimestamp,
 		RevertingHashes:           m.RevertingHashes,
-		Frontrunning:              m.Frontrunning,
 		PerformanceTimestamp:      m.PerformanceTimestamp,
 		BundleHash:                m.BundleHash,
 		MEVBuilders:               copyBuilders,
@@ -672,5 +689,6 @@ func (m *MEVBundle) Clone() *MEVBundle {
 		OriginalSenderAccountID:   m.OriginalSenderAccountID,
 		OriginalSenderAccountTier: m.OriginalSenderAccountTier,
 		SentFromCloudAPI:          m.SentFromCloudAPI,
+		AvoidMixedBundles:         m.AvoidMixedBundles,
 	}
 }

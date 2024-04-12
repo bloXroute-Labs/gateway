@@ -17,6 +17,8 @@ import (
 	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
 	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 	"github.com/prysmaticlabs/prysm/v5/runtime/version"
+
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
 )
 
 type bxBlockRLP struct {
@@ -353,12 +355,15 @@ func (c Converter) extractTransactionsFromBlock(block *types.BxBlock) ([][]byte,
 		// This function works with any type of transaction.
 		// [TODO] This should be removed when BDN will be synced and broadcast
 		// bxmessages with sidecar flag
-		txWithoutBlobs := t.WithoutBlobTxSidecar()
+		if t.BlobTxSidecar() != nil {
+			log.Debugf("Transaction %s has sidecar when extracting from the block, removing it", t.Hash().String())
+			t = t.WithoutBlobTxSidecar()
+		}
 
 		// This is for back compatibility
 		// Beacon block encodes transaction using MarshalBinary instead of rlp.EncodeBytes
 		// For more info look at the comment of calcBeaconTransactionLength func
-		txBytes, err := txWithoutBlobs.MarshalBinary()
+		txBytes, err := t.MarshalBinary()
 		if err != nil {
 			return nil, fmt.Errorf("invalid transaction %d: %v", i, err)
 
@@ -462,4 +467,51 @@ func BeaconBlockToEthBlock(block interfaces.ReadOnlySignedBeaconBlock) (*ethtype
 	}
 
 	return ethtypes.NewBlockWithHeader(header).WithBody(txs, nil /* uncles */).WithWithdrawals(ethWithdrawals), nil
+}
+
+// BeaconMessageToBDN converts a beacon message to a BDN beacon message
+func (c Converter) BeaconMessageToBDN(msg interface{}) (*types.BxBeaconMessage, error) {
+	switch m := msg.(type) {
+	case *ethpb.BlobSidecar:
+		data, err := m.MarshalSSZ()
+		if err != nil {
+			return nil, fmt.Errorf("could not marshal blob sidecar: %v", err)
+		}
+
+		hash, err := m.HashTreeRoot()
+		if err != nil {
+			return nil, fmt.Errorf("could not get hash: %v", err)
+		}
+
+		blockHash, err := m.SignedBlockHeader.Header.HashTreeRoot()
+		if err != nil {
+			return nil, fmt.Errorf("could not get block hash: %v", err)
+		}
+
+		return types.NewBxBeaconMessage(
+			hash,
+			NewSHA256Hash(ethcommon.Hash(blockHash)),
+			types.BxBeaconMessageTypeBlob,
+			data,
+			uint32(m.GetIndex()),
+			uint32(m.GetSignedBlockHeader().GetHeader().GetSlot()),
+		), nil
+	default:
+		return nil, fmt.Errorf("could not convert beacon message %v", m)
+	}
+}
+
+// BeaconMessageBDNToBlockchain converts BDN beacon message to blockchain beacon message
+func (c Converter) BeaconMessageBDNToBlockchain(msg *types.BxBeaconMessage) (interface{}, error) {
+	switch msg.Type {
+	case types.BxBeaconMessageTypeBlob:
+		blob := new(ethpb.BlobSidecar)
+		if err := blob.UnmarshalSSZ(msg.Data); err != nil {
+			return nil, fmt.Errorf("could not unmarshal blob sidecar: %v", err)
+		}
+
+		return blob, nil
+	default:
+		return nil, fmt.Errorf("could not convert beacon message %v", msg)
+	}
 }

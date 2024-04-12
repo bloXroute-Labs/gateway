@@ -27,6 +27,7 @@ const WalletIDLen = 42
 // NodeEndpoint - represent the node endpoint struct sent in BdnPerformanceStats
 type NodeEndpoint struct {
 	IP                string
+	DNS               string
 	Port              int
 	PublicKey         string
 	IsBeacon          bool
@@ -40,6 +41,9 @@ type NodeEndpoint struct {
 
 // String returns string representation of NodeEndpoint
 func (e NodeEndpoint) String() string {
+	if e.DNS != "" {
+		return fmt.Sprintf("%v %v %v", e.DNS, e.Port, e.PublicKey)
+	}
 	return fmt.Sprintf("%v %v %v", e.IP, e.Port, e.PublicKey)
 }
 
