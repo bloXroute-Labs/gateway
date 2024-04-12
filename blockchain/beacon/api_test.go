@@ -20,29 +20,39 @@ import (
 	interfaces "github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
 	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
 	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 var (
-	ctx               = context.Background()
-	config            = &network.EthConfig{}
-	bridge            = &blockchain.BxBridge{}
-	url               = "localhost:4000"
-	blockchainNetwork = "Test"
-	blockID           = "0x025ad52b0739ebbfcbe967b880d426b406764efff1515b555853c43bff81378a"
-	file              *os.File
-	blockData         []byte
-	err               error
-	validBlock        interfaces.ReadOnlySignedBeaconBlock
+	ctx                    = context.Background()
+	config                 = &network.EthConfig{}
+	bridge                 = &blockchain.BxBridge{}
+	url                    = "localhost:4000"
+	blockchainNetwork      = "Test"
+	blockID                = "0x025ad52b0739ebbfcbe967b880d426b406764efff1515b555853c43bff81378a"
+	file                   *os.File
+	denebBlockContentsData []byte
+	denebBlockData         []byte
+	err                    error
+	validBlock             interfaces.ReadOnlySignedBeaconBlock
 )
 
 func init() {
+	file, err = os.Open("test_data/contents_deneb_block.ssz")
+	if err == nil {
+		defer file.Close()
+		denebBlockContentsData, err = io.ReadAll(file)
+	} else {
+		panic(err)
+	}
+
 	file, err = os.Open("test_data/deneb_block.ssz")
 	if err == nil {
 		defer file.Close()
-		blockData, err = io.ReadAll(file)
+		denebBlockData, err = io.ReadAll(file)
+	} else {
+		panic(err)
 	}
 
 	hashLen := 32
@@ -88,6 +98,7 @@ func TestNewAPIClient(t *testing.T) {
 	assert.Equal(t, bridge, client.bridge)
 	assert.Equal(t, config, client.config)
 }
+
 func TestAPIClient_requestBlock(t *testing.T) {
 	// Initialize httpmock
 	httpClient := httpclient.Client(nil)
@@ -120,7 +131,7 @@ func TestAPIClient_requestBlock(t *testing.T) {
 			httpmock.RegisterResponder("GET", "http://"+client.URL+"/eth/v2/beacon/blocks/"+blockID,
 				httpmock.ResponderFromResponse(&http.Response{
 					StatusCode: http.StatusOK,
-					Body:       io.NopCloser(bytes.NewReader(blockData)),
+					Body:       io.NopCloser(bytes.NewReader(denebBlockData)),
 					Header:     respHeaders,
 				}),
 			)
@@ -161,7 +172,7 @@ func TestAPIClient_hashOfBlock(t *testing.T) {
 	httpmock.RegisterResponder("GET", "http://"+client.URL+"/eth/v2/beacon/blocks/"+blockID,
 		httpmock.ResponderFromResponse(&http.Response{
 			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewReader(blockData)),
+			Body:       io.NopCloser(bytes.NewReader(denebBlockData)),
 			Header:     respHeaders,
 		}),
 	)
@@ -237,7 +248,7 @@ func TestAPIClient_processResponse(t *testing.T) {
 	}{
 		{
 			name:        "Test case 1: valid body",
-			respBodyRaw: blockData,
+			respBodyRaw: denebBlockData,
 			v:           version,
 			wantErr:     false,
 		},
@@ -284,13 +295,10 @@ func TestAPIClient_broadcastBlock(t *testing.T) {
 	test.WaitUntilTrueOrFail(t, client.initialized.Load)
 
 	// Test Case 1: Successful broadcast ssz
-	mockRawBlock := blockData
-	var denebBlock = &ethpb.SignedBeaconBlockDeneb{}
-	denebBlock.UnmarshalSSZ(blockData)
-	block, err := blocks.NewSignedBeaconBlock(denebBlock)
-	if err != nil {
-		t.Fatalf("Failed to create block: %v", err)
-	}
+	mockRawBlock := denebBlockContentsData
+	var denebBlock = &eth.SignedBeaconBlockContentsDeneb{}
+	err = denebBlock.UnmarshalSSZ(denebBlockContentsData)
+	require.NoError(t, err)
 
 	httpmock.Reset()
 	httpmock.RegisterResponder(http.MethodPost, fmt.Sprintf("http://%s/eth/v1/beacon/blocks", url),
@@ -301,15 +309,7 @@ func TestAPIClient_broadcastBlock(t *testing.T) {
 
 			reqBody, _ := io.ReadAll(req.Body)
 
-			denebBlock := &eth.SignedBeaconBlockContentsDeneb{}
-			err := denebBlock.UnmarshalSSZ(reqBody)
-			require.NoError(t, err)
-
-			// to check with the original mocked ssz block
-			marshalledBlock, err := denebBlock.Block.MarshalSSZ()
-			require.NoError(t, err)
-
-			if !bytes.Equal(marshalledBlock, mockRawBlock) {
+			if !bytes.Equal(reqBody, mockRawBlock) {
 				t.Errorf("Expected request body:\n%s\nBut got:\n%s", mockRawBlock, reqBody)
 			}
 
@@ -317,7 +317,7 @@ func TestAPIClient_broadcastBlock(t *testing.T) {
 		},
 	)
 
-	err = client.BroadcastBlock(block)
+	err = client.BroadcastBlock(denebBlock)
 	if err != nil {
 		t.Errorf("Expected no error, but got: %v", err)
 	}
@@ -330,8 +330,22 @@ func TestAPIClient_broadcastBlock(t *testing.T) {
 		},
 	)
 
-	err = client.BroadcastBlock(block)
+	err = client.BroadcastBlock(denebBlock)
 	if err == nil {
 		t.Error("Expected an error, but got none")
 	}
+}
+
+func TestAPIClient_UnmarshallBlobFromRequest(t *testing.T) {
+	blobFile := "test_data/blob_without_offset.ssz"
+	blobData, err := os.ReadFile(blobFile)
+	require.NoError(t, err)
+
+	blob := &eth.BlobSidecars{}
+
+	err = blob.UnmarshalSSZ(blobData)
+	require.Error(t, err)
+
+	_, err = lightHouseBlobDecoder{}.decodeBlobSidecar(blobData)
+	require.NoError(t, err)
 }

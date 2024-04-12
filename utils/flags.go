@@ -326,11 +326,6 @@ var (
 		Usage: "set custom method for mevBundle request",
 		Value: "eth_sendBundle",
 	}
-	MEVMaxProfitBuilder = &cli.BoolFlag{
-		Name:  "mev-max-profit-builder",
-		Usage: "enable max-profit-builder",
-		Value: false,
-	}
 	SendBlockConfirmation = &cli.BoolFlag{
 		Name:   "send-block-confirmation",
 		Usage:  "sending block confirmation to relay",

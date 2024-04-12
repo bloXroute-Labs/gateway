@@ -34,7 +34,6 @@ type MEVSearcher struct {
 
 	auth                 MEVSearcherAuth
 	UUID                 string `json:"uuid"`
-	Frontrunning         bool   `json:"frontrunning"`
 	effectiveGasPriceLen uint16
 	EffectiveGasPrice    big.Int `json:"effective_gas_price"`
 	coinbaseProfitLen    uint16
@@ -44,7 +43,7 @@ type MEVSearcher struct {
 }
 
 // NewMEVSearcher create MEVSearcher
-func NewMEVSearcher(mevMinerMethod string, auth MEVSearcherAuth, uuid string, frontrunning bool, effectiveGasPrice, coinbaseProfit big.Int, params MEVSearcherParams) (MEVSearcher, error) {
+func NewMEVSearcher(mevMinerMethod string, auth MEVSearcherAuth, uuid string, effectiveGasPrice, coinbaseProfit big.Int, params MEVSearcherParams) (MEVSearcher, error) {
 	if err := checkAuthSize(len(auth)); err != nil {
 		return MEVSearcher{}, err
 	}
@@ -66,7 +65,6 @@ func NewMEVSearcher(mevMinerMethod string, auth MEVSearcherAuth, uuid string, fr
 		Method:               mevMinerMethod,
 		auth:                 auth,
 		UUID:                 uuid,
-		Frontrunning:         frontrunning,
 		effectiveGasPriceLen: effectiveGasPriceLen,
 		EffectiveGasPrice:    effectiveGasPrice,
 		coinbaseProfitLen:    coinbaseProfitLen,
@@ -120,11 +118,11 @@ func (m *MEVSearcher) ToMEVBundle() (*MEVBundle, error) {
 		int(params[0].MinTimestamp),
 		int(params[0].MaxTimestamp),
 		revertingTxHashes,
-		m.Frontrunning,
 		MEVBundleBuilders(m.Auth()),
 		fmt.Sprintf("0x%x", bundleHash.Sum(nil)),
 		// new fields are not supported for MEVSearcher
 		0,
+		false,
 		false,
 	)
 	if err != nil {
@@ -147,11 +145,8 @@ func (m *MEVSearcher) SetHash() {
 	buf = append(buf, byte(m.coinbaseProfitLen))
 	buf = append(buf, m.CoinbaseProfit.Bytes()...)
 
-	if m.Frontrunning {
-		buf = append(buf, []uint8{1}...)
-	} else {
-		buf = append(buf, []uint8{0}...)
-	}
+	// frontrunning legacy support
+	buf = append(buf, []uint8{0}...)
 
 	m.hash = utils.DoubleSHA256(buf[:])
 }
@@ -163,7 +158,6 @@ func (m MEVSearcher) Clone(auth MEVSearcherAuth) MEVSearcher {
 		Method:               m.Method,
 		auth:                 auth,
 		UUID:                 m.UUID,
-		Frontrunning:         m.Frontrunning,
 		effectiveGasPriceLen: m.effectiveGasPriceLen,
 		EffectiveGasPrice:    m.EffectiveGasPrice,
 		coinbaseProfitLen:    m.coinbaseProfitLen,
@@ -246,11 +240,8 @@ func (m MEVSearcher) Pack(protocol Protocol) ([]byte, error) {
 	}
 
 	if protocol >= MevMaxProfitBuilder {
-		if m.Frontrunning {
-			copy(buf[offset:], []uint8{1})
-		} else {
-			copy(buf[offset:], []uint8{0})
-		}
+		// frontrunning legacy support
+		copy(buf[offset:], []uint8{0})
 		offset += types.UInt8Len
 
 		binary.LittleEndian.PutUint16(buf[offset:], m.effectiveGasPriceLen)
@@ -344,7 +335,8 @@ func (m *MEVSearcher) Unpack(buf []byte, protocol Protocol) error {
 		if err := checkBufSize(&buf, offset, types.UInt8Len); err != nil {
 			return err
 		}
-		m.Frontrunning = int(buf[offset]) != 0
+
+		// frontrunning legacy support
 		offset += types.UInt8Len
 
 		if err := checkBufSize(&buf, offset, types.UInt16Len); err != nil {

@@ -21,7 +21,7 @@ var (
 	txContentFields = []string{"tx_contents.nonce", "tx_contents.tx_hash",
 		"tx_contents.gas_price", "tx_contents.gas", "tx_contents.to", "tx_contents.value", "tx_contents.input",
 		"tx_contents.v", "tx_contents.r", "tx_contents.s", "tx_contents.type", "tx_contents.access_list",
-		"tx_contents.chain_id", "tx_contents.max_priority_fee_per_gas", "tx_contents.max_fee_per_gas", "tx_contents.max_fee_per_blob_gas", "tx_contents.blob_versioned_hashes", "tx_contents.yParity"}
+		"tx_contents.chain_id", "tx_contents.max_priority_fee_per_gas", "tx_contents.max_fee_per_gas", "tx_contents.max_fee_per_blob_gas", "tx_contents.blob_versioned_hashes", "tx_contents.y_parity"}
 
 	defaultTxParams = append(txContentFields, "tx_hash", "local_region", "time")
 
@@ -31,7 +31,7 @@ var (
 	validBlockParams     = append(txContentFields, "tx_contents.from", "hash", "header", "transactions", "uncles", "future_validator_info", "withdrawals")
 	validTxReceiptParams = []string{"block_hash", "block_number", "contract_address",
 		"cumulative_gas_used", "effective_gas_price", "from", "gas_used", "logs", "logs_bloom",
-		"status", "to", "transaction_hash", "transaction_index", "type", "txs_count"}
+		"status", "to", "transaction_hash", "transaction_index", "type", "txs_count", "blob_gas_used", "blob_gas_price"}
 	validOnBlockParams     = []string{"name", "response", "block_height", "tag"}
 	validBeaconBlockParams = []string{"hash", "header", "slot", "body"}
 

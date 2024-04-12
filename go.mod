@@ -9,7 +9,6 @@ require (
 	github.com/davecgh/go-spew v1.1.1
 	github.com/ethereum/go-ethereum v1.13.11
 	github.com/evalphobia/logrus_fluent v0.5.4
-	github.com/ferranbt/fastssz v0.0.0-20210120143747-11b9eff30ea9
 	github.com/fluent/fluent-logger-golang v1.5.0
 	github.com/golang/protobuf v1.5.3
 	github.com/google/uuid v1.3.0
@@ -222,9 +221,3 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.0.2 // indirect
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
-
-// Used in prysm which also has replace for this but for some reason go list which is used in some IDEs does not recognize semver before replace
-replace github.com/MariusVanDerWijden/tx-fuzz => github.com/marcopolo/tx-fuzz v0.0.0-20220927011827-b5c461bc7cae
-
-// See https://github.com/prysmaticlabs/grpc-gateway/issues/2
-replace github.com/grpc-ecosystem/grpc-gateway/v2 => github.com/prysmaticlabs/grpc-gateway/v2 v2.3.1-0.20230315201114-09284ba20446

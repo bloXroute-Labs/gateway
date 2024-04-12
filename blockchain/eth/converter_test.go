@@ -71,11 +71,11 @@ func TestConverter_Block(t *testing.T) {
 	}
 }
 
-func TestConverter_BellatrixBeaconBlock(t *testing.T) {
+func TestConverter_DenebBeaconBlock(t *testing.T) {
 	c := Converter{}
 	block := bxmock.NewEthBlock(10, common.Hash{})
 
-	beaconBlock := bxmock.NewBellatrixBeaconBlock(t, 11, nil, block)
+	beaconBlock := bxmock.NewDenebBeaconBlock(t, 11, nil, block)
 
 	bxBlock, err := c.BlockBlockchainToBDN(beacon.NewWrappedReadOnlySignedBeaconBlock(beaconBlock))
 	assert.NoError(t, err)
@@ -84,73 +84,31 @@ func TestConverter_BellatrixBeaconBlock(t *testing.T) {
 	blockchainBlock, err := c.BlockBDNtoBlockchain(bxBlock)
 	assert.NoError(t, err)
 
-	bellatrixBlock, err := blockchainBlock.(interfaces.ReadOnlySignedBeaconBlock).PbBellatrixBlock()
+	denebBlock, err := blockchainBlock.(interfaces.ReadOnlySignedBeaconBlock).PbDenebBlock()
 	assert.NoError(t, err)
 
 	// Check beacon BxBlock transactions exactly same as eth block
 	for i, tx := range block.Transactions() {
-		bellatrixTx := new(ethtypes.Transaction)
-		err = bellatrixTx.UnmarshalBinary(bellatrixBlock.GetBlock().GetBody().GetExecutionPayload().GetTransactions()[i])
+		blockTx := new(ethtypes.Transaction)
+		err = blockTx.UnmarshalBinary(denebBlock.GetBlock().GetBody().GetExecutionPayload().GetTransactions()[i])
 		assert.NoError(t, err)
 
-		assert.Equal(t, tx.Hash(), bellatrixTx.Hash())
+		assert.Equal(t, blockTx.Hash(), tx.Hash())
 	}
 
 	beaconCanonicFormat, err := types.NewBeaconBlockNotification(blockchainBlock.(interfaces.ReadOnlySignedBeaconBlock))
 	assert.NoError(t, err)
 
 	// Check beacon notification transactions exactly same as beacon BxBlock
-	for i, txRaw := range beaconCanonicFormat.(*types.BellatrixBlockNotification).Block.Body.ExecutionPayload.Transactions {
+	for i, txRaw := range beaconCanonicFormat.(*types.DenebBlockNotification).Block.Body.ExecutionPayload.Transactions {
 		notificationTx := new(ethtypes.Transaction)
 		err = notificationTx.UnmarshalBinary(txRaw)
 		assert.NoError(t, err)
 
-		bellatrixTx := new(ethtypes.Transaction)
-		err = bellatrixTx.UnmarshalBinary(bellatrixBlock.GetBlock().GetBody().GetExecutionPayload().GetTransactions()[i])
+		tx := new(ethtypes.Transaction)
+		err = tx.UnmarshalBinary(denebBlock.GetBlock().GetBody().GetExecutionPayload().GetTransactions()[i])
 		assert.NoError(t, err)
 
-		assert.Equal(t, notificationTx.Hash(), bellatrixTx.Hash())
-	}
-}
-
-func TestConverter_CapellaBeaconBlock(t *testing.T) {
-	c := Converter{}
-	block := bxmock.NewEthBlock(10, common.Hash{})
-
-	beaconBlock := bxmock.NewCapellaBeaconBlock(t, 11, nil, block)
-
-	bxBlock, err := c.BlockBlockchainToBDN(beacon.NewWrappedReadOnlySignedBeaconBlock(beaconBlock))
-	assert.NoError(t, err)
-	assert.Equal(t, block.Hash().Bytes(), bxBlock.Hash().Bytes())
-
-	blockchainBlock, err := c.BlockBDNtoBlockchain(bxBlock)
-	assert.NoError(t, err)
-
-	capellaBlock, err := blockchainBlock.(interfaces.ReadOnlySignedBeaconBlock).PbCapellaBlock()
-	assert.NoError(t, err)
-
-	// Check beacon BxBlock transactions exactly same as eth block
-	for i, tx := range block.Transactions() {
-		capellaTx := new(ethtypes.Transaction)
-		err = capellaTx.UnmarshalBinary(capellaBlock.GetBlock().GetBody().GetExecutionPayload().GetTransactions()[i])
-		assert.NoError(t, err)
-
-		assert.Equal(t, tx.Hash(), capellaTx.Hash())
-	}
-
-	beaconCanonicFormat, err := types.NewBeaconBlockNotification(blockchainBlock.(interfaces.ReadOnlySignedBeaconBlock))
-	assert.NoError(t, err)
-
-	// Check beacon notification transactions exactly same as beacon BxBlock
-	for i, txRaw := range beaconCanonicFormat.(*types.CapellaBlockNotification).Block.Body.ExecutionPayload.Transactions {
-		notificationTx := new(ethtypes.Transaction)
-		err = notificationTx.UnmarshalBinary(txRaw)
-		assert.NoError(t, err)
-
-		capellaTx := new(ethtypes.Transaction)
-		err = capellaTx.UnmarshalBinary(capellaBlock.GetBlock().GetBody().GetExecutionPayload().GetTransactions()[i])
-		assert.NoError(t, err)
-
-		assert.Equal(t, notificationTx.Hash(), capellaTx.Hash())
+		assert.Equal(t, notificationTx.Hash(), tx.Hash())
 	}
 }

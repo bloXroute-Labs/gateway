@@ -12,8 +12,6 @@ import (
 	"strconv"
 	"strings"
 
-	"crypto/rand"
-
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/enode"
@@ -142,7 +140,7 @@ func GenerateUUID() string {
 // GenerateU128 generates random u128 string as subscription ID
 func GenerateU128() (string, error) {
 	u128 := make([]byte, 16)
-	_, err := rand.Read(u128)
+	_, err := cryptorand.Read(u128)
 	if err != nil {
 		return "", err
 	}

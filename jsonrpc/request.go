@@ -119,7 +119,6 @@ func (p *RPCTxPayload) UnmarshalJSON(b []byte) error {
 type RPCBundleSubmissionPayload struct {
 	BlockchainNetwork       string            `json:"blockchain_network"`
 	MEVBuilders             map[string]string `json:"mev_builders"`
-	Frontrunning            bool              `json:"frontrunning"`
 	Transaction             []string          `json:"transaction"`
 	BlockNumber             string            `json:"block_number"`
 	MinTimestamp            int               `json:"min_timestamp"`
@@ -171,7 +170,6 @@ type RPCMEVSearcherPayload struct {
 	MEVMethod         string            `json:"mev_method"`
 	BlockchainNetwork string            `json:"blockchain_network"`
 	MEVBuilders       map[string]string `json:"mev_builders"`
-	Frontrunning      bool              `json:"frontrunning"`
 	Payload           []RPCSendBundle   `json:"payload"`
 }
 
@@ -183,9 +181,9 @@ type RPCSendBundle struct {
 	MinTimestamp      int      `json:"minTimestamp"`
 	MaxTimestamp      int      `json:"maxTimestamp"`
 	RevertingTxHashes []string `json:"revertingTxHashes"`
-	Frontrunning      bool     `json:"frontrunning,omitempty"`
 	BundlePrice       int64    `json:"bundlePrice,omitempty"` // in wei
 	EnforcePayout     bool     `json:"enforcePayout,omitempty"`
+	AvoidMixedBundles bool     `json:"avoidMixedBundles,omitempty"`
 }
 
 // RPCCancelBundlePayload custom json-rpc required to cancel flashbots bundle

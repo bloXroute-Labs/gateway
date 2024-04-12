@@ -34,14 +34,13 @@ type Builder struct {
 
 // Dispatcher is responsible for dispatching MEV bundles to MEV builders
 type Dispatcher struct {
-	stats               statistics.Stats
-	client              *http.Client
-	builders            map[string]*Builder
-	mevMaxProfitBuilder bool
+	stats    statistics.Stats
+	client   *http.Client
+	builders map[string]*Builder
 }
 
 // NewDispatcher creates a new NewDispatcher
-func NewDispatcher(stats statistics.Stats, builders map[string]*Builder, mevMaxProfitBuilder bool) *Dispatcher {
+func NewDispatcher(stats statistics.Stats, builders map[string]*Builder) *Dispatcher {
 	for name, builder := range builders {
 		builder.Name = name
 	}
@@ -57,15 +56,14 @@ func NewDispatcher(stats statistics.Stats, builders map[string]*Builder, mevMaxP
 			},
 			Timeout: 60 * time.Second,
 		},
-		builders:            builders,
-		mevMaxProfitBuilder: mevMaxProfitBuilder,
+		builders: builders,
 	}
 }
 
 // Dispatch dispatches the MEV bundle to the MEV builders
 func (d *Dispatcher) Dispatch(mevBundle *bxmessage.MEVBundle) error {
-	//we create a bundle pointer, and if builders map is empty we create copy of the bundle,
-	//we change it because we use mevBundle pointer in go routine in other place
+	// we create a bundle pointer, and if builders map is empty we create copy of the bundle,
+	// we change it because we use mevBundle pointer in go routine in other place
 	bundle := mevBundle
 	if len(mevBundle.MEVBuilders) == 0 {
 		bundle = mevBundle.Clone()
@@ -75,11 +73,6 @@ func (d *Dispatcher) Dispatch(mevBundle *bxmessage.MEVBundle) error {
 	}
 	if len(d.builders) == 0 {
 		log.Warnf("received mevBundle message, but mev-builders-file-path is empty. Message %v from %v in network %v", bundle.BundleHash, bundle.SourceID(), bundle.GetNetworkNum())
-		return nil
-	}
-
-	if !d.mevMaxProfitBuilder && bundle.Frontrunning {
-		log.Warnf("MEV bundle %v is frontrunning, but max profit builder is not enabled. Skipping.", bundle.BundleHash)
 		return nil
 	}
 
@@ -107,6 +100,10 @@ func (d *Dispatcher) bundleJSON(bundle *bxmessage.MEVBundle) ([]byte, error) {
 		},
 	}
 
+	if bundle.GetNetworkNum() == bxgateway.BSCMainnetNum {
+		params[0].AvoidMixedBundles = bundle.AvoidMixedBundles
+	}
+
 	paramsBytes, err := json.Marshal(params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new mevBundle http request for bundleHash: %v, err: %v", bundle.BundleHash, err)
@@ -117,12 +114,12 @@ func (d *Dispatcher) bundleJSON(bundle *bxmessage.MEVBundle) ([]byte, error) {
 		Method: string(jsonrpc.RPCEthSendBundle),
 	}
 
-	json, err := json.Marshal(mevBundle)
+	res, err := json.Marshal(mevBundle)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new mevBundle http request bundleHash: %v, err: %v", bundle.BundleHash, err)
 	}
 
-	return json, nil
+	return res, nil
 }
 
 // makeRequests concurrently sends provided bundle to MEVBuilders

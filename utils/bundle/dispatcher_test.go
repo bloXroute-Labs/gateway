@@ -37,17 +37,15 @@ func makeBuildersMap(prefix string, builders []string) map[string]*Builder {
 func TestDispatcher(t *testing.T) {
 	testCases := []struct {
 		// TODO: test logs or handle them in a better way
-		name                string
-		builders            []string
-		mevMaxProfitBuilder bool
-		bundle              bxmessage.MEVBundle
-		expPayload          *jsonrpc.RPCSendBundle
-		expBuilders         []string
+		name        string
+		builders    []string
+		bundle      bxmessage.MEVBundle
+		expPayload  *jsonrpc.RPCSendBundle
+		expBuilders []string
 	}{
 		{
-			name:                "one builder called",
-			builders:            []string{"builder1"},
-			mevMaxProfitBuilder: false,
+			name:     "one builder called",
+			builders: []string{"builder1"},
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
 				Transactions:    []string{testTx1, testTx2},
@@ -57,7 +55,6 @@ func TestDispatcher(t *testing.T) {
 				MaxTimestamp:    1686120884,
 				RevertingHashes: []string{testTx1Hash},
 				MEVBuilders:     bxmessage.MEVBundleBuilders{"builder1": ""},
-				Frontrunning:    false,
 			},
 			expPayload: &jsonrpc.RPCSendBundle{
 				Txs:               []string{testTx1, testTx2},
@@ -70,9 +67,8 @@ func TestDispatcher(t *testing.T) {
 			expBuilders: []string{"builder1"},
 		},
 		{
-			name:                "multiple builders called",
-			builders:            []string{"builder1", "builder2"},
-			mevMaxProfitBuilder: false,
+			name:     "multiple builders called",
+			builders: []string{"builder1", "builder2"},
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
 				Transactions:    []string{testTx1, testTx2},
@@ -82,7 +78,6 @@ func TestDispatcher(t *testing.T) {
 				MaxTimestamp:    1686120884,
 				RevertingHashes: []string{testTx1Hash},
 				MEVBuilders:     bxmessage.MEVBundleBuilders{"builder1": "", "builder2": ""},
-				Frontrunning:    false,
 			},
 			expPayload: &jsonrpc.RPCSendBundle{
 				Txs:               []string{testTx1, testTx2},
@@ -95,9 +90,8 @@ func TestDispatcher(t *testing.T) {
 			expBuilders: []string{"builder1", "builder2"},
 		},
 		{
-			name:                "all builders called",
-			builders:            []string{"builder1", "builder2"},
-			mevMaxProfitBuilder: false,
+			name:     "all builders called",
+			builders: []string{"builder1", "builder2"},
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
 				Transactions:    []string{testTx1, testTx2},
@@ -107,7 +101,6 @@ func TestDispatcher(t *testing.T) {
 				MaxTimestamp:    1686120884,
 				RevertingHashes: []string{testTx1Hash},
 				MEVBuilders:     bxmessage.MEVBundleBuilders{"all": ""},
-				Frontrunning:    false,
 			},
 			expPayload: &jsonrpc.RPCSendBundle{
 				Txs:               []string{testTx1, testTx2},
@@ -120,9 +113,8 @@ func TestDispatcher(t *testing.T) {
 			expBuilders: []string{"builder1", "builder2"},
 		},
 		{
-			name:                "one builder of multiple called",
-			builders:            []string{"builder1", "builder2"},
-			mevMaxProfitBuilder: false,
+			name:     "one builder of multiple called",
+			builders: []string{"builder1", "builder2"},
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
 				Transactions:    []string{testTx1, testTx2},
@@ -132,7 +124,6 @@ func TestDispatcher(t *testing.T) {
 				MaxTimestamp:    1686120884,
 				RevertingHashes: []string{testTx1Hash},
 				MEVBuilders:     bxmessage.MEVBundleBuilders{"builder2": ""},
-				Frontrunning:    false,
 			},
 			expPayload: &jsonrpc.RPCSendBundle{
 				Txs:               []string{testTx1, testTx2},
@@ -145,9 +136,8 @@ func TestDispatcher(t *testing.T) {
 			expBuilders: []string{"builder2"},
 		},
 		{
-			name:                "partial intersection of builders called",
-			builders:            []string{"builder1", "builder2"},
-			mevMaxProfitBuilder: false,
+			name:     "partial intersection of builders called",
+			builders: []string{"builder1", "builder2"},
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
 				Transactions:    []string{testTx1, testTx2},
@@ -157,7 +147,6 @@ func TestDispatcher(t *testing.T) {
 				MaxTimestamp:    1686120884,
 				RevertingHashes: []string{testTx1Hash},
 				MEVBuilders:     bxmessage.MEVBundleBuilders{"builder1": "", "builder3": ""},
-				Frontrunning:    false,
 			},
 			expPayload: &jsonrpc.RPCSendBundle{
 				Txs:               []string{testTx1, testTx2},
@@ -170,9 +159,8 @@ func TestDispatcher(t *testing.T) {
 			expBuilders: []string{"builder1"},
 		},
 		{
-			name:                "default bloxroute builder called for empty builders if configured",
-			builders:            []string{"bloxroute", "builder2"},
-			mevMaxProfitBuilder: false,
+			name:     "default bloxroute builder called for empty builders if configured",
+			builders: []string{"bloxroute", "builder2"},
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
 				Transactions:    []string{testTx1, testTx2},
@@ -182,7 +170,6 @@ func TestDispatcher(t *testing.T) {
 				MaxTimestamp:    1686120884,
 				RevertingHashes: []string{testTx1Hash},
 				MEVBuilders:     bxmessage.MEVBundleBuilders{},
-				Frontrunning:    false,
 			},
 			expPayload: &jsonrpc.RPCSendBundle{
 				Txs:               []string{testTx1, testTx2},
@@ -195,9 +182,8 @@ func TestDispatcher(t *testing.T) {
 			expBuilders: []string{"bloxroute"},
 		},
 		{
-			name:                "default bloxroute builder not called for empty builders if not configured",
-			builders:            []string{},
-			mevMaxProfitBuilder: false,
+			name:     "default bloxroute builder not called for empty builders if not configured",
+			builders: []string{},
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
 				Transactions:    []string{testTx1, testTx2},
@@ -207,7 +193,6 @@ func TestDispatcher(t *testing.T) {
 				MaxTimestamp:    1686120884,
 				RevertingHashes: []string{testTx1Hash},
 				MEVBuilders:     bxmessage.MEVBundleBuilders{},
-				Frontrunning:    false,
 			},
 			expPayload: &jsonrpc.RPCSendBundle{
 				Txs:               []string{testTx1, testTx2},
@@ -220,9 +205,8 @@ func TestDispatcher(t *testing.T) {
 			expBuilders: []string{},
 		},
 		{
-			name:                "no builders called if no configured",
-			builders:            []string{},
-			mevMaxProfitBuilder: false,
+			name:     "no builders called if no configured",
+			builders: []string{},
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
 				Transactions:    []string{testTx1, testTx2},
@@ -232,15 +216,13 @@ func TestDispatcher(t *testing.T) {
 				MaxTimestamp:    1686120884,
 				RevertingHashes: []string{testTx1Hash},
 				MEVBuilders:     bxmessage.MEVBundleBuilders{"builder1": ""},
-				Frontrunning:    false,
 			},
 			expPayload:  nil,
 			expBuilders: []string{},
 		},
 		{
-			name:                "no builders called if no overlap",
-			builders:            []string{"builder3", "builder4"},
-			mevMaxProfitBuilder: false,
+			name:     "no builders called if no overlap",
+			builders: []string{"builder3", "builder4"},
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
 				Transactions:    []string{testTx1, testTx2},
@@ -250,15 +232,13 @@ func TestDispatcher(t *testing.T) {
 				MaxTimestamp:    1686120884,
 				RevertingHashes: []string{testTx1Hash},
 				MEVBuilders:     bxmessage.MEVBundleBuilders{"builder1": "", "builder2": ""},
-				Frontrunning:    false,
 			},
 			expPayload:  nil,
 			expBuilders: []string{},
 		},
 		{
-			name:                "no builders called if no builders provided",
-			builders:            []string{"builder1", "builder2"},
-			mevMaxProfitBuilder: false,
+			name:     "no builders called if no builders provided",
+			builders: []string{"builder1", "builder2"},
 			bundle: bxmessage.MEVBundle{
 				Method:          string(jsonrpc.RPCEthSendBundle),
 				Transactions:    []string{testTx1, testTx2},
@@ -268,25 +248,6 @@ func TestDispatcher(t *testing.T) {
 				MaxTimestamp:    1686120884,
 				RevertingHashes: []string{testTx1Hash},
 				MEVBuilders:     bxmessage.MEVBundleBuilders{},
-				Frontrunning:    false,
-			},
-			expPayload:  nil,
-			expBuilders: []string{},
-		},
-		{
-			name:                "frontrunning bundle disabled for non max profit builder",
-			builders:            []string{"builder1"},
-			mevMaxProfitBuilder: false,
-			bundle: bxmessage.MEVBundle{
-				Method:          string(jsonrpc.RPCEthSendBundle),
-				Transactions:    []string{testTx1, testTx2},
-				UUID:            "e2a1c984-b31c-4bc6-a2eb-d2d903aab6d8",
-				BlockNumber:     fmt.Sprintf("0x%x", 123),
-				MinTimestamp:    1686120664,
-				MaxTimestamp:    1686120884,
-				RevertingHashes: []string{testTx1Hash},
-				MEVBuilders:     bxmessage.MEVBundleBuilders{"builder1": ""},
-				Frontrunning:    true,
 			},
 			expPayload:  nil,
 			expBuilders: []string{},
@@ -326,12 +287,12 @@ func TestDispatcher(t *testing.T) {
 			}))
 			defer server.Close()
 
-			d := NewDispatcher(statistics.NoStats{}, makeBuildersMap(fmt.Sprintf("%s/", server.URL), tc.builders), tc.mevMaxProfitBuilder)
+			d := NewDispatcher(statistics.NoStats{}, makeBuildersMap(fmt.Sprintf("%s/", server.URL), tc.builders))
 			err := d.Dispatch(&bundle)
 			assert.NoError(t, err)
 
 			wg.Wait()
-			time.Sleep(5 * time.Millisecond) // wait if there are any non expected calls
+			time.Sleep(5 * time.Millisecond) // wait if there are any non-expected calls
 			assert.Empty(t, buildersMap)
 		})
 	}

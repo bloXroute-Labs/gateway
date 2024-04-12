@@ -67,7 +67,8 @@ type bxCompressedTransaction struct {
 	Transaction       []byte `ssz-max:"1073741824"`
 }
 
-type bxBlockSSZ struct {
+// BxBlockSSZ is a struct for SSZ encoding/decoding of a block
+type BxBlockSSZ struct {
 	Block  []byte                     `ssz-max:"367832"`
 	Txs    []*bxCompressedTransaction `ssz-max:"1048576,1073741825" ssz-size:"?,?"`
 	Number uint64
@@ -218,7 +219,7 @@ func (bp *blockProcessor) newBxBlockFromRLPBroadcast(broadcast *bxmessage.Broadc
 }
 
 func (bp *blockProcessor) newBxBlockFromSSZBroadcast(broadcast *bxmessage.Broadcast, bxTransactions []*types.BxTransaction) (*types.BxBlock, error) {
-	var sszBlock bxBlockSSZ
+	var sszBlock BxBlockSSZ
 	if err := sszBlock.UnmarshalSSZ(broadcast.Block()); err != nil {
 		return nil, err
 	}
@@ -353,7 +354,7 @@ func (bp *blockProcessor) newSSZBlockBroadcast(block *types.BxBlock, networkNum 
 		})
 	}
 
-	sszBlock := bxBlockSSZ{
+	sszBlock := BxBlockSSZ{
 		Block:  block.Trailer,
 		Txs:    txs,
 		Number: block.Number.Uint64(),

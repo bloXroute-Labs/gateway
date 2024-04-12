@@ -1,37 +1,36 @@
 package beacon
 
 import (
+	"fmt"
 	"sync"
 
 	libp2pPeer "github.com/libp2p/go-libp2p/core/peer"
-	ma "github.com/multiformats/go-multiaddr"
 	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
 
 type peers struct {
 	peersByID map[libp2pPeer.ID]*peer
 
-	mu sync.RWMutex
+	mu *sync.RWMutex
 }
 
 func newPeers() peers {
 	return peers{
 		peersByID: make(map[libp2pPeer.ID]*peer),
+		mu:        &sync.RWMutex{},
 	}
 }
 
-func (p *peers) add(addrInfo *libp2pPeer.AddrInfo, remoteAddr ma.Multiaddr) *peer {
+func (p *peers) add(addrInfo libp2pPeer.AddrInfo) *peer {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	peer := &peer{
-		addrInfo:   addrInfo,
-		remoteAddr: remoteAddr,
+	pr := &peer{
+		addrInfo: addrInfo,
 	}
+	p.peersByID[addrInfo.ID] = pr
 
-	p.peersByID[addrInfo.ID] = peer
-
-	return peer
+	return pr
 }
 
 func (p *peers) get(peerID libp2pPeer.ID) *peer {
@@ -57,36 +56,35 @@ func (p *peers) rangeByID(f func(libp2pPeer.ID, *peer) bool) {
 }
 
 type peer struct {
-	addrInfo   *libp2pPeer.AddrInfo
-	remoteAddr ma.Multiaddr
-	status     *ethpb.Status
+	addrInfo libp2pPeer.AddrInfo
+	status   *ethpb.Status
 
-	isHandshaking bool
+	handshaking bool
 
 	mu sync.Mutex
 }
 
 // String implements Stringer interface
 func (p *peer) String() string {
-	return p.remoteAddr.String()
+	return fmt.Sprintf("{%v: %v}", p.addrInfo.ID, p.addrInfo.Addrs)
 }
 
-func (p *peer) handshaking() bool {
+func (p *peer) startHandshake() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	connecting := p.isHandshaking
+	connecting := p.handshaking
 
-	p.isHandshaking = true
+	p.handshaking = true
 
 	return connecting
 }
 
-func (p *peer) finishedHandshaking() {
+func (p *peer) finishHandshake() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	p.isHandshaking = false
+	p.handshaking = false
 }
 
 func (p *peer) setStatus(status *ethpb.Status) {

@@ -128,18 +128,16 @@ func (t *BxTxStore) GetTxByShortID(shortID types.ShortID) (*types.BxTransaction,
 	if hash, ok := t.shortIDToHash.Load(shortID); ok {
 		if tx, exists := t.hashToContent.Load(string(hash[:])); exists {
 			if tx.Flags().IsWithSidecar() {
-
 				var ethTx ethtypes.Transaction
 
 				err := rlp.DecodeBytes(tx.Content(), &ethTx)
-
 				if err != nil {
 					log.Errorf("could not decode Ethereum transaction: %v", err)
 					return nil, fmt.Errorf("could not decode Ethereum transaction: %v", err)
 				}
 
+				log.Debugf("transaction %s has sidecar, removing it, short id: %v", ethTx.Hash().String(), shortID)
 				// get transaction content without the blobs sidecars
-				log.Debug("Transaction has sidecar, removing it, short id: ", shortID)
 				newTx := ethTx.WithoutBlobTxSidecar()
 
 				newContent, err := rlp.EncodeToBytes(newTx)

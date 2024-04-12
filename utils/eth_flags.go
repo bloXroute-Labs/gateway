@@ -18,6 +18,14 @@ var (
 		Name:  "multiaddr",
 		Usage: "specify the beacon multiaddr",
 	}
+	BeaconTrustedPeersFileFlag = &cli.StringFlag{
+		Name:  "beacon-trusted-peers-file",
+		Usage: "specify the file containing the list of trusted peers for the beacon chain",
+	}
+	BeaconPort = &cli.IntFlag{
+		Name:  "beacon-port",
+		Usage: "specify the port for the beacon chain",
+	}
 	PrivateKeyFlag = &cli.StringFlag{
 		Name:     "private-key",
 		Usage:    "private key for encrypted communication with Ethereum node",

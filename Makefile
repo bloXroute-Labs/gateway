@@ -1,4 +1,4 @@
-MODULE   = $(shell env GO111MODULE=on $(GO) list -m)
+MODULE   = $(shell env GOWORK=off env GO111MODULE=on $(GO) list -m)
 DATE    ?= $(shell date +%FT%T%z)
 VERSION ?= $(shell git describe --tags --always --dirty --match=v2* 2> /dev/null || \
             cat .gittag || \
@@ -9,7 +9,7 @@ TESTPKGS = $(shell env GO111MODULE=on $(GO) list -f \
 			$(PKGS))
 BIN      = $(CURDIR)/bin
 
-GO      = go
+GO ?= go
 TIMEOUT = 15
 V = 0
 Q = $(if $(filter 1,$V),,@)

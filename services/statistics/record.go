@@ -53,7 +53,6 @@ type bundleRecord struct {
 	EndDateTime      string           `json:"end_date_time"`
 	NetworkNum       types.NetworkNum `json:"network_num"`
 	MEVBuilderNames  []string         `json:"mev_builder_names"`
-	FrontRunning     bool             `json:"frontrunning"`
 	UUID             string           `json:"uuid"`
 	BlockNumber      uint64           `json:"block_number"`
 	MinTimestamp     int              `json:"min_timestamp"`

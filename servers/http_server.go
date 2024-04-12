@@ -96,15 +96,15 @@ func (s *HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		payload := jsonrpc.RPCBundleSubmissionPayload{
-			Frontrunning:    bundlePayload[0].Frontrunning,
-			Transaction:     bundlePayload[0].Txs,
-			BlockNumber:     bundlePayload[0].BlockNumber,
-			MinTimestamp:    bundlePayload[0].MinTimestamp,
-			MaxTimestamp:    bundlePayload[0].MaxTimestamp,
-			RevertingHashes: bundlePayload[0].RevertingTxHashes,
-			UUID:            bundlePayload[0].UUID,
-			BundlePrice:     bundlePayload[0].BundlePrice,
-			EnforcePayout:   bundlePayload[0].EnforcePayout,
+			Transaction:       bundlePayload[0].Txs,
+			BlockNumber:       bundlePayload[0].BlockNumber,
+			MinTimestamp:      bundlePayload[0].MinTimestamp,
+			MaxTimestamp:      bundlePayload[0].MaxTimestamp,
+			RevertingHashes:   bundlePayload[0].RevertingTxHashes,
+			UUID:              bundlePayload[0].UUID,
+			BundlePrice:       bundlePayload[0].BundlePrice,
+			EnforcePayout:     bundlePayload[0].EnforcePayout,
+			AvoidMixedBundles: bundlePayload[0].AvoidMixedBundles,
 		}
 
 		mevBundle, bundleHash, err := mevBundleFromRequest(&payload, s.feedManager.networkNum)
@@ -147,9 +147,7 @@ func (s *HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 
 		writeJSON(w, rpcRequest.ID, http.StatusOK, result)
 	case jsonrpc.RPCBundleSubmission:
-		params := jsonrpc.RPCBundleSubmissionPayload{
-			Frontrunning: true,
-		}
+		var params jsonrpc.RPCBundleSubmissionPayload
 		if err = json.Unmarshal(*rpcRequest.Params, &params); err != nil {
 			writeErrorJSON(w, rpcRequest.ID, http.StatusInternalServerError, fmt.Errorf("failed to unmarshal params for %v request: %v", jsonrpc.RPCBundleSubmission, err))
 			return

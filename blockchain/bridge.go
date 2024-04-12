@@ -59,12 +59,21 @@ type ConnectionStatus struct {
 	IsDynamic    bool
 }
 
+// BeaconMessageFromNode is used to pass beacon messages from a node to the BDN
+type BeaconMessageFromNode struct {
+	Message      *types.BxBeaconMessage
+	PeerEndpoint types.NodeEndpoint
+}
+
 // Converter defines an interface for converting between blockchain and BDN transactions
 type Converter interface {
 	TransactionBlockchainToBDN(interface{}) (*types.BxTransaction, error)
 	TransactionBDNToBlockchain(*types.BxTransaction) (interface{}, error)
 	BlockBlockchainToBDN(interface{}) (*types.BxBlock, error)
 	BlockBDNtoBlockchain(block *types.BxBlock) (interface{}, error)
+
+	BeaconMessageToBDN(interface{}) (*types.BxBeaconMessage, error)
+	BeaconMessageBDNToBlockchain(*types.BxBeaconMessage) (interface{}, error)
 }
 
 // constants for transaction channel buffer sizes
@@ -109,6 +118,11 @@ type Bridge interface {
 	ReceiveBlockFromNode() <-chan BlockFromNode
 	ReceiveConfirmedBlockFromNode() <-chan BlockFromNode
 
+	SendBeaconMessageToBDN(*types.BxBeaconMessage, types.NodeEndpoint) error
+	SendBeaconMessageToBlockchain(*types.BxBeaconMessage) error
+	ReceiveBeaconMessageFromBDN() <-chan *types.BxBeaconMessage
+	ReceiveBeaconMessageFromNode() <-chan BeaconMessageFromNode
+
 	ReceiveNoActiveBlockchainPeersAlert() <-chan NoActiveBlockchainPeersAlert
 	SendNoActiveBlockchainPeersAlert() error
 
@@ -152,11 +166,14 @@ type BxBridge struct {
 	transactionHashesRequestsFromBDN chan TransactionsRequest
 	requestedTransactions            chan TransactionsResponse
 
-	beaconBlock bool
+	withBeacon bool
 
 	blocksFromNode      chan BlockFromNode
 	ethBlocksFromBDN    chan *types.BxBlock
 	beaconBlocksFromBDN chan *types.BxBlock
+
+	beaconMessageFromNode chan BeaconMessageFromNode
+	beaconMessageFromBDN  chan *types.BxBeaconMessage
 
 	confirmedBlockFromNode chan BlockFromNode
 
@@ -172,7 +189,7 @@ type BxBridge struct {
 }
 
 // NewBxBridge returns a BxBridge instance
-func NewBxBridge(converter Converter, beaconBlock bool) Bridge {
+func NewBxBridge(converter Converter, withBeacon bool) Bridge {
 	return &BxBridge{
 		config:                           make(chan network.EthConfig, 1),
 		transactionsFromNode:             make(chan Transactions, transactionBacklog),
@@ -181,10 +198,12 @@ func NewBxBridge(converter Converter, beaconBlock bool) Bridge {
 		transactionHashesRequests:        make(chan TransactionAnnouncement, transactionHashesBacklog),
 		transactionHashesRequestsFromBDN: make(chan TransactionsRequest, transactionHashesBacklog),
 		requestedTransactions:            make(chan TransactionsResponse, transactionBacklog),
-		beaconBlock:                      beaconBlock,
+		withBeacon:                       withBeacon,
 		blocksFromNode:                   make(chan BlockFromNode, blockBacklog),
 		ethBlocksFromBDN:                 make(chan *types.BxBlock, blockBacklog),
 		beaconBlocksFromBDN:              make(chan *types.BxBlock, blockBacklog),
+		beaconMessageFromNode:            make(chan BeaconMessageFromNode, blockBacklog),
+		beaconMessageFromBDN:             make(chan *types.BxBeaconMessage, blockBacklog),
 		confirmedBlockFromNode:           make(chan BlockFromNode, blockBacklog),
 		noActiveBlockchainPeers:          make(chan NoActiveBlockchainPeersAlert),
 		blockchainStatusRequest:          make(chan struct{}, statusBacklog),
@@ -329,8 +348,8 @@ func (b BxBridge) SendBlockToNode(block *types.BxBlock) error {
 			return ErrChannelFull
 		}
 	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella, types.BxBlockTypeBeaconDeneb:
-		// No listener, `b.beaconBlock` is true if the gateway started with a beacon P2P node or Beacon API
-		if !b.beaconBlock {
+		// No listener, `b.withBeacon` is true if the gateway started with a beacon P2P node or Beacon API
+		if !b.withBeacon {
 			return nil
 		}
 
@@ -364,6 +383,41 @@ func (b BxBridge) ReceiveBeaconBlockFromBDN() <-chan *types.BxBlock {
 // ReceiveConfirmedBlockFromNode provides a channel that pushes confirmed blocks from nodes
 func (b BxBridge) ReceiveConfirmedBlockFromNode() <-chan BlockFromNode {
 	return b.confirmedBlockFromNode
+}
+
+// SendBeaconMessageToBDN sends a beacon message from a node to the BDN
+func (b BxBridge) SendBeaconMessageToBDN(msg *types.BxBeaconMessage, nodeEnpoint types.NodeEndpoint) error {
+	select {
+	case b.beaconMessageFromNode <- BeaconMessageFromNode{Message: msg, PeerEndpoint: nodeEnpoint}:
+		return nil
+	default:
+		return ErrChannelFull
+	}
+}
+
+// SendBeaconMessageToBlockchain sends a beacon message from the BDN to the blockchain node
+func (b BxBridge) SendBeaconMessageToBlockchain(msg *types.BxBeaconMessage) error {
+	// No listener, `b.withBeacon` is true if the gateway started with a beacon P2P node or Beacon API
+	if !b.withBeacon {
+		return nil
+	}
+
+	select {
+	case b.beaconMessageFromBDN <- msg:
+		return nil
+	default:
+		return ErrChannelFull
+	}
+}
+
+// ReceiveBeaconMessageFromBDN provides a channel that pushes beacon messages from the BDN
+func (b BxBridge) ReceiveBeaconMessageFromBDN() <-chan *types.BxBeaconMessage {
+	return b.beaconMessageFromBDN
+}
+
+// ReceiveBeaconMessageFromNode provides a channel that pushes beacon messages from nodes
+func (b BxBridge) ReceiveBeaconMessageFromNode() <-chan BeaconMessageFromNode {
+	return b.beaconMessageFromNode
 }
 
 // SendNoActiveBlockchainPeersAlert sends alerts to the BDN when there is no active blockchain peer

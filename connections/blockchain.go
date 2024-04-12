@@ -27,8 +27,7 @@ func NewBlockchainConn(ipEndpoint types.NodeEndpoint) Blockchain {
 	return Blockchain{
 		endpoint: ipEndpoint,
 		log: log.WithFields(log.Fields{
-			"connType":   connType,
-			"remoteAddr": fmt.Sprintf("%v:%v", ipEndpoint.IP, ipEndpoint.Port),
+			"connType": connType,
 		}),
 	}
 }

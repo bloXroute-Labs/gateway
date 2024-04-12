@@ -3,6 +3,7 @@ package beacon
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
@@ -160,8 +161,11 @@ type Node struct {
 
 	bridge blockchain.Bridge
 
-	peers    peers
-	topicMap *syncmap.SyncMap[string, *topicSubscription]
+	peers                       peers
+	trustedPeers                trustedPeers
+	enableAnyIncomingConnection bool
+	topicMap                    *syncmap.SyncMap[string, *topicSubscription]
+	inboundLimit                int
 
 	encoding encoder.NetworkEncoding
 
@@ -172,19 +176,31 @@ type Node struct {
 	log *log.Entry
 }
 
-// NewNode creates beacon node
-func NewNode(parent context.Context, networkName string, config *network.EthConfig, genesisFilePath string, bridge blockchain.Bridge) (*Node, error) {
-	return newNode(parent, networkName, config, genesisFilePath, bridge, &utils.RealClock{})
+// NodeParams are parameters for beacon node
+type NodeParams struct {
+	ParentContext        context.Context
+	NetworkName          string
+	EthConfig            *network.EthConfig
+	TrustedPeersFilePath string
+	GenesisFilePath      string
+	Bridge               blockchain.Bridge
+	Port                 int
+	InboundLimit         int
 }
 
-func newNode(parent context.Context, networkName string, config *network.EthConfig, genesisFilePath string, bridge blockchain.Bridge, clock utils.Clock) (*Node, error) {
+// NewNode creates beacon node
+func NewNode(params NodeParams) (*Node, error) {
+	return newNode(params, &utils.RealClock{})
+}
+
+func newNode(params NodeParams, clock utils.Clock) (*Node, error) {
 	logCtx := log.WithField("connType", "beacon")
 
-	if err := initNetwork(networkName); err != nil {
+	if err := initNetwork(params.NetworkName); err != nil {
 		return nil, err
 	}
 
-	file, err := os.ReadFile(genesisFilePath)
+	file, err := os.ReadFile(params.GenesisFilePath)
 	if err != nil {
 		return nil, err
 	}
@@ -197,40 +213,41 @@ func newNode(parent context.Context, networkName string, config *network.EthConf
 		return nil, err
 	}
 
-	if genesisState.GenesisTime() != config.GenesisTime {
-		return nil, fmt.Errorf("inconsistent genesis time from genesis.ssz (%v) for network from --blockchain-network (%v)", genesisState.GenesisTime(), config.GenesisTime)
+	if genesisState.GenesisTime() != params.EthConfig.GenesisTime {
+		return nil, fmt.Errorf("inconsistent genesis time from genesis.ssz (%v) for network from --blockchain-network (%v)", genesisState.GenesisTime(), params.EthConfig.GenesisTime)
 	}
 
-	ifaceKey, err := ecdsaprysm.ConvertToInterfacePrivkey(config.PrivateKey)
-	if err != nil {
-		return nil, err
-	}
-	host, err := libp2p.New(
-		libp2p.UserAgent("Prysm/5.0.0/b7b017f5b607f04d4e9056a1ec8a6851a9c7da29"),
-		libp2p.Identity(ifaceKey),
-		libp2p.Transport(tcp.NewTCPTransport),
-		libp2p.Muxer("/mplex/6.7.0", mplex.DefaultTransport),
-		libp2p.DefaultMuxers,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ctx, cancel := context.WithCancel(parent)
+	ctx, cancel := context.WithCancel(params.ParentContext)
 
 	n := &Node{
-		ctx:          ctx,
-		clock:        clock,
-		config:       config,
-		networkName:  networkName,
-		genesisState: genesisState,
-		host:         host,
-		bridge:       bridge,
-		peers:        newPeers(),
-		topicMap:     syncmap.NewStringMapOf[*topicSubscription](),
-		encoding:     encoder.SszNetworkEncoder{},
-		cancel:       cancel,
-		log:          logCtx,
+		ctx:                         ctx,
+		clock:                       clock,
+		config:                      params.EthConfig,
+		networkName:                 params.NetworkName,
+		genesisState:                genesisState,
+		bridge:                      params.Bridge,
+		peers:                       newPeers(),
+		trustedPeers:                newTrustedPeers(),
+		enableAnyIncomingConnection: params.TrustedPeersFilePath == "",
+		topicMap:                    syncmap.NewStringMapOf[*topicSubscription](),
+		inboundLimit:                params.InboundLimit,
+		encoding:                    encoder.SszNetworkEncoder{},
+		cancel:                      cancel,
+		log:                         logCtx,
+	}
+
+	if params.TrustedPeersFilePath != "" {
+		n.reloadTrustedPeers(params.TrustedPeersFilePath)
+	}
+
+	opts, err := n.hostOptions(params.Port)
+	if err != nil {
+		return nil, fmt.Errorf("could not create host options: %v", err)
+	}
+
+	n.host, err = libp2p.New(opts...)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := n.addPeers(); err != nil {
@@ -238,33 +255,36 @@ func newNode(parent context.Context, networkName string, config *network.EthConf
 	}
 
 	psOpts := n.pubsubOptions()
-	n.pubSub, err = pubsub.NewGossipSub(ctx, host, psOpts...)
+
+	// TODO: put it into log file
+	// if log.GetLevel() == log.TraceLevel {
+	// 	logging.SetLogLevel("pubsub", "debug")
+	// 	logging.SetLogLevel("p2p-config", "debug")
+	// }
+
+	n.pubSub, err = pubsub.NewGossipSub(ctx, n.host, psOpts...)
 	if err != nil {
 		return nil, err
 	}
 
 	n.host.Network().Notify(&libp2pNetwork.NotifyBundle{
 		ConnectedF: func(net libp2pNetwork.Network, conn libp2pNetwork.Conn) {
+			n.log.Tracef("peer %v connected", conn.RemotePeer())
+
+			peer := n.peers.get(conn.RemotePeer())
+
+			// Skip handshake for incoming connections
+			if peer == nil {
+				return
+			}
+
 			// should be async
 			go func() {
-				peer := n.peers.get(conn.RemotePeer())
-
-				// Incoming connection
-				if peer == nil {
-					addrInfo, err := libp2pPeer.AddrInfoFromP2pAddr(conn.RemoteMultiaddr())
-					if err != nil {
-						n.log.Errorf("could not convert multiaddr %v for incoming connection: %v", conn.RemoteMultiaddr(), err)
-						return
-					}
-
-					peer = n.peers.add(addrInfo, conn.RemoteMultiaddr())
-				}
-
-				if peer.handshaking() {
+				if peer.startHandshake() {
 					n.log.Tracef("peer %v skipping handshake", peer)
 					return
 				}
-				defer peer.finishedHandshaking()
+				defer peer.finishHandshake()
 
 				if err := n.handshake(conn); err != nil {
 					n.log.Infof("handshake with peer %v failed: %v", peer, err)
@@ -280,13 +300,7 @@ func newNode(parent context.Context, networkName string, config *network.EthConf
 			}()
 		},
 		DisconnectedF: func(net libp2pNetwork.Network, conn libp2pNetwork.Conn) {
-			peer := n.peers.get(conn.RemotePeer())
-
-			if err := n.host.Network().ClosePeer(conn.RemotePeer()); err != nil {
-				n.log.Errorf("could not close peer %v: %v", peer, err)
-			}
-
-			n.log.Tracef("peer %v disconnected", peer)
+			n.log.Tracef("peer %v disconnected", conn.RemotePeer())
 		},
 	})
 
@@ -296,6 +310,34 @@ func newNode(parent context.Context, networkName string, config *network.EthConf
 	n.subscribeRPC(p2p.RPCPingTopicV1, n.pingRPCHandler)
 
 	n.subscribeRPC(p2p.RPCMetaDataTopicV2, n.metadataRPCHandler)
+
+	n.subscribeRPC(p2p.RPCBlobSidecarsByRangeTopicV1, func(stream libp2pNetwork.Stream) {
+		defer n.closeStream(stream)
+
+		SetRPCStreamDeadlines(stream)
+
+		msg := new(ethpb.BlobSidecarsByRangeRequest)
+		if err := n.encoding.DecodeWithMaxLength(stream, msg); err != nil {
+			n.log.Errorf("could not decode blob by range request from peer %v: %v", stream.Conn().RemotePeer(), err)
+			return
+		}
+
+		n.log.Debugf("Received blob by range request from peer %v: %v", stream.Conn().RemotePeer(), msg)
+	})
+
+	n.subscribeRPC(p2p.RPCBlobSidecarsByRootTopicV1, func(stream libp2pNetwork.Stream) {
+		defer n.closeStream(stream)
+
+		SetRPCStreamDeadlines(stream)
+
+		msg := new(types.BlobSidecarsByRootReq)
+		if err := n.encoding.DecodeWithMaxLength(stream, msg); err != nil {
+			n.log.Errorf("could not decode blob by root request from peer %v: %v", stream.Conn().RemotePeer(), err)
+			return
+		}
+
+		n.log.Debugf("Received blob by root request from peer %v: %v", stream.Conn().RemotePeer(), msg)
+	})
 
 	return n, nil
 }
@@ -453,7 +495,11 @@ func (n *Node) BroadcastBlock(block interfaces.ReadOnlySignedBeaconBlock) error 
 		return err
 	}
 
-	return n.broadcast(p2p.BlockSubnetTopicFormat, msg)
+	digest, err := n.currentForkDigest()
+	if err != nil {
+		return fmt.Errorf("could not get current fork digest: %v", err)
+	}
+	return n.broadcast(fmt.Sprintf(p2p.BlockSubnetTopicFormat, digest), msg)
 }
 
 // FilterIncomingSubscriptions is invoked for all RPCs containing subscription notifications.
@@ -538,11 +584,72 @@ func (n *Node) unsubscribeAll(digest [4]byte) {
 	n.topicMap.Clear()
 }
 
+func blobSubnetToTopic(subnet uint64, forkDigest [4]byte) string {
+	return fmt.Sprintf(p2p.BlobSubnetTopicFormat, forkDigest, subnet)
+}
+
+// BroadcastBlob broadcasts blob to peers
+func (n *Node) BroadcastBlob(blobSidecar *ethpb.BlobSidecar) error {
+	digest, err := n.currentForkDigest()
+
+	if err != nil {
+		return fmt.Errorf("could not get current fork digest: %v", err)
+	}
+
+	err = n.broadcast(blobSubnetToTopic(blobSidecar.Index, digest), blobSidecar)
+
+	if err != nil {
+		return fmt.Errorf("failed to broadcast blob: %v", err)
+	}
+
+	return err
+}
+
+func (n *Node) blobSubscriber(msg *pubsub.Message) {
+	blobSidecar := new(ethpb.BlobSidecar)
+
+	if err := n.encoding.DecodeGossip(msg.Data, blobSidecar); err != nil {
+		n.log.Errorf("could not decode blob: %v", err)
+		return
+	}
+
+	bxSidecar, err := n.bridge.BeaconMessageToBDN(blobSidecar)
+	if err != nil {
+		n.log.Errorf("could not convert beacon blob to BDN blob: %v", err)
+		return
+	}
+
+	endpoint, err := n.loadNodeEndpointFromPeerID(msg.ReceivedFrom)
+	if err != nil {
+		if err == errPeerUnknown {
+			n.log.Debugf("skipping blob, the peer ID %v that broadcasted the blob is not trusted", msg.ReceivedFrom)
+		} else {
+			n.log.Errorf("could not load peer endpoint: %v", err)
+		}
+		return
+	}
+
+	if err := n.bridge.SendBeaconMessageToBDN(bxSidecar, *endpoint); err != nil {
+		n.log.Errorf("could not send beacon message to BDN: %v", err)
+		return
+	}
+
+	blockHash, err := blobSidecar.SignedBlockHeader.Header.HashTreeRoot()
+	if err != nil {
+		n.log.Errorf("could not get block hash: %v", err)
+		return
+	}
+
+	n.log.Tracef("Received blob message from %v, index %v, block hash: %v, slot %v, kzg commitment: %v", msg.ReceivedFrom, blobSidecar.Index, hex.EncodeToString(blockHash[:]), blobSidecar.SignedBlockHeader.Header.Slot, hex.EncodeToString(blobSidecar.KzgCommitment))
+}
+
 func (n *Node) subscribeAll(digest [4]byte) error {
 	// Required to be on top gossip score rating and not be disconnected by prysm
 	dontCare := func(msg *pubsub.Message) {}
 
-	if err := n.subscribe(digest, p2p.BlockSubnetTopicFormat, n.blockSubscriber); err != nil {
+	n.log.Infof("Subscribing to all topics with digest %x", digest)
+
+	if err := n.subscribe(fmt.Sprintf(p2p.BlockSubnetTopicFormat, digest), n.blockSubscriber); err != nil {
 		return err
 	}
 
@@ -551,24 +658,29 @@ func (n *Node) subscribeAll(digest [4]byte) error {
 	// 	return err
 	// }
 
-	if err := n.subscribe(digest, p2p.ProposerSlashingSubnetTopicFormat, dontCare); err != nil {
+	if err := n.subscribe(fmt.Sprintf(p2p.ProposerSlashingSubnetTopicFormat, digest), dontCare); err != nil {
 		return err
 	}
 
-	if err := n.subscribe(digest, p2p.AttesterSlashingSubnetTopicFormat, dontCare); err != nil {
+	if err := n.subscribe(fmt.Sprintf(p2p.AttesterSlashingSubnetTopicFormat, digest), dontCare); err != nil {
 		return err
 	}
 
-	if err := n.subscribe(digest, p2p.SyncContributionAndProofSubnetTopicFormat, dontCare); err != nil {
+	if err := n.subscribe(fmt.Sprintf(p2p.SyncContributionAndProofSubnetTopicFormat, digest), dontCare); err != nil {
 		return err
+	}
+
+	for i := uint64(0); i < params.BeaconConfig().BlobsidecarSubnetCount; i++ {
+		if err := n.subscribe(blobSubnetToTopic(i, digest), n.blobSubscriber); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-func (n *Node) subscribe(digest [4]byte, topic string, handler func(msg *pubsub.Message)) error {
-	topicWithDigest := fmt.Sprintf(topic+n.encoding.ProtocolSuffix(), digest)
-	pbTopic, err := n.pubSub.Join(topicWithDigest)
+func (n *Node) subscribe(topic string, handler func(msg *pubsub.Message)) error {
+	pbTopic, err := n.pubSub.Join(topic + n.encoding.ProtocolSuffix())
 	if err != nil {
 		return err
 	}
@@ -579,7 +691,7 @@ func (n *Node) subscribe(digest [4]byte, topic string, handler func(msg *pubsub.
 	}
 
 	ctx, cancel := context.WithCancel(n.ctx)
-	n.topicMap.Store(topicWithDigest, &topicSubscription{
+	n.topicMap.Store(topic, &topicSubscription{
 		ctx:          ctx,
 		cancel:       cancel,
 		topic:        pbTopic,
@@ -625,7 +737,14 @@ func (n *Node) blockSubscriber(msg *pubsub.Message) {
 		return
 	}
 
-	logCtx := n.log.WithField("remoteAddr", fmt.Sprintf("%v:%v", endpoint.IP, endpoint.Port))
+	var remoteAddr string
+	if endpoint.DNS != "" {
+		remoteAddr = fmt.Sprintf("%v:%v", endpoint.DNS, endpoint.Port)
+	} else {
+		remoteAddr = fmt.Sprintf("%v:%v", endpoint.IP, endpoint.Port)
+	}
+
+	logCtx := n.log.WithField("remoteAddr", remoteAddr)
 
 	if msg.Data == nil {
 		logCtx.Errorf("msg is nil from peer: %v", msg.ReceivedFrom)
@@ -671,23 +790,17 @@ func (n *Node) blockSubscriber(msg *pubsub.Message) {
 }
 
 func (n *Node) loadNodeEndpointFromPeerID(peerID libp2pPeer.ID) (*bxTypes.NodeEndpoint, error) {
-	addr := n.peers.get(peerID)
-	if addr == nil {
-		return nil, errPeerUnknown
+	conns := n.host.Network().ConnsToPeer(peerID)
+	if len(conns) == 0 {
+		return nil, fmt.Errorf("no connection to peer %v", peerID)
 	}
 
-	multiaddr := utils.MultiaddrToNodeEndoint(addr.remoteAddr, n.networkName)
+	multiaddr := utils.MultiaddrToNodeEndoint(conns[0].RemoteMultiaddr(), n.networkName)
 	return &multiaddr, nil
 }
 
 func (n *Node) broadcast(topic string, msg proto.Message) error {
-	digest, err := n.currentForkDigest()
-	if err != nil {
-		return fmt.Errorf("could not get current fork digest: %v", err)
-	}
-
-	topicWithDigest := fmt.Sprintf(topic+n.encoding.ProtocolSuffix(), digest)
-	pbTopic, ok := n.topicMap.Load(topicWithDigest)
+	pbTopic, ok := n.topicMap.Load(topic)
 	if !ok {
 		return errors.New("not started")
 	}
@@ -717,7 +830,8 @@ func (n *Node) addPeers() error {
 			return fmt.Errorf("could not convert multiaddr %v to addr info: %v", multiaddr, err)
 		}
 
-		n.peers.add(addrInfo, *multiaddr)
+		// Not using multiple addresses in same multiaddr
+		n.peers.add(*addrInfo)
 	}
 
 	return nil
@@ -740,16 +854,16 @@ func (n *Node) ensurePeerConnections() {
 				ctx, cancel := context.WithTimeout(n.ctx, peerConnectionTimeout)
 				defer cancel()
 
-				if err := n.host.Connect(ctx, *peer.addrInfo); err != nil {
+				if err := n.host.Connect(ctx, peer.addrInfo); err != nil {
 					// Try to reconnect as fast as possible again
 					// https://github.com/libp2p/go-libp2p/blob/ddfb6f9240679b840d3663021e8b4433f51379a7/examples/relay/main.go#L90
 					n.host.Network().(*swarm.Swarm).Backoff().Clear(peerID)
 
 					if err := n.host.Network().ClosePeer(peerID); err != nil {
-						n.log.Errorf("could not close peer %v: %v", peer.remoteAddr.String(), err)
+						n.log.Errorf("could not close peer %s: %v", peer, err)
 					}
 
-					n.log.Warnf("could not connect peer %v: %v", peer.remoteAddr.String(), err)
+					n.log.Warnf("could not connect peer %s: %v", peer, err)
 				}
 
 				return true
@@ -870,8 +984,33 @@ func (n *Node) closeStream(stream libp2pNetwork.Stream) {
 	}
 }
 
+func (n *Node) hostOptions(port int) ([]libp2p.Option, error) {
+	ifaceKey, err := ecdsaprysm.ConvertToInterfacePrivkey(n.config.PrivateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	opts := []libp2p.Option{
+		libp2p.UserAgent("Prysm/5.0.0/b7b017f5b607f04d4e9056a1ec8a6851a9c7da29"),
+		libp2p.Identity(ifaceKey),
+		libp2p.Transport(tcp.NewTCPTransport),
+		libp2p.Muxer("/mplex/6.7.0", mplex.DefaultTransport),
+		libp2p.DefaultMuxers,
+	}
+
+	if port != 0 {
+		opts = append(opts,
+			libp2p.ListenAddrStrings(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port)),
+			libp2p.ConnectionGater(n),
+		)
+	}
+
+	return opts, nil
+}
+
 func (n *Node) pubsubOptions() []pubsub.Option {
 	psOpts := []pubsub.Option{
+		pubsub.WithFloodPublish(true), // send blocks to all peers regardless connection number
 		pubsub.WithMessageSignaturePolicy(pubsub.StrictNoSign),
 		pubsub.WithNoAuthor(),
 		pubsub.WithMessageIdFn(func(pmsg *pubsubpb.Message) string {

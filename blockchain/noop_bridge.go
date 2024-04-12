@@ -117,6 +117,26 @@ func (n NoOpBxBridge) ReceiveConfirmedBlockFromNode() <-chan BlockFromNode {
 	return nil
 }
 
+// SendBeaconMessageToBDN is a no-op
+func (n NoOpBxBridge) SendBeaconMessageToBDN(*types.BxBeaconMessage, types.NodeEndpoint) error {
+	return nil
+}
+
+// SendBeaconMessageToBlockchain is a no-op
+func (n NoOpBxBridge) SendBeaconMessageToBlockchain(*types.BxBeaconMessage) error {
+	return nil
+}
+
+// ReceiveBeaconMessageFromBDN is a no-op
+func (n NoOpBxBridge) ReceiveBeaconMessageFromBDN() <-chan *types.BxBeaconMessage {
+	return make(chan *types.BxBeaconMessage)
+}
+
+// ReceiveBeaconMessageFromNode is a no-op
+func (n NoOpBxBridge) ReceiveBeaconMessageFromNode() <-chan BeaconMessageFromNode {
+	return make(chan BeaconMessageFromNode)
+}
+
 // ReceiveNoActiveBlockchainPeersAlert is a no-op
 func (n NoOpBxBridge) ReceiveNoActiveBlockchainPeersAlert() <-chan NoActiveBlockchainPeersAlert {
 	return make(chan NoActiveBlockchainPeersAlert)
