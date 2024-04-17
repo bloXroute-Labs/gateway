@@ -28,8 +28,8 @@ const (
 var supportedProtocols = map[uint64][]uint{
 	network.BSCMainnetChainID:     {ETH66, eth.ETH67, eth.ETH68},
 	network.BSCTestnetChainID:     {ETH66, eth.ETH67, eth.ETH68},
-	network.PolygonMainnetChainID: {ETH66},
-	network.PolygonMumbaiChainID:  {ETH66},
+	network.PolygonMainnetChainID: {eth.ETH67, eth.ETH68},
+	network.PolygonMumbaiChainID:  {eth.ETH67, eth.ETH68},
 	network.EthMainnetChainID:     {ETH66, eth.ETH67, eth.ETH68},
 	network.GoerliChainID:         {ETH66, eth.ETH67, eth.ETH68},
 	network.ZhejiangChainID:       {ETH66, eth.ETH67, eth.ETH68},
