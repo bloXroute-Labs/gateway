@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"math/big"
 	"net/http"
@@ -31,7 +30,7 @@ import (
 
 //go:generate mockgen -destination ../../bxgateway/test/mock/mock_sdnhttp.go -package mock . SDNHTTP
 
-// ErrSDNUnavailable - represents sdn service unavailable
+// ErrSDNUnavailable - represents SDN service unavailable
 var ErrSDNUnavailable = errors.New("SDN service unavailable")
 
 // SDN Http type constants
@@ -132,10 +131,10 @@ func NewSDNHTTP(sslCerts *utils.SSLCerts, sdnURL string, nodeModel sdnmessage.No
 		var err error
 		nodeModel.ExternalIP, err = utils.IPResolverHolder.GetPublicIP()
 		if err != nil {
-			panic(fmt.Errorf("could not determine node's public ip: %v. consider specifying an --external-ip address", err))
+			log.Fatalf("could not determine node's public ip: %v. consider specifying an --external-ip address", err)
 		}
 		if nodeModel.ExternalIP == "" {
-			panic(fmt.Errorf("could not determine node's public ip. consider specifying an --external-ip address"))
+			log.Fatal("could not determine node's public ip. consider specifying an --external-ip address")
 		}
 		log.Infof("no external ip address was provided, using autodiscovered ip address %v", nodeModel.ExternalIP)
 	}
@@ -149,7 +148,7 @@ func NewSDNHTTP(sslCerts *utils.SSLCerts, sdnURL string, nodeModel sdnmessage.No
 	return sdn
 }
 
-// FetchAllBlockchainNetworks fetches list of blockchain networks from the sdn
+// FetchAllBlockchainNetworks fetches list of blockchain networks from the SDN
 func (s *realSDNHTTP) FetchAllBlockchainNetworks() error {
 	err := s.getBlockchainNetworks()
 	if err != nil {
@@ -173,7 +172,7 @@ func (s *realSDNHTTP) Get(endpoint string, requestBody []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	respBytes, err := ioutil.ReadAll(resp.Body)
+	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -193,10 +192,10 @@ func (s *realSDNHTTP) FetchBlockchainNetwork() error {
 		s.networks[networkNum] = new(sdnmessage.BlockchainNetwork)
 	}
 	if err = json.Unmarshal(resp, s.networks[networkNum]); err != nil {
-		return fmt.Errorf("could not deserialize blockchain network (previously cached as: %v) for networkNum %v, because : %v", prev, networkNum, err)
+		return fmt.Errorf("could not deserialize '%s' response into blockchain network (previously cached as: %v) for networkNum %v: %v", string(resp), prev, networkNum, err)
 	}
 	if prev != nil && s.networks[networkNum].MinTxAgeSeconds != prev.MinTxAgeSeconds {
-		log.Debugf("The MinTxAgeSeconds changed from %v seconds to %v seconds after the update", prev.MinTxAgeSeconds, s.networks[networkNum].MinTxAgeSeconds)
+		log.Debugf("MinTxAgeSeconds changed from %v seconds to %v seconds after the update", prev.MinTxAgeSeconds, s.networks[networkNum].MinTxAgeSeconds)
 	}
 	if s.networks[networkNum].Protocol == bxgateway.Ethereum && s.networks[networkNum].DefaultAttributes.TerminalTotalDifficulty == 0 {
 		s.networks[networkNum].DefaultAttributes.TerminalTotalDifficulty = big.NewInt(math.MaxInt)
@@ -254,7 +253,7 @@ func (s realSDNHTTP) DirectRelayConnections(ctx context.Context, relayHosts stri
 	// if auto relays specified, start and manage them
 	relays, err := s.getRelays(s.nodeModel.NodeID, s.nodeModel.BlockchainNetworkNum)
 	if err != nil {
-		return fmt.Errorf("failed to extract relay list - %v", err)
+		return fmt.Errorf("failed to extract relay list: %v", err)
 	}
 	if len(relays) == 0 {
 		return errors.New("no relays were acquired from SDN")
@@ -320,11 +319,11 @@ func (s realSDNHTTP) manageAutoRelays(ctx context.Context, autoRelayCount int, r
 	}
 
 	autoRelayCounter := 0
-	//autoRelays := nodeLatencyInfos{}
+
 	for idx, pingLatency := range pingLatencies {
 		newRelayIP, err := utils.GetIP(pingLatency.IP)
 		if err != nil {
-			log.Errorf("relay %s from the SDN does not have a valid IP address - %v", pingLatency.IP, err)
+			log.Errorf("relay %s from the SDN does not have a valid IP address: %v", pingLatency.IP, err)
 			continue
 		}
 		// only connect to the relay if not already connected to
@@ -333,7 +332,6 @@ func (s realSDNHTTP) manageAutoRelays(ctx context.Context, autoRelayCount int, r
 		}
 		logLowestLatency(pingLatencies[idx])
 		relayInstructions <- RelayInstruction{IP: newRelayIP, Port: pingLatency.Port, Type: Connect}
-		//autoRelays = append(autoRelays, pingLatency)
 
 		autoRelayCounter++
 		if autoRelayCounter == autoRelayCount {
@@ -403,13 +401,18 @@ func (s *realSDNHTTP) Register() error {
 		s.nodeID = nodeID
 	}
 
-	log.Debugf("registering sdn for relay proxy %v with version %v", s.nodeModel.NodeID, s.nodeModel.SourceVersion)
+	if s.nodeModel.NodeID != "" {
+		log.Debugf("registering SDN for %s with node ID '%v' and version '%v'", s.nodeModel.NodeType, s.nodeModel.NodeID, s.nodeModel.SourceVersion)
+	} else {
+		log.Debugf("registering SDN for %s with IP '%v' and version '%v'", s.nodeModel.NodeType, s.nodeModel.ExternalIP, s.nodeModel.SourceVersion)
+	}
+
 	resp, err := s.httpWithCache(s.sdnURL+"/nodes", bxgateway.PostMethod, nodeModelCacheFileName, bytes.NewBuffer(s.nodeModel.Pack()))
 	if err != nil {
 		return err
 	}
 	if err = json.Unmarshal(resp, &s.nodeModel); err != nil {
-		return fmt.Errorf("could not deserialize node model: %v", err)
+		return fmt.Errorf("could not deserialize '%s' response into node model: %v", string(resp), err)
 	}
 	accountID, err := s.sslCerts.GetAccountID()
 	if err != nil {
@@ -439,7 +442,7 @@ func (s *realSDNHTTP) NeedsRegistration() bool {
 func (s *realSDNHTTP) close(resp *http.Response) {
 	err := resp.Body.Close()
 	if err != nil {
-		log.Error(fmt.Errorf("unable to close response body %v error %v", resp.Body, err))
+		log.Error(fmt.Errorf("could not close response body %v: %v", resp.Body, err))
 	}
 }
 
@@ -460,7 +463,7 @@ func (s *realSDNHTTP) GetQuotaUsage(accountID string) (*QuotaResponseBody, error
 
 	quotaResp := QuotaResponseBody{}
 	if err = json.Unmarshal(resp, &quotaResp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not deserialize '%s' response into quota response: %v", string(resp), err)
 	}
 
 	return &quotaResp, nil
@@ -483,11 +486,11 @@ func (s *realSDNHTTP) getAccountModelWithEndpoint(accountID types.AccountID, end
 	}
 
 	if err != nil {
-		return accountModel, err
+		return accountModel, fmt.Errorf("could not get account model from SDN: %v", err)
 	}
 
 	if err = json.Unmarshal(resp, &accountModel); err != nil {
-		return accountModel, fmt.Errorf("could not deserialize account model: %v", err)
+		return accountModel, fmt.Errorf("could not deserialize '%s' response into account model: %v", string(resp), err)
 	}
 
 	return s.fillInAccountDefaults(&accountModel, time.Now().UTC())
@@ -534,7 +537,7 @@ func (s *realSDNHTTP) getRelays(nodeID types.NodeID, networkNum types.NetworkNum
 	}
 	var relays sdnmessage.Peers
 	if err = json.Unmarshal(resp, &relays); err != nil {
-		return nil, fmt.Errorf("could not deserialize potential relays: %v", err)
+		return nil, fmt.Errorf("could not deserialize '%s' response into potential relays: %v", string(resp), err)
 	}
 	return relays, nil
 }
@@ -543,7 +546,7 @@ func (s *realSDNHTTP) httpWithCache(uri string, method string, fileName string, 
 	var err error
 	data, httpErr := s.http(uri, method, body)
 	if httpErr != nil {
-		if httpErr == ErrSDNUnavailable {
+		if errors.Is(httpErr, ErrSDNUnavailable) {
 			// we can't get the data from http - try to read from cache file
 			data, err = utils.LoadCacheFile(s.dataDir, fileName)
 			if err != nil {
@@ -583,19 +586,19 @@ func (s *realSDNHTTP) http(uri string, method string, body io.Reader) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	if resp != nil && resp.StatusCode != 200 {
+	if resp.StatusCode != 200 {
 		if resp.StatusCode == bxgateway.ServiceUnavailable {
-			log.Debugf("got error from http request: sdn is down")
+			log.Debugf("got error from http request: SDN is down")
 			return nil, ErrSDNUnavailable
 		}
 		if resp.Body != nil {
-			b, errMsg := ioutil.ReadAll(resp.Body)
+			b, errMsg := io.ReadAll(resp.Body)
 			if errMsg != nil {
 				return nil, fmt.Errorf("%v on %v could not read response %v, error %v", method, uri, resp.Status, errMsg.Error())
 			}
 			var errorMessage sdnmessage.ErrorMessage
-			if err := json.Unmarshal(b, &errorMessage); err != nil {
-				return nil, fmt.Errorf("could not deserialize: %v", err)
+			if err = json.Unmarshal(b, &errorMessage); err != nil {
+				return nil, fmt.Errorf("could not deserialize '%s' response into error message: %v", string(b), err)
 			}
 			err = fmt.Errorf("%v to %v received a [%v]: %v", method, uri, resp.Status, errorMessage.Details)
 		} else {
@@ -604,7 +607,7 @@ func (s *realSDNHTTP) http(uri string, method string, body io.Reader) ([]byte, e
 		return nil, err
 	}
 
-	b, errMsg := ioutil.ReadAll(resp.Body)
+	b, errMsg := io.ReadAll(resp.Body)
 	if errMsg != nil {
 		return nil, fmt.Errorf("%v on %v could not read response %v, error %v", method, uri, resp.Status, errMsg.Error())
 
@@ -620,7 +623,7 @@ func (s *realSDNHTTP) getBlockchainNetworks() error {
 	}
 	var networks []*sdnmessage.BlockchainNetwork
 	if err = json.Unmarshal(resp, &networks); err != nil {
-		return fmt.Errorf("could not deserialize blockchain networks: %v", err)
+		return fmt.Errorf("could not deserialize '%s' response into blockchain networks: %v", string(resp), err)
 	}
 	s.networks = sdnmessage.BlockchainNetworks{}
 	for _, network := range networks {
@@ -638,7 +641,7 @@ func (s *realSDNHTTP) FindNetwork(networkNum types.NetworkNum) (*sdnmessage.Bloc
 func (s *realSDNHTTP) MinTxAge() time.Duration {
 	blockchainNetwork, err := s.FindNetwork(s.NetworkNum())
 	if err != nil {
-		log.Debugf("could not get blockchainNetwork: %v, returning default 2 seconds for MinTxAgeSecond", err)
+		log.Warnf("could not get blockchainNetwork: %v, returning default 2 seconds for MinTxAgeSecond", err)
 		return 2 * time.Second
 	}
 	return time.Duration(float64(time.Second) * blockchainNetwork.MinTxAgeSeconds)
@@ -664,7 +667,7 @@ func getPingLatencies(peers sdnmessage.Peers) []nodeLatencyInfo {
 				log.Errorf("error executing (%v) %v: %v", cmd, err, stderr)
 				return
 			}
-			log.Tracef("ping results from %v : %q", (*pingResult).IP, out)
+			log.Tracef("ping results from %v: %q", (*pingResult).IP, out)
 			re := regexp.MustCompile(TimeRegEx)
 			latencyTimeList := re.FindStringSubmatch(out.String())
 			if len(latencyTimeList) > 0 {
@@ -687,13 +690,15 @@ func (s *realSDNHTTP) SendNodeEvent(event sdnmessage.NodeEvent, id types.NodeID)
 	url := fmt.Sprintf("%v/nodes/%v/events", s.sdnURL, id)
 	eventBytes, err := json.Marshal(event)
 	if err != nil {
-		log.Errorf("error in sending node event to SDN through http, can't serialize node event, %v", err)
+		log.Errorf("could not serialize node event %v: %v", event, err)
+		return
 	}
 	resp, err := s.http(url, bxgateway.PostMethod, bytes.NewBuffer(eventBytes))
 	if err != nil {
-		log.Errorf("error in sending node event to SDN through http, %v", err)
+		log.Errorf("could not send node event %v to SDN: %v", event.EventType, err)
+		return
 	}
-	log.Infof("node event %v sent to SDN, resp is %v", event.EventType, resp)
+	log.Infof("node event %v sent to SDN, resp: %s", event.EventType, string(resp))
 }
 
 // SDNURL getter for the private sdnURL field

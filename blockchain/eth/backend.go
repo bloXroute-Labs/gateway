@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2"
@@ -33,7 +34,7 @@ const (
 // Backend represents the interface to which any stateful message handling (e.g. looking up tx pool items or block headers) will be passed to for processing
 type Backend interface {
 	NetworkConfig() *network.EthConfig
-	RunPeer(peer *Peer, handler func(*Peer) error) error
+	RunPeer(peer *Peer, wg *sync.WaitGroup, handler func(*Peer) error) error
 	Handle(peer *Peer, packet eth.Packet) error
 	GetHeaders(start eth.HashOrNumber, count int, skip int, reverse bool) ([]*ethtypes.Header, error)
 	GetBodies(hashes []ethcommon.Hash) ([]*ethtypes.Body, error)
@@ -131,7 +132,7 @@ func (h *Handler) handleFeeds(wsCtx context.Context, nodeWS blockchain.WSProvide
 }
 
 // runEthSub is running as a go routine. Can sleep if needed
-func (h *Handler) runEthSub(wsCtx context.Context, nodeWS blockchain.WSProvider) {
+func (h *Handler) runEthSub(wsCtx context.Context, nodeWS blockchain.WSProvider, wg *sync.WaitGroup) {
 	var newPendingTxsRespCh chan ethcommon.Hash
 	var newPendingTxsErrCh <-chan error
 
@@ -139,6 +140,7 @@ func (h *Handler) runEthSub(wsCtx context.Context, nodeWS blockchain.WSProvider)
 	var newHeadsErrCh <-chan error
 
 	nodeWS.Log().Debugf("starting runEthSub... process %v", utils.GetGID())
+	defer wg.Done()
 	defer nodeWS.Log().Debugf("runEthSub ends process %v", utils.GetGID())
 
 	for {
@@ -188,7 +190,7 @@ func (h *Handler) NetworkConfig() *network.EthConfig {
 }
 
 // RunPeer registers a peer within the peer set and starts handling all its messages
-func (h *Handler) RunPeer(ep *Peer, handler func(*Peer) error) error {
+func (h *Handler) RunPeer(ep *Peer, wg *sync.WaitGroup, handler func(*Peer) error) error {
 	_, isRecommended := h.recommendedPeers[fmt.Sprintf("%s:%d", ep.endpoint.IP, ep.endpoint.Port)]
 	if !ep.Dynamic() && !isRecommended {
 		ok := h.wsManager.SetBlockchainPeer(ep)
@@ -196,7 +198,8 @@ func (h *Handler) RunPeer(ep *Peer, handler func(*Peer) error) error {
 			log.Warnf("unable to set blockchain peer for %v: no corresponding websockets provider found (ok if websockets URI was omitted)", ep.endpoint.IPPort())
 		}
 		if ws, ok := h.wsManager.Provider(&ep.endpoint); ok {
-			go h.runEthSub(ep.ctx, ws)
+			wg.Add(1)
+			go h.runEthSub(ep.ctx, ws, wg)
 		}
 	}
 	if err := h.peers.register(ep); err != nil {

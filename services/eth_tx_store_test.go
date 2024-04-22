@@ -14,6 +14,7 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -93,6 +94,33 @@ func TestEthTxStore_Add(t *testing.T) {
 
 	assert.Equal(t, 1, store.Count())
 
+	// add valid blob type transaction
+	tx = bxmock.NewSignedEthTx(ethtypes.BlobTxType, 3, privateKey, nil)
+	content, _ = rlp.EncodeToBytes(&tx)
+	hash = types.SHA256Hash{3}
+
+	result4 := store.Add(hash, content, types.ShortIDEmpty, testNetworkNum, true, types.TFPaidTx, time.Now(), tx.ChainId().Int64(), types.EmptySender)
+
+	assert.True(t, result4.NewTx)
+	assert.True(t, result4.NewContent)
+	assert.False(t, result4.NewSID)
+	assert.False(t, result4.FailedValidation)
+	assert.False(t, result4.Transaction.Flags().IsReuseSenderNonce())
+	assert.Equal(t, 2, store.Count())
+
+	// add valid blob type transaction with same nonce
+	tx = bxmock.NewSignedEthTx(ethtypes.BlobTxType, 1, privateKey, nil)
+	content, _ = rlp.EncodeToBytes(&tx)
+	hash = types.SHA256Hash{4}
+
+	result5 := store.Add(hash, content, types.ShortIDEmpty, testNetworkNum, true, types.TFPaidTx, time.Now(), tx.ChainId().Int64(), types.EmptySender)
+
+	assert.True(t, result5.NewTx)
+	assert.True(t, result5.NewContent)
+	assert.False(t, result5.NewSID)
+	assert.False(t, result5.FailedValidation)
+	assert.True(t, result5.Transaction.Flags().IsReuseSenderNonce())
+	assert.Equal(t, 3, store.Count())
 }
 
 func TestEthTxStore_AddReuseSenderNonce(t *testing.T) {
@@ -225,6 +253,34 @@ func newEthTransaction(nonce uint64, gasFee, gasTip int64) (*types.EthTransactio
 	return types.NewEthTransaction(types.SHA256Hash(signedTx.Hash()), signedTx, types.EmptySender)
 }
 
+func newBlobTypeTransaction(nonce uint64, gasFee, gasTip, blobFeeCap uint64) (*types.EthTransaction, error) {
+	to := common.HexToAddress("0x12345")
+
+	rawTx := ethtypes.NewTx(&ethtypes.BlobTx{
+		ChainID:    uint256.NewInt(uint64(testChainID)),
+		Nonce:      nonce,
+		GasFeeCap:  uint256.NewInt(gasFee),
+		GasTipCap:  uint256.NewInt(gasTip),
+		BlobFeeCap: uint256.NewInt(blobFeeCap),
+		Gas:        1000,
+		To:         to,
+		Value:      uint256.NewInt(100),
+		Data:       []byte{},
+		AccessList: nil,
+		BlobHashes: []common.Hash{
+			common.HexToHash("0x12345"),
+		},
+	})
+
+	// Sign the transaction with same private key
+	signedTx, err := ethtypes.SignTx(rawTx, ethtypes.NewCancunSigner(rawTx.ChainId()), privateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return types.NewEthTransaction(types.SHA256Hash(signedTx.Hash()), signedTx, types.EmptySender)
+}
+
 func TestNonceTracker_track(t *testing.T) {
 	c := utils.MockClock{}
 	nc := blockchainNetwork
@@ -274,6 +330,58 @@ func TestNonceTracker_track(t *testing.T) {
 	assert.False(t, duplicate)
 }
 
+func TestNonceTrackerBlobTx_track(t *testing.T) {
+	c := utils.MockClock{}
+
+	nc := blockchainNetwork
+	nc.AllowTimeReuseSenderNonce = 1
+	nc.NetworkNum = testNetworkNum
+	n := newNonceTracker(&c, sdnmessage.BlockchainNetworks{nc.NetworkNum: &nc}, 10)
+	nonce := uint64(1)
+
+	tx, err := newBlobTypeTransaction(nonce, 100, 100, 100)
+	require.NoError(t, err)
+
+	txSame, err := newBlobTypeTransaction(nonce, 100, 100, 100)
+	require.NoError(t, err)
+
+	txLowerGas, err := newBlobTypeTransaction(nonce, 5, 5, 5)
+	require.NoError(t, err)
+
+	txSlightlyHigherGas, err := newBlobTypeTransaction(nonce, 101, 101, 101)
+	require.NoError(t, err)
+
+	txHigherGas, err := newBlobTypeTransaction(nonce, 111, 1111, 1111)
+	require.NoError(t, err)
+
+	duplicate, _, err := n.track(tx, testNetworkNum)
+	require.NoError(t, err)
+
+	require.False(t, duplicate)
+
+	duplicate, _, err = n.track(txSame, testNetworkNum)
+	require.NoError(t, err)
+	require.True(t, duplicate)
+
+	duplicate, _, err = n.track(txLowerGas, testNetworkNum)
+	require.NoError(t, err)
+	require.True(t, duplicate)
+
+	duplicate, _, err = n.track(txSlightlyHigherGas, testNetworkNum)
+	require.NoError(t, err)
+
+	require.True(t, duplicate)
+
+	duplicate, _, err = n.track(txHigherGas, testNetworkNum)
+	require.NoError(t, err)
+	require.False(t, duplicate)
+
+	c.IncTime(5 * time.Second)
+	duplicate, _, err = n.track(txLowerGas, testNetworkNum)
+	require.NoError(t, err)
+	require.False(t, duplicate)
+}
+
 func TestNonceTracker_clean(t *testing.T) {
 	c := utils.MockClock{}
 	nc := blockchainNetwork
@@ -290,6 +398,9 @@ func TestNonceTracker_clean(t *testing.T) {
 	tx3, err := newEthTransaction(3, 100, 100)
 	require.NoError(t, err)
 
+	tx4, err := newBlobTypeTransaction(4, 100, 100, 100)
+	require.NoError(t, err)
+
 	n.track(tx, testNetworkNum)
 	c.IncTime(500 * time.Millisecond)
 
@@ -297,6 +408,9 @@ func TestNonceTracker_clean(t *testing.T) {
 	c.IncTime(500 * time.Millisecond)
 
 	n.track(tx3, testNetworkNum)
+	c.IncTime(100 * time.Millisecond)
+
+	n.track(tx4, testNetworkNum)
 	c.IncTime(100 * time.Millisecond)
 
 	n.clean()
@@ -321,4 +435,37 @@ func TestNonceTracker_clean(t *testing.T) {
 	rtx, ok = n.getTransaction(fromTx3, 3)
 	assert.Equal(t, tx3, rtx.tx)
 	assert.True(t, ok)
+
+	fromTx4, err := tx4.From()
+	require.NoError(t, err)
+
+	rtx, ok = n.getTransaction(fromTx4, 4)
+	assert.Equal(t, tx4, rtx.tx)
+	assert.True(t, ok)
+
+	c.IncTime(500 * time.Millisecond)
+	n.clean()
+
+	rtx, ok = n.getTransaction(fromTx2, 2)
+	assert.Nil(t, rtx)
+	assert.False(t, ok)
+
+	rtx, ok = n.getTransaction(fromTx3, 3)
+	assert.Equal(t, tx3, rtx.tx)
+	assert.True(t, ok)
+
+	rtx, ok = n.getTransaction(fromTx4, 4)
+	assert.Equal(t, tx4, rtx.tx)
+	assert.True(t, ok)
+
+	c.IncTime(500 * time.Millisecond)
+	n.clean()
+
+	rtx, ok = n.getTransaction(fromTx3, 3)
+	assert.Nil(t, rtx)
+	assert.False(t, ok)
+
+	rtx, ok = n.getTransaction(fromTx4, 4)
+	assert.Nil(t, rtx)
+	assert.False(t, ok)
 }

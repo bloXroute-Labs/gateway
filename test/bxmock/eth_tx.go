@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/holiman/uint256"
 )
 
@@ -117,6 +118,11 @@ func newEthBlobTx(nonce uint64, privateKey *ecdsa.PrivateKey, chainID *uint256.I
 		Data:       []byte{},
 		BlobFeeCap: uint256.NewInt(100),
 		BlobHashes: []common.Hash{},
+		Sidecar: &ethtypes.BlobTxSidecar{
+			Blobs:       []kzg4844.Blob{},
+			Commitments: []kzg4844.Commitment{},
+			Proofs:      []kzg4844.Proof{},
+		},
 		AccessList: nil,
 		V:          nil,
 		R:          nil,

@@ -1332,9 +1332,12 @@ func (g *gateway) handleBeaconMessageFromBlockchain(beaconMessage *bxmessage.Bea
 			return err
 		}
 
-		err = g.blobsManager.AddBlobSidecar(blobSidecar)
-		if err != nil {
-			g.log.Errorf("failed to add blob sidecar: %v", err)
+		if g.blobsManager != nil {
+			err = g.blobsManager.AddBlobSidecar(blobSidecar)
+
+			if err != nil {
+				g.log.Errorf("failed to add blob sidecar: %v", err)
+			}
 		}
 	default:
 		g.log.Errorf("unknown beacon message type %v", beaconMessage.Type())

@@ -158,9 +158,10 @@ func (t *EthTxStore) Stop() {
 type trackedTx struct {
 	tx *types.EthTransaction
 
-	// txs with a gas fees higher than both of this are not considered duplicates
-	gasFeeCap *big.Int
-	gasTipCap *big.Int
+	// all gas prices should be increased to not consider the same transaction as duplicate
+	gasFeeCap  *big.Int
+	gasTipCap  *big.Int
+	blobGasCap *big.Int
 
 	expireTime time.Time // after this time, txs with same key are not considered duplicates
 }
@@ -215,11 +216,16 @@ func (nt *nonceTracker) setTransaction(tx *types.EthTransaction, from *common.Ad
 	gasTipCap := new(big.Float).SetInt(tx.EffectiveGasTipCap())
 	gasTipCap.Mul(gasTipCap, reuseNonceGasChange).Int(intGasTipCap)
 
+	intBlobGasCap := new(big.Int)
+	blobGasCap := new(big.Float).SetInt(tx.EffectiveBlobGasFeeCap())
+	blobGasCap.Mul(blobGasCap, reuseNonceGasChange).Int(intBlobGasCap)
+
 	tracked := trackedTx{
 		tx:         tx,
 		expireTime: nt.clock.Now().Add(reuseNonceDelay),
 		gasFeeCap:  intGasFeeCap,
 		gasTipCap:  intGasTipCap,
+		blobGasCap: intBlobGasCap,
 	}
 	nt.addressNonceToTx.Store(fromNonceKey(from, tx.Nonce()), tracked)
 }
@@ -243,7 +249,7 @@ func (nt *nonceTracker) track(tx *types.EthTransaction, network types.NetworkNum
 		return false, nil, nil
 	}
 
-	if (tx.EffectiveGasFeeCap().Cmp(oldTx.gasFeeCap) >= 0 && tx.EffectiveGasTipCap().Cmp(oldTx.gasTipCap) >= 0) || nt.clock.Now().After(oldTx.expireTime) {
+	if (tx.EffectiveGasFeeCap().Cmp(oldTx.gasFeeCap) >= 0 && tx.EffectiveGasTipCap().Cmp(oldTx.gasTipCap) >= 0 && tx.EffectiveBlobGasFeeCapIntCmp(oldTx.blobGasCap) >= 0) || nt.clock.Now().After(oldTx.expireTime) {
 		nt.setTransaction(tx, from, network)
 		return false, nil, nil
 	}

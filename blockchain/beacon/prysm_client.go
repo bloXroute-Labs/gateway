@@ -30,6 +30,7 @@ type PrysmClient struct {
 	endpoint    types.NodeEndpoint
 	beaconBlock bool
 	log         *log.Entry
+	latestSlot  prysmTypes.Slot
 }
 
 // NewPrysmClient creates new Prysm gRPC client
@@ -109,6 +110,12 @@ func (c *PrysmClient) run() {
 					c.log.Errorf("block slot=%d is too old to process", blk.Block().Slot())
 					continue
 				}
+
+				// only process new blocks
+				if c.latestSlot >= blk.Block().Slot() {
+					continue
+				}
+				c.latestSlot = blk.Block().Slot()
 
 				wrappedBlock := NewWrappedReadOnlySignedBeaconBlock(blk)
 				blockHash, err := wrappedBlock.HashTreeRoot()
