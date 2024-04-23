@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"math/big"
+	"sync"
 	"testing"
 	"time"
 
@@ -1031,7 +1032,6 @@ func TestHandler_ConnectionCloseOnContextClosure(t *testing.T) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	// Create a done channel to signal completion
-	done := make(chan bool)
 	for _, provider := range handler.wsManager.Providers() {
 		// Run the runEthSub method in a goroutine
 		provider.UpdateSyncStatus(blockchain.Synced)
@@ -1039,9 +1039,10 @@ func TestHandler_ConnectionCloseOnContextClosure(t *testing.T) {
 	provider, ok := handler.wsManager.SyncedProvider()
 	require.True(t, ok)
 	// Run the runEthSub method in a goroutine
+	wg := new(sync.WaitGroup)
 	go func() {
-		handler.runEthSub(ctx, provider)
-		done <- true
+		wg.Add(1)
+		handler.runEthSub(ctx, provider, wg)
 	}()
 
 	testUtils.WaitUntilTrueOrFail(t, func() bool {
@@ -1051,7 +1052,7 @@ func TestHandler_ConnectionCloseOnContextClosure(t *testing.T) {
 	cancel()
 
 	// Wait for the goroutine to complete
-	<-done
+	wg.Wait()
 	require.False(t, provider.IsOpen())
 }
 

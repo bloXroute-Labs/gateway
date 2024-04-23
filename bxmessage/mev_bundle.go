@@ -99,8 +99,8 @@ func NewMEVBundle(
 
 // String returns a string representation of the MEVBundle
 func (m MEVBundle) String() string {
-	return fmt.Sprintf("mev bundle(sender account ID: %s, hash: %s, blockNumber: %s, builders: %v, txs: %d, sent from cloud api: %v, tier: %v, allowMixedBundles: %v, UUID: %s)",
-		m.OriginalSenderAccountID, m.BundleHash, m.BlockNumber, m.MEVBuilders, len(m.Transactions), m.SentFromCloudAPI, m.OriginalSenderAccountTier, m.AvoidMixedBundles, m.UUID)
+	return fmt.Sprintf("mev bundle(sender account ID: %s, hash: %s, blockNumber: %s, builders: %v, txs: %d, sent from cloud api: %v, tier: %v, allowMixedBundles: %v, UUID: %s, EnforcePayout %v, BundlePrice %v, MinTimestamp %v , MaxTimestamp %v, RevertingHashes %v)",
+		m.OriginalSenderAccountID, m.BundleHash, m.BlockNumber, m.MEVBuilders, len(m.Transactions), m.SentFromCloudAPI, m.OriginalSenderAccountTier, m.AvoidMixedBundles, m.UUID, m.EnforcePayout, m.BundlePrice, m.MinTimestamp, m.MaxTimestamp, len(m.RevertingHashes))
 }
 
 // SetHash sets the hash based on the fields in BundleSubmission

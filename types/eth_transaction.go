@@ -308,6 +308,25 @@ func (et *EthTransaction) EffectiveGasTipCap() *big.Int {
 	return et.tx.GasPrice()
 }
 
+// EffectiveBlobGasFeeCap returns a common "gas fee per blob gas" that can be used for all types of transactions
+func (et *EthTransaction) EffectiveBlobGasFeeCap() *big.Int {
+	if et.Type() == ethtypes.BlobTxType {
+		return et.tx.BlobGasFeeCap()
+	}
+
+	return big.NewInt(0)
+}
+
+// EffectiveBlobGasFeeCapIntCmp make a compare for "blob gas fee cap" that can be used for all types of transactions
+func (et *EthTransaction) EffectiveBlobGasFeeCapIntCmp(other *big.Int) int {
+	if et.Type() == ethtypes.BlobTxType {
+		return et.tx.BlobGasFeeCap().Cmp(other)
+	}
+
+	// Legacy and dynamic fee transactions have no blob gas fee cap
+	return 1
+}
+
 // ChainID returns the chain ID of the transaction
 func (et *EthTransaction) ChainID() *big.Int {
 	return et.tx.ChainId()

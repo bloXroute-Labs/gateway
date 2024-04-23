@@ -24,10 +24,18 @@ var blockchainTLSPlaceholder = TLS{}
 func NewBlockchainConn(ipEndpoint types.NodeEndpoint) Blockchain {
 	connType := utils.Blockchain.String()
 
+	var remoteAddr string
+	if ipEndpoint.DNS != "" {
+		remoteAddr = fmt.Sprintf("%v:%v", ipEndpoint.DNS, ipEndpoint.Port)
+	} else {
+		remoteAddr = fmt.Sprintf("%v:%v", ipEndpoint.IP, ipEndpoint.Port)
+	}
+
 	return Blockchain{
 		endpoint: ipEndpoint,
 		log: log.WithFields(log.Fields{
-			"connType": connType,
+			"connType":   connType,
+			"remoteAddr": remoteAddr,
 		}),
 	}
 }

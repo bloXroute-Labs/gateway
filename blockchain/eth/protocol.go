@@ -2,6 +2,7 @@ package eth
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
@@ -82,8 +83,8 @@ func makeProtocol(ctx context.Context, backend Backend, version uint, versionLen
 			}
 			// process status message on backend to set initial total difficulty
 			_ = backend.Handle(ep, peerStatus)
-
-			peerErr := backend.RunPeer(ep, func(peer *Peer) error {
+			wg := new(sync.WaitGroup)
+			peerErr := backend.RunPeer(ep, wg, func(peer *Peer) error {
 				for {
 					if err = handleMessage(backend, ep); err != nil {
 						return err
@@ -98,6 +99,7 @@ func makeProtocol(ctx context.Context, backend Backend, version uint, versionLen
 			}
 			// TODO Here we have disconnection, but that disconnection does not affect BDNPerformanceStats
 
+			wg.Wait()
 			log.Errorf("Peer %v terminated with error - %v", ep.endpoint, peerErr)
 			return err
 		},
