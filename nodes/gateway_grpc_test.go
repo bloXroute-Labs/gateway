@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
@@ -21,7 +22,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
@@ -62,26 +62,29 @@ var (
 	}
 )
 
-func spawnGRPCServer(t *testing.T, port int, user string, password string) (*gateway, blockchain.Bridge, *gatewayGRPCServer) {
+func spawnGRPCServer(t *testing.T, port int, user string, password string) (*gateway, blockchain.Bridge, *servers.GRPCServer, *GatewayGrpc) {
 	serverConfig := config.NewGRPC("0.0.0.0", port, user, password)
 	bridge, g := setup(t, 1)
 	g.BxConfig.GRPC = serverConfig
-	g.grpcHandler = servers.NewGrpcHandler(g.feedManager, g.wsManager, true)
-	s := newGatewayGRPCServer(g, serverConfig.Host, serverConfig.Port, serverConfig.User, serverConfig.Password)
+	gwGrpc := NewGatewayGrpc(&g.Bx, GatewayGrpcParams{sdn: g.sdn, authorize: g.authorize, bridge: g.bridge, blockchainPeers: g.blockchainPeers, wsManager: g.wsManager,
+		bdnStats: g.bdnStats, timeStarted: g.timeStarted, txsQueue: g.txsQueue, txsOrderQueue: g.txsOrderQueue, gatewayPublicKey: g.gatewayPublicKey,
+		feedManager: g.feedManager, txFromFieldIncludable: false, blockProposer: g.blockProposer,
+		feedManagerChan: g.feedManagerChan, intentsManager: newIntentsManager(), grpcFeedManager: g.feedManager})
+	grpcServer := servers.NewGRPCServer("0.0.0.0", port, user, password, g.stats, g.accountID, gwGrpc)
 	go func() {
-		_ = s.Start()
+		_ = grpcServer.Run()
 	}()
 
 	test.WaitServerStarted(t, fmt.Sprintf("%v:%v", serverConfig.Host, serverConfig.Port))
 
-	return g, bridge, s
+	return g, bridge, grpcServer, gwGrpc
 }
 
 func TestGatewayGRPCServerNoAuth(t *testing.T) {
 	port := test.NextTestPort()
 
-	_, _, s := spawnGRPCServer(t, port, "", "")
-	defer s.Stop()
+	_, _, s, _ := spawnGRPCServer(t, port, "", "")
+	defer s.Shutdown()
 
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
 	res, err := rpc.GatewayCall(clientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
@@ -98,12 +101,13 @@ func TestGatewayGRPCServerNoAuth(t *testing.T) {
 func TestGatewayGRPCServerAuth(t *testing.T) {
 	port := test.NextTestPort()
 
-	g, _, s := spawnGRPCServer(t, port, testGatewayAccountID, testGatewaySecretHash)
-	defer s.Stop()
+	g, _, s, gg := spawnGRPCServer(t, port, testGatewayAccountID, testGatewaySecretHash)
+	defer s.Shutdown()
 
 	ctl := gomock.NewController(t)
 	mockedSdn := mock.NewMockSDNHTTP(ctl)
 	g.sdn = mockedSdn
+	gg.params.sdn = mockedSdn
 	mockedSdn.EXPECT().AccountModel().Return(testAccountModel).AnyTimes()
 
 	authorizedClientConfig := config.NewGRPC("127.0.0.1", port, testGatewayAccountID, testGatewaySecretHash)
@@ -128,12 +132,13 @@ func TestGatewayGRPCServerAuth(t *testing.T) {
 func TestGatewayGRPCGatewayUserHeaderAuth(t *testing.T) {
 	port := test.NextTestPort()
 
-	g, _, s := spawnGRPCServer(t, port, "", "")
-	defer s.Stop()
+	g, _, s, gg := spawnGRPCServer(t, port, "", "")
+	defer s.Shutdown()
 
 	ctl := gomock.NewController(t)
 	mockedSdn := mock.NewMockSDNHTTP(ctl)
 	g.sdn = mockedSdn
+	gg.params.sdn = mockedSdn
 
 	// there is no need to mock FetchCustomerAccountModel because
 	// it's called only when not gateway user header auth is used
@@ -155,8 +160,8 @@ func TestGatewayGRPCGatewayUserHeaderAuth(t *testing.T) {
 func TestGatewayGRPCNotGatewayUserHeaderAuth(t *testing.T) {
 	port := test.NextTestPort()
 
-	g, _, s := spawnGRPCServer(t, port, "", "")
-	defer s.Stop()
+	g, _, s, _ := spawnGRPCServer(t, port, "", "")
+	defer s.Shutdown()
 
 	ctl := gomock.NewController(t)
 	mockedSdn := mock.NewMockSDNHTTP(ctl)
@@ -188,8 +193,8 @@ func TestInternalGatewayUnauthorizedAccess(t *testing.T) {
 
 	port := test.NextTestPort()
 
-	g, _, s := spawnGRPCServer(t, port, "", "")
-	defer s.Stop()
+	g, _, s, _ := spawnGRPCServer(t, port, "", "")
+	defer s.Shutdown()
 
 	ctl := gomock.NewController(t)
 
@@ -248,8 +253,22 @@ func TestInternalGatewayUnauthorizedAccess(t *testing.T) {
 func TestGatewayGRPCServerPeers(t *testing.T) {
 	port := test.NextTestPort()
 
-	g, _, s := spawnGRPCServer(t, port, "", "")
-	defer s.Stop()
+	/*
+		port := test.NextTestPort()
+
+			_, _, s, _ := spawnGRPCServer(t, port, "", "")
+			defer s.Shutdown()
+
+			clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
+			res, err := rpc.GatewayCall(clientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
+				return client.Version(ctx, &pb.VersionRequest{})
+			})
+
+			require.Nil(t, err)
+	*/
+
+	g, _, s, _ := spawnGRPCServer(t, port, "", "")
+	defer s.Shutdown()
 
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
 
@@ -280,8 +299,8 @@ func TestGatewayGRPCServerPeers(t *testing.T) {
 func TestGatewayGRPCNewTxs(t *testing.T) {
 	port := test.NextTestPort()
 
-	g, _, s := spawnGRPCServer(t, port, "", "")
-	defer s.Stop()
+	g, _, s, _ := spawnGRPCServer(t, port, "", "")
+	defer s.Shutdown()
 	g.BxConfig.WebsocketEnabled = true
 
 	go g.feedManager.Start(context.Background())
@@ -321,8 +340,8 @@ func TestGatewayGRPCNewTxs(t *testing.T) {
 func TestGatewayGRPCNewTxs_withNonTxIncludes(t *testing.T) {
 	port := test.NextTestPort()
 
-	g, _, s := spawnGRPCServer(t, port, "", "")
-	defer s.Stop()
+	g, _, s, _ := spawnGRPCServer(t, port, "", "")
+	defer s.Shutdown()
 	g.BxConfig.WebsocketEnabled = true
 
 	go g.feedManager.Start(context.Background())
@@ -359,8 +378,8 @@ func TestGatewayGRPCNewTxs_withNonTxIncludes(t *testing.T) {
 func TestGatewayGRPCPendingTxs(t *testing.T) {
 	port := test.NextTestPort()
 
-	g, _, s := spawnGRPCServer(t, port, "", "")
-	defer s.Stop()
+	g, _, s, _ := spawnGRPCServer(t, port, "", "")
+	defer s.Shutdown()
 	g.BxConfig.WebsocketEnabled = true
 
 	go g.feedManager.Start(context.Background())
@@ -398,8 +417,8 @@ func TestGatewayGRPCPendingTxs(t *testing.T) {
 func TestGatewayGRPCNewBlocks(t *testing.T) {
 	port := test.NextTestPort()
 
-	g, bridge, s := spawnGRPCServer(t, port, "", "")
-	defer s.Stop()
+	g, bridge, s, _ := spawnGRPCServer(t, port, "", "")
+	defer s.Shutdown()
 	g.BxConfig.WebsocketEnabled = true
 	g.BxConfig.SendConfirmation = true
 
@@ -444,8 +463,8 @@ func TestGatewayGRPCNewBlocks(t *testing.T) {
 func TestGatewayGRPCBdnBlocks(t *testing.T) {
 	port := test.NextTestPort()
 
-	g, bridge, s := spawnGRPCServer(t, port, "", "")
-	defer s.Stop()
+	g, bridge, s, _ := spawnGRPCServer(t, port, "", "")
+	defer s.Shutdown()
 	g.BxConfig.WebsocketEnabled = true
 	g.BxConfig.SendConfirmation = true
 	_, relayConn1 := addRelayConn(g)
@@ -699,11 +718,12 @@ func TestGatewayGRPCBlxrTx(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
-			g, _, s := spawnGRPCServer(t, port, "", "")
-			defer s.Stop()
-			g.feedManager = tc.setupFeedManagerFunc(g)
-			go g.feedManager.Start(context.Background())
+			g, _, s, gg := spawnGRPCServer(t, port, "", "")
+			defer s.Shutdown()
+			gg.params.feedManager = tc.setupFeedManagerFunc(g)
+			go gg.params.feedManager.Start(context.Background())
 			g.sdn = tc.setupSdnFunc()
+			gg.params.sdn = tc.setupSdnFunc()
 
 			tx, hash := tc.generateTxAndHash()
 			tc.request.Transaction = tx
@@ -829,11 +849,12 @@ func TestGatewayGRPCBlxrBatchTx(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
-			g, _, s := spawnGRPCServer(t, port, "", "")
-			defer s.Stop()
-			g.feedManager = tc.setupFeedManagerFunc(g)
-			go g.feedManager.Start(context.Background())
+			g, _, s, gg := spawnGRPCServer(t, port, "", "")
+			defer s.Shutdown()
+			gg.params.feedManager = tc.setupFeedManagerFunc(g)
+			go gg.params.feedManager.Start(context.Background())
 			g.sdn = tc.setupSdnFunc()
+			gg.params.sdn = tc.setupSdnFunc()
 
 			txs, hashes := tc.generateTxAndHash()
 			var txsAndSenders []*pb.TxAndSender
@@ -1093,11 +1114,12 @@ func TestGatewaySubmitBundle(t *testing.T) {
 			port := test.NextTestPort()
 			chain := big.NewInt(1)
 
-			g, _, s := spawnGRPCServer(t, port, "", "")
-			defer s.Stop()
-			g.feedManager = tc.setupFeedManagerFunc(g)
-			go g.feedManager.Start(context.Background())
+			g, _, s, gg := spawnGRPCServer(t, port, "", "")
+			defer s.Shutdown()
+			gg.params.feedManager = tc.setupFeedManagerFunc(g)
+			go gg.params.feedManager.Start(context.Background())
 			g.sdn = tc.setupSdnFunc()
+			gg.params.sdn = tc.setupSdnFunc()
 
 			if tc.privKey != nil {
 				privKey = tc.privKey

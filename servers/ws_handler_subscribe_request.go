@@ -57,7 +57,7 @@ func init() {
 	}
 }
 
-func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) {
+func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*ClientReq, error) {
 	if req.Params == nil {
 		return nil, errors.New(errParamsValueIsMissing)
 	}
@@ -76,16 +76,16 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 	request := subscriptionRequest{}
 	err = json.Unmarshal(rpcParams[0], &request.feed)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal feed name: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal Feed name: %w", err)
 	}
 	if _, ok := availableFeedsMap[request.feed]; !ok {
-		h.log.Debugf("invalid request feed param from request id: %v, method: %v, params: %s. remote address: %v account id: %v.",
+		h.log.Debugf("invalid request Feed param from request id: %v, method: %v, params: %s. remote address: %v account id: %v.",
 			req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID)
-		return nil, fmt.Errorf("got unsupported feed name %v, possible feeds are: %v", request.feed, availableFeeds)
+		return nil, fmt.Errorf("got unsupported Feed name %v, possible feeds are: %v", request.feed, availableFeeds)
 	}
 	if h.connectionAccount.AccountID != h.FeedManager.accountModel.AccountID &&
 		(request.feed == types.OnBlockFeed || request.feed == types.TxReceiptsFeed) {
-		err = fmt.Errorf("%v feed is not available via cloud services. %v feed is only supported on gateways", request.feed, request.feed)
+		err = fmt.Errorf("%v Feed is not available via cloud services. %v Feed is only supported on gateways", request.feed, request.feed)
 		h.log.Errorf("%v. caller account ID: %v, node account ID: %v", err, h.connectionAccount.AccountID, h.FeedManager.accountModel.AccountID)
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 		return nil, fmt.Errorf("got unsupported params: %v", string(rpcParams[1]))
 	}
 
-	requestedFields, err := validateIncludeParam(request.feed, request.options.Include, h.txFromFieldIncludable)
+	requestedFields, err := ValidateIncludeParam(request.feed, request.options.Include, h.txFromFieldIncludable)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +109,7 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 
 	var expr conditions.Expr
 	if request.options.Filters != "" {
-		expr, err = validateFilters(request.options.Filters, h.txFromFieldIncludable)
+		expr, err = ValidateFilters(request.options.Filters, h.txFromFieldIncludable)
 		if err != nil {
 			h.log.Debugf("error when creating filters. request id: %v. method: %v. params: %s. remote address: %v account id: %v error - %v",
 				req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID, err.Error())
@@ -117,7 +117,7 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 		}
 	}
 
-	// check if valid feed
+	// check if valid Feed
 	var filters []string
 	if expr != nil {
 		filters = expr.Args()
@@ -148,17 +148,17 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*clientReq, error) 
 			if callParams == nil {
 				return nil, errors.New("call-params cannot be nil")
 			}
-			err = fillCalls(h.FeedManager.nodeWSManager, calls, idx, callParams)
+			err = FillCalls(h.FeedManager.nodeWSManager, calls, idx, callParams)
 			if err != nil {
 				return nil, err
 			}
 		}
 	}
 
-	return &clientReq{
-		includes: request.options.Include,
-		feed:     request.feed,
-		expr:     expr,
+	return &ClientReq{
+		Includes: request.options.Include,
+		Feed:     request.feed,
+		Expr:     expr,
 		calls:    &calls,
 		MultiTxs: request.options.MultiTxs,
 	}, nil

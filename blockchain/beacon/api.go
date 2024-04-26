@@ -85,6 +85,7 @@ type APIClient struct {
 	lastBlobsByBeaconHashSuccessSlot atomic.Int64
 	blobDecoder                      blobDecoder
 	initialized                      atomic.Bool
+	lastSlot                         atomic.Uint64
 }
 
 // NewAPIClient creates a new APIClient with the specified URL.
@@ -120,7 +121,6 @@ func NewAPIClient(ctx context.Context, httpClient *http.Client, config *network.
 func CreateAPIEndpoint(url, blockchainNetwork string) (*types.NodeEndpoint, error) {
 	urlSplitted := strings.Split(url, ":")
 	port, err := strconv.Atoi(urlSplitted[1])
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve endpoint port: %v", err)
 	}
@@ -446,6 +446,13 @@ func (c *APIClient) blockHeadEventHandler() func(msg *sse.Event) {
 			return
 		}
 
+		lastSlot := c.lastSlot.Load()
+		if data.Slot <= lastSlot {
+			c.log.Tracef("skip processing already processed block[slot=%d], last processed slot %d", data.Slot, lastSlot)
+			return
+		}
+		c.lastSlot.Store(data.Slot)
+
 		block, err := c.requestBlock(data.Block)
 		if err != nil {
 			c.log.Errorf("error in getting block: %v", err)
@@ -499,6 +506,14 @@ func (c *APIClient) BroadcastBlock(block *ethpb.SignedBeaconBlockContentsDeneb) 
 	if !c.initialized.Load() {
 		return fmt.Errorf("unknown client version")
 	}
+
+	lastSlot := c.lastSlot.Load()
+	blockSlot := block.GetBlock().GetBlock().GetSlot()
+	if uint64(blockSlot) <= lastSlot {
+		c.log.Tracef("skip broadcast already processed block[slot=%d], last processed slot is %d", blockSlot, lastSlot)
+		return nil
+	}
+	c.lastSlot.Store(uint64(blockSlot))
 
 	uri := fmt.Sprintf(broadcastBlockRoute, c.URL)
 

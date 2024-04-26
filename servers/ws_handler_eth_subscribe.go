@@ -64,17 +64,17 @@ func (h *handlerObj) handleEthSubscribeNewPendingTxs(ctx context.Context, conn *
 		feed = types.NewTxsFeed
 	}
 
-	request := &clientReq{
-		feed:     feed,
-		includes: []string{"tx_hash"},
+	request := &ClientReq{
+		Feed:     feed,
+		Includes: []string{"tx_hash"},
 	}
 
 	ro := types.ReqOptions{
-		Includes: strings.Join(request.includes, ","),
+		Includes: strings.Join(request.Includes, ","),
 	}
 	// since we are replacing newPendingTransactions with newTxs/pendingTx, any existing newTxs/pendingTxs suppose to make newPendingTransactions a duplicate subscription.
 	// But this is used only in external gateway where gateway account id is the same with request account id, so this is avoided
-	sub, errSubscribe := h.FeedManager.Subscribe(request.feed, types.WebSocketFeed, conn, ci, ro, true)
+	sub, errSubscribe := h.FeedManager.Subscribe(request.Feed, types.WebSocketFeed, conn, ci, ro, true)
 	if errSubscribe != nil {
 		SendErrorMsg(ctx, jsonrpc.InvalidParams, errSubscribe.Error(), conn, req.ID)
 		return
@@ -104,7 +104,7 @@ func (h *handlerObj) handleEthSubscribeNewPendingTxs(ctx context.Context, conn *
 				return
 			}
 
-			switch request.feed {
+			switch request.Feed {
 			case types.NewTxsFeed:
 				tx := (notification).(*types.NewTransactionNotification)
 				if h.sendTxNotificationEthFormat(ctx, subscriptionID, request, conn, tx) != nil {
@@ -121,17 +121,17 @@ func (h *handlerObj) handleEthSubscribeNewPendingTxs(ctx context.Context, conn *
 }
 
 func (h *handlerObj) handleEthSubscribeNewHeads(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request, ci types.ClientInfo) {
-	request := &clientReq{
-		feed:     types.NewBlocksFeed,
-		includes: []string{"header", "hash", "tx_contents.nonce"},
+	request := &ClientReq{
+		Feed:     types.NewBlocksFeed,
+		Includes: []string{"header", "hash", "tx_contents.nonce"},
 	}
 
 	ro := types.ReqOptions{
-		Includes: strings.Join(request.includes, ","),
+		Includes: strings.Join(request.Includes, ","),
 	}
 	// since we are replacing newPendingTransactions with newTxs/pendingTx, any existing newTxs/pendingTxs suppose to make newPendingTransactions a duplicate subscription.
 	// But this is used only in external gateway where gateway account id is the same with request account id, so this is avoided
-	sub, errSubscribe := h.FeedManager.Subscribe(request.feed, types.WebSocketFeed, conn, ci, ro, true)
+	sub, errSubscribe := h.FeedManager.Subscribe(request.Feed, types.WebSocketFeed, conn, ci, ro, true)
 	if errSubscribe != nil {
 		SendErrorMsg(ctx, jsonrpc.InvalidParams, errSubscribe.Error(), conn, req.ID)
 		return
@@ -212,8 +212,8 @@ func (h *handlerObj) handleEthSubscribeFeed(ctx context.Context, feedType string
 		case <-conn.DisconnectNotify():
 			return
 		case err = <-subscription.Err():
-			h.log.Errorf("failed to subscribe to eth_subscribe feed %v: %v", feedType, err.Error())
-			SendErrorMsg(ctx, jsonrpc.InternalError, fmt.Sprintf("failed to subscribe to eth_subscribe feed %v: %v", feedType, err.Error()), conn, req.ID)
+			h.log.Errorf("failed to subscribe to eth_subscribe Feed %v: %v", feedType, err.Error())
+			SendErrorMsg(ctx, jsonrpc.InternalError, fmt.Sprintf("failed to subscribe to eth_subscribe Feed %v: %v", feedType, err.Error()), conn, req.ID)
 			return
 		case response := <-subscribeChan:
 			err = h.sendEthSubscribeNotification(ctx, subscriptionID, conn, response)
@@ -226,7 +226,7 @@ func (h *handlerObj) handleEthSubscribeFeed(ctx context.Context, feedType string
 }
 
 // sendTxNotificationEthSubscribeFormat - build a response according to client request and notify client
-func (h *handlerObj) sendTxNotificationEthFormat(ctx context.Context, subscriptionID string, clientReq *clientReq, conn *jsonrpc2.Conn, tx *types.NewTransactionNotification) error {
+func (h *handlerObj) sendTxNotificationEthFormat(ctx context.Context, subscriptionID string, clientReq *ClientReq, conn *jsonrpc2.Conn, tx *types.NewTransactionNotification) error {
 	result := filterAndIncludeTx(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
 	if result == nil {
 		return nil

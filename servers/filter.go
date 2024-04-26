@@ -20,7 +20,7 @@ var (
 	availableFilters = []string{"gas", "gas_price", "value", "to", "from", "method_id", "type", "chain_id", "max_fee_per_gas", "max_priority_fee_per_gas", "max_fee_per_blob_gas"}
 )
 
-// This function is used to skip the evaluation of txs which are not supported by the filters.
+// IsFiltersSupportedByTxType This function is used to skip the evaluation of txs which are not supported by the filters.
 // for example, if the client requested to filter by gas_price we will not evaluate dynamic fee txs, cause the
 // evaluation result will not be correct, or cause the error.
 // It helps us to proceed only to evaluation part with complex filters, like this one:
@@ -28,7 +28,7 @@ var (
 //
 // TODO: to get rid of this stuff, we need to move to another expression evaluation library (or forking existing one)
 // to support short circuit behavior for the logical operators.
-func isFiltersSupportedByTxType(txType uint8, filters []string) bool {
+func IsFiltersSupportedByTxType(txType uint8, filters []string) bool {
 	gasPriceExists := utils.Exists("gas_price", filters)
 	maxFeePerGasExists := utils.Exists("max_fee_per_gas", filters)
 	maxPriorityFeePerGasExists := utils.Exists("max_priority_fee_per_gas", filters)
@@ -51,7 +51,8 @@ func isFiltersSupportedByTxType(txType uint8, filters []string) bool {
 	return true
 }
 
-func validateFilters(filters string, txFromFieldIncludable bool) (conditions.Expr, error) {
+// ValidateFilters validate filters from request
+func ValidateFilters(filters string, txFromFieldIncludable bool) (conditions.Expr, error) {
 	_, expr, err := parseFilter(filters)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing Filters: %v", err)

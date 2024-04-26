@@ -528,4 +528,10 @@ var (
 		Hidden: true,
 		Value:  false,
 	}
+	EnableIntroductoryIntentsAccess = &cli.BoolFlag{
+		Name:   "enable-introductory-intents-access",
+		Usage:  "enable intents access for Introductory tiers",
+		Hidden: true,
+		Value:  false,
+	}
 )

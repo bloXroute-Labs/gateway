@@ -11,7 +11,8 @@ const (
 	txFromField  = "tx_contents.from"
 )
 
-func validateIncludeParam(feed types.FeedType, include []string, txFromFieldIncludable bool) ([]string, error) {
+// ValidateIncludeParam validate params from request
+func ValidateIncludeParam(feed types.FeedType, include []string, txFromFieldIncludable bool) ([]string, error) {
 	var requestedFields []string
 
 	if len(include) == 0 {
@@ -45,13 +46,13 @@ func validateIncludeParam(feed types.FeedType, include []string, txFromFieldIncl
 			}
 		case txFromField:
 			if !txFromFieldIncludable {
-				return nil, fmt.Errorf("got unsupported param '%s' for feed '%s'", txFromField, feed)
+				return nil, fmt.Errorf("got unsupported param '%s' for Feed '%s'", txFromField, feed)
 			}
 			requestedFields = append(requestedFields, txFromField)
 		default:
 			_, ok := validParamsMap[feed][param]
 			if !ok {
-				return nil, fmt.Errorf("got unsupported param '%v' for feed '%v'", param, feed)
+				return nil, fmt.Errorf("got unsupported param '%v' for Feed '%v'", param, feed)
 			}
 
 			requestedFields = append(requestedFields, param)

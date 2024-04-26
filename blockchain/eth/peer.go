@@ -355,7 +355,7 @@ func (ep *Peer) Handshake(version uint32, networkChain uint64, td *big.Int, head
 		return peerStatus, err
 	}
 
-	if version >= eth.ETH67 {
+	if version >= ETH67 {
 		// Relevant only for BSC
 		switch networkChain {
 		case network.BSCMainnetChainID, network.BSCTestnetChainID:
@@ -623,12 +623,12 @@ func (ep *Peer) RequestTransactions(txHashes []common.Hash) error {
 
 // SendPooledTransactionHashes67 sends transaction hashes to the peer
 func (ep *Peer) SendPooledTransactionHashes67(txHashes []common.Hash) error {
-	return ep.send(eth.NewPooledTransactionHashesMsg, eth.NewPooledTransactionHashesPacket67(txHashes))
+	return ep.send(eth.NewPooledTransactionHashesMsg, NewPooledTransactionHashesPacket66(txHashes))
 }
 
 // SendPooledTransactionHashes sends transaction hashes to the peer
 func (ep *Peer) SendPooledTransactionHashes(txHashes []common.Hash, types []byte, sizes []uint32) error {
-	return ep.send(eth.NewPooledTransactionHashesMsg, eth.NewPooledTransactionHashesPacket68{
+	return ep.send(eth.NewPooledTransactionHashesMsg, eth.NewPooledTransactionHashesPacket{
 		Hashes: txHashes,
 		Types:  types,
 		Sizes:  sizes,

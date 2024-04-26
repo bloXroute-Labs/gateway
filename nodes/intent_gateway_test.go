@@ -12,6 +12,7 @@ import (
 	gateway2 "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/servers"
+	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/mock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
@@ -40,19 +41,21 @@ func TestGateway_Intents(t *testing.T) {
 		ctx = metadata.NewIncomingContext(c,
 			metadata.New(map[string]string{"authorization": authHeader}),
 		)
-
-		target = gateway{
-			Bx: Bx{
-				Connections:     make(connections.ConnList, 0),
-				ConnectionsLock: &sync.RWMutex{},
-				clock:           utils.RealClock{},
-			},
-			log:            logEntry,
-			sdn:            sdnHTTPMock,
-			intentsManager: intentsManagerMock,
-			grpcHandler:    servers.NewGrpcHandler(gRPCFeedManagerMock, nil, false),
-		}
+		port                  = test.NextTestPort()
+		gateway, _, s, target = spawnGRPCServer(t, port, "", "")
 	)
+	defer s.Shutdown()
+	gateway.intentsManager = intentsManagerMock
+	gateway.sdn = sdnHTTPMock
+	gateway.Bx = Bx{
+		Connections:     make(connections.ConnList, 0),
+		ConnectionsLock: &sync.RWMutex{},
+		clock:           utils.RealClock{},
+	}
+	target.Bx = &gateway.Bx
+	target.params.sdn = sdnHTTPMock
+	target.params.intentsManager = intentsManagerMock
+	target.params.grpcFeedManager = gRPCFeedManagerMock
 
 	// simulate new relay connection and expect calls by bx.OnConnEstablished
 	relayConnMock.EXPECT().Log().Return(logEntry)
@@ -63,7 +66,7 @@ func TestGateway_Intents(t *testing.T) {
 	relayConnMock.EXPECT().GetLocalPort().Return(int64(2222))
 	relayConnMock.EXPECT().GetPeerIP().Return("localhost")
 	intentsManagerMock.EXPECT().SubscriptionMessages().Return([]bxmessage.Message{})
-	require.NoError(t, target.OnConnEstablished(relayConnMock))
+	require.NoError(t, gateway.OnConnEstablished(relayConnMock))
 
 	// simulate gRPC subscription
 	intentsStreamMock.EXPECT().Context().Return(ctx)
@@ -173,7 +176,7 @@ func TestGateway_Intents(t *testing.T) {
 	}).Return(nil)
 
 	// connect the second relay
-	require.NoError(t, target.OnConnEstablished(relayConnMock2))
+	require.NoError(t, gateway.OnConnEstablished(relayConnMock2))
 
 	// wait for the handler to die to make sure all expected calls were executed
 	<-doneGRPCSubscribe

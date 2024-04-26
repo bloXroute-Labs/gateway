@@ -8,14 +8,16 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 )
 
+// ETH66, ETH67 are the protocols that dropped by go-ethereum which still should be supported
 const (
-	// ETH66 declares dropped by go-ethereum version of ethereum which still should be supported
 	ETH66 = 66
+	ETH67 = 67
 )
 
 const (
@@ -25,20 +27,28 @@ const (
 	NodeDataMsg = 0x0e
 )
 
+// NewPooledTransactionHashesPacket66 represents a transaction announcement packet on eth/66.
+// Used for both eth/66 and eth/67.
+type NewPooledTransactionHashesPacket66 []common.Hash
+
+// Name implements the eth.Packet interface.
+func (*NewPooledTransactionHashesPacket66) Name() string { return "NewPooledTransactionHashes" }
+
+// Kind implements the eth.Packet interface.
+func (*NewPooledTransactionHashesPacket66) Kind() byte { return eth.NewPooledTransactionHashesMsg }
+
 // supportedProtocols is the map of networks to devp2p protocols supported by this client
 var supportedProtocols = map[uint64][]uint{
-	network.BSCMainnetChainID:     {ETH66, eth.ETH67, eth.ETH68},
-	network.BSCTestnetChainID:     {ETH66, eth.ETH67, eth.ETH68},
-	network.PolygonMainnetChainID: {eth.ETH67, eth.ETH68},
-	network.PolygonMumbaiChainID:  {eth.ETH67, eth.ETH68},
-	network.EthMainnetChainID:     {ETH66, eth.ETH67, eth.ETH68},
-	network.GoerliChainID:         {ETH66, eth.ETH67, eth.ETH68},
-	network.ZhejiangChainID:       {ETH66, eth.ETH67, eth.ETH68},
-	network.HoleskyChainID:        {eth.ETH67, eth.ETH68},
+	network.BSCMainnetChainID:     {ETH66, ETH67, eth.ETH68},
+	network.BSCTestnetChainID:     {ETH66, ETH67, eth.ETH68},
+	network.PolygonMainnetChainID: {ETH67, eth.ETH68},
+	network.PolygonMumbaiChainID:  {ETH67, eth.ETH68},
+	network.EthMainnetChainID:     {ETH66, ETH67, eth.ETH68},
+	network.HoleskyChainID:        {ETH67, eth.ETH68},
 }
 
 // protocolLengths is a mapping of each supported devp2p protocol to its message version length
-var protocolLengths = map[uint]uint64{ETH66: 17, eth.ETH67: 17, eth.ETH68: 17}
+var protocolLengths = map[uint]uint64{ETH66: 17, ETH67: 17, eth.ETH68: 17}
 
 // MakeProtocols generates the set of supported protocols structs for the p2p server
 func MakeProtocols(ctx context.Context, backend Backend) []p2p.Protocol {
@@ -183,7 +193,7 @@ func handleMessage(backend Backend, peer *Peer) error {
 	switch peer.version {
 	case ETH66:
 		handlers = eth66
-	case eth.ETH67:
+	case ETH67:
 		handlers = eth67
 	case eth.ETH68:
 		handlers = eth68

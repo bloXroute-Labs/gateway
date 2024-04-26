@@ -20,22 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/sirupsen/logrus"
-	"github.com/sourcegraph/jsonrpc2"
-	"go.uber.org/atomic"
-	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
-
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
@@ -51,9 +35,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/connections/handler"
-	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	bxrpc "github.com/bloXroute-Labs/gateway/v2/rpc"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/servers"
@@ -66,6 +48,19 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
 	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 	"github.com/bloXroute-Labs/gateway/v2/version"
+	"github.com/cenkalti/backoff/v4"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/pkg/errors"
+	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
+	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
+	"github.com/sirupsen/logrus"
+	"github.com/sourcegraph/jsonrpc2"
+	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/metadata"
 )
 
 const (
@@ -83,6 +78,9 @@ const (
 
 var (
 	errUnsupportedBlockType = errors.New("block type is not supported")
+	errMethodNotAllowed     = errors.New("not authorized to call this method")
+	errTierTooLow           = errors.New("account must be enterprise / enterprise elite / ultra")
+	errInvalidHeader        = errors.New("wrong value in the authorization header")
 )
 
 type accountResult struct {
@@ -92,7 +90,6 @@ type accountResult struct {
 
 type gateway struct {
 	Bx
-	pb.UnimplementedGatewayServer
 	context context.Context
 
 	sslCerts           *utils.SSLCerts
@@ -152,19 +149,16 @@ type gateway struct {
 	polygonValidatorInfoManager polygon.ValidatorInfoManager
 	blockTime                   time.Duration
 
-	grpcHandler   *servers.GrpcHandler
 	txsQueue      services.MessageQueue
 	txsOrderQueue services.MessageQueue
 
 	clientHandler *servers.ClientHandler
-	grpcServer    *gatewayGRPCServer
 	log           *log.Entry
 	chainID       int64
 
 	accountsCacheManager *utils.Cache[types.AccountID, accountResult]
 	intentsManager       IntentsManager
-
-	blobsManager *beacon.BlobSidecarCacheManager
+	blobsManager         *beacon.BlobSidecarCacheManager
 }
 
 // GeneratePeers generate string peers separated by coma
@@ -580,28 +574,33 @@ func (g *gateway) Run() error {
 
 	txFromFieldIncludable := blockchainNetwork.EnableCheckSenderNonce || g.txIncludeSenderInFeed
 
-	g.grpcHandler = servers.NewGrpcHandler(g.feedManager, g.wsManager, txFromFieldIncludable)
-
-	// start feed manager if websocket or gRPC is enabled
+	// start feed manager and servers if websocket or gRPC is enabled
 	if g.BxConfig.WebsocketEnabled || g.BxConfig.WebsocketTLSEnabled || g.BxConfig.GRPC.Enabled {
 		group.Go(func() error {
 			return g.feedManager.Start(ctx)
 		})
 	}
+	var grpcServer *servers.GRPCServer
+	var websocketServer *http.Server
 
-	if g.BxConfig.WebsocketEnabled || g.BxConfig.WebsocketTLSEnabled {
-		g.clientHandler = servers.NewClientHandler(g.feedManager, nil, servers.NewHTTPServer(g.feedManager, g.BxConfig.HTTPPort), g.BxConfig.EnableBlockchainRPC, g.sdn.GetQuotaUsage, log.WithFields(log.Fields{
-			"component": "gatewayClientHandler",
-		}), &g.BxConfig.PendingTxsSourceFromNode, g.authorize, txFromFieldIncludable)
-
-		group.Go(func() error {
-			return g.clientHandler.ManageWSServer(ctx, g.BxConfig.ManageWSServer)
+	if g.BxConfig.GRPC.Enabled {
+		gatewayGrpc := NewGatewayGrpc(&g.Bx, GatewayGrpcParams{sdn: g.sdn, authorize: g.authorize, bridge: g.bridge, blockchainPeers: g.blockchainPeers, wsManager: g.wsManager, bdnStats: g.bdnStats,
+			timeStarted: g.timeStarted, txsQueue: g.txsQueue, txsOrderQueue: g.txsOrderQueue, gatewayPublicKey: g.gatewayPublicKey, feedManager: g.feedManager, txFromFieldIncludable: txFromFieldIncludable,
+			blockProposer:   g.blockProposer,
+			feedManagerChan: g.feedManagerChan, intentsManager: g.intentsManager, grpcFeedManager: g.feedManager,
+			allowIntroductoryTierAccess: g.Bx.BxConfig.AllowIntroductoryTierAccess,
 		})
-
-		group.Go(func() error {
-			return g.clientHandler.ManageHTTPServer()
-		})
+		grpcServer = servers.NewGRPCServer(g.BxConfig.Host, g.BxConfig.Port, g.BxConfig.User, g.BxConfig.Password, g.stats, g.accountID, gatewayGrpc)
 	}
+	if g.BxConfig.WebsocketEnabled || g.BxConfig.WebsocketTLSEnabled {
+		websocketServer = servers.NewWSServer(g.feedManager, g.sdn.GetQuotaUsage, g.BxConfig.EnableBlockchainRPC, &g.BxConfig.PendingTxsSourceFromNode, g.authorize, txFromFieldIncludable)
+	}
+	g.clientHandler = servers.NewClientHandler(g.feedManager, websocketServer, servers.NewHTTPServer(g.feedManager, g.BxConfig.HTTPPort), grpcServer, g.BxConfig.EnableBlockchainRPC, g.sdn.GetQuotaUsage,
+		&g.BxConfig.PendingTxsSourceFromNode, g.authorize, txFromFieldIncludable)
+
+	group.Go(func() error {
+		return g.clientHandler.ManageServers(ctx, g.BxConfig.ManageWSServer)
+	})
 
 	if err = log.InitFluentD(g.BxConfig.FluentDEnabled, g.BxConfig.FluentDHost, string(g.sdn.NodeID()), logrus.InfoLevel); err != nil {
 		return err
@@ -617,13 +616,6 @@ func (g *gateway) Run() error {
 	}
 
 	go g.sendStatsOnInterval(15 * time.Minute)
-
-	if g.BxConfig.GRPC.Enabled {
-		g.grpcServer = newGatewayGRPCServer(g, g.BxConfig.Host, g.BxConfig.Port, g.BxConfig.User, g.BxConfig.Password)
-		group.Go(func() error {
-			return g.grpcServer.Start()
-		})
-	}
 
 	go g.handleBlockchainConnectionStatusUpdate()
 
@@ -651,10 +643,6 @@ func (g *gateway) Run() error {
 }
 
 func (g *gateway) Close() error {
-	if g.grpcServer != nil {
-		g.grpcServer.Stop()
-	}
-
 	if g.clientHandler != nil {
 		return g.clientHandler.Stop()
 	}
@@ -1645,6 +1633,8 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 	// we add the transaction to TxStore with current time, so we can measure time difference to node announcement/confirmation
 	txResult := g.TxStore.Add(tx.Hash(), tx.Content(), tx.ShortID(), tx.GetNetworkNum(), !(isRelay || (connections.IsGrpc(connectionType) && sender != types.EmptySender)), tx.Flags(), g.clock.Now(), g.chainID, sender)
 
+	resultFlags := txResult.Transaction.Flags()
+
 	nodeID := source.GetNodeID()
 	l := source.Log().WithFields(log.Fields{
 		"hash":   tx.Hash(),
@@ -1654,7 +1644,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 	switch {
 	case txResult.FailedValidation:
 		eventName = "TxValidationFailedStructure"
-	case txResult.NewContent && txResult.Transaction.Flags().IsReuseSenderNonce() && tx.ShortID() == types.ShortIDEmpty:
+	case txResult.NewContent && resultFlags.IsReuseSenderNonce() && tx.ShortID() == types.ShortIDEmpty:
 		eventName = "TxReuseSenderNonce"
 		l.Trace(txResult.DebugData)
 	case txResult.AlreadySeen:
@@ -1784,7 +1774,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 						}
 
 						l.WithFields(log.Fields{
-							"flags":                   tx.Flags(),
+							"flags":                   resultFlags,
 							"frontRunProtectionDelay": frontRunProtectionDelay.String(),
 						}).Debug("tx sent to blockchain with front run protection delay")
 					})
@@ -1800,7 +1790,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 					}
 
 					l.WithFields(log.Fields{
-						"flags": tx.Flags(),
+						"flags": resultFlags,
 					}).Debug("tx sent to blockchain")
 				}
 			}
@@ -1815,7 +1805,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 		}
 	default:
 		// duplicate transaction
-		if txResult.Transaction.Flags().IsReuseSenderNonce() {
+		if resultFlags.IsReuseSenderNonce() {
 			eventName = "TxReuseSenderNonceIgnoreSeen"
 			g.log.Trace(txResult.DebugData)
 		}
@@ -1832,7 +1822,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 	l = l.WithFields(log.Fields{
 		"from":                    source,
 		"nonce":                   txResult.Nonce,
-		"flags":                   tx.Flags(),
+		"flags":                   resultFlags,
 		"newTx":                   txResult.NewTx,
 		"newContent":              txResult.NewContent,
 		"newShortid":              txResult.NewSID,
@@ -2070,74 +2060,10 @@ func retrieveOriginalSenderAccountID(ctx context.Context, accountModel *sdnmessa
 	return &accountID, nil
 }
 
-func (g *gateway) Peers(ctx context.Context, req *pb.PeersRequest) (*pb.PeersReply, error) {
-	authHeader := retrieveAuthHeader(ctx, req.AuthHeader)
-
-	_, err := g.validateAuthHeader(authHeader, false, true, servers.GetPeerAddr(ctx))
-	if err != nil {
-		return nil, status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	return g.Bx.Peers(ctx, req)
-}
-
-// DisconnectInboundPeer disconnect inbound peer from gateway
-func (g *gateway) DisconnectInboundPeer(ctx context.Context, req *pb.DisconnectInboundPeerRequest) (*pb.DisconnectInboundPeerReply, error) {
-	authHeader := retrieveAuthHeader(ctx, req.AuthHeader)
-
-	_, err := g.validateAuthHeader(authHeader, false, true, servers.GetPeerAddr(ctx))
-	if err != nil {
-		return nil, status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	err = g.bridge.SendDisconnectEvent(types.NodeEndpoint{IP: req.PeerIp, Port: int(req.PeerPort), PublicKey: req.PublicKey})
-	if err != nil {
-		return &pb.DisconnectInboundPeerReply{Status: err.Error()}, status.Error(codes.Internal, err.Error())
-	}
-	return &pb.DisconnectInboundPeerReply{Status: fmt.Sprintf("Sent request to disconnect peer %v %v %v", req.PublicKey, req.PeerIp, req.PeerPort)}, nil
-}
-
 const (
 	connectionStatusConnected    = "connected"
 	connectionStatusNotConnected = "not_connected"
 )
-
-func (g *gateway) validateAuthHeader(authHeader string, required bool, allowAccessToInternalGateway bool, ip string) (*sdnmessage.Account, error) {
-	var err error
-	if authHeader == "" {
-		if required {
-			return nil, fmt.Errorf("auth header is missing")
-		}
-		if g.sdn.AccountModel().AccountID == types.BloxrouteAccountID {
-			return nil, fmt.Errorf("could not connect to internal gateway without auth header")
-		}
-		authHeader = g.getHeaderFromGateway()
-	}
-	accountID, secretHash, err := utils.GetAccountIDSecretHashFromHeader(authHeader)
-	if err != nil {
-		return nil, err
-	}
-
-	accountModel, err := g.authorize(accountID, secretHash, allowAccessToInternalGateway, ip)
-	if err != nil {
-		return nil, err
-	}
-	return &accountModel, nil
-}
-
-func (g *gateway) validateAuthHeaderWithContext(ctx context.Context, authHeader string, required bool, allowAccessToInternalGateway bool) (*sdnmessage.Account, error) {
-	accountModel, err := g.validateAuthHeader(authHeader, required, allowAccessToInternalGateway, servers.GetPeerAddr(ctx))
-	if err != nil {
-		return accountModel, err
-	}
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	default:
-		return accountModel, err
-	}
-}
 
 func (g *gateway) getHeaderFromGateway() string {
 	accountID := g.sdn.AccountModel().AccountID
@@ -2146,7 +2072,7 @@ func (g *gateway) getHeaderFromGateway() string {
 	return base64.StdEncoding.EncodeToString([]byte(accountIDAndHash))
 }
 
-func (g *gateway) authorize(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool, ip string) (sdnmessage.Account, error) {
+func (g *gateway) authorize(accountID types.AccountID, secretHash string, allowAccessToInternalGateway, allowIntroductoryTierAccess bool, ip string) (sdnmessage.Account, error) {
 	// if gateway received request from a customer with a different account id, it should verify it with the SDN.
 	// if the gateway does not have permission to verify account id (which mostly happen with external gateways),
 	// SDN will return StatusUnauthorized and fail this connection. if SDN return any other error -
@@ -2162,7 +2088,7 @@ func (g *gateway) authorize(accountID types.AccountID, secretHash string, allowA
 	if accountID != connectionAccountModel.AccountID {
 		if !allowAccessToInternalGateway {
 			l.Errorf("account %v is not authorized to call this method directly", g.sdn.AccountModel().AccountID)
-			return connectionAccountModel, fmt.Errorf("not authorized to call this method")
+			return connectionAccountModel, errMethodNotAllowed
 		}
 		accountRes, err := g.accountsCacheManager.Get(accountID)
 		if err != nil {
@@ -2175,445 +2101,21 @@ func (g *gateway) authorize(accountID types.AccountID, secretHash string, allowA
 		}
 
 		connectionAccountModel = accountRes.account
-		if !connectionAccountModel.TierName.IsEnterprise() {
+		if !allowIntroductoryTierAccess && !connectionAccountModel.TierName.IsEnterprise() {
 			l.Warnf("customer must be enterprise / enterprise elite / ultra but it is %v", connectionAccountModel)
-			return connectionAccountModel, fmt.Errorf("account must be enterprise / enterprise elite / ultra")
+			return connectionAccountModel, errTierTooLow
 		}
 	}
 
 	if secretHash != connectionAccountModel.SecretHash && secretHash != "" {
 		l.Error("account sent a different secret hash than set in the account model")
-		return connectionAccountModel, fmt.Errorf("wrong value in the authorization header")
+		return connectionAccountModel, errInvalidHeader
 	}
 
 	return connectionAccountModel, nil
 }
 
-func (g *gateway) Version(ctx context.Context, req *pb.VersionRequest) (*pb.VersionReply, error) {
-	authHeader := retrieveAuthHeader(ctx, req.AuthHeader)
-
-	_, err := g.validateAuthHeader(authHeader, false, true, servers.GetPeerAddr(ctx))
-	if err != nil {
-		return nil, status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	resp := &pb.VersionReply{
-		Version:   version.BuildVersion,
-		BuildDate: version.BuildDate,
-	}
-	return resp, nil
-}
-
-const bdn = "BDN"
-
-func (g *gateway) Status(ctx context.Context, req *pb.StatusRequest) (*pb.StatusResponse, error) {
-	authHeader := retrieveAuthHeader(ctx, req.AuthHeader)
-
-	_, err := g.validateAuthHeader(authHeader, false, true, servers.GetPeerAddr(ctx))
-	if err != nil {
-		return nil, status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	var bdnConn = func() map[string]*pb.BDNConnStatus {
-		var mp = make(map[string]*pb.BDNConnStatus)
-
-		g.ConnectionsLock.RLock()
-		for _, conn := range g.Connections {
-			connectionType := conn.GetConnectionType()
-
-			if connectionType&utils.Relay == 0 {
-				continue
-			}
-
-			var connectionLatency *pb.ConnectionLatency
-			if bxConn, ok := conn.(*handler.BxConn); ok {
-				minMsFromPeer, minMsToPeer, slowTrafficCount, minMsRoundTrip := bxConn.GetMinLatencies()
-				connectionLatency = &pb.ConnectionLatency{
-					MinMsFromPeer:    minMsFromPeer,
-					MinMsToPeer:      minMsToPeer,
-					SlowTrafficCount: slowTrafficCount,
-					MinMsRoundTrip:   minMsRoundTrip,
-				}
-			}
-
-			peerIP := conn.GetPeerIP()
-
-			if !conn.IsOpen() {
-				mp[peerIP] = &pb.BDNConnStatus{
-					Status: connectionStatusNotConnected,
-				}
-
-				continue
-			}
-
-			mp[peerIP] = &pb.BDNConnStatus{
-				Status:      connectionStatusConnected,
-				ConnectedAt: conn.GetConnectedAt().Format(time.RFC3339),
-				Latency:     connectionLatency,
-			}
-		}
-		g.ConnectionsLock.RUnlock()
-
-		if len(mp) == 0 {
-			// set "BDN: NOT_CONNECTED" in case of missing connections to any relay
-			mp[bdn] = &pb.BDNConnStatus{
-				Status: connectionStatusNotConnected,
-			}
-		}
-
-		return mp
-	}
-
-	var nodeConn = func() map[string]*pb.NodeConnStatus {
-		if len(g.blockchainPeers) == 0 {
-			return nil // Gateway is not connected to nodes
-		}
-
-		err := g.bridge.SendBlockchainStatusRequest()
-		if err != nil {
-			g.log.Errorf("failed to send blockchain status request: %v", err)
-			return nil
-		}
-
-		var wsProviders = g.wsManager.Providers()
-
-		select {
-		case status := <-g.bridge.ReceiveBlockchainStatusResponse():
-			var mp = make(map[string]*pb.NodeConnStatus)
-			var nodeStats = g.bdnStats.NodeStats()
-			for _, peer := range status {
-				connStatus := &pb.NodeConnStatus{
-					Dynamic: peer.IsDynamic(),
-					Version: int64(peer.Version),
-					Name:    peer.Name,
-				}
-
-				nstat, ok := nodeStats[peer.IPPort()]
-				if ok {
-					connStatus.IsConnected = nstat.IsConnected
-					connStatus.ConnectedAt = peer.ConnectedAt
-					connStatus.NodePerformance = &pb.NodePerformance{
-						Since:                                   g.bdnStats.StartTime().Format(time.RFC3339),
-						NewBlocksReceivedFromBlockchainNode:     uint32(nstat.NewBlocksReceivedFromBlockchainNode),
-						NewBlocksReceivedFromBdn:                uint32(nstat.NewBlocksReceivedFromBdn),
-						NewBlocksSeen:                           nstat.NewBlocksSeen,
-						NewBlockMessagesFromBlockchainNode:      nstat.NewBlockMessagesFromBlockchainNode,
-						NewBlockAnnouncementsFromBlockchainNode: nstat.NewBlockAnnouncementsFromBlockchainNode,
-						NewTxReceivedFromBlockchainNode:         nstat.NewTxReceivedFromBlockchainNode,
-						NewTxReceivedFromBdn:                    nstat.NewTxReceivedFromBdn,
-						TxSentToNode:                            nstat.TxSentToNode,
-						DuplicateTxFromNode:                     nstat.DuplicateTxFromNode,
-					}
-				}
-
-				mp[ipport(peer.IP, peer.Port)] = connStatus
-
-				wsPeer, ok := wsProviders[peer.IPPort()]
-				if !ok {
-					continue
-				}
-
-				connStatus.WsConnection = &pb.WsConnStatus{
-					Addr: wsPeer.Addr(),
-					ConnStatus: func() string {
-						if wsPeer.IsOpen() {
-							return connectionStatusConnected
-						}
-						return connectionStatusNotConnected
-					}(),
-					SyncStatus: strings.ToLower(string(wsPeer.SyncStatus())),
-				}
-			}
-
-			// If a node was disconnected through the interval then they are not connected.
-			// Let state this explicitly.
-			for key, peer := range nodeStats {
-				ipPort := strings.Replace(key, " ", ":", -1)
-				if _, ok := mp[ipPort]; !ok {
-					mp[ipPort] = &pb.NodeConnStatus{
-						IsConnected: peer.IsConnected,
-						Dynamic:     peer.Dynamic,
-						NodePerformance: &pb.NodePerformance{
-							Since:                                   g.bdnStats.StartTime().Format(time.RFC3339),
-							NewBlocksReceivedFromBlockchainNode:     uint32(peer.NewBlocksReceivedFromBlockchainNode),
-							NewBlocksReceivedFromBdn:                uint32(peer.NewBlocksReceivedFromBdn),
-							NewBlocksSeen:                           peer.NewBlocksSeen,
-							NewBlockMessagesFromBlockchainNode:      peer.NewBlockMessagesFromBlockchainNode,
-							NewBlockAnnouncementsFromBlockchainNode: peer.NewBlockAnnouncementsFromBlockchainNode,
-							NewTxReceivedFromBlockchainNode:         peer.NewTxReceivedFromBlockchainNode,
-							NewTxReceivedFromBdn:                    peer.NewTxReceivedFromBdn,
-							TxSentToNode:                            peer.TxSentToNode,
-							DuplicateTxFromNode:                     peer.DuplicateTxFromNode,
-						},
-					}
-				}
-			}
-
-			return mp
-		case <-time.After(time.Second):
-			g.log.Errorf("no blockchain status response from backend within 1sec timeout")
-			return nil
-		}
-	}
-
-	var (
-		nodeModel    = g.sdn.NodeModel()
-		accountModel = g.sdn.AccountModel()
-	)
-
-	rsp := &pb.StatusResponse{
-		GatewayInfo: &pb.GatewayInfo{
-			Version:          version.BuildVersion,
-			NodeId:           string(nodeModel.NodeID),
-			IpAddress:        nodeModel.ExternalIP,
-			TimeStarted:      g.timeStarted.Format(time.RFC3339),
-			Continent:        nodeModel.Continent,
-			Country:          nodeModel.Country,
-			Network:          nodeModel.Network,
-			StartupParams:    strings.Join(os.Args[1:], " "),
-			GatewayPublicKey: g.gatewayPublicKey,
-		},
-		Nodes:  nodeConn(),
-		Relays: bdnConn(),
-		AccountInfo: &pb.AccountInfo{
-			AccountId:  string(accountModel.AccountID),
-			ExpireDate: accountModel.ExpireDate,
-		},
-		QueueStats: &pb.QueuesStats{
-			TxsQueueCount:      g.txsQueue.TxsCount(),
-			TxsOrderQueueCount: g.txsOrderQueue.TxsCount(),
-		},
-	}
-
-	return rsp, nil
-}
-
 func ipport(ip string, port int) string { return fmt.Sprintf("%s:%d", ip, port) }
-
-func (g *gateway) Subscriptions(ctx context.Context, req *pb.SubscriptionsRequest) (*pb.SubscriptionsReply, error) {
-	authHeader := retrieveAuthHeader(ctx, req.AuthHeader)
-
-	_, err := g.validateAuthHeader(authHeader, false, true, servers.GetPeerAddr(ctx))
-	if err != nil {
-		return nil, status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	return g.feedManager.GetGrpcSubscriptionReply(), nil
-}
-
-func (g *gateway) BlxrSubmitBundle(ctx context.Context, req *pb.BlxrSubmitBundleRequest) (*pb.BlxrSubmitBundleReply, error) {
-	authHeader := retrieveAuthHeader(ctx, "")
-
-	accountModel, err := g.validateAuthHeader(authHeader, true, false, servers.GetPeerAddr(ctx))
-	if err != nil {
-		return nil, status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	accountID, err := retrieveOriginalSenderAccountID(ctx, accountModel)
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
-	}
-
-	mevBundleParams := &jsonrpc.RPCBundleSubmissionPayload{
-		MEVBuilders:       req.MevBuilders,
-		Transaction:       req.Transactions,
-		BlockNumber:       req.BlockNumber,
-		MinTimestamp:      int(req.MinTimestamp),
-		MaxTimestamp:      int(req.MaxTimestamp),
-		RevertingHashes:   req.RevertingHashes,
-		UUID:              req.Uuid,
-		BundlePrice:       req.BundlePrice,
-		EnforcePayout:     req.EnforcePayout,
-		AvoidMixedBundles: req.AvoidMixedBundles,
-	}
-
-	grpc := connections.NewRPCConn(*accountID, servers.GetPeerAddr(ctx), g.sdn.NetworkNum(), utils.GRPC)
-	bundleSubmitResult, _, err := servers.HandleMEVBundle(g.feedManager, grpc, *accountModel, mevBundleParams)
-	if err != nil {
-		// TODO need to refactor errors returned from HandleMEVBundle and then map them to jsonrpc and gRPC codes accordingly
-		// TODO instead of returning protocol specific error codes
-		return nil, err
-	}
-
-	return &pb.BlxrSubmitBundleReply{BundleHash: bundleSubmitResult.BundleHash}, nil
-}
-
-func (g *gateway) BlxrTx(ctx context.Context, req *pb.BlxrTxRequest) (*pb.BlxrTxReply, error) {
-	authHeader := retrieveAuthHeader(ctx, req.AuthHeader)
-
-	accountModel, err := g.validateAuthHeader(authHeader, true, false, servers.GetPeerAddr(ctx))
-	if err != nil {
-		return nil, status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	accountID, err := retrieveOriginalSenderAccountID(ctx, accountModel)
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
-	}
-
-	grpc := connections.NewRPCConn(*accountID, servers.GetPeerAddr(ctx), g.sdn.NetworkNum(), utils.GRPC)
-	txHash, ok, err := servers.HandleSingleTransaction(g.feedManager, req.Transaction, nil, grpc,
-		req.ValidatorsOnly, req.NextValidator, req.NodeValidation, req.FrontrunningProtection, uint16(req.Fallback),
-		g.feedManager.GetNextValidatorMap(), g.feedManager.GetValidatorStatusMap())
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	if !ok {
-		return nil, nil
-	}
-
-	log.Infof("grpc blxr_tx: Hash - 0x%v", txHash)
-	return &pb.BlxrTxReply{TxHash: txHash}, nil
-}
-
-func (g *gateway) BlxrBatchTX(ctx context.Context, req *pb.BlxrBatchTXRequest) (*pb.BlxrBatchTXReply, error) {
-	authHeader := retrieveAuthHeader(ctx, req.AuthHeader)
-
-	accountModel, err := g.validateAuthHeader(authHeader, true, false, servers.GetPeerAddr(ctx))
-	if err != nil {
-		return nil, err
-	}
-
-	startTime := time.Now()
-	var txHashes []*pb.TxIndex
-	var txErrors []*pb.ErrorIndex
-	transactionsAndSenders := req.GetTransactionsAndSenders()
-
-	batchTxLimit := 10
-	if len(transactionsAndSenders) > batchTxLimit {
-		txError := fmt.Sprintf("blxr-batch-tx currently supports a maximum of %v transactions", batchTxLimit)
-		txErrors = append(txErrors, &pb.ErrorIndex{Idx: 0, Error: txError})
-		return &pb.BlxrBatchTXReply{TxErrors: txErrors}, nil
-	}
-
-	accountID, err := retrieveOriginalSenderAccountID(ctx, accountModel)
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
-	}
-
-	grpc := connections.NewRPCConn(*accountID, servers.GetPeerAddr(ctx), g.sdn.NetworkNum(), utils.GRPC)
-
-	for idx, transactionsAndSender := range transactionsAndSenders {
-		tx := transactionsAndSender.GetTransaction()
-		txHash, ok, err := servers.HandleSingleTransaction(g.feedManager, tx, transactionsAndSender.GetSender(), grpc,
-			req.ValidatorsOnly, req.NextValidator, req.NodeValidation, req.FrontrunningProtection,
-			uint16(req.Fallback), g.feedManager.GetNextValidatorMap(), g.feedManager.GetValidatorStatusMap())
-		if err != nil {
-			txErrors = append(txErrors, &pb.ErrorIndex{Idx: int32(idx), Error: err.Error()})
-			continue
-		}
-		if !ok {
-			continue
-		}
-		txHashes = append(txHashes, &pb.TxIndex{Idx: int32(idx), TxHash: txHash})
-	}
-
-	g.log.WithFields(log.Fields{
-		"networkTime":    startTime.Sub(time.Unix(0, req.GetSendingTime())),
-		"handleTime":     time.Now().Sub(startTime),
-		"txsSuccess":     len(txHashes),
-		"txsError":       len(txErrors),
-		"validatorsOnly": req.ValidatorsOnly,
-		"nextValidator":  req.NextValidator,
-		"fallback":       req.Fallback,
-		"nodeValidation": req.NodeValidation,
-	}).Debug("blxr-batch-tx")
-
-	return &pb.BlxrBatchTXReply{TxHashes: txHashes, TxErrors: txErrors}, nil
-}
-
-func (g *gateway) NewTxs(req *pb.TxsRequest, stream pb.Gateway_NewTxsServer) error {
-	authHeader := retrieveAuthHeader(stream.Context(), req.AuthHeader)
-
-	accountModel, err := g.validateAuthHeader(authHeader, true, true, servers.GetPeerAddr(stream.Context()))
-	if err != nil {
-		return status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	return g.grpcHandler.NewTxs(req, stream, *accountModel)
-}
-
-func (g *gateway) PendingTxs(req *pb.TxsRequest, stream pb.Gateway_PendingTxsServer) error {
-	authHeader := retrieveAuthHeader(stream.Context(), req.AuthHeader)
-
-	accountModel, err := g.validateAuthHeader(authHeader, true, true, servers.GetPeerAddr(stream.Context()))
-	if err != nil {
-		return status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	return g.grpcHandler.PendingTxs(req, stream, *accountModel)
-}
-
-func (g *gateway) NewBlocks(req *pb.BlocksRequest, stream pb.Gateway_NewBlocksServer) error {
-	authHeader := retrieveAuthHeader(stream.Context(), req.AuthHeader)
-
-	accountModel, err := g.validateAuthHeader(authHeader, true, true, servers.GetPeerAddr(stream.Context()))
-	if err != nil {
-		return status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	return g.grpcHandler.NewBlocks(req, stream, *accountModel)
-}
-
-func (g *gateway) BdnBlocks(req *pb.BlocksRequest, stream pb.Gateway_BdnBlocksServer) error {
-	authHeader := retrieveAuthHeader(stream.Context(), req.AuthHeader)
-
-	accountModel, err := g.validateAuthHeader(authHeader, true, true, servers.GetPeerAddr(stream.Context()))
-	if err != nil {
-		return status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	return g.grpcHandler.BdnBlocks(req, stream, *accountModel)
-}
-
-func (g *gateway) EthOnBlock(req *pb.EthOnBlockRequest, stream pb.Gateway_EthOnBlockServer) error {
-	authHeader := retrieveAuthHeader(stream.Context(), req.AuthHeader)
-
-	accountModel, err := g.validateAuthHeader(authHeader, true, true, servers.GetPeerAddr(stream.Context()))
-	if err != nil {
-		return status.Error(codes.PermissionDenied, err.Error())
-	}
-	return g.grpcHandler.EthOnBlock(req, stream, *accountModel)
-}
-
-func (g *gateway) ShortIDs(ctx context.Context, req *pb.ShortIDsRequest) (*pb.ShortIDsReply, error) {
-	authHeader, err := bxrpc.ReadAuthMetadata(ctx)
-	if err != nil {
-		return nil, status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	if _, err = g.validateAuthHeader(authHeader, false, false, servers.GetPeerAddr(ctx)); err != nil {
-		return nil, status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	return g.blockProposer.ShortIDs(ctx, req)
-}
-
-func (g *gateway) ProposedBlock(ctx context.Context, req *pb.ProposedBlockRequest) (*pb.ProposedBlockReply, error) {
-	authHeader, err := bxrpc.ReadAuthMetadata(ctx)
-	if err != nil {
-		return nil, status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	if _, err = g.validateAuthHeader(authHeader, false, false, servers.GetPeerAddr(ctx)); err != nil {
-		return nil, status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	return g.blockProposer.ProposedBlock(ctx, req)
-}
-
-func (g *gateway) ProposedBlockStats(ctx context.Context, req *pb.ProposedBlockStatsRequest) (*pb.ProposedBlockStatsReply, error) {
-	authHeader, err := bxrpc.ReadAuthMetadata(ctx)
-	if err != nil {
-		return nil, status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	if _, err = g.validateAuthHeaderWithContext(ctx, authHeader, false, false); err != nil {
-		return nil, status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	return g.blockProposer.ProposedBlockStats(ctx, req)
-}
 
 func (g *gateway) bxBlockToBlockInfo(bxBlock *types.BxBlock) (*eth.BlockInfo, error) {
 	// We support only types.BxBlockTypeEth. That means BSC or Polygon block
@@ -2643,16 +2145,6 @@ func (g *gateway) onBlock(blockInfo *eth.BlockInfo) {
 		g.log.Debugf("failed to process block: %v", err)
 		return
 	}
-}
-
-func (g *gateway) TxReceipts(req *pb.TxReceiptsRequest, stream pb.Gateway_TxReceiptsServer) error {
-	authHeader := retrieveAuthHeader(stream.Context(), req.AuthHeader)
-
-	accountModel, err := g.validateAuthHeader(authHeader, true, true, servers.GetPeerAddr(stream.Context()))
-	if err != nil {
-		return status.Error(codes.PermissionDenied, err.Error())
-	}
-	return g.grpcHandler.TxReceipts(req, stream, *accountModel)
 }
 
 func (g *gateway) sendStats() {
@@ -2820,36 +2312,6 @@ func (g *gateway) forwardBSCTx(conn *http.Client, txHash string, tx string, endp
 		"response":   string(body),
 		"statusCode": resp.StatusCode,
 	}).Info("transaction sent")
-}
-
-func (g *gateway) TxsFromShortIDs(ctx context.Context, req *pb.ShortIDListRequest) (*pb.TxListReply, error) {
-	_, err := g.validateAuthHeader(retrieveAuthHeader(ctx, req.AuthHeader), false, false, servers.GetPeerAddr(ctx))
-	if err != nil {
-		return nil, status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	shortIDs := req.GetShortIDs()
-	if len(shortIDs) == 0 {
-		return nil, errors.New("missing shortIDs")
-	}
-
-	txList := make([][]byte, 0, len(shortIDs))
-
-	for _, shortID := range shortIDs {
-		if shortID == 0 {
-			txList = append(txList, []byte{})
-			continue
-		}
-		txStoreTx, err := g.TxStore.GetTxByShortID(types.ShortID(shortID))
-		if err != nil {
-			return nil, errors.New("failed decompressing")
-		}
-		txList = append(txList, hexutil.Bytes(txStoreTx.Content()))
-	}
-
-	return &pb.TxListReply{
-		Txs: txList,
-	}, nil
 }
 
 func (g *gateway) OnConnEstablished(conn connections.Conn) error {

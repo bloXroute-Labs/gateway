@@ -24,7 +24,7 @@ var (
 
 type handlerObj struct {
 	FeedManager              *FeedManager
-	ClientReq                *clientReq
+	ClientReq                *ClientReq
 	remoteAddress            string
 	connectionAccount        sdnmessage.Account
 	getQuotaUsage            func(accountID string) (*connections.QuotaResponseBody, error)
@@ -124,11 +124,11 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 }
 
 // sendNotification - build a response according to client request and notify client
-func (h *handlerObj) sendNotification(ctx context.Context, subscriptionID string, clientReq *clientReq, conn *jsonrpc2.Conn, notification types.Notification) error {
+func (h *handlerObj) sendNotification(ctx context.Context, subscriptionID string, clientReq *ClientReq, conn *jsonrpc2.Conn, notification types.Notification) error {
 	response := BlockResponse{
 		Subscription: subscriptionID,
 	}
-	content := notification.WithFields(clientReq.includes)
+	content := notification.WithFields(clientReq.Includes)
 	response.Result = content
 	err := conn.Notify(ctx, "subscribe", response)
 	if err != nil {

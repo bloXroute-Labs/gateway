@@ -29,23 +29,22 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *jsonrpc2.Conn
 		SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
 		return
 	}
-	feedName := request.feed
+	feedName := request.Feed
 
 	if len(h.FeedManager.nodeWSManager.Providers()) == 0 && feedName == types.NewBlocksFeed &&
-		h.FeedManager.networkNum != bxgateway.RopstenNum && h.FeedManager.networkNum != bxgateway.GoerliNum &&
 		h.FeedManager.networkNum != bxgateway.MainnetNum && h.FeedManager.networkNum != bxgateway.HoleskyNum {
-		errMsg := fmt.Sprintf("%v feed requires a websockets endpoint to be specifed via either --eth-ws-uri or --multi-node startup parameter", feedName)
+		errMsg := fmt.Sprintf("%v Feed requires a websockets endpoint to be specifed via either --eth-ws-uri or --multi-node startup parameter", feedName)
 		SendErrorMsg(ctx, jsonrpc.InvalidParams, errMsg, conn, req.ID)
 		return
 	}
 
 	var filters string
-	if request.expr != nil {
-		filters = request.expr.String()
+	if request.Expr != nil {
+		filters = request.Expr.String()
 	}
 	ro := types.ReqOptions{
 		Filters:  filters,
-		Includes: strings.Join(request.includes, ","),
+		Includes: strings.Join(request.Includes, ","),
 	}
 	ci := types.ClientInfo{
 		RemoteAddress: h.remoteAddress,
@@ -54,7 +53,7 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *jsonrpc2.Conn
 		MetaInfo:      h.headers,
 	}
 
-	sub, errSubscribe := h.FeedManager.Subscribe(request.feed, types.WebSocketFeed, conn, ci, ro, false)
+	sub, errSubscribe := h.FeedManager.Subscribe(request.Feed, types.WebSocketFeed, conn, ci, ro, false)
 	if errSubscribe != nil {
 		SendErrorMsg(ctx, jsonrpc.InvalidParams, errSubscribe.Error(), conn, req.ID)
 		return
@@ -74,7 +73,7 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *jsonrpc2.Conn
 		h.connectionAccount.TierName,
 		h.remoteAddress,
 		h.FeedManager.networkNum,
-		request.includes,
+		request.Includes,
 		filters,
 		"")
 
@@ -95,7 +94,7 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *jsonrpc2.Conn
 }
 
 func (h *handlerObj) handleRPCSubscribeNotify(ctx context.Context, conn *jsonrpc2.Conn,
-	reqID jsonrpc2.ID, sub *ClientSubscriptionHandlingInfo, subscriptionID string, feedName types.FeedType, request *clientReq) {
+	reqID jsonrpc2.ID, sub *ClientSubscriptionHandlingInfo, subscriptionID string, feedName types.FeedType, request *ClientReq) {
 
 	for {
 		select {
@@ -138,7 +137,7 @@ func (h *handlerObj) handleRPCSubscribeNotify(ctx context.Context, conn *jsonrpc
 					return h.sendNotification(ctx, subscriptionID, request, conn, notification)
 				}
 
-				err := handleEthOnBlock(h.FeedManager.nodeWSManager, h.FeedManager, block, *request.calls, sendEthOnBlockWsNotification)
+				err := HandleEthOnBlock(h.FeedManager.nodeWSManager, h.FeedManager, block, *request.calls, sendEthOnBlockWsNotification)
 				if err != nil {
 					SendErrorMsg(ctx, jsonrpc.InvalidRequest, err.Error(), conn, reqID)
 					return
@@ -149,7 +148,7 @@ func (h *handlerObj) handleRPCSubscribeNotify(ctx context.Context, conn *jsonrpc
 }
 
 // sendTxNotification - build a response according to client request and notify client
-func (h *handlerObj) sendTxNotification(ctx context.Context, subscriptionID string, clientReq *clientReq, conn *jsonrpc2.Conn, tx *types.NewTransactionNotification) error {
+func (h *handlerObj) sendTxNotification(ctx context.Context, subscriptionID string, clientReq *ClientReq, conn *jsonrpc2.Conn, tx *types.NewTransactionNotification) error {
 	result := filterAndIncludeTx(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
 	if result == nil {
 		return nil
@@ -168,11 +167,11 @@ func (h *handlerObj) sendTxNotification(ctx context.Context, subscriptionID stri
 	return nil
 }
 
-func (h *handlerObj) sendTxReceiptNotification(ctx context.Context, subscriptionID string, clientReq *clientReq, conn *jsonrpc2.Conn, notification types.Notification) error {
+func (h *handlerObj) sendTxReceiptNotification(ctx context.Context, subscriptionID string, clientReq *ClientReq, conn *jsonrpc2.Conn, notification types.Notification) error {
 	response := txReceiptResponse{
 		Subscription: subscriptionID,
 	}
-	content := notification.WithFields(clientReq.includes).(*types.TxReceiptsNotification)
+	content := notification.WithFields(clientReq.Includes).(*types.TxReceiptsNotification)
 	for _, receipt := range content.Receipts {
 		response.Result = receipt
 		err := conn.Notify(ctx, "subscribe", response)
@@ -185,7 +184,7 @@ func (h *handlerObj) sendTxReceiptNotification(ctx context.Context, subscription
 	return nil
 }
 
-func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan types.Notification, subscriptionID string, clientReq *clientReq, conn *jsonrpc2.Conn, req *jsonrpc2.Request, feedName types.FeedType) error {
+func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan types.Notification, subscriptionID string, clientReq *ClientReq, conn *jsonrpc2.Conn, req *jsonrpc2.Request, feedName types.FeedType) error {
 	for {
 		select {
 		case <-conn.DisconnectNotify():
