@@ -157,15 +157,6 @@ const BSCMainnet = "BSC-Mainnet"
 // BSCTestnet - for BSC testnet blockchain network name
 const BSCTestnet = "BSC-Testnet"
 
-// Ropsten - for Ropsten blockchain network name
-const Ropsten = "Ropsten"
-
-// Zhejiang - for Zhejiang blockchain network name
-const Zhejiang = "Zhejiang"
-
-// Goerli - for Goerli blockchain network name
-const Goerli = "Goerli"
-
 // Holesky - for Holesky testnet blockchain network name
 const Holesky = "Holesky"
 
@@ -202,12 +193,6 @@ const PolygonMainnetNum types.NetworkNum = 36
 // PolygonMumbaiNum - for Polygon Mumbai blockchain network number
 const PolygonMumbaiNum types.NetworkNum = 47
 
-// RopstenNum - for Ropsten blockchain network number
-const RopstenNum types.NetworkNum = 32
-
-// GoerliNum - for Goerli blockchain network number
-const GoerliNum types.NetworkNum = 45
-
 // BSCTestnetNum - for BSC-Testnet blockchain network number
 const BSCTestnetNum types.NetworkNum = 42
 
@@ -220,8 +205,6 @@ var BlockchainNetworkToNetworkNum = map[string]types.NetworkNum{
 	BSCMainnet:     BSCMainnetNum,
 	PolygonMainnet: PolygonMainnetNum,
 	PolygonMumbai:  PolygonMumbaiNum,
-	Ropsten:        RopstenNum,
-	Goerli:         GoerliNum,
 	BSCTestnet:     BSCTestnetNum,
 	Holesky:        HoleskyNum,
 }
@@ -251,8 +234,6 @@ var NetworkNumToBlockchainNetwork = map[types.NetworkNum]string{
 	BSCMainnetNum:     BSCMainnet,
 	PolygonMainnetNum: PolygonMainnet,
 	PolygonMumbaiNum:  PolygonMumbai,
-	RopstenNum:        Ropsten,
-	GoerliNum:         Goerli,
 	BSCTestnetNum:     BSCTestnet,
 	HoleskyNum:        Holesky,
 }

@@ -559,10 +559,9 @@ func (h *Handler) Handle(peer *Peer, packet eth.Packet) error {
 		var msg interface{}
 		switch peer.version {
 		case eth.ETH68:
-			msg = eth.NewPooledTransactionHashesPacket68{}
+			msg = eth.NewPooledTransactionHashesPacket{}
 		default:
-			// eth.NewPooledTransactionHashesPacket67 the same as eth.NewPooledTransactionHashesPacket66
-			msg = eth.NewPooledTransactionHashesPacket67{}
+			msg = NewPooledTransactionHashesPacket66{}
 		}
 		if err := peer.send(eth.NewPooledTransactionHashesMsg, &msg); err != nil {
 			peer.Log().Errorf("error sending empty NewPooledTransactionHashesMsg message after handshake %v", err)
@@ -572,9 +571,9 @@ func (h *Handler) Handle(peer *Peer, packet eth.Packet) error {
 		return h.processTransactions(peer, *p)
 	case *eth.PooledTransactionsResponse:
 		return h.processTransactions(peer, *p)
-	case *eth.NewPooledTransactionHashesPacket67:
+	case *NewPooledTransactionHashesPacket66:
 		return h.processTransactionHashes(peer, *p)
-	case *eth.NewPooledTransactionHashesPacket68:
+	case *eth.NewPooledTransactionHashesPacket:
 		return h.processTransactionHashes(peer, (*p).Hashes)
 	case *eth.NewBlockPacket:
 		return h.processBlock(peer, NewBlockInfo(p.Block, p.TD))

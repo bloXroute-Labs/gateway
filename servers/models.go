@@ -47,10 +47,11 @@ type txReceiptResponse struct {
 	Result       *types.TxReceipt `json:"result"`
 }
 
-type clientReq struct {
-	includes []string
-	feed     types.FeedType
-	expr     conditions.Expr
+// ClientReq represent client request
+type ClientReq struct {
+	Includes []string
+	Feed     types.FeedType
+	Expr     conditions.Expr
 	calls    *map[string]*RPCCall
 	MultiTxs bool
 }
@@ -60,7 +61,7 @@ type subscriptionRequest struct {
 	options subscriptionOptions
 }
 
-// subscriptionOptions includes subscription options
+// subscriptionOptions Includes subscription options
 type subscriptionOptions struct {
 	Include    []string            `json:"Include"`
 	Filters    string              `json:"Filters"`

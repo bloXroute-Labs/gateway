@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// RPCCall represents customer call executed for onBlock feed
+// RPCCall represents customer call executed for onBlock Feed
 type RPCCall struct {
 	commandMethod string
 	blockOffset   int
@@ -104,7 +104,8 @@ func (c *RPCCall) string() string {
 	})
 }
 
-func fillCalls(nodeWSManager blockchain.WSManager, calls map[string]*RPCCall, callIdx int, callParams map[string]string) error {
+// FillCalls fill calls
+func FillCalls(nodeWSManager blockchain.WSManager, calls map[string]*RPCCall, callIdx int, callParams map[string]string) error {
 	call := newCall(strconv.Itoa(callIdx))
 	err := call.constructCall(callParams, nodeWSManager)
 	if err != nil {
@@ -123,7 +124,8 @@ type WSProviderManager interface {
 	GetSyncedWSProvider(preferredProviderEndpoint *types.NodeEndpoint) (blockchain.WSProvider, bool)
 }
 
-func handleEthOnBlock(nodeWSManager blockchain.WSManager, providerManager WSProviderManager, block *types.EthBlockNotification, calls map[string]*RPCCall, sendNotification func(notification *types.OnBlockNotification) error) error {
+// HandleEthOnBlock handle eth on block
+func HandleEthOnBlock(nodeWSManager blockchain.WSManager, providerManager WSProviderManager, block *types.EthBlockNotification, calls map[string]*RPCCall, sendNotification func(notification *types.OnBlockNotification) error) error {
 	if len(block.Transactions) > 0 {
 		nodeWS, ok := providerManager.GetSyncedWSProvider(block.Source())
 		if !ok {

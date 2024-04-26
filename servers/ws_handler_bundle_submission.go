@@ -36,6 +36,11 @@ func (h *handlerObj) handleRPCBundleSubmission(ctx context.Context, conn *jsonrp
 
 	var ws connections.RPCConn
 	if h.connectionAccount.AccountID == types.BloxrouteAccountID {
+		// reject bundle if sent from Bloxroute, but has empty original sender
+		if params.OriginalSenderAccountID == "" {
+			SendErrorMsg(ctx, jsonrpc.InvalidParams, "original sender account ID param is missing", conn, req.ID)
+			return
+		}
 		// Bundle sent from cloud services, need to update account ID of the connection to be the origin sender
 		ws = connections.NewRPCConn(types.AccountID(params.OriginalSenderAccountID), h.remoteAddress, h.FeedManager.networkNum, utils.CloudAPI)
 	} else {

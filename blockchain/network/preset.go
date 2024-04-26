@@ -15,12 +15,6 @@ import (
 // EthMainnetChainID ethereum mainnet chain ID
 const EthMainnetChainID = 1
 
-// ZhejiangChainID ethereum zhejiang (shanghai hard fork) chain ID
-const ZhejiangChainID = 1337803
-
-// GoerliChainID ethereum Goerli chain ID
-const GoerliChainID = 5
-
 // BSCMainnetChainID BSC mainnet chain ID
 const BSCMainnetChainID = 56
 
@@ -42,76 +36,7 @@ var networkMapping = map[string]EthConfig{
 	"BSC-Testnet":     newBSCTestnetConfig(),
 	"Polygon-Mainnet": newPolygonMainnetConfig(),
 	"Polygon-Mumbai":  newPolygonMumbaiConfig(),
-	"Zhejiang":        newZhejiangEthereumConfig(),
-	"Goerli":          newGoerliConfig(),
 	"Holesky":         newHoleskyConfig(),
-}
-
-func newGoerliConfig() EthConfig {
-	td, ok := new(big.Int).SetString("10790000", 16)
-	if !ok {
-		panic("could not load Ethereum Mainnet configuration")
-	}
-
-	var err error
-	var bootNodes []*enode.Node
-
-	bootNodes, err = bootstrapNodes(enode.ValidSchemes, []string{
-		"enode://011f758e6552d105183b1761c5e2dea0111bc20fd5f6422bc7f91e0fabbec9a6595caf6239b37feb773dddd3f87240d99d859431891e4a642cf2a0a9e6cbb98a@51.141.78.53:30303",
-		"enode://176b9417f511d05b6b2cf3e34b756cf0a7096b3094572a8f6ef4cdcb9d1f9d00683bf0f83347eebdf3b81c3521c2332086d9592802230bf528eaf606a1d9677b@13.93.54.137:30303",
-		"enode://46add44b9f13965f7b9875ac6b85f016f341012d84f975377573800a863526f4da19ae2c620ec73d11591fa9510e992ecc03ad0751f53cc02f7c7ed6d55c7291@94.237.54.114:30313",
-		"enode://b5948a2d3e9d486c4d75bf32713221c2bd6cf86463302339299bd227dc2e276cd5a1c7ca4f43a0e9122fe9af884efed563bd2a1fd28661f3b5f5ad7bf1de5949@18.218.250.66:30303",
-	})
-	if err != nil {
-		panic("could not set Ethereum Mainnet bootstrapNodes")
-	}
-
-	ttd, _ := big.NewInt(0).SetString("10790000", 0)
-
-	return EthConfig{
-		Network:                 GoerliChainID,
-		TotalDifficulty:         td,
-		TerminalTotalDifficulty: ttd,
-		GenesisTime:             1616508000,
-		Head:                    common.HexToHash("0xbf7e331f7f7c1dd2e05159666b3bf8bc7a8a3a9eb1d518969eab529dd9b88c1a"),
-		Genesis:                 common.HexToHash("0xbf7e331f7f7c1dd2e05159666b3bf8bc7a8a3a9eb1d518969eab529dd9b88c1a"),
-		IgnoreBlockTimeout:      3 * time.Minute,
-		IgnoreSlotCount:         10,
-		BootstrapNodes:          bootNodes,
-		ProgramName:             "Geth/v1.11.2-stable-67109427/linux-amd64/go1.18.4",
-	}
-}
-
-func newZhejiangEthereumConfig() EthConfig {
-	td, ok := new(big.Int).SetString("0400000000", 16) // todo: ?
-	if !ok {
-		panic("could not load Ethereum Mainnet configuration")
-	}
-
-	var err error
-	var bootNodes []*enode.Node
-
-	bootNodes, err = bootstrapNodes(enode.ValidSchemes, []string{ // todo: ?
-		"enode://f20741af2743d83e03d30c49801b19b0103db81667cd8482a428cb1807a790f78a6ed2045ac45694e84803c94b6e8e63a4fc151f7c676cace3d38fcd94e52c57@167.99.209.68:30303",
-	})
-	if err != nil {
-		panic("could not set Ethereum Mainnet bootstrapNodes")
-	}
-
-	ttd, _ := big.NewInt(0).SetString("0", 0) // not changed
-
-	return EthConfig{
-		Network:                 ZhejiangChainID,
-		TotalDifficulty:         td,
-		TerminalTotalDifficulty: ttd,
-		GenesisTime:             1680523260, // cfg.MinGenesisTime = 1680523200 + cfg.GenesisDelay = 60
-		Head:                    common.HexToHash("0xd4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3"),
-		Genesis:                 common.HexToHash("0xd4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3"),
-		IgnoreBlockTimeout:      150 * time.Second,
-		IgnoreSlotCount:         10,
-		BootstrapNodes:          bootNodes,
-		ProgramName:             "Geth/v1.10.21-stable-67109427/linux-amd64/go1.18.4",
-	}
 }
 
 // NewEthereumPreset returns an Ethereum configuration for the given network name. For most of these presets, the client will present itself as only having the genesis block, but that shouldn't matter too much.

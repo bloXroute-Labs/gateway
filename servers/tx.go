@@ -80,36 +80,36 @@ func HandleSingleTransaction(
 	return tx.Hash().String(), true, nil
 }
 
-func shouldSendTx(clientReq *clientReq, tx *types.NewTransactionNotification, remoteAddress string, accountID types.AccountID) bool {
-	if clientReq.expr == nil {
+func shouldSendTx(clientReq *ClientReq, tx *types.NewTransactionNotification, remoteAddress string, accountID types.AccountID) bool {
+	if clientReq.Expr == nil {
 		return true
 	}
 
-	filters := clientReq.expr.Args()
+	filters := clientReq.Expr.Args()
 	txFilters := tx.Filters(filters)
 
 	// should be done after tx.Filters() to avoid nil pointer dereference
 	txType := tx.BlockchainTransaction.(*types.EthTransaction).Type()
 
-	if !isFiltersSupportedByTxType(txType, filters) {
+	if !IsFiltersSupportedByTxType(txType, filters) {
 		return false
 	}
 
 	// Evaluate if we should send the tx
-	shouldSend, err := conditions.Evaluate(clientReq.expr, txFilters)
+	shouldSend, err := conditions.Evaluate(clientReq.Expr, txFilters)
 	if err != nil {
-		log.Errorf("error evaluate Filters. feed: %v. filters: %s. remote address: %v. account id: %v error - %v tx: %v",
-			clientReq.feed, clientReq.expr, remoteAddress, accountID, err.Error(), txFilters)
+		log.Errorf("error evaluate Filters. Feed: %v. filters: %s. remote address: %v. account id: %v error - %v tx: %v",
+			clientReq.Feed, clientReq.Expr, remoteAddress, accountID, err.Error(), txFilters)
 		return false
 	}
 
 	return shouldSend
 }
 
-func includeTx(clientReq *clientReq, tx *types.NewTransactionNotification) *TxResult {
+func includeTx(clientReq *ClientReq, tx *types.NewTransactionNotification) *TxResult {
 	hasTxContent := false
 	var response TxResult
-	for _, param := range clientReq.includes {
+	for _, param := range clientReq.Includes {
 		switch param {
 		case "tx_hash":
 			txHash := tx.GetHash()
@@ -131,7 +131,7 @@ func includeTx(clientReq *clientReq, tx *types.NewTransactionNotification) *TxRe
 	}
 
 	if hasTxContent {
-		fields := tx.Fields(clientReq.includes)
+		fields := tx.Fields(clientReq.Includes)
 		if fields == nil {
 			log.Errorf("Got nil from tx.Fields - need to be checked")
 			return nil
@@ -142,7 +142,7 @@ func includeTx(clientReq *clientReq, tx *types.NewTransactionNotification) *TxRe
 	return &response
 }
 
-func filterAndIncludeTx(clientReq *clientReq, tx *types.NewTransactionNotification, remoteAddress string, accountID types.AccountID) *TxResult {
+func filterAndIncludeTx(clientReq *ClientReq, tx *types.NewTransactionNotification, remoteAddress string, accountID types.AccountID) *TxResult {
 	if !shouldSendTx(clientReq, tx, remoteAddress, accountID) {
 		return nil
 	}

@@ -9,7 +9,7 @@ import (
 
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
+	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
 	prysmTypes "github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
 	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
@@ -42,9 +42,7 @@ func (m *BlobSidecarCacheManager) AddBlobSidecar(blobSidecar *ethpb.BlobSidecar)
 
 	value, _ := m.blobSidecars.LoadOrStore(hex.EncodeToString(blockHash[:]), &BlobCacheValue{
 		slot: blobSidecar.SignedBlockHeader.Header.Slot,
-		// BlobsidecarSubnetCount is the number of subnets that the blob sidecar will be sent to
-		// currently it's equal to the max number of blobs inside a block
-		ch: make(chan *ethpb.BlobSidecar, params.BeaconConfig().BlobsidecarSubnetCount),
+		ch:   make(chan *ethpb.BlobSidecar, fieldparams.MaxBlobsPerBlock),
 	})
 
 	value.closeLock.RLock()
@@ -68,9 +66,7 @@ func (m *BlobSidecarCacheManager) SubscribeToBlobByBlockHash(blockHash string, s
 	blockHash = strings.TrimPrefix(blockHash, "0x")
 	value, _ := m.blobSidecars.LoadOrStore(blockHash, &BlobCacheValue{
 		slot: slot,
-		// BlobsidecarSubnetCount is the number of subnets that the blob sidecar will be sent to
-		// currently it's equal to the max number of blobs inside a block
-		ch: make(chan *ethpb.BlobSidecar, params.BeaconConfig().BlobsidecarSubnetCount),
+		ch:   make(chan *ethpb.BlobSidecar, fieldparams.MaxBlobsPerBlock),
 	})
 
 	value.closeLock.RLock()

@@ -19,7 +19,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
 	"github.com/bloXroute-Labs/gateway/v2/config"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
@@ -73,7 +72,7 @@ var accountIDToAccountModel = map[types.AccountID]sdnmessage.Account{
 	},
 }
 
-func mockAuthorize(accountID types.AccountID, _ string, _ bool, _ string) (sdnmessage.Account, error) {
+func mockAuthorize(accountID types.AccountID, _ string, _, _ bool, _ string) (sdnmessage.Account, error) {
 	return getMockCustomerAccountModel(accountID)
 }
 
@@ -154,11 +153,9 @@ func TestClientHandler(t *testing.T) {
 
 	var group errgroup.Group
 	sourceFromNode := false
-	clientHandler := NewClientHandler(fm, nil, NewHTTPServer(fm, cfg.HTTPPort), true, nil, log.WithFields(log.Fields{
-		"component": "gatewayClientHandler",
-	}), &sourceFromNode, mockAuthorize, true)
-	go clientHandler.ManageWSServer(context.Background(), cfg.ManageWSServer)
-	go clientHandler.ManageHTTPServer()
+	wsServer := NewWSServer(fm, getMockQuotaUsage, true, &sourceFromNode, mockAuthorize, true)
+	clientHandler := NewClientHandler(fm, wsServer, NewHTTPServer(fm, cfg.HTTPPort), nil, true, nil, &sourceFromNode, mockAuthorize, true)
+	go clientHandler.ManageServers(context.Background(), cfg.ManageWSServer)
 	group.Go(func() error {
 		return fm.Start(context.Background())
 	})
@@ -227,11 +224,8 @@ func TestClientHandler(t *testing.T) {
 		})
 		// restart bc last test shut down ws server
 		fm = NewFeedManager(context.Background(), g, make(chan types.Notification), services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 1, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil, nil)
-		clientHandler = NewClientHandler(fm, nil, NewHTTPServer(fm, cfg.HTTPPort), true, getMockQuotaUsage, log.WithFields(log.Fields{
-			"component": "gatewayClientHandler",
-		}), &sourceFromNode, mockAuthorize, true)
-		go clientHandler.ManageWSServer(context.Background(), cfg.ManageWSServer)
-		go clientHandler.ManageHTTPServer()
+		clientHandler := NewClientHandler(fm, wsServer, NewHTTPServer(fm, cfg.HTTPPort), nil, true, getMockQuotaUsage, &sourceFromNode, mockAuthorize, true)
+		go clientHandler.ManageServers(context.Background(), cfg.ManageWSServer)
 		group.Go(func() error {
 			return fm.Start(context.Background())
 		})
@@ -317,11 +311,9 @@ func TestClientHandler_BSC(t *testing.T) {
 	var group errgroup.Group
 	sourceFromNode := false
 	fmBSC := NewFeedManager(context.Background(), g, feedChan, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 56, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfoBSC, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false), gwAccount, getMockCustomerAccountModel, "", "", cfgBSC, stats, nil, nil)
-	clientHandlerBSC := NewClientHandler(fmBSC, nil, NewHTTPServer(fmBSC, cfgBSC.HTTPPort), false, getMockQuotaUsage, log.WithFields(log.Fields{
-		"component": "gatewayClientHandlerBSC",
-	}), &sourceFromNode, mockAuthorize, true)
-	go clientHandlerBSC.ManageWSServer(context.Background(), false)
-	go clientHandlerBSC.ManageHTTPServer()
+	wsServer := NewWSServer(fmBSC, getMockQuotaUsage, true, &sourceFromNode, mockAuthorize, true)
+	clientHandlerBSC := NewClientHandler(fmBSC, wsServer, NewHTTPServer(fmBSC, cfgBSC.HTTPPort), nil, false, getMockQuotaUsage, &sourceFromNode, mockAuthorize, true)
+	go clientHandlerBSC.ManageServers(context.Background(), false)
 	group.Go(func() error {
 		return fmBSC.Start(context.Background())
 	})
@@ -1051,7 +1043,7 @@ func assertEthSubscribe(t *testing.T, ws *websocket.Conn, fm *FeedManager, filte
 	), subscriptionID
 }
 
-func TestisFiltersSupportedByTxType(t *testing.T) {
+func TestIsFiltersSupportedByTxType(t *testing.T) {
 	tests := []struct {
 		name     string
 		txType   uint8
@@ -1134,8 +1126,8 @@ func TestisFiltersSupportedByTxType(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := isFiltersSupportedByTxType(tt.txType, tt.filters); got != tt.expected {
-				t.Errorf("isFiltersSupportedByTxType() = %v, expected %v", got, tt.expected)
+			if got := IsFiltersSupportedByTxType(tt.txType, tt.filters); got != tt.expected {
+				t.Errorf("IsFiltersSupportedByTxType() = %v, expected %v", got, tt.expected)
 			}
 		})
 	}

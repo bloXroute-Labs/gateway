@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bloXroute-Labs/gateway/v2/rpc"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/google/uuid"
@@ -39,6 +40,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/test/mock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 	"github.com/bloXroute-Labs/gateway/v2/utils/utilmock"
 )
 
@@ -1274,7 +1276,9 @@ func expectFeedNotificationCount(t *testing.T, feedChan chan types.Notification,
 }
 
 func TestGateway_Status(t *testing.T) {
-	bridge, g := setup(t, 1)
+	port := test.NextTestPort()
+	g, bridge, s, _ := spawnGRPCServer(t, port, "", "")
+	defer s.Shutdown()
 	mockTLS, relayConn := addRelayConn(g)
 
 	go func() {
@@ -1311,7 +1315,13 @@ func TestGateway_Status(t *testing.T) {
 	err = g.bridge.SendBlockchainStatusResponse(endpoints)
 	assert.NoError(t, err)
 
-	rsp, err := g.Status(context.Background(), &pb.StatusRequest{})
+	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
+	statusResp, err := rpc.GatewayCall(clientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {
+		return client.Status(context.Background(), &pb.StatusRequest{})
+	})
+	require.Nil(t, err)
+	rsp, ok := statusResp.(*pb.StatusResponse)
+	require.True(t, ok)
 	require.NoError(t, err)
 	require.NotNil(t, rsp)
 	require.Equal(t, rsp.GatewayInfo.IpAddress, "172.0.0.1")
@@ -1500,4 +1510,183 @@ func TestGateway_SendStatsOnInterval(t *testing.T) {
 		t.Fatal("sendStats did not return within the expected time")
 	}
 
+}
+
+func TestGateway_Authorize(t *testing.T) {
+	type fields struct {
+		accountFetcher  func(accountID types.AccountID) (*accountResult, error)
+		sdnAccountModel sdnmessage.Account
+	}
+	type args struct {
+		accountID                    types.AccountID
+		secretHash                   string
+		allowAccessToInternalGateway bool
+		allowIntroductoryTierAccess  bool
+	}
+	sdnAccountModelEnterprise := sdnmessage.Account{
+		AccountInfo: sdnmessage.AccountInfo{
+			AccountID: testGatewayAccountID,
+			TierName:  sdnmessage.ATierEnterprise,
+		},
+		SecretHash: testGatewaySecretHash,
+	}
+	sdnAccountModelProfessional := sdnmessage.Account{
+		AccountInfo: sdnmessage.AccountInfo{
+			AccountID: testGatewayAccountID,
+			TierName:  sdnmessage.ATierProfessional,
+		},
+		SecretHash: testGatewaySecretHash,
+	}
+
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		wantErr error
+	}{
+		{
+			name: "success with same accountID and secret hash",
+			fields: fields{
+				sdnAccountModel: sdnAccountModelEnterprise,
+			},
+			args: args{
+				accountID:                    testGatewayAccountID,
+				secretHash:                   testGatewaySecretHash,
+				allowAccessToInternalGateway: false,
+				allowIntroductoryTierAccess:  false,
+			},
+			wantErr: nil,
+		},
+		{
+			name: "invalid secret hash error",
+			fields: fields{
+				sdnAccountModel: sdnAccountModelEnterprise,
+			},
+			args: args{
+				accountID:                    testGatewayAccountID,
+				secretHash:                   testGatewaySecretHash + "1",
+				allowAccessToInternalGateway: false,
+				allowIntroductoryTierAccess:  false,
+			},
+			wantErr: errInvalidHeader,
+		},
+		{
+			name: "success with same accountID and empty secret hash",
+			fields: fields{
+				accountFetcher:  nil,
+				sdnAccountModel: sdnAccountModelEnterprise,
+			},
+			args: args{
+				accountID:                    testGatewayAccountID,
+				secretHash:                   "",
+				allowAccessToInternalGateway: false,
+				allowIntroductoryTierAccess:  false,
+			},
+			wantErr: nil,
+		},
+		{
+			name: "deny access to internal gateway",
+			fields: fields{
+				accountFetcher:  nil,
+				sdnAccountModel: sdnAccountModelEnterprise,
+			},
+			args: args{
+				accountID:                    testDifferentAccountID,
+				secretHash:                   "",
+				allowAccessToInternalGateway: false,
+				allowIntroductoryTierAccess:  false,
+			},
+			wantErr: errMethodNotAllowed,
+		},
+		{
+			name: "account manager not authorized error",
+			fields: fields{
+				sdnAccountModel: sdnAccountModelEnterprise,
+				accountFetcher: func(accountID types.AccountID) (*accountResult, error) {
+					return &accountResult{
+						notAuthorizedErr: fmt.Errorf("not authorized"),
+					}, nil
+				},
+			},
+			args: args{
+				accountID:                    testDifferentAccountID,
+				secretHash:                   "",
+				allowAccessToInternalGateway: true,
+				allowIntroductoryTierAccess:  false,
+			},
+			wantErr: fmt.Errorf("not authorized"),
+		},
+		{
+			name: "success with enterprise account",
+			fields: fields{
+
+				sdnAccountModel: sdnAccountModelEnterprise,
+				accountFetcher: func(accountID types.AccountID) (*accountResult, error) {
+					return &accountResult{account: sdnAccountModelEnterprise}, nil
+				},
+			},
+			args: args{
+				accountID:                    testDifferentAccountID,
+				secretHash:                   "",
+				allowAccessToInternalGateway: true,
+				allowIntroductoryTierAccess:  false,
+			},
+			wantErr: nil,
+		},
+		{
+			name: "tier to low error",
+			fields: fields{
+				sdnAccountModel: sdnAccountModelEnterprise,
+				accountFetcher: func(accountID types.AccountID) (*accountResult, error) {
+					return &accountResult{account: sdnAccountModelProfessional}, nil
+				},
+			},
+			args: args{
+				accountID:                    testDifferentAccountID,
+				secretHash:                   "",
+				allowAccessToInternalGateway: true,
+				allowIntroductoryTierAccess:  false,
+			},
+			wantErr: errTierTooLow,
+		},
+		{
+			name: "success with introductory tier access enabled",
+			fields: fields{
+				sdnAccountModel: sdnAccountModelEnterprise,
+				accountFetcher: func(accountID types.AccountID) (*accountResult, error) {
+					return &accountResult{account: sdnAccountModelProfessional}, nil
+				},
+			},
+			args: args{
+				accountID:                    testDifferentAccountID,
+				secretHash:                   "",
+				allowAccessToInternalGateway: true,
+				allowIntroductoryTierAccess:  true,
+			},
+			wantErr: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+
+			ctl := gomock.NewController(t)
+			mockedSdn := mock.NewMockSDNHTTP(ctl)
+
+			g := &gateway{
+				accountsCacheManager: utils.NewCache[types.AccountID, accountResult](syncmap.AccountIDHasher, tt.fields.accountFetcher, accountsCacheManagerExpDur, accountsCacheManagerCleanDur),
+				log:                  log.TestEntry(),
+				sdn:                  mockedSdn,
+			}
+
+			mockedSdn.EXPECT().AccountModel().Return(tt.fields.sdnAccountModel).AnyTimes()
+
+			_, err := g.authorize(tt.args.accountID, tt.args.secretHash, tt.args.allowAccessToInternalGateway, tt.args.allowIntroductoryTierAccess, "")
+			if tt.wantErr != nil {
+				assert.Equal(t, tt.wantErr, err)
+				return
+			}
+			assert.NoError(t, err)
+		})
+	}
 }

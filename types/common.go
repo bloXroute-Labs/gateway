@@ -106,7 +106,7 @@ const ShortIDEmpty = 0
 // ShortIDLen is the byte length of packed short IDs
 const ShortIDLen = UInt32Len
 
-// NetworkNum represents the network that a message is being routed in (Ethereum Mainnet, Ethereum Ropsten, etc.)
+// NetworkNum represents the network that a message is being routed in (Ethereum Mainnet, Ethereum Holesky, etc.)
 type NetworkNum uint32
 
 // NetworkID represent the chain ID that a message is being routed in (1 for Ethereum Mainnet, 56 for BSC-Mainnet, etc.)

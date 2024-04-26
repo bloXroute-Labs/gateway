@@ -26,6 +26,15 @@ func Filter[K any](slice []K, f func(K) bool) []K {
 	return filtered
 }
 
+// ConvertSlice - converts a slice of one type to another
+func ConvertSlice[I, J any](s []I, converter func(I) J) []J {
+	var e []J
+	for _, item := range s {
+		e = append(e, converter(item))
+	}
+	return e
+}
+
 // RemoveItemFromList is a helper function for remove a tx of a tx slice
 func RemoveItemFromList(itemList []string, item string) ([]string, error) {
 	if len(itemList) == 0 {

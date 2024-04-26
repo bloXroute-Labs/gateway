@@ -18,6 +18,7 @@ import (
 	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
 	blocks "github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
 	interfaces "github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
+	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
 	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
 	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 	"github.com/stretchr/testify/assert"
@@ -55,32 +56,40 @@ func init() {
 		panic(err)
 	}
 
+	validBlock = newBlock(201)
+}
+
+func newBlock(slot uint64) interfaces.ReadOnlySignedBeaconBlock {
 	hashLen := 32
-	blk := &eth.SignedBeaconBlock{Block: &eth.BeaconBlock{
-		Slot:          201,
-		ProposerIndex: 2,
-		ParentRoot:    bytesutil.PadTo([]byte("parent root"), hashLen),
-		StateRoot:     bytesutil.PadTo([]byte("state root"), hashLen),
-		Body: &eth.BeaconBlockBody{
-			Eth1Data: &eth.Eth1Data{
-				BlockHash:    bytesutil.PadTo([]byte("block hash"), hashLen),
-				DepositRoot:  bytesutil.PadTo([]byte("deposit root"), hashLen),
-				DepositCount: 1,
+
+	b, err := blocks.NewSignedBeaconBlock(&eth.SignedBeaconBlock{
+		Block: &eth.BeaconBlock{
+			Slot:          primitives.Slot(slot),
+			ProposerIndex: 2,
+			ParentRoot:    bytesutil.PadTo([]byte("parent root"), hashLen),
+			StateRoot:     bytesutil.PadTo([]byte("state root"), hashLen),
+			Body: &eth.BeaconBlockBody{
+				Eth1Data: &eth.Eth1Data{
+					BlockHash:    bytesutil.PadTo([]byte("block hash"), hashLen),
+					DepositRoot:  bytesutil.PadTo([]byte("deposit root"), hashLen),
+					DepositCount: 1,
+				},
+				RandaoReveal:      bytesutil.PadTo([]byte("randao"), fieldparams.BLSSignatureLength),
+				Graffiti:          bytesutil.PadTo([]byte("teehee"), hashLen),
+				ProposerSlashings: []*eth.ProposerSlashing{},
+				AttesterSlashings: []*eth.AttesterSlashing{},
+				Attestations:      []*eth.Attestation{},
+				Deposits:          []*eth.Deposit{},
+				VoluntaryExits:    []*eth.SignedVoluntaryExit{},
 			},
-			RandaoReveal:      bytesutil.PadTo([]byte("randao"), fieldparams.BLSSignatureLength),
-			Graffiti:          bytesutil.PadTo([]byte("teehee"), hashLen),
-			ProposerSlashings: []*eth.ProposerSlashing{},
-			AttesterSlashings: []*eth.AttesterSlashing{},
-			Attestations:      []*eth.Attestation{},
-			Deposits:          []*eth.Deposit{},
-			VoluntaryExits:    []*eth.SignedVoluntaryExit{},
 		},
-	},
 		Signature: bytesutil.PadTo([]byte("signature"), fieldparams.BLSSignatureLength),
+	})
+	if err != nil {
+		panic(err)
 	}
 
-	validBlock, _ = blocks.NewSignedBeaconBlock(blk)
-
+	return b
 }
 
 func TestNewAPIClient(t *testing.T) {
@@ -296,7 +305,7 @@ func TestAPIClient_broadcastBlock(t *testing.T) {
 
 	// Test Case 1: Successful broadcast ssz
 	mockRawBlock := denebBlockContentsData
-	var denebBlock = &eth.SignedBeaconBlockContentsDeneb{}
+	denebBlock := &eth.SignedBeaconBlockContentsDeneb{}
 	err = denebBlock.UnmarshalSSZ(denebBlockContentsData)
 	require.NoError(t, err)
 
@@ -322,7 +331,21 @@ func TestAPIClient_broadcastBlock(t *testing.T) {
 		t.Errorf("Expected no error, but got: %v", err)
 	}
 
-	// Test Case 2: Failed broadcast
+	// Test Case 2: Same block broadcast
+	// This is a partial test to avoid requesting a block that has already been broadcasted, as fully emulating the event is challenging.
+	// Instead, we'll ensure here that the block is not broadcasted twice.
+	httpmock.Reset()
+	httpmock.RegisterResponder(http.MethodPost, fmt.Sprintf("http://%s/eth/v1/beacon/blocks", url),
+		func(req *http.Request) (*http.Response, error) {
+			t.Fatal("Expected no request, but got one")
+			return nil, nil
+		},
+	)
+
+	err = client.BroadcastBlock(denebBlock)
+	assert.NoError(t, err)
+
+	// Test Case 3: Failed broadcast
 	httpmock.Reset()
 	httpmock.RegisterResponder(http.MethodPost, fmt.Sprintf("http://%s/eth/v1/beacon/blocks", url),
 		func(req *http.Request) (*http.Response, error) {
@@ -330,6 +353,7 @@ func TestAPIClient_broadcastBlock(t *testing.T) {
 		},
 	)
 
+	denebBlock.Block.Block.Slot++
 	err = client.BroadcastBlock(denebBlock)
 	if err == nil {
 		t.Error("Expected an error, but got none")

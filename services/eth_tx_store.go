@@ -82,6 +82,7 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 				log.Error(errEmptySidecar)
 				return TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: errEmptySidecar}
 			}
+			log.Tracef("adding flag TFWithSidecar for transaction %v", hash)
 			transaction.AddFlags(types.TFWithSidecar)
 		}
 

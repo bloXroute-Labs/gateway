@@ -17,6 +17,7 @@ import (
 	testUtils "github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/forkid"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -224,29 +225,68 @@ func TestHandler_BDNTransactionChannelTest(t *testing.T) {
 	}
 }
 
-func TestHandler_HandleTransactionHashes(t *testing.T) {
+func TestHandler_HandleTransactionHashes66and67(t *testing.T) {
+	testFunc := func(protocolVersion uint) {
+		bridge, handler, _ := setup()
+		peer, _, _ := testPeer(-1, 1)
+		_ = handler.peers.register(peer)
+
+		txHashes := types.SHA256HashList{
+			types.GenerateSHA256Hash(),
+			types.GenerateSHA256Hash(),
+		}
+		txHashesPacket := make(NewPooledTransactionHashesPacket66, 0)
+		for _, txHash := range txHashes {
+			txHashesPacket = append(txHashesPacket, common.BytesToHash(txHash[:]))
+		}
+
+		err := handler.Handle(peer, &txHashesPacket)
+		require.NoError(t, err)
+
+		txAnnouncements := <-bridge.ReceiveTransactionHashesAnnouncement()
+		require.Equal(t, peer.ID(), txAnnouncements.PeerID)
+		require.Equal(t, txHashes, txAnnouncements.Hashes)
+	}
+
+	testFunc(ETH66)
+	testFunc(ETH67)
+}
+
+func TestHandler_HandleTransactionHashes68(t *testing.T) {
 	bridge, handler, _ := setup()
 	peer, _, _ := testPeer(-1, 1)
+	peer.version = eth.ETH68
 	_ = handler.peers.register(peer)
 
-	txHashes := []types.SHA256Hash{
-		types.GenerateSHA256Hash(),
-		types.GenerateSHA256Hash(),
-	}
-	txHashesPacket := make(eth.NewPooledTransactionHashesPacket67, 0)
-	for _, txHash := range txHashes {
-		txHashesPacket = append(txHashesPacket, common.BytesToHash(txHash[:]))
+	txHashesPacket := eth.NewPooledTransactionHashesPacket{
+		Hashes: []common.Hash{
+			common.Hash(types.GenerateSHA256Hash().Bytes()),
+			common.Hash(types.GenerateSHA256Hash().Bytes()),
+			common.Hash(types.GenerateSHA256Hash().Bytes()),
+		},
+		Types: []uint8{
+			ethtypes.DynamicFeeTxType,
+			ethtypes.BlobTxType,
+			ethtypes.LegacyTxType,
+		},
+		Sizes: []uint32{
+			100,
+			200,
+			300,
+		},
 	}
 
 	err := handler.Handle(peer, &txHashesPacket)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	txAnnouncements := <-bridge.ReceiveTransactionHashesAnnouncement()
-	assert.Equal(t, peer.ID(), txAnnouncements.PeerID)
-
-	for i, announcedHash := range txAnnouncements.Hashes {
-		assert.Equal(t, txHashes[i], announcedHash)
-	}
+	require.Equal(t, peer.ID(), txAnnouncements.PeerID)
+	require.Equal(t, txHashesPacket.Hashes, utils.ConvertSlice(
+		txAnnouncements.Hashes,
+		func(h types.SHA256Hash) common.Hash {
+			return common.Hash(h)
+		},
+	))
 }
 
 func TestHandler_HandleNewBlock_MultiNode_SlowNode(t *testing.T) {

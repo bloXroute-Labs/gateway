@@ -142,7 +142,8 @@ func handlePooledTransactions(backend Backend, msg Decoder, peer *Peer) error {
 }
 
 func handleNewPooledTransactionHashes(backend Backend, msg Decoder, peer *Peer) error {
-	var txHashes eth.NewPooledTransactionHashesPacket67
+
+	var txHashes NewPooledTransactionHashesPacket66
 	if err := msg.Decode(&txHashes); err != nil {
 		return fmt.Errorf("could not decode message: %v: %v", msg, err)
 	}
@@ -167,7 +168,7 @@ func handleGetPooledTransactions(backend Backend, msg Decoder, peer *Peer) error
 }
 
 func handleNewPooledTransactionHashes68(backend Backend, msg Decoder, peer *Peer) error {
-	var txs eth.NewPooledTransactionHashesPacket68
+	var txs eth.NewPooledTransactionHashesPacket
 	if err := msg.Decode(&txs); err != nil {
 		return fmt.Errorf("could not decode message: %v: %v", msg, err)
 	}

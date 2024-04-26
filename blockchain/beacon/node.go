@@ -87,32 +87,6 @@ const (
 var networkInitMapping = map[string]func(){
 	// Mainnet is default and has required values
 	"Mainnet": func() {},
-	"Goerli": func() {
-		params.UsePraterNetworkConfig()
-		params.OverrideBeaconConfig(params.PraterConfig())
-		types.InitializeDataMaps()
-	},
-	"Zhejiang": func() {
-		cfg := params.MainnetConfig().Copy()
-		cfg.MinGenesisTime = 1680523200
-		cfg.GenesisDelay = 60
-		cfg.ConfigName = "Zhejiang"
-		cfg.GenesisForkVersion = []byte{0x10, 0x00, 0x00, 0x48}
-		cfg.SecondsPerETH1Block = 12
-		cfg.DepositChainID = 1
-		cfg.DepositNetworkID = 1
-		cfg.AltairForkEpoch = 0
-		cfg.AltairForkVersion = []byte{0x20, 0x00, 0x00, 0x48}
-		cfg.BellatrixForkEpoch = 0
-		cfg.BellatrixForkVersion = []byte{0x30, 0x00, 0x00, 0x48}
-		cfg.CapellaForkEpoch = 675
-		cfg.CapellaForkVersion = []byte{0x40, 0x00, 0x00, 0x48}
-		cfg.TerminalTotalDifficulty = "0"
-		cfg.DepositContractAddress = "0x6f22fFbC56eFF051aECF839396DD1eD9aD6BBA9D"
-		cfg.InitializeForkSchedule()
-		params.OverrideBeaconConfig(cfg)
-		types.InitializeDataMaps()
-	},
 	"Holesky": func() {
 		cfg := params.HoleskyConfig().Copy()
 		cfg.InitializeForkSchedule()
@@ -806,8 +780,7 @@ func (n *Node) broadcast(topic string, msg proto.Message) error {
 	}
 
 	if len(pbTopic.topic.ListPeers()) == 0 {
-		n.log.Warnf("no peers to broadcast")
-		return nil
+		return errors.New("no peers to broadcast")
 	}
 
 	castMsg, ok := msg.(fastssz.Marshaler)

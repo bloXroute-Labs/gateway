@@ -19,7 +19,7 @@ func (h *handlerObj) handleRPCEthUnsubscribe(ctx context.Context, conn *jsonrpc2
 	sid := rpcParams[0].(string)
 	cancel, exit := h.ethSubscribeIDToChanMap[sid]
 	if !exit {
-		// unsubscribe with feed manager
+		// unsubscribe with Feed manager
 		if err := h.FeedManager.Unsubscribe(sid, false, ""); err != nil {
 			h.log.Infof("subscription id %v was not found", sid)
 

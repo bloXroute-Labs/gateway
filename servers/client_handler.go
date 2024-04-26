@@ -39,39 +39,42 @@ type ClientHandler struct {
 	feedManager              *FeedManager
 	websocketServer          *http.Server
 	httpServer               *HTTPServer
+	gRPCServer               *GRPCServer
 	getQuotaUsage            func(accountID string) (*connections.QuotaResponseBody, error)
 	enableBlockchainRPC      bool
 	pendingTxsSourceFromNode *bool
 	log                      *log.Entry
-	authorize                func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool, ip string) (sdnmessage.Account, error)
+	authorize                func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway, allowIntroductoryTierAccess bool, ip string) (sdnmessage.Account, error)
 	txFromFieldIncludable    bool
 }
 
 // NewClientHandler is a constructor for ClientHandler
-func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, httpServer *HTTPServer, enableBlockchainRPC bool, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), log *log.Entry, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool, ip string) (sdnmessage.Account, error), txFromFieldIncludable bool) *ClientHandler {
+func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, httpServer *HTTPServer, gRPCServer *GRPCServer, enableBlockchainRPC bool, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway, allowIntroductoryTierAccess bool, ip string) (sdnmessage.Account, error), txFromFieldIncludable bool) *ClientHandler {
 	return &ClientHandler{
 		feedManager:              feedManager,
 		websocketServer:          websocketServer,
 		httpServer:               httpServer,
+		gRPCServer:               gRPCServer,
 		getQuotaUsage:            getQuotaUsage,
 		enableBlockchainRPC:      enableBlockchainRPC,
 		pendingTxsSourceFromNode: pendingTxsSourceFromNode,
 		authorize:                authorize,
-		log:                      log,
-		txFromFieldIncludable:    txFromFieldIncludable,
+		log: log.WithFields(log.Fields{
+			"component": "gatewayClientHandler"}),
+		txFromFieldIncludable: txFromFieldIncludable,
 	}
 }
 
-// ManageWSServer manage the ws connection of the blockchain node
-func (ch *ClientHandler) ManageWSServer(ctx context.Context, activeManagement bool) error {
+// ManageServers manage the ws and grpc connection of the blockchain node
+func (ch *ClientHandler) ManageServers(ctx context.Context, activeManagement bool) error {
 	if !activeManagement {
-		go ch.runWSServer()
+		go ch.runServers()
 	}
 
 	for {
 		select {
 		case <-ctx.Done():
-			ch.shutdownWSServer()
+			ch.shutdownServers()
 			return nil
 		case syncStatus := <-ch.feedManager.nodeWSManager.ReceiveNodeSyncStatusUpdate():
 			if !activeManagement {
@@ -81,28 +84,72 @@ func (ch *ClientHandler) ManageWSServer(ctx context.Context, activeManagement bo
 
 			switch syncStatus {
 			case blockchain.Synced:
-				go ch.runWSServer()
+				go ch.runServers()
 			case blockchain.Unsynced:
-				ch.shutdownWSServer()
+				ch.shutdownServers()
 				ch.feedManager.subscriptionServices.SendSubscriptionResetNotification(make([]sdnmessage.SubscriptionModel, 0))
 			}
 		}
 	}
 }
 
-// ManageHTTPServer runs http server for the gateway client handler
-func (ch *ClientHandler) ManageHTTPServer() error {
-	return ch.httpServer.Start()
+func (ch *ClientHandler) runServers() {
+	if ch.websocketServer != nil {
+		go func() {
+			err := ch.runWSServer()
+			if err != nil {
+				return
+			}
+		}()
+	}
+
+	if ch.gRPCServer != nil {
+		go func() {
+			err := ch.gRPCServer.Run()
+			if err != nil {
+				return
+			}
+		}()
+	}
+	if ch.httpServer != nil {
+		go func() {
+			err := ch.httpServer.Start()
+			if err != nil {
+				return
+			}
+		}()
+	}
+}
+
+func (ch *ClientHandler) shutdownServers() {
+	if ch.websocketServer != nil {
+		ch.shutdownWSServer()
+	}
+
+	if ch.gRPCServer != nil {
+		ch.gRPCServer.Shutdown()
+	}
+
+	if ch.httpServer != nil {
+		if err := ch.httpServer.Stop(); err != nil {
+			log.Errorf("error when stopping http server: %v", err)
+		}
+	}
+
+	ch.feedManager.CloseAllClientConnections()
 }
 
 // Stop stops the servers
 func (ch *ClientHandler) Stop() error {
-	ch.shutdownWSServer()
-	return ch.httpServer.Stop()
+	ch.shutdownServers()
+	if ch.httpServer != nil {
+		return ch.httpServer.Stop()
+	}
+	return nil
 }
 
 func (ch *ClientHandler) runWSServer() error {
-	ch.websocketServer = newWSServer(ch.feedManager, ch.getQuotaUsage, ch.enableBlockchainRPC, ch.pendingTxsSourceFromNode, ch.authorize, ch.txFromFieldIncludable)
+	ch.websocketServer = NewWSServer(ch.feedManager, ch.getQuotaUsage, ch.enableBlockchainRPC, ch.pendingTxsSourceFromNode, ch.authorize, ch.txFromFieldIncludable)
 	ch.log.Infof("starting websockets RPC server at: %v", ch.websocketServer.Addr)
 	var err error
 	if ch.feedManager.cfg.WebsocketTLSEnabled {
@@ -124,15 +171,14 @@ func (ch *ClientHandler) runWSServer() error {
 
 func (ch *ClientHandler) shutdownWSServer() {
 	ch.log.Infof("shutting down websocket server")
-	ch.feedManager.CloseAllClientConnections()
 	err := ch.websocketServer.Shutdown(ch.feedManager.context)
 	if err != nil {
 		ch.log.Errorf("encountered error shutting down websocket server %v: %v", ch.feedManager.cfg.WebsocketPort, err)
 	}
 }
 
-// newWSServer creates and returns a new websocket server managed by FeedManager
-func newWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway bool, ip string) (sdnmessage.Account, error), txFromFieldIncludable bool) *http.Server {
+// NewWSServer creates and returns a new websocket server managed by FeedManager
+func NewWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway, allowIntroductoryTierAccess bool, ip string) (sdnmessage.Account, error), txFromFieldIncludable bool) *http.Server {
 	handler := http.NewServeMux()
 	wsHandler := func(responseWriter http.ResponseWriter, request *http.Request) {
 		// if enable client handler - skip authorization
@@ -163,7 +209,7 @@ func newWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) 
 				errorWithDelay(responseWriter, request, fmt.Errorf("missing authorization from method: %v", request.Method).Error())
 				return
 			}
-			connectionAccountModel, err = authorize(accountID, secretHash, true, request.RemoteAddr)
+			connectionAccountModel, err = authorize(accountID, secretHash, true, false, request.RemoteAddr)
 			if err != nil {
 				errorWithDelay(responseWriter, request, err.Error())
 				return

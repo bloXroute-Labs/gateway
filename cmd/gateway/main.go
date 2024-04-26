@@ -108,6 +108,7 @@ func main() {
 			utils.BSCHighLoadBlockSendDelayIntervalMSFlag,
 			utils.BSCHighLoadTxNumThresholdFlag,
 			utils.TxIncludeSenderInFeed,
+			utils.EnableIntroductoryIntentsAccess,
 			utils.BeaconTrustedPeersFileFlag,
 			utils.BeaconPort,
 		},
@@ -388,15 +389,8 @@ func downloadGenesisFile(network, genesisFilePath string) (string, error) {
 	switch network {
 	case bxgateway.Mainnet:
 		genesisFileURL = "https://github.com/eth-clients/eth2-mainnet/raw/master/genesis.ssz"
-	case bxgateway.Ropsten:
-		genesisFileURL = "https://github.com/eth-clients/merge-testnets/raw/main/ropsten-beacon-chain/genesis.ssz"
-	case bxgateway.Zhejiang:
-		genesisFileURL = "https://github.com/ethpandaops/withdrawals-testnet/raw/master/withdrawal-mainnet-shadowfork-3/custom_config_data/genesis.ssz"
-	case bxgateway.Goerli:
-		genesisFileURL = "https://github.com/eth-clients/goerli/raw/main/prater/genesis.ssz"
 	case bxgateway.Holesky:
 		genesisFileURL = "https://github.com/eth-clients/holesky/raw/main/custom_config_data/genesis.ssz"
-
 	default:
 		return "", fmt.Errorf("beacon node is only supported on Ethereum")
 	}
