@@ -2017,7 +2017,7 @@ func (g *gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source c
 	if fromRelay {
 		event = "GatewayReceivedBundleFromBDN"
 
-		if mevBundle.UUID == "" {
+		if mevBundle.UUID == "" && !mevBundle.PriorityFeeRefund {
 			if err := g.mevBundleDispatcher.Dispatch(&mevBundle); err != nil {
 				g.log.Errorf("failed to dispatch mev bundle %v: %v", mevBundle.BundleHash, err)
 			}

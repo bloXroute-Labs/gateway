@@ -60,23 +60,24 @@ type GatewayGrpc struct {
 
 // GatewayGrpcParams GatewayGrpc params
 type GatewayGrpcParams struct {
-	sdn                         connections.SDNHTTP
-	authorize                   func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway, allowIntroductoryTierAccess bool, ip string) (sdnmessage.Account, error)
-	bridge                      blockchain.Bridge
-	blockchainPeers             []types.NodeEndpoint
-	wsManager                   blockchain.WSManager
-	bdnStats                    *bxmessage.BdnPerformanceStats
-	timeStarted                 time.Time
-	txsQueue                    services.MessageQueue
-	txsOrderQueue               services.MessageQueue
-	gatewayPublicKey            string
-	feedManager                 *servers.FeedManager
-	feedManagerChan             chan types.Notification
-	txFromFieldIncludable       bool
-	blockProposer               bsc.BlockProposer
-	allowIntroductoryTierAccess bool
-	intentsManager              IntentsManager
-	grpcFeedManager             GRPCFeedManager
+	sdn                            connections.SDNHTTP
+	authorize                      func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway, allowIntroductoryTierAccess bool, ip string) (sdnmessage.Account, error)
+	bridge                         blockchain.Bridge
+	blockchainPeers                []types.NodeEndpoint
+	wsManager                      blockchain.WSManager
+	bdnStats                       *bxmessage.BdnPerformanceStats
+	timeStarted                    time.Time
+	txsQueue                       services.MessageQueue
+	txsOrderQueue                  services.MessageQueue
+	gatewayPublicKey               string
+	feedManager                    *servers.FeedManager
+	feedManagerChan                chan types.Notification
+	txFromFieldIncludable          bool
+	blockProposer                  bsc.BlockProposer
+	enableGRPCSubmitBeaconBlockSSZ bool
+	allowIntroductoryTierAccess    bool
+	intentsManager                 IntentsManager
+	grpcFeedManager                GRPCFeedManager
 }
 
 // NewGatewayGrpc return new GatewayGrpc object
@@ -387,6 +388,7 @@ func (g *GatewayGrpc) BlxrSubmitBundle(ctx context.Context, req *pb.BlxrSubmitBu
 		BundlePrice:       req.BundlePrice,
 		EnforcePayout:     req.EnforcePayout,
 		AvoidMixedBundles: req.AvoidMixedBundles,
+		PriorityFeeRefund: req.PriorityFeeRefund,
 	}
 
 	grpc := connections.NewRPCConn(*accountID, servers.GetPeerAddr(ctx), g.params.sdn.NetworkNum(), utils.GRPC)

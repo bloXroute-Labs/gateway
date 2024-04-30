@@ -216,6 +216,7 @@ func mevBundleFromRequest(payload *jsonrpc.RPCBundleSubmissionPayload, networkNu
 		payload.BundlePrice,
 		payload.EnforcePayout,
 		avoidMixedBundles,
+		payload.PriorityFeeRefund,
 	)
 	if err != nil {
 		// Validated before, should not happen

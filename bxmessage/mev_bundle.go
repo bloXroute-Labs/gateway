@@ -63,6 +63,9 @@ type MEVBundle struct {
 
 	// From protocol version 43
 	AvoidMixedBundles bool
+
+	// From protocol version 45
+	PriorityFeeRefund bool `json:"priority_fee_refund"`
 }
 
 // NewMEVBundle creates a new MEVBundle
@@ -78,6 +81,7 @@ func NewMEVBundle(
 	bundlePrice int64,
 	enforcePayout,
 	avoidMixedBundles bool,
+	priorityFeeRefund bool,
 ) (MEVBundle, error) {
 	if len(uuid) != 0 && len(uuid) != 36 {
 		return MEVBundle{}, errors.New("invalid uuid len")
@@ -94,13 +98,14 @@ func NewMEVBundle(
 		BundlePrice:       bundlePrice,
 		EnforcePayout:     enforcePayout,
 		AvoidMixedBundles: avoidMixedBundles,
+		PriorityFeeRefund: priorityFeeRefund,
 	}, nil
 }
 
 // String returns a string representation of the MEVBundle
 func (m MEVBundle) String() string {
-	return fmt.Sprintf("mev bundle(sender account ID: %s, hash: %s, blockNumber: %s, builders: %v, txs: %d, sent from cloud api: %v, tier: %v, allowMixedBundles: %v, UUID: %s, EnforcePayout %v, BundlePrice %v, MinTimestamp %v , MaxTimestamp %v, RevertingHashes %v)",
-		m.OriginalSenderAccountID, m.BundleHash, m.BlockNumber, m.MEVBuilders, len(m.Transactions), m.SentFromCloudAPI, m.OriginalSenderAccountTier, m.AvoidMixedBundles, m.UUID, m.EnforcePayout, m.BundlePrice, m.MinTimestamp, m.MaxTimestamp, len(m.RevertingHashes))
+	return fmt.Sprintf("mev bundle(sender account ID: %s, hash: %s, blockNumber: %s, builders: %v, txs: %d, sent from cloud api: %v, tier: %v, allowMixedBundles: %v, priorityFeeRefund: %v, UUID: %s, EnforcePayout %v, BundlePrice %v, MinTimestamp %v , MaxTimestamp %v, RevertingHashes %v)",
+		m.OriginalSenderAccountID, m.BundleHash, m.BlockNumber, m.MEVBuilders, len(m.Transactions), m.SentFromCloudAPI, m.OriginalSenderAccountTier, m.AvoidMixedBundles, m.PriorityFeeRefund, m.UUID, m.EnforcePayout, m.BundlePrice, m.MinTimestamp, m.MaxTimestamp, len(m.RevertingHashes))
 }
 
 // SetHash sets the hash based on the fields in BundleSubmission
@@ -199,6 +204,11 @@ func (m MEVBundle) size(protocol Protocol, txs [][]byte) uint32 {
 	// From protocol version 43: AvoidMixedBundles
 	if protocol >= AvoidMixedBundleProtocol {
 		size += types.UInt8Len // AvoidMixedBundles bool
+	}
+
+	// From protocol version 45: BundlePriorityFeeRefund
+	if protocol >= BundlePriorityFeeRefundProtocol {
+		size += types.UInt8Len // PriorityFeeRefund bool
 	}
 
 	return size
@@ -370,6 +380,15 @@ func (m MEVBundle) Pack(protocol Protocol) ([]byte, error) {
 
 	if protocol >= AvoidMixedBundleProtocol {
 		if m.AvoidMixedBundles {
+			buf[offset] = 1
+		} else {
+			buf[offset] = 0
+		}
+		offset += types.UInt8Len //nolint:ineffassign
+	}
+
+	if protocol >= BundlePriorityFeeRefundProtocol {
+		if m.PriorityFeeRefund {
 			buf[offset] = 1
 		} else {
 			buf[offset] = 0
@@ -618,6 +637,15 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 		offset += types.UInt8Len //nolint:ineffassign
 	}
 
+	if protocol >= BundlePriorityFeeRefundProtocol {
+		if err := checkBufSize(&data, offset, types.UInt8Len); err != nil {
+			return err
+		}
+
+		m.PriorityFeeRefund = data[offset] == 1
+		offset += types.UInt8Len //nolint:ineffassign
+	}
+
 	return nil
 }
 
@@ -690,5 +718,6 @@ func (m *MEVBundle) Clone() *MEVBundle {
 		OriginalSenderAccountTier: m.OriginalSenderAccountTier,
 		SentFromCloudAPI:          m.SentFromCloudAPI,
 		AvoidMixedBundles:         m.AvoidMixedBundles,
+		PriorityFeeRefund:         m.PriorityFeeRefund,
 	}
 }

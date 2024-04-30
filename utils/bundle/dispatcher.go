@@ -97,6 +97,7 @@ func (d *Dispatcher) bundleJSON(bundle *bxmessage.MEVBundle) ([]byte, error) {
 			RevertingTxHashes: bundle.RevertingHashes,
 			BundlePrice:       bundle.BundlePrice,
 			EnforcePayout:     bundle.EnforcePayout,
+			PriorityFeeRefund: bundle.PriorityFeeRefund,
 		},
 	}
 
