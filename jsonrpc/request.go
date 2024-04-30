@@ -129,6 +129,7 @@ type RPCBundleSubmissionPayload struct {
 	EnforcePayout           bool              `json:"enforcePayout,omitempty"`
 	AvoidMixedBundles       bool              `json:"avoidMixedBundles,omitempty"`
 	OriginalSenderAccountID string            `json:"original_sender_account_id"`
+	PriorityFeeRefund       bool              `json:"priority_fee_refund"`
 }
 
 // Validate doing validation for blxr_submit_bundle payload
@@ -184,6 +185,7 @@ type RPCSendBundle struct {
 	BundlePrice       int64    `json:"bundlePrice,omitempty"` // in wei
 	EnforcePayout     bool     `json:"enforcePayout,omitempty"`
 	AvoidMixedBundles bool     `json:"avoidMixedBundles,omitempty"`
+	PriorityFeeRefund bool     `json:"priorityFeeRefund"`
 }
 
 // RPCCancelBundlePayload custom json-rpc required to cancel flashbots bundle

@@ -105,6 +105,7 @@ message BlxrSubmitBundleRequest {
   int64 bundle_price = 8;
   bool enforce_payout = 9;
   bool avoid_mixed_bundles = 10;
+  bool priority_fee_refund = 11;
 }
 
 message BlxrSubmitBundleReply {

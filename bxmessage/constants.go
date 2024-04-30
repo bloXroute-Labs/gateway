@@ -100,7 +100,10 @@ const EmptyProtocol = 0
 const MinProtocol = 19
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
-const CurrentProtocol = BeaconMessagesProtocol
+const CurrentProtocol = BundlePriorityFeeRefundProtocol
+
+// BundlePriorityFeeRefundProtocol is the minimum protocol version that supports bundle priority fee refund
+const BundlePriorityFeeRefundProtocol = 45
 
 // BeaconMessagesProtocol is the minimum protocol version that supports beacon messages
 const BeaconMessagesProtocol = 44
