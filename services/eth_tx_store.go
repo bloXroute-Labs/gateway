@@ -32,9 +32,9 @@ type EthTxStore struct {
 // NewEthTxStore returns new manager for Ethereum transactions
 func NewEthTxStore(clock utils.Clock, cleanupInterval time.Duration, maxTxAge time.Duration,
 	noSIDAge time.Duration, assigner ShortIDAssigner, hashHistory HashHistory, cleanedShortIDsChannel chan types.ShortIDsByNetwork,
-	networkConfig sdnmessage.BlockchainNetworks, bloom BloomFilter) *EthTxStore {
+	networkConfig sdnmessage.BlockchainNetworks, bloom BloomFilter, blobCompressorStorage BlobCompressorStorage) *EthTxStore {
 	return &EthTxStore{
-		BxTxStore:    newBxTxStore(clock, cleanupInterval, maxTxAge, noSIDAge, assigner, hashHistory, cleanedShortIDsChannel, timeToAvoidReEntry, bloom),
+		BxTxStore:    newBxTxStore(clock, cleanupInterval, maxTxAge, noSIDAge, assigner, hashHistory, cleanedShortIDsChannel, timeToAvoidReEntry, bloom, blobCompressorStorage),
 		nonceTracker: newNonceTracker(clock, networkConfig, cleanNonceInterval),
 	}
 }
@@ -76,16 +76,6 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 
 		ethTx := blockchainTx.(*types.EthTransaction)
 
-		if ethTx.Type() == ethtypes.BlobTxType {
-			if ethTx.Tx().BlobTxSidecar() == nil {
-				errEmptySidecar := fmt.Errorf("missing sidecar for hash %v", hash)
-				log.Error(errEmptySidecar)
-				return TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: errEmptySidecar}
-			}
-			log.Tracef("adding flag TFWithSidecar for transaction %v", hash)
-			transaction.AddFlags(types.TFWithSidecar)
-		}
-
 		txChainID := ethTx.ChainID().Int64()
 		if networkChainID != 0 && txChainID != 0 && networkChainID != txChainID {
 			errChainIDMismatch := fmt.Errorf("chainID mismatch for hash %v - content chainID %v networkNum %v networkChainID %v", hash, txChainID, network, networkChainID)
@@ -104,6 +94,18 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 				return TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: errExtractionFailed}
 			}
 		}
+
+		if ethTx.Type() == ethtypes.BlobTxType {
+			if ethTx.Tx().BlobTxSidecar() == nil {
+				errEmptySidecar := fmt.Errorf("missing sidecar for hash %v", hash)
+				log.Error(errEmptySidecar)
+				return TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: errEmptySidecar}
+			}
+			log.Tracef("adding flag TFWithSidecar for transaction %v", hash)
+
+			transaction.AddFlags(types.TFWithSidecar)
+		}
+
 	}
 
 	result := t.BxTxStore.Add(hash, content, shortID, network, false, transaction.Flags(), timestamp, networkChainID, sender)
@@ -125,6 +127,11 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 
 	ethTx := blockchainTx.(*types.EthTransaction)
 	result.Nonce = ethTx.Nonce()
+
+	if result.Transaction.Flags().IsWithSidecar() {
+		// this function is NoOp on Relays
+		t.blobCompressorStorage.StoreKzgCommitmentToTxHashRecords(ethTx.Tx())
+	}
 
 	// if reuseNonce is disabled or network disables sender extraction, we can leave
 	if !t.isReuseNonceActive(network) || sender == types.EmptySender {

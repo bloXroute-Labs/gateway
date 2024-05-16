@@ -139,7 +139,7 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 }
 
 func newBP() (*services.BxTxStore, services.BlockProcessor) {
-	txStore := services.NewBxTxStore(time.Minute, time.Minute, time.Minute, services.NewEmptyShortIDAssigner(), services.NewHashHistory("seenTxs", time.Minute), nil, 30*time.Minute, services.NoOpBloomFilter{})
+	txStore := services.NewBxTxStore(time.Minute, time.Minute, time.Minute, services.NewEmptyShortIDAssigner(), services.NewHashHistory("seenTxs", time.Minute), nil, 30*time.Minute, services.NoOpBloomFilter{}, services.NewNoOpBlockCompressorStorage())
 	bp := services.NewBlockProcessor(&txStore)
 	return &txStore, bp
 }
@@ -310,7 +310,7 @@ func TestGateway_HandleTransactionFromBlockchain_SeenInBloomFilter(t *testing.T)
 
 	g.TxStore = services.NewEthTxStore(g.clock, 30*time.Minute, 72*time.Hour, 10*time.Minute,
 		services.NewEmptyShortIDAssigner(), services.NewHashHistory("seenTxs", 30*time.Minute), nil,
-		*g.sdn.Networks(), bf)
+		*g.sdn.Networks(), bf, services.NewNoOpBlockCompressorStorage())
 
 	go func() {
 		err := g.handleBridgeMessages(context.Background())
@@ -331,7 +331,7 @@ func TestGateway_HandleTransactionFromBlockchain_SeenInBloomFilter(t *testing.T)
 	// create empty TxStore to make sure transaction is ignored due to bloom_filter
 	g.TxStore = services.NewEthTxStore(g.clock, 30*time.Minute, 72*time.Hour, 10*time.Minute,
 		services.NewEmptyShortIDAssigner(), services.NewHashHistory("seenTxs", 30*time.Minute), nil,
-		*g.sdn.Networks(), bf)
+		*g.sdn.Networks(), bf, services.NewNoOpBlockCompressorStorage())
 
 	processEthTxOnBridge(t, bridge, ethTx, g.blockchainPeers[0])
 	assertNoTransactionSentToRelay(t, mockTLS)
@@ -433,7 +433,6 @@ func TestGateway_HandleTransactionFromBlockchain_TwoRelays(t *testing.T) {
 func TestGateway_HandleTransactionFromBlockchain_BurstLimit(t *testing.T) {
 	bridge, g := setup(t, 1)
 	mockTLS, relayConn := addRelayConn(g)
-	test.ConfigureLogger(log.TraceLevel)
 
 	mockClock := &utils.MockClock{}
 	g.accountID = "foobar"
@@ -466,7 +465,6 @@ func TestGateway_HandleTransactionFromBlockchain_BurstLimit(t *testing.T) {
 
 func TestGateway_HandleTransactionFromRPC_BurstLimitPaid(t *testing.T) {
 	_, g := setup(t, 1)
-	test.ConfigureLogger(log.TraceLevel)
 
 	mockClock := &utils.MockClock{}
 	g.accountID = "foobar"
@@ -499,7 +497,6 @@ func TestGateway_HandleTransactionFromRPC_BurstLimitPaid(t *testing.T) {
 
 func TestGateway_HandleTransactionFromRPC_BurstLimitUnpaid(t *testing.T) {
 	_, g := setup(t, 1)
-	test.ConfigureLogger(log.TraceLevel)
 
 	mockClock := &utils.MockClock{}
 	g.accountID = "foobar"
@@ -723,6 +720,7 @@ func TestGateway_ReprocessTransactionFromRelay(t *testing.T) {
 
 	// send new tx
 	ethTx, ethTxMsg := bxmock.NewSignedEthTxMessage(ethtypes.LegacyTxType, 1, nil, networkNum, 0, big.NewInt(network.EthMainnetChainID))
+	resentTxMessage := ethTxMsg.Clone()
 	err := g.HandleMsg(ethTxMsg, relayConn1, connections.RunForeground)
 	assert.NoError(t, err)
 	assertNoTransactionSentToRelay(t, mockTLS2)
@@ -732,7 +730,6 @@ func TestGateway_ReprocessTransactionFromRelay(t *testing.T) {
 	assert.True(t, exists)
 
 	// reprocess resent tx
-	resentTxMessage := ethTxMsg.Clone()
 	resentTxMessage.SetFlags(types.TFDeliverToNode)
 	err = g.HandleMsg(resentTxMessage, relayConn1, connections.RunForeground)
 	assert.NoError(t, err)
@@ -1240,7 +1237,7 @@ func expectFeedNotification(t *testing.T, bridge blockchain.Bridge, g *gateway, 
 	}
 
 	// TxReceipts and OnBlock runs in goroutine
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(3 * time.Second)
 
 	// It is neccessary to have FailNow to not wait until timeout when something goes wrong
 	for len(expectedNotifications) > 0 {
@@ -1675,7 +1672,7 @@ func TestGateway_Authorize(t *testing.T) {
 
 			g := &gateway{
 				accountsCacheManager: utils.NewCache[types.AccountID, accountResult](syncmap.AccountIDHasher, tt.fields.accountFetcher, accountsCacheManagerExpDur, accountsCacheManagerCleanDur),
-				log:                  log.TestEntry(),
+				log:                  log.Discard(),
 				sdn:                  mockedSdn,
 			}
 

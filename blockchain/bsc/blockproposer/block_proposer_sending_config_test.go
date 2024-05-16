@@ -28,7 +28,7 @@ var (
 )
 
 func TestSendingConfig_Validate(t *testing.T) {
-	log := logger.TestEntry()
+	log := logger.Discard()
 
 	tests := []struct {
 		name       string

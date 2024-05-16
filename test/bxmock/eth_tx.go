@@ -10,6 +10,7 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/holiman/uint256"
 )
 
@@ -53,7 +54,15 @@ func NewSignedEthTx(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey, ch
 func NewSignedEthTxBytes(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey, chainID *big.Int) (*ethtypes.Transaction, []byte) {
 	tx := NewSignedEthTx(txType, nonce, privateKey, chainID)
 
-	b, err := tx.MarshalBinary()
+	var b []byte
+	var err error
+
+	if txType == ethtypes.BlobTxType {
+		b, err = rlp.EncodeToBytes(tx)
+	} else {
+		b, err = tx.MarshalBinary()
+	}
+
 	if err != nil {
 		panic(err)
 	}
@@ -123,10 +132,10 @@ func newEthBlobTx(nonce uint64, privateKey *ecdsa.PrivateKey, chainID *uint256.I
 			Commitments: []kzg4844.Commitment{},
 			Proofs:      []kzg4844.Proof{},
 		},
-		AccessList: nil,
-		V:          nil,
-		R:          nil,
-		S:          nil,
+		AccessList: ethtypes.AccessList{},
+		V:          &uint256.Int{},
+		R:          &uint256.Int{},
+		S:          &uint256.Int{},
 	})
 	return unsignedTx
 }

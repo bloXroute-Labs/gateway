@@ -58,7 +58,8 @@ type BxConn struct {
 func NewBxConn(node connections.BxListener, connect func() (connections.Socket, error), handler connections.ConnHandler,
 	sslCerts *utils.SSLCerts, ip string, port int64, nodeID types.NodeID, connectionType utils.NodeType,
 	usePQ bool, logMessages bool, localGEO bool, privateNetwork bool, localPort int64, clock utils.Clock,
-	sameRegion bool) *BxConn {
+	sameRegion bool,
+) *BxConn {
 	bc := &BxConn{
 		Conn:           connections.NewSSLConnection(connect, sslCerts, ip, port, bxmessage.CurrentProtocol, usePQ, logMessages, bxgateway.MaxConnectionBacklog, clock),
 		Node:           node,
@@ -413,7 +414,6 @@ func (b *BxConn) handleNonces(nodeNonce, peerNonce uint64) {
 	if roundTrip < b.minRoundTrip {
 		b.minRoundTrip = roundTrip
 	}
-
 }
 
 func (b *BxConn) processMessage(msgBytes bxmessage.MessageBytes) {
@@ -463,7 +463,6 @@ func (b *BxConn) readLoop() {
 				func(b []byte) int {
 					return int(binary.LittleEndian.Uint32(b[bxmessage.PayloadSizeOffset:]))
 				})
-
 			if err != nil {
 				closeReason = err.Error()
 				b.Log().Tracef("connection closed: %v", err)

@@ -3,6 +3,8 @@ package utils
 import (
 	"fmt"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -58,4 +60,42 @@ func MultiaddrToNodeEndoint(ma multiaddr.Multiaddr, blockchainNetwork string) ty
 		IsBeacon:          true,
 		BlockchainNetwork: blockchainNetwork,
 	}
+}
+
+// CreatePrysmEndpoint creates prysm endpoint
+func CreatePrysmEndpoint(prysmAddr, blockchainNetwork string) (types.NodeEndpoint, error) {
+	parts := strings.Split(prysmAddr, ":")
+	if len(parts) < 2 {
+		return types.NodeEndpoint{}, fmt.Errorf("invalid addr format, addr %v", prysmAddr)
+	}
+	prysmPort, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return types.NodeEndpoint{}, fmt.Errorf("error getting port from prysm addr %v err %v", prysmAddr, err)
+	}
+	return types.NodeEndpoint{
+		IP:                parts[0],
+		Port:              prysmPort,
+		IsBeacon:          true,
+		BlockchainNetwork: blockchainNetwork,
+		Name:              "Prysm",
+	}, nil
+}
+
+// CreateAPIEndpoint creates NodeEndpoint object from uri:port string of beacon API endpoint
+func CreateAPIEndpoint(url, blockchainNetwork string) (types.NodeEndpoint, error) {
+	urlSplitted := strings.Split(url, ":")
+	port, err := strconv.Atoi(urlSplitted[1])
+	if err != nil {
+		return types.NodeEndpoint{}, fmt.Errorf("failed to retrieve endpoint port: %v", err)
+	}
+
+	return types.NodeEndpoint{
+		IP:                urlSplitted[0],
+		Port:              port,
+		PublicKey:         "BeaconAPI",
+		IsBeacon:          true,
+		BlockchainNetwork: blockchainNetwork,
+		Name:              "BeaconAPI",
+		ConnectedAt:       time.Now().Format(time.RFC3339),
+	}, nil
 }

@@ -13,7 +13,7 @@ func TestBeaconMessagePackUnpack(t *testing.T) {
 	blockHash := types.GenerateSHA256Hash()
 	blobBody := test.GenerateBytes(500)
 
-	beaconMessage := NewBeaconMessage(hash, blockHash, types.BxBeaconMessageTypeBlob, blobBody, 3, 2, 1)
+	beaconMessage := NewBeaconMessage(hash, blockHash, types.BxBeaconMessageTypeEthBlob, blobBody, 3, 2, 1)
 	b, err := beaconMessage.Pack(BeaconBlockProtocol)
 	assert.NoError(t, err)
 

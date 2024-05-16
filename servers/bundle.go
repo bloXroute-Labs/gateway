@@ -11,13 +11,12 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/ofac"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rlp"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -37,33 +36,11 @@ type RawTransactionGroupData struct {
 	SanctionedAddresses []string
 }
 
-// ParseRawTransaction is a helper function used by blxr_tx and blxr_batch_tx for processing a rawTransaction
-// here it is used with the blxr_submit_bundle method on gateway
-func ParseRawTransaction(tx string) (*ethtypes.Transaction, error) {
-	txBytes, err := types.DecodeHex(tx)
-	if err != nil {
-		return nil, fmt.Errorf("invalid hex string: %w", err)
-	}
-
-	var ethTx ethtypes.Transaction
-	err = ethTx.UnmarshalBinary(txBytes)
-
-	if err != nil {
-		// If UnmarshalBinary failed, we will try RLP in case user made mistake
-		e := rlp.DecodeBytes(txBytes, &ethTx)
-		if e != nil {
-			return nil, fmt.Errorf("could not decode Ethereum transaction: %v", err)
-		}
-		log.Warnf("Ethereum transaction was in RLP format instead of binary, transaction has been processed anyway, but it'd be best to use the Ethereum binary standard encoding. err: %v", err)
-	}
-	return &ethTx, nil
-}
-
 // GetRawTxsHashes is a helper function used to parse a list of raw txs to hex
 func GetRawTxsHashes(transactions []string) ([]string, error) {
 	txHashes := make([]string, 0, len(transactions))
 	for _, tx := range transactions {
-		transaction, err := ParseRawTransaction(tx)
+		transaction, err := utils.ParseStringTransaction(tx)
 		if err != nil {
 			return nil, err
 		}
@@ -83,7 +60,7 @@ func ParseRawTransactionGroup(transactions []string, trimTxHashPrefix bool, chai
 	sanctionedAddressMap := make(map[string]bool)
 
 	for i, tx := range transactions {
-		transaction, err := ParseRawTransaction(tx)
+		transaction, err := utils.ParseStringTransaction(tx)
 		if err != nil {
 			return nil, fmt.Errorf("unable to parse %d transaction error: %v", i, err)
 		}

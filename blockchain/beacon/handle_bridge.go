@@ -22,7 +22,7 @@ func HandleBDNBeaconMessages(ctx context.Context, b blockchain.Bridge, n *Node, 
 		select {
 		case beaconMessage := <-b.ReceiveBeaconMessageFromBDN():
 			switch beaconMessage.Type {
-			case types.BxBeaconMessageTypeBlob:
+			case types.BxBeaconMessageTypeEthBlob:
 				convertedMessage, err := b.BeaconMessageBDNToBlockchain(beaconMessage)
 				if err != nil {
 					log.Errorf("failed to convert BDN blob to beacon blob: %v", err)
@@ -33,11 +33,6 @@ func HandleBDNBeaconMessages(ctx context.Context, b blockchain.Bridge, n *Node, 
 				if !ok {
 					log.Errorf("failed to convert BDN blob to beacon blob: %v", err)
 					continue
-				}
-
-				err = blobsManager.AddBlobSidecar(blobSidecar)
-				if err != nil {
-					log.Errorf("failed to add blob sidecar: %v", err)
 				}
 
 				if broadcastP2P {

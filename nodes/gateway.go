@@ -20,6 +20,18 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/pkg/errors"
+	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
+	"github.com/sourcegraph/jsonrpc2"
+	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/metadata"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
@@ -48,19 +60,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
 	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 	"github.com/bloXroute-Labs/gateway/v2/version"
-	"github.com/cenkalti/backoff/v4"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/sirupsen/logrus"
-	"github.com/sourcegraph/jsonrpc2"
-	"go.uber.org/atomic"
-	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc/metadata"
 )
 
 const (
@@ -102,6 +101,7 @@ type gateway struct {
 	isBDN              bool
 	bdnStats           *bxmessage.BdnPerformanceStats
 	blockProcessor     services.BlockProcessor
+	blobProcessor      services.BlobProcessor
 	pendingTxs         services.HashHistory
 	possiblePendingTxs services.HashHistory
 	txTrace            loggers.TxTrace
@@ -161,7 +161,7 @@ type gateway struct {
 	blobsManager         *beacon.BlobSidecarCacheManager
 }
 
-// GeneratePeers generate string peers separated by coma
+// GeneratePeers generate string peers separated by comma
 func GeneratePeers(peersInfo []network.PeerInfo) string {
 	var result string
 	if len(peersInfo) == 0 {
@@ -407,8 +407,9 @@ func (g *gateway) setSyncWithRelay() {
 func (g *gateway) setupTxStore() {
 	assigner := services.NewEmptyShortIDAssigner()
 	g.TxStore = services.NewEthTxStore(g.clock, 30*time.Minute, 3*24*time.Hour, 10*time.Minute,
-		assigner, services.NewHashHistory("seenTxs", 30*time.Minute), nil, *g.sdn.Networks(), g.bloomFilter)
+		assigner, services.NewHashHistory("seenTxs", 30*time.Minute), nil, *g.sdn.Networks(), g.bloomFilter, services.NewBlobCompressorStorage())
 	g.blockProcessor = services.NewBlockProcessor(g.TxStore)
+	g.blobProcessor = services.NewBlobProcessor(g.TxStore, g.blobsManager)
 }
 
 // InitSDN initialize SDN, get account model
@@ -584,7 +585,8 @@ func (g *gateway) Run() error {
 	var websocketServer *http.Server
 
 	if g.BxConfig.GRPC.Enabled {
-		gatewayGrpc := NewGatewayGrpc(&g.Bx, GatewayGrpcParams{sdn: g.sdn, authorize: g.authorize, bridge: g.bridge, blockchainPeers: g.blockchainPeers, wsManager: g.wsManager, bdnStats: g.bdnStats,
+		gatewayGrpc := NewGatewayGrpc(&g.Bx, GatewayGrpcParams{
+			sdn: g.sdn, authorize: g.authorize, bridge: g.bridge, blockchainPeers: g.blockchainPeers, wsManager: g.wsManager, bdnStats: g.bdnStats,
 			timeStarted: g.timeStarted, txsQueue: g.txsQueue, txsOrderQueue: g.txsOrderQueue, gatewayPublicKey: g.gatewayPublicKey, feedManager: g.feedManager, txFromFieldIncludable: txFromFieldIncludable,
 			blockProposer:   g.blockProposer,
 			feedManagerChan: g.feedManagerChan, intentsManager: g.intentsManager, grpcFeedManager: g.feedManager,
@@ -601,10 +603,6 @@ func (g *gateway) Run() error {
 	group.Go(func() error {
 		return g.clientHandler.ManageServers(ctx, g.BxConfig.ManageWSServer)
 	})
-
-	if err = log.InitFluentD(g.BxConfig.FluentDEnabled, g.BxConfig.FluentDHost, string(g.sdn.NodeID()), logrus.InfoLevel); err != nil {
-		return err
-	}
 
 	go g.PingLoop()
 
@@ -675,7 +673,6 @@ func (g *gateway) connectRelay(instruction connections.RelayInstruction, sslCert
 		"relayIP":   instruction.IP,
 		"relayPort": instruction.Port,
 	}).Info("connecting to relay")
-
 }
 
 func (g *gateway) broadcast(msg bxmessage.Message, source connections.Conn, to utils.NodeType) types.BroadcastResults {
@@ -970,7 +967,6 @@ func (g *gateway) generateFutureValidatorInfo(block *types.BxBlock, blockInfo *e
 }
 
 func (g *gateway) publishBlock(bxBlock *types.BxBlock, nodeSource *connections.Blockchain, info []*types.FutureValidatorInfo, isBlockchainBlock bool) error {
-
 	// publishing a block means extracting the sender for all the block transactions which is heavy.
 	// if there are no active block related feed subscribers we can skip this.
 	if !g.feedManager.NeedBlocks() {
@@ -1182,7 +1178,7 @@ func (g *gateway) handleBridgeMessages(ctx context.Context) error {
 
 			err = g.bridge.SendRequestedTransactionsToNode(request.RequestID, txs)
 			if err == blockchain.ErrChannelFull {
-				g.log.Warningf("requested transactions channel is full, skipping request")
+				g.log.Warnf("requested transactions channel is full, skipping request")
 			} else if err != nil {
 				panic(fmt.Errorf("could not send requested transactions over bridge: %v", err))
 			}
@@ -1225,7 +1221,7 @@ func (g *gateway) handleBridgeMessages(ctx context.Context) error {
 					} else {
 						var diffFromBDNTime int64
 						var delivered bool
-						var expected = "expected"
+						expected := "expected"
 						if bxTx != nil {
 							diffFromBDNTime = time.Since(bxTx.AddTime()).Microseconds()
 							delivered = bxTx.Flags().ShouldDeliverToNode()
@@ -1247,7 +1243,7 @@ func (g *gateway) handleBridgeMessages(ctx context.Context) error {
 				if len(requests) > 0 && txAnnouncement.PeerID != bxgateway.WSConnectionID {
 					err = g.bridge.RequestTransactionsFromNode(txAnnouncement.PeerID, requests)
 					if err == blockchain.ErrChannelFull {
-						g.log.Warningf("transaction requests channel is full, skipping request")
+						g.log.Warnf("transaction requests channel is full, skipping request")
 					} else if err != nil {
 						panic(fmt.Errorf("could not request transactions over bridge: %v", err))
 					}
@@ -1285,51 +1281,30 @@ func (g *gateway) handleBridgeMessages(ctx context.Context) error {
 					fmt.Sprintf("handleBlockFromBlockchain hash=[%s]", blockchainBlock.Block.Hash()), blockchainBlock.PeerEndpoint.String(), 1)
 			}
 		case beaconMessage := <-g.bridge.ReceiveBeaconMessageFromNode():
-			bMessage := bxmessage.NewBeaconMessage(
-				beaconMessage.Message.Hash,
-				beaconMessage.Message.BlockHash,
-				beaconMessage.Message.Type,
-				beaconMessage.Message.Data,
-				beaconMessage.Message.Index,
-				beaconMessage.Message.Slot,
-				g.sdn.NetworkNum(),
-			)
 
-			source := connections.NewBlockchainConn(beaconMessage.PeerEndpoint)
 			g.traceIfSlow(func() {
-				g.handleBeaconMessageFromBlockchain(bMessage, source)
+				g.handleBeaconMessageFromBlockchain(&beaconMessage)
 			},
 				fmt.Sprintf("handleBeaconMessageFromBlockchain hash=[%s]", beaconMessage.Message.Hash), beaconMessage.PeerEndpoint.String(), 1)
 		}
 	}
 }
 
-func (g *gateway) handleBeaconMessageFromBlockchain(beaconMessage *bxmessage.BeaconMessage, source connections.Blockchain) error {
-	if !g.seenBeaconMessages.SetIfAbsent(beaconMessage.Hash().String(), 30*time.Minute) {
-		g.log.Tracef("skipping beacon message %v, already seen", beaconMessage.Hash())
+func (g *gateway) handleBeaconMessageFromBlockchain(beaconMessageFromNode *blockchain.BeaconMessageFromNode) error {
+	if !g.seenBeaconMessages.SetIfAbsent(beaconMessageFromNode.Message.Hash.String(), 30*time.Minute) {
+		g.log.Tracef("skipping beacon message %v, already seen", beaconMessageFromNode.Message.Hash.String())
 		return eth.ErrAlreadySeen
 	}
 
-	results := g.broadcast(beaconMessage, source, utils.Relay)
-
-	switch beaconMessage.Type() {
-	case types.BxBeaconMessageTypeBlob:
-		blobSidecar := new(ethpb.BlobSidecar)
-		err := blobSidecar.UnmarshalSSZ(beaconMessage.Data())
-		if err != nil {
-			return err
-		}
-
-		if g.blobsManager != nil {
-			err = g.blobsManager.AddBlobSidecar(blobSidecar)
-
-			if err != nil {
-				g.log.Errorf("failed to add blob sidecar: %v", err)
-			}
-		}
-	default:
-		g.log.Errorf("unknown beacon message type %v", beaconMessage.Type())
+	beaconMessage, err := g.blobProcessor.BxBeaconMessageToBeaconMessage(beaconMessageFromNode.Message, g.sdn.NetworkNum())
+	if err != nil {
+		g.log.Errorf("Failed to convert beaconMessage from BxBeaconMessage")
+		return err
 	}
+
+	source := connections.NewBlockchainConn(beaconMessageFromNode.PeerEndpoint)
+
+	results := g.broadcast(beaconMessage, source, utils.Relay)
 
 	g.log.Tracef("broadcasted beacon message from Blockchain to BDN %v, from %v to peers[%v]", beaconMessage, source, results)
 	return nil
@@ -1476,19 +1451,20 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 }
 
 func (g *gateway) processBeaconMessage(beaconMessage *bxmessage.BeaconMessage, source connections.Conn) {
+	if !g.isSyncWithRelay() {
+		g.log.Tracef("skipping beacon message %v, gateway is not yet synced with relay", beaconMessage.Hash())
+		return
+	}
 	if !g.seenBeaconMessages.SetIfAbsent(beaconMessage.Hash().String(), 30*time.Minute) {
 		g.log.Tracef("skipping beacon message %v, already seen", beaconMessage.Hash())
 		return
 	}
 
-	bxBeaconMessage := types.NewBxBeaconMessage(
-		beaconMessage.Hash(),
-		beaconMessage.BlockHash(),
-		beaconMessage.Type(),
-		beaconMessage.Data(),
-		beaconMessage.Index(),
-		beaconMessage.Slot(),
-	)
+	bxBeaconMessage, err := g.blobProcessor.BeaconMessageToBxBeaconMessage(beaconMessage)
+	if err != nil {
+		g.log.Errorf("failed to process beaconMessage from broadcast: %v", err)
+		return
+	}
 
 	if err := g.bridge.SendBeaconMessageToBlockchain(bxBeaconMessage); err != nil {
 		g.log.Errorf("could not send beacon message %v to blockchain: %v", beaconMessage, err)
@@ -1508,7 +1484,6 @@ func (g *gateway) gatewayHasBlockchainConnection() bool {
 		case <-time.After(time.Second):
 			return false
 		}
-
 	} else {
 		g.log.Errorf("failed to send blockchain status request when received hello msg from relay: %v", err)
 	}
@@ -1633,7 +1608,9 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 	// we add the transaction to TxStore with current time, so we can measure time difference to node announcement/confirmation
 	txResult := g.TxStore.Add(tx.Hash(), tx.Content(), tx.ShortID(), tx.GetNetworkNum(), !(isRelay || (connections.IsGrpc(connectionType) && sender != types.EmptySender)), tx.Flags(), g.clock.Now(), g.chainID, sender)
 
-	resultFlags := txResult.Transaction.Flags()
+	// some flags can be changed during the process of adding transaction to the store
+	// so we need to update the flags of the initial transaction as well to keep them in sync
+	tx.SetFlags(txResult.Transaction.Flags())
 
 	nodeID := source.GetNodeID()
 	l := source.Log().WithFields(log.Fields{
@@ -1644,7 +1621,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 	switch {
 	case txResult.FailedValidation:
 		eventName = "TxValidationFailedStructure"
-	case txResult.NewContent && resultFlags.IsReuseSenderNonce() && tx.ShortID() == types.ShortIDEmpty:
+	case txResult.NewContent && txResult.Transaction.Flags().IsReuseSenderNonce() && tx.ShortID() == types.ShortIDEmpty:
 		eventName = "TxReuseSenderNonce"
 		l.Trace(txResult.DebugData)
 	case txResult.AlreadySeen:
@@ -1774,7 +1751,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 						}
 
 						l.WithFields(log.Fields{
-							"flags":                   resultFlags,
+							"flags":                   tx.Flags(),
 							"frontRunProtectionDelay": frontRunProtectionDelay.String(),
 						}).Debug("tx sent to blockchain with front run protection delay")
 					})
@@ -1790,7 +1767,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 					}
 
 					l.WithFields(log.Fields{
-						"flags": resultFlags,
+						"flags": tx.Flags(),
 					}).Debug("tx sent to blockchain")
 				}
 			}
@@ -1805,7 +1782,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 		}
 	default:
 		// duplicate transaction
-		if resultFlags.IsReuseSenderNonce() {
+		if txResult.Transaction.Flags().IsReuseSenderNonce() {
 			eventName = "TxReuseSenderNonceIgnoreSeen"
 			g.log.Trace(txResult.DebugData)
 		}
@@ -1822,7 +1799,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 	l = l.WithFields(log.Fields{
 		"from":                    source,
 		"nonce":                   txResult.Nonce,
-		"flags":                   resultFlags,
+		"flags":                   tx.Flags(),
 		"newTx":                   txResult.NewTx,
 		"newContent":              txResult.NewContent,
 		"newShortid":              txResult.NewSID,
@@ -2249,7 +2226,6 @@ func (g *gateway) handleBlockchainConnectionStatusUpdate() {
 						g.sdn.NodeModel().ExternalIP, g.sdn.NodeID(), g.accountID,
 					), g.clock.Now().String()),
 					g.sdn.NodeID())
-
 			}()
 		}
 	}

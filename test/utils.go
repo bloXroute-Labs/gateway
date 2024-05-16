@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"math/rand"
 	"net"
-	"os"
 	"reflect"
 	"regexp"
 	"strings"
@@ -12,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/stretchr/testify/assert"
@@ -77,12 +75,6 @@ func ToSnakeCase(str string) string {
 	snake := matchFirstCap.ReplaceAllString(str, "${1}_${2}")
 	snake = matchAllCap.ReplaceAllString(snake, "${1}_${2}")
 	return strings.ToLower(snake)
-}
-
-// ConfigureLogger sets the log level for tests. Mainly useful while debugging tests.
-func ConfigureLogger(level log.Level) {
-	log.SetLevel(level)
-	log.SetOutput(os.Stdout)
 }
 
 // MapsEqual util function to check if two maps are equal

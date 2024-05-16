@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -70,7 +71,9 @@ func newLightHouseBlobDecoder() blobDecoder {
 	return &lightHouseBlobDecoder{}
 }
 
-type lightHouseBlobDecoder struct{}
+type lightHouseBlobDecoder struct {
+	defaultBlobDecoder
+}
 
 // APIClient represents the client for subscribing to the Beacon API event stream.
 type APIClient struct {
@@ -81,59 +84,52 @@ type APIClient struct {
 	clock                            utils.Clock
 	ctx                              context.Context
 	httpClient                       *http.Client
-	nodeEndpoint                     *types.NodeEndpoint
-	lastBlobsByBeaconHashSuccessSlot atomic.Int64
+	nodeEndpoint                     types.NodeEndpoint
+	lastBlobsByBeaconHashSuccessSlot uint64
+	lastBlobsMutex                   sync.Mutex
+	processedBlobIndexesBitfield     uint64
 	blobDecoder                      blobDecoder
 	initialized                      atomic.Bool
 	lastSlot                         atomic.Uint64
 }
 
-// NewAPIClient creates a new APIClient with the specified URL.
-func NewAPIClient(ctx context.Context, httpClient *http.Client, config *network.EthConfig, bridge blockchain.Bridge, url, blockchainNetwork string) (*APIClient, error) {
-	log := log.WithFields(log.Fields{
-		"connType":   "beaconApi",
-		"remoteAddr": url,
-	})
+func (c *APIClient) setProcessedBlobIndex(index uint64) {
+	if index > 63 {
+		c.log.Errorf("blob sidecar index %d is out of range", index)
+		return
+	}
+	c.processedBlobIndexesBitfield = c.processedBlobIndexesBitfield | (1 << index)
+}
 
-	client := &APIClient{
-		ctx:                              ctx,
-		URL:                              url,
-		log:                              log,
+func (c *APIClient) isProcessedBlobIndex(index uint64) bool {
+	return c.processedBlobIndexesBitfield&(1<<index) != 0
+}
+
+func (c *APIClient) resetProcessedBlobIndexes() {
+	c.processedBlobIndexesBitfield = 0
+}
+
+// NewAPIClient creates a new APIClient with the specified URL.
+func NewAPIClient(ctx context.Context, httpClient *http.Client, config *network.EthConfig, bridge blockchain.Bridge, url string, endpoint types.NodeEndpoint) *APIClient {
+	return &APIClient{
+		ctx: ctx,
+		URL: url,
+		log: log.WithFields(log.Fields{
+			"connType":   "beaconApi",
+			"remoteAddr": url,
+		}),
 		bridge:                           bridge,
 		config:                           config,
 		clock:                            utils.RealClock{},
 		httpClient:                       httpClient,
 		blobDecoder:                      newDefaultBlobDecoder(),
-		lastBlobsByBeaconHashSuccessSlot: atomic.Int64{},
+		nodeEndpoint:                     endpoint,
+		lastBlobsByBeaconHashSuccessSlot: 0,
+		processedBlobIndexesBitfield:     0,
+		initialized:                      atomic.Bool{},
+		lastSlot:                         atomic.Uint64{},
+		lastBlobsMutex:                   sync.Mutex{},
 	}
-
-	var err error
-
-	client.nodeEndpoint, err = CreateAPIEndpoint(url, blockchainNetwork)
-	if err != nil {
-		return nil, fmt.Errorf("error creating Beacon API endpoint: %v", err)
-	}
-
-	return client, nil
-}
-
-// CreateAPIEndpoint creates NodeEndpoint object from uri:port string of beacon API endpoint
-func CreateAPIEndpoint(url, blockchainNetwork string) (*types.NodeEndpoint, error) {
-	urlSplitted := strings.Split(url, ":")
-	port, err := strconv.Atoi(urlSplitted[1])
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve endpoint port: %v", err)
-	}
-
-	return &types.NodeEndpoint{
-		IP:                urlSplitted[0],
-		Port:              port,
-		PublicKey:         "BeaconAPI",
-		IsBeacon:          true,
-		BlockchainNetwork: blockchainNetwork,
-		Name:              "BeaconAPI",
-		ConnectedAt:       time.Now().Format(time.RFC3339),
-	}, nil
 }
 
 func (c *APIClient) requestClientVersion() (string, error) {
@@ -301,7 +297,7 @@ func (defaultBlobDecoder) decodeBlobSidecar(responseBody []byte) (*ethpb.BlobSid
 	return blobSidecar, nil
 }
 
-func (lightHouseBlobDecoder) decodeBlobSidecar(responseBody []byte) (*ethpb.BlobSidecars, error) {
+func (d lightHouseBlobDecoder) decodeBlobSidecar(responseBody []byte) (*ethpb.BlobSidecars, error) {
 	// Check if the response is missing the offset
 	// Currently LightHouse doesn't include the offset in the response, but it's required for SSZ unmarshalling
 	var offset uint64
@@ -312,24 +308,18 @@ func (lightHouseBlobDecoder) decodeBlobSidecar(responseBody []byte) (*ethpb.Blob
 
 	responseBody = append([]byte{4, 0, 0, 0}, responseBody...)
 
-	return defaultBlobDecoder{}.decodeBlobSidecar(responseBody)
+	return d.defaultBlobDecoder.decodeBlobSidecar(responseBody)
 }
 
-func (c *APIClient) retry(fn func() error, maxTry int, sleep time.Duration) (int, error) {
-	var err error
-
-	for attempt := 1; ; attempt++ {
-		if err = fn(); err == nil {
-			// success, return number of attempts till success
-			return attempt, nil
+func (c *APIClient) retry(fn func() error, maxTry int, sleep time.Duration) (attempt int, err error) {
+	for ; attempt < maxTry; attempt++ {
+		err = fn()
+		if err == nil {
+			break
 		}
-
-		if attempt == maxTry {
-			return attempt, err
-		}
-
 		time.Sleep(sleep)
 	}
+	return attempt + 1, err
 }
 
 func (c *APIClient) requestBlobSidecarWithRetries(beaconHash string, index string) (*ethpb.BlobSidecars, error) {
@@ -369,33 +359,62 @@ func (c *APIClient) requestBlobSidecarWithRetries(beaconHash string, index strin
 	return c.blobDecoder.decodeBlobSidecar(respBodyRaw)
 }
 
+func (c *APIClient) isNeedToRequestBlobSidecar(blobSidecarEvent *structs.BlobSidecarEvent) bool {
+	c.lastBlobsMutex.Lock()
+	defer c.lastBlobsMutex.Unlock()
+
+	eventSlot, err := strconv.ParseUint(blobSidecarEvent.Slot, 10, 64)
+	if err != nil {
+		c.log.Errorf("could not parse slot from blob sidecar event, slot data: %s, err: %v ", blobSidecarEvent.Slot, err)
+		return false
+	}
+
+	index, err := strconv.ParseUint(blobSidecarEvent.Index, 10, 64)
+	if err != nil {
+		c.log.Errorf("could not parse index from blob sidecar event, index data: %s, err: %v ", blobSidecarEvent.Index, err)
+		return false
+	}
+
+	// if the blob sidecar block is already processed, ignore it
+	if c.lastBlobsByBeaconHashSuccessSlot > eventSlot {
+		c.log.Tracef("blob sidecar request already processed: slot: %s, block hash: %s", blobSidecarEvent.Slot, blobSidecarEvent.BlockRoot)
+		return false
+	}
+
+	if c.lastBlobsByBeaconHashSuccessSlot < eventSlot {
+		// reset processed blob indexes for each new slot
+		c.resetProcessedBlobIndexes()
+		c.lastBlobsByBeaconHashSuccessSlot = eventSlot
+	}
+
+	// if the blob sidecar index is already processed, ignore it
+	if c.isProcessedBlobIndex(index) {
+		c.log.Tracef("blob sidecar index %d for slot %d already processed, block hash: %s ", index, eventSlot, blobSidecarEvent.BlockRoot)
+		return false
+	}
+
+	c.setProcessedBlobIndex(index)
+	return true
+}
+
 // blobSidecarEventHandler returns a function to handle server-sent events.
 func (c *APIClient) blobSidecarEventHandler() func(msg *sse.Event) {
-	return func(msg *sse.Event) {
-		if string(msg.Data) == keepAliveMessage {
+	handleBlobSidecarEvent := func(eventData []byte) {
+		if string(eventData) == keepAliveMessage {
 			return
 		}
 
-		c.log.Tracef("received blob sidecar event: %s", string(msg.Data))
+		c.log.Tracef("received blob sidecar event: %s", string(eventData))
 
 		var blobSidecarEvent structs.BlobSidecarEvent
 
-		err := json.Unmarshal(msg.Data, &blobSidecarEvent)
+		err := json.Unmarshal(eventData, &blobSidecarEvent)
 		if err != nil {
-			c.log.Errorf("could not unmarshal blob sidecar event: %s, err: %v ", string(msg.Data), err)
+			c.log.Errorf("could not unmarshal blob sidecar event: %s, err: %v ", string(eventData), err)
 			return
 		}
 
-		eventSlot, err := strconv.ParseInt(blobSidecarEvent.Slot, 10, 64)
-		if err != nil {
-			c.log.Errorf("could not parse slot from blob sidecar event: %s, err: %v ", string(msg.Data), err)
-			return
-		}
-
-		// if the blob sidecar is already processed, ignore it
-
-		if c.lastBlobsByBeaconHashSuccessSlot.Load() > eventSlot {
-			c.log.Tracef("blob sidecar request already processed: %s", blobSidecarEvent.BlockRoot)
+		if !c.isNeedToRequestBlobSidecar(&blobSidecarEvent) {
 			return
 		}
 
@@ -406,8 +425,6 @@ func (c *APIClient) blobSidecarEventHandler() func(msg *sse.Event) {
 			return
 		}
 
-		c.lastBlobsByBeaconHashSuccessSlot.Store(eventSlot)
-
 		for _, sidecar := range blobSidecars.Sidecars {
 			// validate the blob sidecar
 			bdnSidecar, err := c.bridge.BeaconMessageToBDN(sidecar)
@@ -416,7 +433,7 @@ func (c *APIClient) blobSidecarEventHandler() func(msg *sse.Event) {
 				continue
 			}
 
-			if err := c.bridge.SendBeaconMessageToBDN(bdnSidecar, *c.nodeEndpoint); err != nil {
+			if err := c.bridge.SendBeaconMessageToBDN(bdnSidecar, c.nodeEndpoint); err != nil {
 				c.log.Errorf("could not send blob sidecar to BDN: %v", err)
 				continue
 			}
@@ -429,6 +446,10 @@ func (c *APIClient) blobSidecarEventHandler() func(msg *sse.Event) {
 
 			c.log.Tracef("propagated blob sidecar from Beacon API to BDN: index %v, slot %v, kzgCommitment %v, block hash %s", sidecar.Index, sidecar.SignedBlockHeader.Header.Slot, hex.EncodeToString(sidecar.KzgCommitment), hex.EncodeToString(headerRoot[:]))
 		}
+	}
+
+	return func(msg *sse.Event) {
+		go handleBlobSidecarEvent(msg.Data)
 	}
 }
 
@@ -471,7 +492,7 @@ func (c *APIClient) blockHeadEventHandler() func(msg *sse.Event) {
 			return
 		}
 
-		if err := SendBlockToBDN(c.clock, c.log, wrappedBlock, c.bridge, *c.nodeEndpoint); err != nil {
+		if err := SendBlockToBDN(c.clock, c.log, wrappedBlock, c.bridge, c.nodeEndpoint); err != nil {
 			c.log.Errorf("could not proccess beacon block[slot=%d,hash=%s] to eth: %v", block.Block().Slot(), blockHash, err)
 			return
 		}

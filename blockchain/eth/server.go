@@ -26,7 +26,8 @@ type Server struct {
 
 // NewServer return an Ethereum p2p server, configured with BDN friendly defaults
 func NewServer(parent context.Context, port int, externalIP net.IP, config *network.EthConfig, chain *Chain,
-	bridge blockchain.Bridge, dataDir string, logger log.Logger, ws blockchain.WSManager, dynamicPeers, dialRatio int, recommendedPeers map[string]struct{}) (*Server, error) {
+	bridge blockchain.Bridge, dataDir string, logger log.Logger, ws blockchain.WSManager, dynamicPeers, dialRatio int, recommendedPeers map[string]struct{},
+) (*Server, error) {
 	var privateKey *ecdsa.PrivateKey
 
 	if config.PrivateKey != nil {
@@ -34,7 +35,6 @@ func NewServer(parent context.Context, port int, externalIP net.IP, config *netw
 	} else {
 		privateKeyPath := path.Join(dataDir, ".gatewaykey")
 		privateKeyFromFile, generated, err := network.LoadOrGeneratePrivateKey(privateKeyPath)
-
 		if err != nil {
 			keyWriteErr, ok := err.(keyWriteError)
 			if ok {
@@ -57,7 +57,7 @@ func NewServer(parent context.Context, port int, externalIP net.IP, config *netw
 		discovery       = true
 		dynamicDisabled = false
 	)
-	staticEnodes := config.StaticEnodes()
+	staticEnodes := config.StaticPeers.Enodes()
 
 	// if no Dynamic peers we want to disable Dialing and Discovery
 	if dynamicPeers == 0 {
@@ -111,7 +111,8 @@ func NewServer(parent context.Context, port int, externalIP net.IP, config *netw
 
 // NewServerWithEthLogger returns the p2p server preconfigured with the default Ethereum logger
 func NewServerWithEthLogger(ctx context.Context, port int, externalIP net.IP, config *network.EthConfig,
-	chain *Chain, bridge blockchain.Bridge, dataDir string, ws blockchain.WSManager, dynamicPeers, dialRatio int, recommendedPeers map[string]struct{}) (*Server, error) {
+	chain *Chain, bridge blockchain.Bridge, dataDir string, ws blockchain.WSManager, dynamicPeers, dialRatio int, recommendedPeers map[string]struct{},
+) (*Server, error) {
 	l := log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stdout, log.LevelTrace, true))
 	log.SetDefault(l)
 
@@ -136,7 +137,7 @@ func (s *Server) Stop() {
 func (s *Server) AddEthLoggerFileHandler(path string) error {
 	var err error
 	var logOutputFile *os.File
-	if logOutputFile, err = os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644); err != nil {
+	if logOutputFile, err = os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err != nil {
 		return err
 	}
 	output := io.MultiWriter(logOutputFile)

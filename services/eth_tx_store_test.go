@@ -34,7 +34,7 @@ func newTestBloomFilter(t *testing.T) BloomFilter {
 
 func TestEthTxStore_InvalidChainID(t *testing.T) {
 	store := NewEthTxStore(&utils.MockClock{}, 30*time.Second, 30*time.Second, 30*time.Second,
-		NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{testNetworkNum: &blockchainNetwork}, newTestBloomFilter(t))
+		NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{testNetworkNum: &blockchainNetwork}, newTestBloomFilter(t), NewNoOpBlockCompressorStorage())
 	hash := types.SHA256Hash{1}
 	tx := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey, nil)
 	content, _ := rlp.EncodeToBytes(&tx)
@@ -50,9 +50,28 @@ func TestEthTxStore_InvalidChainID(t *testing.T) {
 
 }
 
+func TestEthTxStore_AddBlobTx(t *testing.T) {
+	store := NewEthTxStore(&utils.MockClock{}, 30*time.Second, 30*time.Second, 30*time.Second,
+		NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{testNetworkNum: &blockchainNetwork}, newTestBloomFilter(t), NewNoOpBlockCompressorStorage())
+	hash := types.SHA256Hash{1}
+
+	// add valid blob type transaction
+	tx := bxmock.NewSignedEthTx(ethtypes.BlobTxType, 1, privateKey, nil)
+	content, _ := rlp.EncodeToBytes(&tx)
+	result1 := store.Add(hash, content, types.ShortIDEmpty, testNetworkNum, true, types.TFPaidTx, time.Now(), tx.ChainId().Int64(), types.EmptySender)
+
+	assert.True(t, result1.NewTx)
+	assert.True(t, result1.NewContent)
+	assert.False(t, result1.NewSID)
+	assert.False(t, result1.FailedValidation)
+	assert.False(t, result1.Transaction.Flags().IsReuseSenderNonce())
+	assert.True(t, result1.Transaction.Flags().IsWithSidecar())
+	assert.Equal(t, 1, store.Count())
+}
+
 func TestEthTxStore_Add(t *testing.T) {
 	store := NewEthTxStore(&utils.MockClock{}, 30*time.Second, 30*time.Second, 30*time.Second,
-		NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{testNetworkNum: &blockchainNetwork}, newTestBloomFilter(t))
+		NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{testNetworkNum: &blockchainNetwork}, newTestBloomFilter(t), NewNoOpBlockCompressorStorage())
 	hash := types.SHA256Hash{1}
 	tx := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey, nil)
 	content, _ := rlp.EncodeToBytes(&tx)
@@ -127,7 +146,7 @@ func TestEthTxStore_AddReuseSenderNonce(t *testing.T) {
 	mc := utils.MockClock{}
 	nc := blockchainNetwork
 	nc.AllowTimeReuseSenderNonce = 10
-	store := NewEthTxStore(&mc, 30*time.Second, 30*time.Second, 20*time.Second, NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{testNetworkNum: &nc}, newTestBloomFilter(t))
+	store := NewEthTxStore(&mc, 30*time.Second, 30*time.Second, 20*time.Second, NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{testNetworkNum: &nc}, newTestBloomFilter(t), NewNoOpBlockCompressorStorage())
 
 	// original transaction
 	hash1 := types.SHA256Hash{1}
@@ -215,7 +234,7 @@ func TestEthTxStore_AddReuseSenderNonce(t *testing.T) {
 
 func TestEthTxStore_AddInvalidTx(t *testing.T) {
 	store := NewEthTxStore(&utils.MockClock{}, 30*time.Second, 30*time.Second, 10*time.Second,
-		NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{blockchainNetwork.NetworkNum: &blockchainNetwork}, newTestBloomFilter(t))
+		NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{blockchainNetwork.NetworkNum: &blockchainNetwork}, newTestBloomFilter(t), NewNoOpBlockCompressorStorage())
 	hash := types.SHA256Hash{1}
 	content := types.TxContent{1, 2, 3}
 

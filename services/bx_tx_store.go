@@ -19,9 +19,10 @@ import (
 
 // BxTxStore represents the storage of transaction info for a given node
 type BxTxStore struct {
-	clock         utils.Clock
-	hashToContent *syncmap.SyncMap[string, *types.BxTransaction]
-	shortIDToHash *syncmap.SyncMap[types.ShortID, types.SHA256Hash]
+	clock                 utils.Clock
+	hashToContent         *syncmap.SyncMap[string, *types.BxTransaction]
+	shortIDToHash         *syncmap.SyncMap[types.ShortID, types.SHA256Hash]
+	blobCompressorStorage BlobCompressorStorage
 
 	seenTxs            HashHistory
 	timeToAvoidReEntry time.Duration
@@ -39,17 +40,18 @@ type BxTxStore struct {
 // NewBxTxStore creates a new BxTxStore to store and processes all relevant transactions
 func NewBxTxStore(cleanupFreq time.Duration, maxTxAge time.Duration, noSIDAge time.Duration,
 	assigner ShortIDAssigner, seenTxs HashHistory, cleanedShortIDsChannel chan types.ShortIDsByNetwork,
-	timeToAvoidReEntry time.Duration, bloom BloomFilter) BxTxStore {
-	return newBxTxStore(utils.RealClock{}, cleanupFreq, maxTxAge, noSIDAge, assigner, seenTxs, cleanedShortIDsChannel, timeToAvoidReEntry, bloom)
+	timeToAvoidReEntry time.Duration, bloom BloomFilter, blobCompressorStorage BlobCompressorStorage) BxTxStore {
+	return newBxTxStore(utils.RealClock{}, cleanupFreq, maxTxAge, noSIDAge, assigner, seenTxs, cleanedShortIDsChannel, timeToAvoidReEntry, bloom, blobCompressorStorage)
 }
 
 func newBxTxStore(clock utils.Clock, cleanupFreq time.Duration, maxTxAge time.Duration,
 	noSIDAge time.Duration, assigner ShortIDAssigner, seenTxs HashHistory, cleanedShortIDsChannel chan types.ShortIDsByNetwork,
-	timeToAvoidReEntry time.Duration, bloom BloomFilter) BxTxStore {
+	timeToAvoidReEntry time.Duration, bloom BloomFilter, blobCompressorStorage BlobCompressorStorage) BxTxStore {
 	return BxTxStore{
 		clock:                  clock,
 		hashToContent:          syncmap.NewStringMapOf[*types.BxTransaction](),
 		shortIDToHash:          syncmap.NewIntegerMapOf[types.ShortID, types.SHA256Hash](),
+		blobCompressorStorage:  blobCompressorStorage,
 		seenTxs:                seenTxs,
 		timeToAvoidReEntry:     timeToAvoidReEntry,
 		cleanupFreq:            cleanupFreq,
@@ -78,6 +80,7 @@ func (t *BxTxStore) Stop() {
 func (t *BxTxStore) Clear() {
 	t.hashToContent.Clear()
 	t.shortIDToHash.Clear()
+	t.blobCompressorStorage.Clear()
 	log.Debugf("Cleared tx service.")
 }
 
@@ -109,6 +112,8 @@ func (t *BxTxStore) remove(hash string, reEntryProtection ReEntryProtectionFlags
 		log.Tracef("TxStore: transaction %v, network %v, shortIDs %v removed (%v). reEntryProtection %v",
 			bxTransaction.Hash(), bxTransaction.NetworkNum(), bxTransaction.ShortIDs(), reason, reEntryProtection)
 	}
+	// remove the hash also from the blobCompressorStorage
+	t.blobCompressorStorage.RemoveByTxHash(hash)
 }
 
 // RemoveShortIDs deletes a series of transactions by their short IDs. RemoveShortIDs can take a potentially large short ID array, so it should be passed by reference.
@@ -156,6 +161,18 @@ func (t *BxTxStore) GetTxByShortID(shortID types.ShortID) (*types.BxTransaction,
 	}
 
 	return nil, fmt.Errorf("transaction with shortID %v does not exist", shortID)
+}
+
+// GetTxByKzgCommitment lookup a transaction by its KzgCommitment. return error if not found
+func (t *BxTxStore) GetTxByKzgCommitment(kzgCommitment string) (*types.BxTransaction, error) {
+	if hash, ok := t.blobCompressorStorage.KzgCommitmentToTxHash(kzgCommitment); ok {
+		if tx, exists := t.hashToContent.Load(hash); exists {
+			return tx, nil
+		}
+		return nil, fmt.Errorf("transaction content for KzgCommitment %v and hash %v does not exist", kzgCommitment, hash)
+	}
+
+	return nil, fmt.Errorf("transaction with KzgCommitment %v does not exist", kzgCommitment)
 }
 
 // RemoveHashes deletes a series of transactions by their hash from BxTxStore. RemoveHashes can take a potentially large hash array, so it should be passed by reference.
@@ -327,6 +344,7 @@ func (t *BxTxStore) clean() (cleaned int, cleanedShortIDs types.ShortIDsByNetwor
 			// no need to add the hash to the history as it is deleted after long time
 			// dec-5-2021: add to hash history to prevent a lot of reentry (BSC, Polygon)
 			t.remove(key, FullReEntryProtection, removeReason)
+
 			cleanedShortIDs[networkNum] = append(cleanedShortIDs[networkNum], bxTransaction.ShortIDs()...)
 		}
 

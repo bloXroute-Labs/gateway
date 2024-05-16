@@ -98,7 +98,7 @@ func (m *WSManager) ProviderWithBlock(preferredEndpoint *types.NodeEndpoint, blo
 		provider, ok := m.syncedPreferredProvider(preferredEndpoint)
 		if ok {
 			if err := m.waitProviderBlock(ctx, provider, blockNumber); err != nil {
-				log.Warningf("failed to wait for block %v from %v: %v", blockNumber, provider.BlockchainPeerEndpoint(), err)
+				log.Warnf("failed to wait for block %v from %v: %v", blockNumber, provider.BlockchainPeerEndpoint(), err)
 				return nil, false
 			}
 
@@ -110,7 +110,7 @@ func (m *WSManager) ProviderWithBlock(preferredEndpoint *types.NodeEndpoint, blo
 
 	provider, err := m.firstSyncedProviderWithBlock(ctx, blockNumber)
 	if err != nil {
-		log.Warningf("failed to find synced provider for block %v: %v", blockNumber, err)
+		log.Warnf("failed to find synced provider for block %v: %v", blockNumber, err)
 		return nil, false
 	}
 

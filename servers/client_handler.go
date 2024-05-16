@@ -98,6 +98,7 @@ func (ch *ClientHandler) runServers() {
 		go func() {
 			err := ch.runWSServer()
 			if err != nil {
+				log.Errorf("error running ws server, err: %v", err)
 				return
 			}
 		}()
@@ -107,6 +108,7 @@ func (ch *ClientHandler) runServers() {
 		go func() {
 			err := ch.gRPCServer.Run()
 			if err != nil {
+				log.Errorf("error running grpc server, err: %v", err)
 				return
 			}
 		}()
@@ -115,6 +117,7 @@ func (ch *ClientHandler) runServers() {
 		go func() {
 			err := ch.httpServer.Start()
 			if err != nil {
+				log.Errorf("error running http server, err: %v", err)
 				return
 			}
 		}()

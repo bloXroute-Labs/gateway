@@ -59,7 +59,7 @@ func generateRandTxHash() types.SHA256Hash {
 }
 
 func BenchmarkTxService(b *testing.B) {
-	txManager := NewBxTxStore(10*time.Second, 300*time.Minute, 10*time.Minute, NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, 30*time.Minute, NoOpBloomFilter{})
+	txManager := NewBxTxStore(10*time.Second, 300*time.Minute, 10*time.Minute, NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, 30*time.Minute, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage())
 	go func() {
 		_ = txManager.Start()
 	}()
@@ -143,7 +143,7 @@ func BenchmarkTxService(b *testing.B) {
 }
 
 func TestRemoveTxsByShortIDs(t *testing.T) {
-	txService := NewBxTxStore(10*time.Second, 300*time.Second, 30*time.Second, NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, 30*time.Minute, NoOpBloomFilter{})
+	txService := NewBxTxStore(10*time.Second, 300*time.Second, 30*time.Second, NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, 30*time.Minute, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage())
 
 	content := generateRandTxContent()
 	h := sha256.New()

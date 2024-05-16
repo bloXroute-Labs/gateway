@@ -33,6 +33,7 @@ type GRPCServer struct {
 	stats            statistics.Stats
 	gatewayAccountID types.AccountID
 	server           *grpc.Server
+	gatewayServer    pb.GatewayServer
 }
 
 // NewGRPCServer is the constructor of the GRPCServer object
@@ -45,21 +46,17 @@ func NewGRPCServer(host string, port int, user string, secret string, stats stat
 	} else {
 		encodedAuth = ""
 	}
+	if g == nil {
+		log.Fatal("gatewayServer is nil")
+	}
 	gRPCServer := &GRPCServer{
 		listenAddr:       grpcHostPort,
 		encodedAuth:      encodedAuth,
 		stats:            stats,
 		gatewayAccountID: accountID,
+		gatewayServer:    g,
 	}
 
-	serverOptions := []grpc.ServerOption{
-		grpc.WriteBufferSize(bufferSize),
-		grpc.InitialConnWindowSize(windowSize),
-		grpc.UnaryInterceptor(gRPCServer.authenticate),
-		grpc.ChainUnaryInterceptor(gRPCServer.authenticate, gRPCServer.reqSDKStats),
-	}
-	gRPCServer.server = grpc.NewServer(serverOptions...)
-	pb.RegisterGatewayServer(gRPCServer.server, g)
 	return gRPCServer
 }
 
@@ -72,6 +69,14 @@ func (gs *GRPCServer) Run() error {
 
 	log.Infof("GRPC server is starting on %v", gs.listenAddr)
 
+	serverOptions := []grpc.ServerOption{
+		grpc.WriteBufferSize(bufferSize),
+		grpc.InitialConnWindowSize(windowSize),
+		grpc.UnaryInterceptor(gs.authenticate),
+		grpc.ChainUnaryInterceptor(gs.authenticate, gs.reqSDKStats),
+	}
+	gs.server = grpc.NewServer(serverOptions...)
+	pb.RegisterGatewayServer(gs.server, gs.gatewayServer)
 	err = gs.server.Serve(listener)
 	if err != nil {
 		return fmt.Errorf("failed to serve: %v", err)

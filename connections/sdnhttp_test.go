@@ -14,14 +14,13 @@ import (
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2"
-	"github.com/bloXroute-Labs/gateway/v2/logger"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/utilmock"
 	"github.com/gorilla/mux"
-	logrusTest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -60,7 +59,6 @@ func testSDNHTTP() realSDNHTTP {
 			NodeID:               "35299c61-55ad-4565-85a3-0cd985953fac",
 			BlockchainNetworkNum: LocalInitiatedPort,
 		},
-		//autoRelays: []nodeLatencyInfo,
 	}
 }
 
@@ -117,7 +115,6 @@ func TestRegister_BlockchainNetworkNumberUpdated(t *testing.T) {
 }
 
 func TestDirectRelayConnections_IfPingOver40MSLogsWarning(t *testing.T) {
-	logger.NonBlocking.AvoidChannel()
 	jsonRespRelays := `[{"ip":"8.208.101.30", "port":1809}, {"ip":"47.90.133.153", "port":1809}]`
 	nodeModel := sdnmessage.NodeModel{
 		NodeID:     "35299c61-55ad-4565-85a3-0cd985953fac",
@@ -173,7 +170,7 @@ func TestDirectRelayConnections_IfPingOver40MSLogsWarning(t *testing.T) {
 
 			sdn := NewSDNHTTP(&sslCerts, server.URL, nodeModel, "").(*realSDNHTTP)
 
-			globalHook := logrusTest.NewGlobal()
+			globalHook := log.NewGlobal()
 			getPingLatenciesFunction := func(peers sdnmessage.Peers) []nodeLatencyInfo {
 				return testCase.latencies
 			}
@@ -239,7 +236,6 @@ func TestDirectRelayConnections_IncorrectArgs(t *testing.T) {
 	}
 
 	s := testSDNHTTP()
-	//defer server.Close()
 
 	for _, testCase := range testTable {
 		t.Run(fmt.Sprint(testCase.name), func(t *testing.T) {
@@ -633,7 +629,6 @@ func TestDirectRelayConnections_UpdateAutoRelays(t *testing.T) {
 	for _, testCase := range testTable {
 		t.Run(testCase.name, func(t *testing.T) {
 			s := testSDNHTTP()
-			//defer server.Close()
 			s.getPingLatencies = func(peers sdnmessage.Peers) []nodeLatencyInfo {
 				return testCase.initialPingLatencies
 			}
@@ -650,11 +645,9 @@ func TestDirectRelayConnections_UpdateAutoRelays(t *testing.T) {
 			err := s.DirectRelayConnections(ctx, testCase.relaysArgument, 2, relayInstructions, time.Millisecond)
 			require.Nil(t, err)
 			time.Sleep(time.Millisecond * 2)
-			//require.True(t, UnorderedEqual(testCase.expectedInitialAutoRelays, s.autoRelays))
 
 			testCase.initialPingLatencies = append(testCase.addPingLatencies, testCase.initialPingLatencies...)
 			time.Sleep(time.Millisecond * 5)
-			//require.True(t, UnorderedEqual(testCase.expectedFinalAutoRelays, s.autoRelays))
 		})
 	}
 }
@@ -703,7 +696,6 @@ func TestDirectRelayConnections_UpdateAutoRelaysTwice(t *testing.T) {
 	for _, testCase := range testTable {
 		t.Run(testCase.name, func(t *testing.T) {
 			s := testSDNHTTP()
-			//defer server.Close()
 			s.getPingLatencies = func(peers sdnmessage.Peers) []nodeLatencyInfo {
 				return testCase.initialPingLatencies
 			}
@@ -720,15 +712,12 @@ func TestDirectRelayConnections_UpdateAutoRelaysTwice(t *testing.T) {
 			err := s.DirectRelayConnections(ctx, testCase.relaysArgument, 2, relayInstructions, time.Millisecond)
 			require.Nil(t, err)
 			time.Sleep(time.Millisecond * 2)
-			//require.True(t, UnorderedEqual(testCase.expectedAutoRelays1, s.autoRelays))
 
 			testCase.initialPingLatencies = append(testCase.addPingLatencies1, testCase.initialPingLatencies...)
 			time.Sleep(time.Millisecond * 5)
-			//require.True(t, UnorderedEqual(testCase.expectedAutoRelays2, s.autoRelays))
 
 			testCase.initialPingLatencies = append(testCase.addPingLatencies2, testCase.initialPingLatencies...)
 			time.Sleep(time.Millisecond * 5)
-			//require.True(t, UnorderedEqual(testCase.expectedFinalAutoRelays, s.autoRelays))
 		})
 	}
 }

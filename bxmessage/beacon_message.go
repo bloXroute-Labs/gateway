@@ -11,15 +11,20 @@ type beaconMessageType string
 
 // Beacon message types
 const (
-	beaconMessageTypeBlob beaconMessageType = "blob"
+	beaconMessageTypeEthBlob beaconMessageType = "blob"
+	// cebl is a C ompressed E th BL ob
+	beaconMessageTypeCompressedEthBlob beaconMessageType = "cebl"
+
 	// Attestations
 	// etc
 )
 
 func beaconMessageTypeToBx(bType types.BxBeaconMessageType) beaconMessageType {
 	switch bType {
-	case types.BxBeaconMessageTypeBlob:
-		return beaconMessageTypeBlob
+	case types.BxBeaconMessageTypeEthBlob:
+		return beaconMessageTypeEthBlob
+	case types.BxBeaconMessageTypeCompressedEthBlob:
+		return beaconMessageTypeCompressedEthBlob
 	default:
 		return ""
 	}
@@ -177,8 +182,10 @@ func (m *BeaconMessage) Unpack(buf []byte, protocol Protocol) error {
 // Type returns the type of the message
 func (m *BeaconMessage) Type() types.BxBeaconMessageType {
 	switch string(m.beaconMessageType[:]) {
-	case string(beaconMessageTypeBlob):
-		return types.BxBeaconMessageTypeBlob
+	case string(beaconMessageTypeEthBlob):
+		return types.BxBeaconMessageTypeEthBlob
+	case string(beaconMessageTypeCompressedEthBlob):
+		return types.BxBeaconMessageTypeCompressedEthBlob
 	default:
 		return types.BxBeaconMessageTypeUnknown
 	}

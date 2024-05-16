@@ -39,11 +39,6 @@ func NewPrysmClient(ctx context.Context, config *network.EthConfig, addr string,
 }
 
 func newPrysmClient(ctx context.Context, config *network.EthConfig, addr string, bridge blockchain.Bridge, endpoint types.NodeEndpoint, clock utils.Clock) *PrysmClient {
-	log := log.WithFields(log.Fields{
-		"connType":   "prysm",
-		"remoteAddr": addr,
-	})
-
 	return &PrysmClient{
 		ctx:      ctx,
 		clock:    clock,
@@ -51,7 +46,10 @@ func newPrysmClient(ctx context.Context, config *network.EthConfig, addr string,
 		addr:     addr,
 		bridge:   bridge,
 		endpoint: endpoint,
-		log:      log,
+		log: log.WithFields(log.Fields{
+			"connType":   "prysm",
+			"remoteAddr": addr,
+		}),
 	}
 }
 
@@ -67,7 +65,7 @@ func (c *PrysmClient) run() {
 
 			conn, err := grpc.Dial(c.addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 			if err != nil {
-				c.log.Warningf("could not establish a connection to the Prysm: %v, retrying in %v seconds...", err, prysmClientTimeout)
+				c.log.Warnf("could not establish a connection to the Prysm: %v, retrying in %v seconds...", err, prysmClientTimeout)
 				return
 			}
 			defer conn.Close()
