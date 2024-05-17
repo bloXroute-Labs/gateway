@@ -24,7 +24,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/nodes"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/httpclient"
 	"github.com/bloXroute-Labs/gateway/v2/version"
@@ -124,6 +123,24 @@ func main() {
 func runGateway(c *cli.Context) error {
 	ctx := utils.ContextWithSignal(c.Context)
 
+	bxConfig, err := config.NewBxFromCLI(c)
+	if err != nil {
+		return err
+	}
+
+	var fluentdCfg *log.FluentDConfig
+	if bxConfig.FluentDEnabled {
+		fluentdCfg = &log.FluentDConfig{
+			FluentDHost: bxConfig.FluentDHost,
+			Level:       bxConfig.ConsoleLevel,
+		}
+	}
+
+	err = log.Init(bxConfig.Config, fluentdCfg, version.BuildVersion)
+	if err != nil {
+		return err
+	}
+
 	group, ctx := errgroup.WithContext(ctx)
 
 	var pprofServer *http.Server
@@ -140,63 +157,30 @@ func runGateway(c *cli.Context) error {
 		})
 	}
 
-	bxConfig, err := config.NewBxFromCLI(c)
-	if err != nil {
-		return err
-	}
-
-	err = log.Init(bxConfig.Config, version.BuildVersion)
-	if err != nil {
-		return err
-	}
-
 	dataDir := c.String(utils.DataDirFlag.Name)
 	ethConfig, gatewayPublicKey, err := network.NewPresetEthConfigFromCLI(c, dataDir)
 	if err != nil {
 		return err
 	}
 
-	var blockchainPeers []types.NodeEndpoint
-	var prysmEndpoint types.NodeEndpoint
-	var prysmAddr string
 	blockchainNetwork := c.String(utils.BlockchainNetworkFlag.Name)
+	blockchainPeers := ethConfig.StaticPeers.Endpoints()
 
-	for _, blockchainPeerInfo := range ethConfig.StaticPeers {
-		var endpoint types.NodeEndpoint
-		if blockchainPeerInfo.Enode != nil {
-			endpoint = utils.EnodeToNodeEndpoint(blockchainPeerInfo.Enode, blockchainNetwork)
-		} else if blockchainPeerInfo.Multiaddr != nil {
-			endpoint = utils.MultiaddrToNodeEndoint(*blockchainPeerInfo.Multiaddr, blockchainNetwork)
-			prysmEndpoint = endpoint
-		} else if blockchainPeerInfo.BeaconAPIURI != "" {
-			endpointPtr, err := beacon.CreateAPIEndpoint(blockchainPeerInfo.BeaconAPIURI, blockchainNetwork)
-			if err != nil {
-				return err
-			}
-			endpoint = *endpointPtr
-		} else {
-			continue
-		}
-
-		blockchainPeers = append(blockchainPeers, endpoint)
-
-		if blockchainPeerInfo.PrysmAddr != "" {
-			prysmAddr = blockchainPeerInfo.PrysmAddr
-		}
-	}
-
-	sslCerts, sdn, err := nodes.InitSDN(bxConfig, blockchainPeers, nodes.GeneratePeers(ethConfig.StaticPeers), len(ethConfig.StaticEnodes()))
+	sslCerts, sdn, err := nodes.InitSDN(bxConfig, blockchainPeers, nodes.GeneratePeers(ethConfig.StaticPeers), len(ethConfig.StaticPeers.Enodes()))
 	if err != nil {
 		return err
 	}
 
+	// set node ID for fluentd logging
+	log.SetNodeID(string(sdn.NodeID()))
+
 	// create a set of recommended peers
 	recommendedPeers := make(map[string]struct{})
 
-	startupBeaconNode := bxConfig.GatewayMode.IsBDN() && len(ethConfig.BeaconNodes()) > 0 || c.Int(utils.BeaconPort.Name) != 0
-	startupBeaconAPIClients := bxConfig.GatewayMode.IsBDN() && len(ethConfig.BeaconAPIEndpoints()) > 0
-	startupBlockchainClient := startupBeaconAPIClients || startupBeaconNode || len(ethConfig.StaticEnodes()) > 0 || bxConfig.EnableDynamicPeers // if beacon node running we need to receive txs also
-	startupPrysmClient := bxConfig.GatewayMode.IsBDN() && prysmAddr != ""
+	startupBeaconNode := bxConfig.GatewayMode.IsBDN() && len(ethConfig.StaticPeers.BeaconNodes()) > 0 || c.Int(utils.BeaconPort.Name) != 0
+	startupBeaconAPIClients := bxConfig.GatewayMode.IsBDN() && len(ethConfig.StaticPeers.BeaconAPIEndpoints()) > 0
+	startupBlockchainClient := startupBeaconAPIClients || startupBeaconNode || len(ethConfig.StaticPeers.Enodes()) > 0 || bxConfig.EnableDynamicPeers // if beacon node running we need to receive txs also
+	startupPrysmClient := bxConfig.GatewayMode.IsBDN() && len(ethConfig.StaticPeers.PrysmAddrs()) > 0
 
 	var bridge blockchain.Bridge
 	if blockchainNetwork == bxgateway.Mainnet || startupBlockchainClient || startupPrysmClient {
@@ -213,13 +197,13 @@ func runGateway(c *cli.Context) error {
 		return fmt.Errorf("websocket server must be enabled using --ws or --ws-tls if --enable-blockchain-rpc is used")
 	}
 	wsManager := eth.NewEthWSManager(ethConfig.StaticPeers, eth.NewWSProvider, bxgateway.WSProviderTimeout, bxConfig.EnableBlockchainRPC)
-	if (bxConfig.WebsocketEnabled || bxConfig.WebsocketTLSEnabled) && !ethConfig.ValidWSAddr() {
+	if (bxConfig.WebsocketEnabled || bxConfig.WebsocketTLSEnabled) && !ethConfig.StaticPeers.ValidWSAddr() {
 		log.Warn("websocket server enabled but no valid websockets endpoint specified via --eth-ws-uri nor --multi-node: only newTxs and bdnBlocks feeds are available")
 	}
-	if bxConfig.ManageWSServer && !ethConfig.ValidWSAddr() {
+	if bxConfig.ManageWSServer && !ethConfig.StaticPeers.ValidWSAddr() {
 		return fmt.Errorf("if websocket server management is enabled, a valid websocket address must be provided")
 	}
-	if bxConfig.EnableBlockchainRPC && !ethConfig.ValidWSAddr() {
+	if bxConfig.EnableBlockchainRPC && !ethConfig.StaticPeers.ValidWSAddr() {
 		return fmt.Errorf("if blockchan rpc is enabled, a valid websocket address must be provided")
 	}
 
@@ -259,11 +243,8 @@ func runGateway(c *cli.Context) error {
 
 	beaconAPIClients := make([]*beacon.APIClient, 0)
 	if startupBeaconAPIClients {
-		for _, endpoint := range ethConfig.BeaconAPIEndpoints() {
-			client, err := beacon.NewAPIClient(ctx, httpclient.Client(nil), ethConfig, bridge, endpoint, blockchainNetwork)
-			if err != nil {
-				return fmt.Errorf("error creating new beacon api client: %v", err)
-			}
+		for _, beaconAPI := range ethConfig.StaticPeers.BeaconAPIEndpoints() {
+			client := beacon.NewAPIClient(ctx, httpclient.Client(nil), ethConfig, bridge, beaconAPI.BeaconAPIURI, beaconAPI.Endpoint)
 			client.Start()
 			beaconAPIClients = append(beaconAPIClients, client)
 		}
@@ -288,7 +269,7 @@ func runGateway(c *cli.Context) error {
 		gatewayPublicKey,
 		sdn,
 		sslCerts,
-		len(ethConfig.StaticEnodes()),
+		len(ethConfig.StaticPeers.Enodes()),
 		c.String(utils.PolygonMainnetHeimdallEndpoints.Name),
 		c.Int(utils.TransactionHoldDuration.Name),
 		c.Int(utils.TransactionPassedDueDuration.Name),
@@ -347,10 +328,11 @@ func runGateway(c *cli.Context) error {
 		log.Infof("skipping starting blockchain client as no enodes have been provided")
 	}
 
-	var prysmClient *beacon.PrysmClient
 	if startupPrysmClient {
-		prysmClient = beacon.NewPrysmClient(ctx, ethConfig, prysmAddr, bridge, prysmEndpoint)
-		prysmClient.Start()
+		for _, prysmAddr := range ethConfig.StaticPeers.PrysmAddrs() {
+			prysmClient := beacon.NewPrysmClient(ctx, ethConfig, prysmAddr.PrysmAddr, bridge, prysmAddr.Endpoint)
+			prysmClient.Start()
+		}
 	}
 
 	<-ctx.Done()

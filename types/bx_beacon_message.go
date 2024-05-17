@@ -8,8 +8,10 @@ type BxBeaconMessageType int
 // String implements Stringer interface
 func (t BxBeaconMessageType) String() string {
 	switch t {
-	case BxBeaconMessageTypeBlob:
-		return "Blob"
+	case BxBeaconMessageTypeEthBlob:
+		return "EthBlob"
+	case BxBeaconMessageTypeCompressedEthBlob:
+		return "CompressedEthBlob"
 	default:
 		return "Unknown"
 	}
@@ -18,7 +20,8 @@ func (t BxBeaconMessageType) String() string {
 // BxBeaconMessageType constants
 const (
 	BxBeaconMessageTypeUnknown BxBeaconMessageType = iota
-	BxBeaconMessageTypeBlob
+	BxBeaconMessageTypeEthBlob
+	BxBeaconMessageTypeCompressedEthBlob
 )
 
 // BxBeaconMessage represents a beacon message

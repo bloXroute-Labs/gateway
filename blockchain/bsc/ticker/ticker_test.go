@@ -76,7 +76,7 @@ func TestTicker(t *testing.T) {
 	clock := new(utils.MockClock)
 	clock.SetTime(time.Now())
 
-	log := logger.TestEntry()
+	log := logger.Discard()
 
 	invalidArgs := new(Args)
 	validDelayArgs := &Args{

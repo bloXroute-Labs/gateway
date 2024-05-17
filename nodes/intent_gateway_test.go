@@ -27,7 +27,7 @@ import (
 
 func TestGateway_Intents(t *testing.T) {
 	var (
-		logEntry            = log.TestEntry()
+		logEntry            = log.Discard()
 		ctrl                = gomock.NewController(t)
 		relayConnMock       = mock.NewMockConn(ctrl)
 		gRPCFeedManagerMock = mock.NewMockGRPCFeedManager(ctrl)

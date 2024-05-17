@@ -491,7 +491,7 @@ func (c Converter) BeaconMessageToBDN(msg interface{}) (*types.BxBeaconMessage, 
 		return types.NewBxBeaconMessage(
 			hash,
 			NewSHA256Hash(ethcommon.Hash(blockHash)),
-			types.BxBeaconMessageTypeBlob,
+			types.BxBeaconMessageTypeEthBlob,
 			data,
 			uint32(m.GetIndex()),
 			uint32(m.GetSignedBlockHeader().GetHeader().GetSlot()),
@@ -504,7 +504,7 @@ func (c Converter) BeaconMessageToBDN(msg interface{}) (*types.BxBeaconMessage, 
 // BeaconMessageBDNToBlockchain converts BDN beacon message to blockchain beacon message
 func (c Converter) BeaconMessageBDNToBlockchain(msg *types.BxBeaconMessage) (interface{}, error) {
 	switch msg.Type {
-	case types.BxBeaconMessageTypeBlob:
+	case types.BxBeaconMessageTypeEthBlob:
 		blob := new(ethpb.BlobSidecar)
 		if err := blob.UnmarshalSSZ(msg.Data); err != nil {
 			return nil, fmt.Errorf("could not unmarshal blob sidecar: %v", err)

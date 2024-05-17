@@ -34,7 +34,6 @@ func (q *SerialPeerQueue) AddPeer(peerID types.NodeID, callback MessageQueueCall
 func (q *SerialPeerQueue) RemovePeer(peerID types.NodeID) {
 	queue, ok := q.queues.Load(peerID)
 	if !ok {
-		log.Errorf("failed to remove peer %s from message queue, message queue for peer does not exist", peerID)
 		return
 	}
 

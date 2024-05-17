@@ -12,8 +12,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
-	"github.com/bloXroute-Labs/gateway/v2/logger"
-	gateway_test "github.com/bloXroute-Labs/gateway/v2/test"
 	testUtils "github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
@@ -38,7 +36,6 @@ func setup() (blockchain.Bridge, *Handler, []types.NodeEndpoint) {
 	blockchainPeers, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
 	ctx := context.Background()
 	handler := NewHandler(ctx, &config, NewChain(ctx, config.IgnoreBlockTimeout), bridge, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout, false), make(map[string]struct{}))
-	gateway_test.ConfigureLogger(logger.TraceLevel)
 	return bridge, handler, blockchainPeers
 }
 
@@ -48,7 +45,6 @@ func setupEthMainnet() (blockchain.Bridge, *Handler, []types.NodeEndpoint) {
 	blockchainPeers, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
 	ctx := context.Background()
 	handler := NewHandler(ctx, &config, NewChain(ctx, config.IgnoreBlockTimeout), bridge, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout, false), make(map[string]struct{}))
-	gateway_test.ConfigureLogger(logger.TraceLevel)
 	return bridge, handler, blockchainPeers
 }
 
@@ -1063,7 +1059,6 @@ func TestHandler_ConnectionCloseOnContextClosure(t *testing.T) {
 	_, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(1)
 	ctx := context.Background()
 	handler := NewHandler(ctx, &config, NewChain(ctx, config.IgnoreBlockTimeout), bridge, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout, false), make(map[string]struct{}))
-	gateway_test.ConfigureLogger(logger.TraceLevel)
 
 	peer1, _, _ := testPeer(1, 1)
 	_ = handler.peers.register(peer1)

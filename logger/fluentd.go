@@ -1,49 +1,69 @@
 package logger
 
 import (
+	"fmt"
+	"io"
 	"strings"
+	"sync"
+	"time"
 
-	"github.com/evalphobia/logrus_fluent"
-	"github.com/sirupsen/logrus"
+	"github.com/fluent/fluent-logger-golang/fluent"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/diode"
 )
 
-// InitFluentD - initialise logging
-func InitFluentD(fluentDEnabled bool, fluentDHost, nodeID string, logLevel logrus.Level) error {
-	Formatter := new(logrus.TextFormatter)
-	Formatter.TimestampFormat = timestampFormat
-	Formatter.FullTimestamp = true
+const (
+	fluentDTag         = "bx.go.log"
+	defaultBufferLimit = 32 * 1024
+)
 
-	if fluentDEnabled {
-		hook, err := logrus_fluent.NewWithConfig(logrus_fluent.Config{
-			Host:          fluentDHost,
-			Port:          24224,
-			MarshalAsJSON: true,
-			AsyncConnect:  true,
-			BufferLimit:   defaultBufferLimit,
-		})
-		if err != nil {
-			logrus.Warnf("Failed to create fluentd config with error %v", err)
-			return nil
-		}
+var (
+	once   sync.Once
+	nodeID string
+)
 
-		var hookLevels []logrus.Level
-		for _, level := range logrus.AllLevels {
-			if int(level) <= int(logLevel) {
-				hookLevels = append(hookLevels, level)
-			}
-		}
-		hook.SetLevels(hookLevels)
+// SetNodeID sets the node ID for the fluentd writer
+func SetNodeID(id string) {
+	once.Do(func() {
+		nodeID = id
+	})
+}
 
-		hook.SetTag(fluentDTag)
-		hook.SetMessageField("msg")
-		hook.AddCustomizer(func(entry *logrus.Entry, data logrus.Fields) {
-			data["level"] = strings.ToUpper(entry.Level.String())
-			data["timestamp"] = entry.Time.Format(Formatter.TimestampFormat)
-			data["instance"] = nodeID
-		})
-
-		logrus.AddHook(hook)
-		logrus.Infof("connection established with fluentd hook at %v:%v", hook.Fluent.FluentHost, hook.Fluent.FluentPort)
+// fluentDWriter returns a writer that writes to fluentd
+func fluentDWriter(fluentDHost string, level zerolog.Level) (*levelWriter, error) {
+	fd, err := fluent.New(fluent.Config{
+		FluentPort:    24224,
+		FluentHost:    fluentDHost,
+		BufferLimit:   defaultBufferLimit,
+		Async:         true,
+		MarshalAsJSON: true,
+	})
+	if err != nil {
+		return nil, err
 	}
-	return nil
+
+	// set writer to discard logs
+	w := newWriter(io.Discard, true)
+	// use formatter to send logs to fluentd
+	w.FormatPrepare = func(m map[string]interface{}) error {
+		// FormatPrepare is called before FormatTimestamp, thus using standard time format to parse
+		tm, err := time.Parse(zerolog.TimeFieldFormat, m["time"].(string))
+		if err != nil {
+			return fmt.Errorf("failed to parse time for fluend: %v", err)
+		}
+		m["level"] = strings.ToUpper(m["level"].(string))
+		m["timestamp"] = m["time"].(string)
+		if nodeID != "" {
+			m["instance"] = nodeID
+		}
+
+		return fd.EncodeAndPostData(fluentDTag, tm, m)
+	}
+
+	return &levelWriter{
+		Writer:      diode.NewWriter(w, backLog, 0, func(int) {}),
+		minLevel:    zerolog.TraceLevel,
+		maxLevel:    zerolog.PanicLevel,
+		systemLevel: level,
+	}, nil
 }

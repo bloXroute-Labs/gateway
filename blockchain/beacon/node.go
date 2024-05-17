@@ -565,13 +565,11 @@ func blobSubnetToTopic(subnet uint64, forkDigest [4]byte) string {
 // BroadcastBlob broadcasts blob to peers
 func (n *Node) BroadcastBlob(blobSidecar *ethpb.BlobSidecar) error {
 	digest, err := n.currentForkDigest()
-
 	if err != nil {
 		return fmt.Errorf("could not get current fork digest: %v", err)
 	}
 
 	err = n.broadcast(blobSubnetToTopic(blobSidecar.Index, digest), blobSidecar)
-
 	if err != nil {
 		return fmt.Errorf("failed to broadcast blob: %v", err)
 	}
@@ -797,7 +795,7 @@ func (n *Node) broadcast(topic string, msg proto.Message) error {
 }
 
 func (n *Node) addPeers() error {
-	for _, multiaddr := range n.config.BeaconNodes() {
+	for _, multiaddr := range n.config.StaticPeers.BeaconNodes() {
 		addrInfo, err := libp2pPeer.AddrInfoFromP2pAddr(*multiaddr)
 		if err != nil {
 			return fmt.Errorf("could not convert multiaddr %v to addr info: %v", multiaddr, err)

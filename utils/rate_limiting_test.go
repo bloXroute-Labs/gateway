@@ -5,9 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/sirupsen/logrus"
-	"github.com/sirupsen/logrus/hooks/test"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -132,13 +130,12 @@ func TestLeakyBucketRateLimiter_Take_BucketCounterSameWhenOutOfCalls(t *testing.
 }
 
 func TestTxTraceLeakyBucketRateLimiter_Take_HasCorrectLogging(t *testing.T) {
-	logger.NonBlocking.AvoidChannel()
 	mockClock := &MockClock{}
 	startTime := time.Unix(0, 0)
 	mockClock.SetTime(startTime)
 	l := NewTxToolsLeakyBucketRateLimiter(mockClock, 2, PerSecond, "abc")
-	logrus.SetLevel(logrus.DebugLevel)
-	hook := test.NewGlobal()
+
+	hook := log.NewGlobal()
 
 	res, counter := l.Take()
 	if len(hook.AllEntries()) != 1 {

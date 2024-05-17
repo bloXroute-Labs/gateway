@@ -38,9 +38,11 @@ func (m *BlobSidecarCacheManager) AddBlobSidecar(blobSidecar *ethpb.BlobSidecar)
 		return fmt.Errorf("failed to calculate block hash: %v", err)
 	}
 
-	m.log.Tracef("adding blob sidecar to cache, slot %v, block hash: %s index: %d", blobSidecar.SignedBlockHeader.Header.Slot, hex.EncodeToString(blockHash[:]), blobSidecar.Index)
+	blockHashStr := hex.EncodeToString(blockHash[:])
 
-	value, _ := m.blobSidecars.LoadOrStore(hex.EncodeToString(blockHash[:]), &BlobCacheValue{
+	m.log.Tracef("adding blob sidecar to cache, slot %v, block hash: %s index: %d", blobSidecar.SignedBlockHeader.Header.Slot, blockHashStr, blobSidecar.Index)
+
+	value, _ := m.blobSidecars.LoadOrStore(blockHashStr, &BlobCacheValue{
 		slot: blobSidecar.SignedBlockHeader.Header.Slot,
 		ch:   make(chan *ethpb.BlobSidecar, fieldparams.MaxBlobsPerBlock),
 	})
@@ -49,13 +51,13 @@ func (m *BlobSidecarCacheManager) AddBlobSidecar(blobSidecar *ethpb.BlobSidecar)
 	defer value.closeLock.RUnlock()
 
 	if value.ch == nil {
-		return fmt.Errorf("blob sidecar channel is closed for block hash %s", blockHash)
+		return fmt.Errorf("blob sidecar channel is closed for block hash %s", blockHashStr)
 	}
 
 	select {
 	case value.ch <- blobSidecar:
 	default:
-		return fmt.Errorf("blob sidecar channel is full for block hash %s", blockHash)
+		return fmt.Errorf("blob sidecar channel is full for block hash %s", blockHashStr)
 	}
 
 	return nil

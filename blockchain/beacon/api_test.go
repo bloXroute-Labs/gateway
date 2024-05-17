@@ -13,6 +13,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/test"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	httpclient "github.com/bloXroute-Labs/gateway/v2/utils/httpclient"
 	httpmock "github.com/jarcoal/httpmock"
 	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
@@ -98,7 +99,7 @@ func TestNewAPIClient(t *testing.T) {
 	httpmock.ActivateNonDefault(httpClient)
 	defer httpmock.DeactivateAndReset()
 
-	client, err := NewAPIClient(ctx, httpClient, config, bridge, url, blockchainNetwork)
+	client := NewAPIClient(ctx, httpClient, config, bridge, url, types.NodeEndpoint{})
 
 	time.Sleep(time.Second)
 	assert.NoError(t, err)
@@ -120,8 +121,7 @@ func TestAPIClient_requestBlock(t *testing.T) {
 		},
 	)
 
-	client, err := NewAPIClient(ctx, httpClient, config, bridge, url, blockchainNetwork)
-	assert.NoError(t, err)
+	client := NewAPIClient(ctx, httpClient, config, bridge, url, types.NodeEndpoint{})
 	tests := []struct {
 		name        string
 		version     string
@@ -174,8 +174,7 @@ func TestAPIClient_hashOfBlock(t *testing.T) {
 		},
 	)
 
-	client, err := NewAPIClient(ctx, httpClient, config, bridge, url, blockchainNetwork)
-	assert.NoError(t, err)
+	client := NewAPIClient(ctx, httpClient, config, bridge, url, types.NodeEndpoint{})
 	respHeaders := http.Header{}
 	respHeaders.Add("Eth-Consensus-Version", "deneb")
 	httpmock.RegisterResponder("GET", "http://"+client.URL+"/eth/v2/beacon/blocks/"+blockID,
@@ -243,9 +242,7 @@ func TestAPIClient_processResponse(t *testing.T) {
 	)
 
 	// Initialize Beacon API client
-	client, err := NewAPIClient(ctx, httpClient, config, bridge, url, blockchainNetwork)
-
-	assert.NoError(t, err)
+	client := NewAPIClient(ctx, httpClient, config, bridge, url, types.NodeEndpoint{})
 
 	version := "deneb"
 
@@ -297,8 +294,7 @@ func TestAPIClient_broadcastBlock(t *testing.T) {
 	defer cancel()
 
 	// Initialize Beacon API client
-	client, err := NewAPIClient(ctx, httpClient, config, bridge, url, blockchainNetwork)
-	assert.NoError(t, err)
+	client := NewAPIClient(ctx, httpClient, config, bridge, url, types.NodeEndpoint{})
 	client.Start()
 
 	test.WaitUntilTrueOrFail(t, client.initialized.Load)

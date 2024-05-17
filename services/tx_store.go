@@ -35,6 +35,8 @@ type TxStore interface {
 	RemoveHashes(*types.SHA256HashList, ReEntryProtectionFlags, string)
 	GetTxByShortID(types.ShortID) (*types.BxTransaction, error)
 
+	GetTxByKzgCommitment(string) (*types.BxTransaction, error)
+
 	Clear()
 
 	Iter() (iter <-chan *types.BxTransaction)

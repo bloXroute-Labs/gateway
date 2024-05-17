@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 	"github.com/urfave/cli/v2"
 
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -30,11 +32,12 @@ type PeerInfo struct {
 	EthWSURI     string
 	PrysmAddr    string
 	BeaconAPIURI string
+	Endpoint     types.NodeEndpoint
 }
 
 // EthConfig represents Ethereum network configuration settings (e.g. indicate Mainnet, Rinkeby, BSC, etc.). Most of this information will be exchanged in the status messages.
 type EthConfig struct {
-	StaticPeers    []PeerInfo
+	StaticPeers    StaticPeers
 	BootstrapNodes []*enode.Node
 	PrivateKey     *ecdsa.PrivateKey
 	Port           int
@@ -55,34 +58,43 @@ type EthConfig struct {
 	IgnoreSlotCount    int
 }
 
-const privateKeyLen = 64
-const invalidMultiNodeErrMsg = "unable to parse --multi-node argument node number %d. Expected format: enode[+eth-ws-uri],enr[+prysm://prysm-host:prysm-port],multiaddr[+prysm://prysm-host:prysm-port],beacon-api://ip:port"
+const (
+	privateKeyLen          = 64
+	invalidMultiNodeErrMsg = "unable to parse --multi-node argument node number %d. Expected format: enode[+eth-ws-uri],enr[+prysm://prysm-host:prysm-port],multiaddr[+prysm://prysm-host:prysm-port],beacon-api://ip:port"
+)
 
 // NewPresetEthConfigFromCLI builds a new EthConfig from the command line context. Selects a specific network configuration based on the provided startup flag.
 func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, string, error) {
-	preset, err := NewEthereumPreset(ctx.String(utils.BlockchainNetworkFlag.Name))
+	blockchainNetwork := ctx.String(utils.BlockchainNetworkFlag.Name)
+
+	preset, err := NewEthereumPreset(blockchainNetwork)
 	if err != nil {
 		return nil, "", err
 	}
 	preset.StaticPeers = make([]PeerInfo, 0)
 
 	if ctx.IsSet(utils.MultiNode.Name) {
-		if ctx.IsSet(utils.EnodesFlag.Name) || ctx.IsSet(utils.BeaconENRFlag.Name) || ctx.IsSet(utils.BeaconMultiaddrFlag.Name) || ctx.IsSet(utils.PrysmGRPCFlag.Name) || ctx.IsSet(utils.EthWSUriFlag.Name) || ctx.IsSet(utils.BeaconAPIUriFlag.Name) {
+		switch {
+		case ctx.IsSet(utils.EnodesFlag.Name), ctx.IsSet(utils.BeaconENRFlag.Name), ctx.IsSet(utils.BeaconMultiaddrFlag.Name), ctx.IsSet(utils.PrysmGRPCFlag.Name), ctx.IsSet(utils.EthWSUriFlag.Name), ctx.IsSet(utils.BeaconAPIUriFlag.Name):
 			return nil, "", errors.New("parameters --multi-node and (--enodes, --enr, --multiaddr, --prysm-grpc-uri, --eth-ws-uri or --beacon-api-uri) should not be used simultaneously; if you would like to use multiple connections, use --multi-node")
 		}
-		err = preset.parseMultiNode(ctx.String(utils.MultiNode.Name))
-		if err != nil {
-			return nil, "", err
+
+		if err := preset.parseMultiNode(ctx.String(utils.MultiNode.Name), ctx.String(utils.BlockchainNetworkFlag.Name)); err != nil {
+			return nil, "", fmt.Errorf("unable to parse --multi-node argument: %v", err)
 		}
 	} else {
-		var peer PeerInfo
+
 		if ctx.IsSet(utils.EnodesFlag.Name) {
+			peer := PeerInfo{}
+
 			enodeString := ctx.String(utils.EnodesFlag.Name)
 			node, err := enode.Parse(enode.ValidSchemes, enodeString)
 			if err != nil {
 				return nil, "", err
 			}
 			peer.Enode = node
+			peer.Endpoint = utils.EnodeToNodeEndpoint(node, blockchainNetwork)
+
 			if ctx.IsSet(utils.EthWSUriFlag.Name) {
 				ethWSURI := ctx.String(utils.EthWSUriFlag.Name)
 				err = validateWSURI(ethWSURI)
@@ -92,15 +104,6 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 				peer.EthWSURI = ethWSURI
 			}
 
-			// Prysm is using enode address for source of the blocks in stats
-			if ctx.IsSet(utils.PrysmGRPCFlag.Name) && !ctx.IsSet(utils.BeaconENRFlag.Name) {
-				prysmGRPCURI := ctx.String(utils.PrysmGRPCFlag.Name)
-				err = validatePrysmGRPC(prysmGRPCURI)
-				if err != nil {
-					return nil, "", err
-				}
-				peer.PrysmAddr = prysmGRPCURI
-			}
 			preset.StaticPeers = append(preset.StaticPeers, peer)
 		} else if ctx.IsSet(utils.EthWSUriFlag.Name) {
 			ethWSURI := ctx.String(utils.EthWSUriFlag.Name)
@@ -108,8 +111,10 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 			if err != nil {
 				return nil, "", err
 			}
-			peer.EthWSURI = ethWSURI
-			preset.StaticPeers = append(preset.StaticPeers, peer)
+
+			preset.StaticPeers = append(preset.StaticPeers, PeerInfo{
+				EthWSURI: ethWSURI,
+			})
 		}
 
 		if ctx.IsSet(utils.BeaconENRFlag.Name) || ctx.IsSet(utils.BeaconMultiaddrFlag.Name) {
@@ -125,6 +130,7 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 				}
 
 				peer.Multiaddr = &multiAddr
+				peer.Endpoint = utils.MultiaddrToNodeEndoint(multiAddr, blockchainNetwork)
 			} else if ctx.IsSet(utils.BeaconMultiaddrFlag.Name) {
 				multiAddr, err := multiaddrFromStr(ctx.String(utils.BeaconMultiaddrFlag.Name))
 				if err != nil {
@@ -132,18 +138,28 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 				}
 
 				peer.Multiaddr = &multiAddr
-			}
-
-			if ctx.IsSet(utils.PrysmGRPCFlag.Name) {
-				prysmGRPCURI := ctx.String(utils.PrysmGRPCFlag.Name)
-				err = validatePrysmGRPC(prysmGRPCURI)
-				if err != nil {
-					return nil, "", err
-				}
-				peer.PrysmAddr = prysmGRPCURI
+				peer.Endpoint = utils.MultiaddrToNodeEndoint(multiAddr, blockchainNetwork)
 			}
 
 			preset.StaticPeers = append(preset.StaticPeers, peer)
+		}
+
+		if ctx.IsSet(utils.PrysmGRPCFlag.Name) {
+			prysmGRPCURI := ctx.String(utils.PrysmGRPCFlag.Name)
+			err = validatePrysmGRPC(prysmGRPCURI)
+			if err != nil {
+				return nil, "", err
+			}
+
+			endpoint, err := utils.CreatePrysmEndpoint(prysmGRPCURI, blockchainNetwork)
+			if err != nil {
+				return nil, "", fmt.Errorf("unable to parse --prysm-grpc-uri argument: %v", err)
+			}
+
+			preset.StaticPeers = append(preset.StaticPeers, PeerInfo{
+				PrysmAddr: prysmGRPCURI,
+				Endpoint:  endpoint,
+			})
 		}
 
 		if ctx.IsSet(utils.BeaconAPIUriFlag.Name) {
@@ -154,7 +170,15 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 				return nil, "", fmt.Errorf("--beacon-api-uri: error in parsing %s endpoint: %v", beaconAPIEndpointsArg, err)
 			}
 
-			preset.StaticPeers = append(preset.StaticPeers, PeerInfo{BeaconAPIURI: beaconAPIURI})
+			endpoint, err := utils.CreateAPIEndpoint(beaconAPIURI, blockchainNetwork)
+			if err != nil {
+				return nil, "", fmt.Errorf("unable to parse --beacon-api-uri argument: %v", err)
+			}
+
+			preset.StaticPeers = append(preset.StaticPeers, PeerInfo{
+				BeaconAPIURI: beaconAPIURI,
+				Endpoint:     endpoint,
+			})
 		}
 	}
 
@@ -169,7 +193,7 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to convert hex string to ECDSA key (%v)", err)
 		}
-		err = os.WriteFile(path.Join(dataDir, ".gatewaykey"), []byte(privateKeyHexString), 0644)
+		err = os.WriteFile(path.Join(dataDir, ".gatewaykey"), []byte(privateKeyHexString), 0o644)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to save private key to file (%v)", err)
 		}
@@ -179,7 +203,6 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 	if privateKey == nil && len(dataDir) != 0 {
 		privateKeyPath := path.Join(dataDir, ".gatewaykey")
 		privateKeyFromFile, _, err := LoadOrGeneratePrivateKey(privateKeyPath)
-
 		if err != nil {
 			return nil, "", fmt.Errorf("couldn't load or generate a private key (%v)", err)
 		}
@@ -217,10 +240,12 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 }
 
 // parseMultiNode parses a string into list of PeerInfo, according to expected format of multi-eth-ws-uri parameter
-func (ec *EthConfig) parseMultiNode(multiNodeStr string) error {
+func (ec *EthConfig) parseMultiNode(multiNodeStr string, blockchainNetwork string) error {
 	nodes := strings.Split(multiNodeStr, ",")
 	for i, nodeStr := range nodes {
-		var peer PeerInfo
+		// enode+eth-ws-uri only
+		var combinedPeer *PeerInfo
+
 		connURIs := strings.Split(nodeStr, "+")
 		if len(connURIs) == 0 {
 			return fmt.Errorf(invalidMultiNodeErrMsg, i)
@@ -236,7 +261,7 @@ func (ec *EthConfig) parseMultiNode(multiNodeStr string) error {
 			connURIScheme := connURIParts[0]
 			switch connURIScheme {
 			case "enr":
-				if peer.Enode != nil || peer.Multiaddr != nil {
+				if combinedPeer != nil {
 					return fmt.Errorf(invalidMultiNodeErrMsg, i)
 				}
 
@@ -245,9 +270,12 @@ func (ec *EthConfig) parseMultiNode(multiNodeStr string) error {
 					return fmt.Errorf("invalid enr argument argument %d comma: %v", i, err)
 				}
 
-				peer.Multiaddr = &multiaddr
+				ec.StaticPeers = append(ec.StaticPeers, PeerInfo{
+					Multiaddr: &multiaddr,
+					Endpoint:  utils.MultiaddrToNodeEndoint(multiaddr, blockchainNetwork),
+				})
 			case "multiaddr":
-				if peer.Enode != nil || peer.Multiaddr != nil {
+				if combinedPeer != nil {
 					return fmt.Errorf(invalidMultiNodeErrMsg, i)
 				}
 
@@ -256,9 +284,12 @@ func (ec *EthConfig) parseMultiNode(multiNodeStr string) error {
 					return fmt.Errorf("invalid multiaddr argument after %d comma: %v", i, err)
 				}
 
-				peer.Multiaddr = &multiaddr
+				ec.StaticPeers = append(ec.StaticPeers, PeerInfo{
+					Multiaddr: &multiaddr,
+					Endpoint:  utils.MultiaddrToNodeEndoint(multiaddr, blockchainNetwork),
+				})
 			case "enode":
-				if peer.Enode != nil || peer.Multiaddr != nil {
+				if combinedPeer != nil {
 					return fmt.Errorf(invalidMultiNodeErrMsg, i)
 				}
 
@@ -267,30 +298,59 @@ func (ec *EthConfig) parseMultiNode(multiNodeStr string) error {
 					return fmt.Errorf("invalid enode argument after %d comma: %v", i, err)
 				}
 
-				peer.Enode = enode
+				combinedPeer = &PeerInfo{
+					Enode:    enode,
+					Endpoint: utils.EnodeToNodeEndpoint(enode, blockchainNetwork),
+				}
 			case "ws", "wss":
-				peer.EthWSURI = connURI
+				if combinedPeer == nil {
+					ec.StaticPeers = append(ec.StaticPeers, PeerInfo{
+						EthWSURI: connURI,
+					})
+				} else {
+					combinedPeer.EthWSURI = connURI
+				}
 			case "prysm":
-				peer.PrysmAddr = strings.TrimPrefix(connURI, "prysm://")
+				prysmAddr := strings.TrimPrefix(connURI, "prysm://")
+
+				endpoint, err := utils.CreatePrysmEndpoint(prysmAddr, blockchainNetwork)
+				if err != nil {
+					return fmt.Errorf("invalid prysm argument after %d comma: %v", i, err)
+				}
+
+				ec.StaticPeers = append(ec.StaticPeers, PeerInfo{
+					PrysmAddr: prysmAddr,
+					Endpoint:  endpoint,
+				})
 			case "beacon-api":
 				beaconAPIUri := strings.TrimPrefix(connURI, "beacon-api://")
-				if utils.Exists(beaconAPIUri, ec.BeaconAPIEndpoints()) {
+
+				if slices.ContainsFunc(ec.StaticPeers.BeaconAPIEndpoints(), func(peer PeerInfo) bool {
+					return peer.BeaconAPIURI == beaconAPIUri
+				}) {
 					return fmt.Errorf("duplicated beacon-api argument after %d comma", i)
 				}
 				if err := validateBeaconAPIURI(beaconAPIUri); err != nil {
 					return fmt.Errorf("invalid beacon-api argument after %d comma: %v", i, err)
 				}
-				peer.BeaconAPIURI = beaconAPIUri
+
+				endpoint, err := utils.CreateAPIEndpoint(beaconAPIUri, blockchainNetwork)
+				if err != nil {
+					return fmt.Errorf("invalid beacon-api argument after %d comma: %v", i, err)
+				}
+
+				ec.StaticPeers = append(ec.StaticPeers, PeerInfo{
+					BeaconAPIURI: beaconAPIUri,
+					Endpoint:     endpoint,
+				})
 			default:
 				return fmt.Errorf(invalidMultiNodeErrMsg, i)
 			}
 		}
 
-		if peer.Enode == nil && peer.Multiaddr == nil && peer.BeaconAPIURI == "" {
-			return fmt.Errorf("none of enode/enr/multiaddr/beacon-api were specified in --multi-node %d connection URI", i)
+		if combinedPeer != nil {
+			ec.StaticPeers = append(ec.StaticPeers, *combinedPeer)
 		}
-
-		ec.StaticPeers = append(ec.StaticPeers, peer)
 	}
 
 	return nil
@@ -441,10 +501,13 @@ func (ec *EthConfig) Update(otherConfig EthConfig) {
 	ec.BlockConfirmationsCount = otherConfig.BlockConfirmationsCount
 }
 
-// StaticEnodes makes a list of enodes only from StaticPeers
-func (ec *EthConfig) StaticEnodes() []*enode.Node {
+// StaticPeers is a list of peers to connect to
+type StaticPeers []PeerInfo
+
+// Enodes makes a list of enodes
+func (peers *StaticPeers) Enodes() []*enode.Node {
 	var enodesList []*enode.Node
-	for _, peerInfo := range ec.StaticPeers {
+	for _, peerInfo := range *peers {
 		if peerInfo.Multiaddr == nil && peerInfo.Enode != nil {
 			enodesList = append(enodesList, peerInfo.Enode)
 		}
@@ -453,9 +516,9 @@ func (ec *EthConfig) StaticEnodes() []*enode.Node {
 }
 
 // BeaconNodes makes a list of nodes for beacon
-func (ec *EthConfig) BeaconNodes() []*multiaddr.Multiaddr {
+func (peers *StaticPeers) BeaconNodes() []*multiaddr.Multiaddr {
 	var beaconNodes []*multiaddr.Multiaddr
-	for _, peer := range ec.StaticPeers {
+	for _, peer := range *peers {
 		if peer.Multiaddr != nil {
 			beaconNodes = append(beaconNodes, peer.Multiaddr)
 		}
@@ -465,25 +528,37 @@ func (ec *EthConfig) BeaconNodes() []*multiaddr.Multiaddr {
 }
 
 // BeaconAPIEndpoints makes a list of endpoints which supports beacon API
-func (ec *EthConfig) BeaconAPIEndpoints() []string {
-	var beaconAPIEndpoints = make([]string, 0, len(ec.StaticPeers))
-	for _, peer := range ec.StaticPeers {
-		if peer.BeaconAPIURI != "" {
-			beaconAPIEndpoints = append(beaconAPIEndpoints, peer.BeaconAPIURI)
-		}
-	}
+func (peers *StaticPeers) BeaconAPIEndpoints() []PeerInfo {
+	return utils.Filter(*peers, func(peer PeerInfo) bool {
+		return peer.BeaconAPIURI != ""
+	})
+}
 
-	return beaconAPIEndpoints
+// PrysmAddrs makes a list of prysm addresses
+func (peers *StaticPeers) PrysmAddrs() []PeerInfo {
+	return utils.Filter(*peers, func(peer PeerInfo) bool {
+		return peer.PrysmAddr != ""
+	})
 }
 
 // ValidWSAddr indicates whether a valid eth ws uri was parsed
-func (ec *EthConfig) ValidWSAddr() bool {
-	for _, peerInfo := range ec.StaticPeers {
+func (peers *StaticPeers) ValidWSAddr() bool {
+	for _, peerInfo := range *peers {
 		if peerInfo.EthWSURI != "" {
 			return true
 		}
 	}
 	return false
+}
+
+// Endpoints makes a list of endpoints
+func (peers *StaticPeers) Endpoints() []types.NodeEndpoint {
+	endpoints := make([]types.NodeEndpoint, len(*peers))
+	for i, peer := range *peers {
+		endpoints[i] = peer.Endpoint
+	}
+
+	return endpoints
 }
 
 type keyWriteError struct {
@@ -496,7 +571,7 @@ func LoadOrGeneratePrivateKey(keyPath string) (privateKey *ecdsa.PrivateKey, gen
 	if err != nil {
 		if os.IsNotExist(err) {
 			dir, _ := path.Split(keyPath)
-			if err = os.MkdirAll(dir, 0755); err != nil {
+			if err = os.MkdirAll(dir, 0o755); err != nil {
 				err = keyWriteError{err}
 				return
 			}

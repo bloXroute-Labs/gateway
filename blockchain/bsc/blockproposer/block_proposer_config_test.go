@@ -38,11 +38,13 @@ func (m mockTxStore) RemoveShortIDs(*types.ShortIDList, services.ReEntryProtecti
 }
 func (m mockTxStore) RemoveHashes(*types.SHA256HashList, services.ReEntryProtectionFlags, string) {}
 func (m mockTxStore) GetTxByShortID(types.ShortID) (r *types.BxTransaction, e error)              { return }
-func (m mockTxStore) Clear()                                                                      {}
-func (m mockTxStore) Iter() (r <-chan *types.BxTransaction)                                       { return }
-func (m mockTxStore) Count() (r int)                                                              { return }
-func (m mockTxStore) Summarize() (r *pb.TxStoreReply)                                             { return }
-func (m mockTxStore) CleanNow()                                                                   {}
+
+func (m mockTxStore) GetTxByKzgCommitment(string) (r *types.BxTransaction, e error) { return }
+func (m mockTxStore) Clear()                                                        {}
+func (m mockTxStore) Iter() (r <-chan *types.BxTransaction)                         { return }
+func (m mockTxStore) Count() (r int)                                                { return }
+func (m mockTxStore) Summarize() (r *pb.TxStoreReply)                               { return }
+func (m mockTxStore) CleanNow()                                                     {}
 
 type mockCallerManager struct{}
 
@@ -63,7 +65,7 @@ func validConfig() *Config {
 	return &Config{
 		Clock:          new(mockClock),
 		TxStore:        func() *services.TxStore { var s services.TxStore = new(mockTxStore); return &s }(),
-		Log:            logger.TestEntry(),
+		Log:            logger.Discard(),
 		CallerManager:  new(mockCallerManager),
 		SendingInfo:    sendingConfig,
 		RegularTicker:  new(mockTicker),

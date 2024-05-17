@@ -17,7 +17,7 @@ func TestArgs(t *testing.T) {
 
 	validArgs := &Args{
 		Clock: clock,
-		Log:   logger.TestEntry(),
+		Log:   logger.Discard(),
 		Delays: []time.Duration{
 			time.Second,
 			time.Second * 2,
@@ -32,7 +32,7 @@ func TestArgs(t *testing.T) {
 				require.ErrorIs(t, invalidArgs.Validate(), ErrLogIsNotInit)
 			})
 
-			invalidArgs.Log = logger.TestEntry()
+			invalidArgs.Log = logger.Discard()
 
 			t.Run("ClockIsNotInit", func(t *testing.T) {
 				require.ErrorIs(t, invalidArgs.Validate(), ErrClockIsNotInit)

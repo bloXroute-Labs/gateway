@@ -100,7 +100,10 @@ const EmptyProtocol = 0
 const MinProtocol = 19
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
-const CurrentProtocol = BundlePriorityFeeRefundProtocol
+const CurrentProtocol = BlobCompressionProtocol
+
+// BlobCompressionProtocol is the minimum protocol version that supports blob compression
+const BlobCompressionProtocol = 46
 
 // BundlePriorityFeeRefundProtocol is the minimum protocol version that supports bundle priority fee refund
 const BundlePriorityFeeRefundProtocol = 45

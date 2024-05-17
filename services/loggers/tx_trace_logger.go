@@ -37,5 +37,5 @@ func (tt txTrace) Log(hash types.SHA256Hash, source connections.Conn) {
 	} else {
 		sourceName = "BDN"
 	}
-	tt.logger.Tracef("%v - %v %v", hash, sourceName, source.GetPeerIP())
+	tt.logger.Trace().Msgf("%v - %v %v", hash, sourceName, source.GetPeerIP())
 }

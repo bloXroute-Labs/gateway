@@ -1,51 +1,56 @@
 package logger
 
 import (
-	"github.com/sirupsen/logrus"
-	"github.com/sirupsen/logrus/hooks/test"
+	"fmt"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 // Entry type
 type Entry struct {
-	e *logrus.Entry
+	ee zerolog.Logger
 }
 
-// TestEntry - Not being used currently
-func TestEntry() *Entry {
-	logger, _ := test.NewNullLogger()
-	return &Entry{
-		e: logrus.NewEntry(logger),
-	}
+// Fields type
+type Fields map[string]interface{}
+
+// WithFields creates an entry with fields
+func WithFields(fields Fields) *Entry {
+	return &Entry{ee: log.With().Fields(map[string]interface{}(fields)).Logger()}
+}
+
+// WithField creates an entry with field
+func WithField(key string, value interface{}) *Entry {
+	return &Entry{ee: log.With().Any(key, value).Logger()}
 }
 
 // WithField adds a single field to the Entry.
 func (entry *Entry) WithField(key string, value interface{}) *Entry {
-	e := entry.e.WithField(key, value)
-	return &Entry{e: e}
+	return &Entry{ee: entry.ee.With().Any(key, value).Logger()}
 }
 
 // WithFields adds fields to the Entry.
 func (entry *Entry) WithFields(fields Fields) *Entry {
-	e := entry.e.WithFields(logrus.Fields(fields))
-	return &Entry{e: e}
+	return &Entry{ee: entry.ee.With().Fields(map[string]interface{}(fields)).Logger()}
 }
 
 // Logf logs using level and format
 func (entry *Entry) Logf(level Level, format string, args ...interface{}) {
-	if !IsLevelEnabled(level) {
+	if entry == nil {
 		return
 	}
-	fields := Fields(entry.e.Data)
-	NonBlocking.Logf(level, &fields, format, args...)
+
+	entry.ee.WithLevel(toZeroLogLevel(level)).Msgf(format, args...)
 }
 
 // Log logs using level
 func (entry *Entry) Log(level Level, args ...interface{}) {
-	if !IsLevelEnabled(level) {
+	if entry == nil {
 		return
 	}
-	fields := Fields(entry.e.Data)
-	NonBlocking.Log(level, &fields, args...)
+
+	entry.ee.WithLevel(toZeroLogLevel(level)).Msg(fmt.Sprint(args...))
 }
 
 // Tracef logs trace level with format
@@ -66,11 +71,6 @@ func (entry *Entry) Infof(format string, args ...interface{}) {
 // Warnf logs warn level with format
 func (entry *Entry) Warnf(format string, args ...interface{}) {
 	entry.Logf(WarnLevel, format, args...)
-}
-
-// Warningf is like Warnf
-func (entry *Entry) Warningf(format string, args ...interface{}) {
-	entry.Warnf(format, args...)
 }
 
 // Errorf logs error level with format

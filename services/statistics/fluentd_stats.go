@@ -293,6 +293,14 @@ func (s FluentdStats) AddBundleEvent(name string, source connections.Conn, start
 
 // AddGatewayBundleEvent generates a fluentd STATS event
 func (s FluentdStats) AddGatewayBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum, mevBuilderNames []string, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int, bundlePrice int64, enforcePayout bool) {
+	hashInBytes, err := types.NewSHA256HashFromString(bundleHash)
+	if err != nil {
+		log.Errorf("error converting bundle hash from string to byte: %v", err)
+		return
+	}
+	if !s.shouldLogEvent(networkNum, hashInBytes) {
+		return
+	}
 	now := time.Now()
 
 	record := Record{

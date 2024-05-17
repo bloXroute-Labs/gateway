@@ -21,6 +21,7 @@ type BxTransaction struct {
 	flags      TxFlags
 	networkNum NetworkNum
 	sender     Sender
+	rawTx      string
 }
 
 // NewBxTransaction creates a new transaction to be stored. Transactions are not expected to be initialized with content or shortIDs; they should be added via AddShortID and SetContent.
@@ -110,6 +111,16 @@ func (bt *BxTransaction) AddTime() time.Time {
 // SetAddTime sets the time the transaction was added. Should be called with Lock()
 func (bt *BxTransaction) SetAddTime(t time.Time) {
 	bt.addTime = t
+}
+
+// GetRawTx returns preconfigured raw tx string, normally the raw tx is calculated base on tx content
+func (bt *BxTransaction) GetRawTx() string {
+	return bt.rawTx
+}
+
+// SetRawTx sets the raw_tx, this is used by cloud-api with type 3 tx due to missing sidecar in txContent
+func (bt *BxTransaction) SetRawTx(rawTx string) {
+	bt.rawTx = rawTx
 }
 
 // Lock locks the transaction so changes can be made
