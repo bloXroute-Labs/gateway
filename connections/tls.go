@@ -1,4 +1,4 @@
-package bxmock
+package connections
 
 import (
 	"bytes"
@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
-	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
@@ -68,7 +67,7 @@ func (m *MockTLS) IsClosed() bool {
 }
 
 // Equals compares the remote IP addr of two sockets
-func (m *MockTLS) Equals(s connections.Socket) bool {
+func (m *MockTLS) Equals(s Socket) bool {
 	return m.RemoteAddr().String() == s.RemoteAddr().String()
 }
 

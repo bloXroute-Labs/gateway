@@ -34,7 +34,7 @@ type SyncTxsMessage struct {
 	ContentShortIds []SyncTxContentsShortIDs
 	_size           int
 
-	//ShortIDs int
+	// ShortIDs int
 }
 
 // GetNetworkNum gets the message network number
@@ -66,14 +66,13 @@ func (m *SyncTxsMessage) Add(txInfo *types.BxTransaction) uint32 {
 		csi.ShortIDFlags[i] = txInfo.Flags()
 	}
 	m.ContentShortIds = append(m.ContentShortIds, csi)
-	m._size +=
-		types.SHA256HashLen + //hash
-			types.UInt32Len + // content size
-			len(csi.Content) + // content itself
-			types.UInt16Len + // shortIds count
-			types.UInt32Len + // transaction creation timestamp
-			len(csi.ShortIDs)*types.UInt32Len + // shortIds
-			len(csi.ShortIDFlags)*types.TxFlagsLen // flags
+	m._size += types.SHA256HashLen + // hash
+		types.UInt32Len + // content size
+		len(csi.Content) + // content itself
+		types.UInt16Len + // shortIds count
+		types.UInt32Len + // transaction creation timestamp
+		len(csi.ShortIDs)*types.UInt32Len + // shortIds
+		len(csi.ShortIDFlags)*types.TxFlagsLen // flags
 	return m.size()
 }
 
@@ -90,9 +89,15 @@ func (m *SyncTxsMessage) Count() int {
 func (m SyncTxsMessage) Pack(_ Protocol) ([]byte, error) {
 	bufLen := m.size()
 	buf := make([]byte, bufLen)
+
 	binary.LittleEndian.PutUint32(buf[HeaderLen:], uint32(m.networkNumber))
 	binary.LittleEndian.PutUint32(buf[HeaderLen+types.NetworkNumLen:], uint32(len(m.ContentShortIds)))
-	m.packContentShortIds(&buf, HeaderLen+types.NetworkNumLen+types.UInt32Len)
+	offset := m.packContentShortIds(&buf, HeaderLen+types.NetworkNumLen+types.UInt32Len)
+
+	if err := checkBuffEnd(&buf, offset); err != nil {
+		return nil, err
+	}
+
 	m.Header.Pack(&buf, SyncTxsType)
 	return buf, nil
 }
@@ -102,15 +107,21 @@ func (m *SyncTxsMessage) Unpack(buf []byte, protocol Protocol) error {
 	if err := checkBufSize(&buf, HeaderLen, types.NetworkNumLen+types.UInt32Len); err != nil {
 		return err
 	}
-	m.networkNumber = types.NetworkNum(binary.LittleEndian.Uint32(buf[HeaderLen:]))
-	txCount := binary.LittleEndian.Uint32(buf[HeaderLen+types.NetworkNumLen:])
+
+	offset := HeaderLen
+
+	m.networkNumber = types.NetworkNum(binary.LittleEndian.Uint32(buf[offset:]))
+	offset += types.NetworkNumLen
+
+	txCount := binary.LittleEndian.Uint32(buf[offset:])
+	offset += types.UInt32Len
+
 	log.Tracef("%v: size %v, network %v, txcount %v", SyncTxsType, len(buf), m.networkNumber, txCount)
-	err := m.unpackContentShortIds(&buf, HeaderLen+types.NetworkNumLen+types.UInt32Len, txCount)
+	err := m.unpackContentShortIds(&buf, offset, txCount)
 	if err != nil {
 		return err
 	}
 	return m.Header.Unpack(buf, protocol)
-
 }
 
 func (m *SyncTxsMessage) packContentShortIds(buf *[]byte, offset int) int {

@@ -52,6 +52,9 @@ const AsyncMsgChannelSize = 500
 // BxNotificationChannelSize - is the size of feed channels
 const BxNotificationChannelSize = 1000
 
+// BxErrorNotificationChannelSize - size of error feed channel
+const BxErrorNotificationChannelSize = 10
+
 // MaxEthOnBlockCallRetries - max number of retries for eth RPC calls executed for onBlock feed
 const MaxEthOnBlockCallRetries = 2
 

@@ -61,6 +61,13 @@ type subscriptionRequest struct {
 	options subscriptionOptions
 }
 
+type subscriptionIntentParams struct {
+	SolverAddress string `json:"solver_address"`
+	Hash          []byte `json:"hash"`
+	Signature     []byte `json:"signature"`
+	DappAddress   string `json:"dapp_address"`
+}
+
 // subscriptionOptions Includes subscription options
 type subscriptionOptions struct {
 	Include    []string            `json:"Include"`
@@ -71,4 +78,27 @@ type subscriptionOptions struct {
 
 type rpcPingResponse struct {
 	Pong string `json:"pong"`
+}
+
+type userIntentResponse struct {
+	Subscription string                 `json:"subscription"`
+	Result       userIntentNotification `json:"result"`
+}
+
+type userIntentNotification struct {
+	DappAddress   string `json:"dapp_address"`
+	SenderAddress string `json:"sender_address"`
+	IntentID      string `json:"intent_id"`
+	Intent        []byte `json:"intent"`
+	Timestamp     string `json:"timestamp"`
+}
+
+type userIntentSolutionResponse struct {
+	Subscription string                         `json:"subscription"`
+	Result       userIntentSolutionNotification `json:"result"`
+}
+
+type userIntentSolutionNotification struct {
+	IntentID       string `json:"intent_id"`
+	IntentSolution []byte `json:"intent_solution"`
 }

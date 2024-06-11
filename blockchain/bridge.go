@@ -10,8 +10,7 @@ import (
 )
 
 // NoActiveBlockchainPeersAlert is used to send an alert to the gateway on initial liveliness check if no active blockchain peers
-type NoActiveBlockchainPeersAlert struct {
-}
+type NoActiveBlockchainPeersAlert struct{}
 
 // TransactionAnnouncement represents an available transaction from a given peer that can be requested
 type TransactionAnnouncement struct {
@@ -130,8 +129,6 @@ type Bridge interface {
 	ReceiveBlockchainStatusRequest() <-chan struct{}
 	SendBlockchainStatusResponse([]*types.NodeEndpoint) error
 	ReceiveBlockchainStatusResponse() <-chan []*types.NodeEndpoint
-	SendValidatorListInfo(info *ValidatorListInfo) error
-	ReceiveValidatorListInfo() <-chan *ValidatorListInfo
 	SendBlockchainConnectionStatus(ConnectionStatus) error
 	ReceiveBlockchainConnectionStatus() <-chan ConnectionStatus
 
@@ -148,12 +145,6 @@ type Bridge interface {
 var (
 	ErrChannelFull = errors.New("channel full") // ErrChannelFull is a special error for identifying overflowing channel buffers
 )
-
-// ValidatorListInfo is a struct for validator list
-type ValidatorListInfo struct {
-	ValidatorList []string
-	BlockHeight   uint64
-}
 
 // BxBridge is a channel based implementation of the Bridge interface
 type BxBridge struct {
@@ -185,7 +176,6 @@ type BxBridge struct {
 	nodeConnectionCheckResponse chan types.NodeEndpoint
 	blockchainConnectionStatus  chan ConnectionStatus
 	disconnectEvent             chan types.NodeEndpoint
-	validatorInfo               chan *ValidatorListInfo
 }
 
 // NewBxBridge returns a BxBridge instance
@@ -213,7 +203,6 @@ func NewBxBridge(converter Converter, withBeacon bool) Bridge {
 		blockchainConnectionStatus:       make(chan ConnectionStatus, transactionBacklog),
 		disconnectEvent:                  make(chan types.NodeEndpoint, statusBacklog),
 		Converter:                        converter,
-		validatorInfo:                    make(chan *ValidatorListInfo, 1),
 	}
 }
 
@@ -495,21 +484,6 @@ func (b BxBridge) ReceiveNodeConnectionCheckResponse() <-chan types.NodeEndpoint
 	return b.nodeConnectionCheckResponse
 }
 
-// SendValidatorListInfo sends a validator info to gateway
-func (b *BxBridge) SendValidatorListInfo(info *ValidatorListInfo) error {
-	select {
-	case b.validatorInfo <- info:
-		return nil
-	default:
-		return ErrChannelFull
-	}
-}
-
-// ReceiveValidatorListInfo called by gateway to receive the validator info
-func (b *BxBridge) ReceiveValidatorListInfo() <-chan *ValidatorListInfo {
-	return b.validatorInfo
-}
-
 // SendBlockchainConnectionStatus sends blockchain connection status
 func (b BxBridge) SendBlockchainConnectionStatus(connStatus ConnectionStatus) error {
 	select {
@@ -533,7 +507,6 @@ func (b BxBridge) SendDisconnectEvent(endpoint types.NodeEndpoint) error {
 	default:
 		return ErrChannelFull
 	}
-
 }
 
 // ReceiveDisconnectEvent handles disconnect event

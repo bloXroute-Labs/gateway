@@ -16,6 +16,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
@@ -36,22 +37,25 @@ var upgrader = websocket.Upgrader{}
 
 // ClientHandler is a struct for gateway client handler object
 type ClientHandler struct {
-	feedManager              *FeedManager
-	websocketServer          *http.Server
-	httpServer               *HTTPServer
-	gRPCServer               *GRPCServer
-	getQuotaUsage            func(accountID string) (*connections.QuotaResponseBody, error)
-	enableBlockchainRPC      bool
-	pendingTxsSourceFromNode *bool
-	log                      *log.Entry
-	authorize                func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway, allowIntroductoryTierAccess bool, ip string) (sdnmessage.Account, error)
-	txFromFieldIncludable    bool
+	feedManager                 *FeedManager
+	intentsManager              services.IntentsManager
+	websocketServer             *http.Server
+	httpServer                  *HTTPServer
+	gRPCServer                  *GRPCServer
+	getQuotaUsage               func(accountID string) (*connections.QuotaResponseBody, error)
+	enableBlockchainRPC         bool
+	pendingTxsSourceFromNode    *bool
+	log                         *log.Entry
+	authorize                   func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway, allowIntroductoryTierAccess bool, ip string) (sdnmessage.Account, error)
+	txFromFieldIncludable       bool
+	allowIntroductoryTierAccess bool
 }
 
 // NewClientHandler is a constructor for ClientHandler
-func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, httpServer *HTTPServer, gRPCServer *GRPCServer, enableBlockchainRPC bool, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway, allowIntroductoryTierAccess bool, ip string) (sdnmessage.Account, error), txFromFieldIncludable bool) *ClientHandler {
+func NewClientHandler(feedManager *FeedManager, intentsManager services.IntentsManager, websocketServer *http.Server, httpServer *HTTPServer, gRPCServer *GRPCServer, enableBlockchainRPC bool, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway, allowIntroductoryTierAccess bool, ip string) (sdnmessage.Account, error), txFromFieldIncludable, allowIntroductoryTierAccess bool) *ClientHandler {
 	return &ClientHandler{
 		feedManager:              feedManager,
+		intentsManager:           intentsManager,
 		websocketServer:          websocketServer,
 		httpServer:               httpServer,
 		gRPCServer:               gRPCServer,
@@ -61,7 +65,8 @@ func NewClientHandler(feedManager *FeedManager, websocketServer *http.Server, ht
 		authorize:                authorize,
 		log: log.WithFields(log.Fields{
 			"component": "gatewayClientHandler"}),
-		txFromFieldIncludable: txFromFieldIncludable,
+		txFromFieldIncludable:       txFromFieldIncludable,
+		allowIntroductoryTierAccess: allowIntroductoryTierAccess,
 	}
 }
 
@@ -152,7 +157,7 @@ func (ch *ClientHandler) Stop() error {
 }
 
 func (ch *ClientHandler) runWSServer() error {
-	ch.websocketServer = NewWSServer(ch.feedManager, ch.getQuotaUsage, ch.enableBlockchainRPC, ch.pendingTxsSourceFromNode, ch.authorize, ch.txFromFieldIncludable)
+	ch.websocketServer = NewWSServer(ch.feedManager, ch.intentsManager, ch.getQuotaUsage, ch.enableBlockchainRPC, ch.pendingTxsSourceFromNode, ch.authorize, ch.txFromFieldIncludable, ch.allowIntroductoryTierAccess)
 	ch.log.Infof("starting websockets RPC server at: %v", ch.websocketServer.Addr)
 	var err error
 	if ch.feedManager.cfg.WebsocketTLSEnabled {
@@ -181,7 +186,7 @@ func (ch *ClientHandler) shutdownWSServer() {
 }
 
 // NewWSServer creates and returns a new websocket server managed by FeedManager
-func NewWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway, allowIntroductoryTierAccess bool, ip string) (sdnmessage.Account, error), txFromFieldIncludable bool) *http.Server {
+func NewWSServer(feedManager *FeedManager, intentsManager services.IntentsManager, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool, pendingTxsSourceFromNode *bool, authorize func(accountID types.AccountID, secretHash string, allowAccessToInternalGateway, allowIntroductoryTierAccess bool, ip string) (sdnmessage.Account, error), txFromFieldIncludable, allowIntroductoryTierAccess bool) *http.Server {
 	handler := http.NewServeMux()
 	wsHandler := func(responseWriter http.ResponseWriter, request *http.Request) {
 		// if enable client handler - skip authorization
@@ -212,7 +217,7 @@ func NewWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) 
 				errorWithDelay(responseWriter, request, fmt.Errorf("missing authorization from method: %v", request.Method).Error())
 				return
 			}
-			connectionAccountModel, err = authorize(accountID, secretHash, true, false, request.RemoteAddr)
+			connectionAccountModel, err = authorize(accountID, secretHash, true, allowIntroductoryTierAccess, request.RemoteAddr)
 			if err != nil {
 				errorWithDelay(responseWriter, request, err.Error())
 				return
@@ -224,7 +229,7 @@ func NewWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) 
 					serverAccountID, request.RemoteAddr, err)
 			}
 		}
-		handleWSClientConnection(feedManager, responseWriter, request, connectionAccountModel, getQuotaUsage, enableBlockchainRPC, pendingTxsSourceFromNode, txFromFieldIncludable)
+		handleWSClientConnection(feedManager, intentsManager, responseWriter, request, connectionAccountModel, getQuotaUsage, enableBlockchainRPC, pendingTxsSourceFromNode, txFromFieldIncludable, allowIntroductoryTierAccess)
 	}
 
 	handler.HandleFunc("/ws", wsHandler)
@@ -242,7 +247,7 @@ func NewWSServer(feedManager *FeedManager, getQuotaUsage func(accountID string) 
 }
 
 // handleWsClientConnection - when new http connection is made we get here upgrade to ws, and start handling
-func handleWSClientConnection(feedManager *FeedManager, w http.ResponseWriter, r *http.Request, accountModel sdnmessage.Account, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool, pendingTxsSourceFromNode *bool, txFromFieldIncludable bool) {
+func handleWSClientConnection(feedManager *FeedManager, intentsManager services.IntentsManager, w http.ResponseWriter, r *http.Request, accountModel sdnmessage.Account, getQuotaUsage func(accountID string) (*connections.QuotaResponseBody, error), enableBlockchainRPC bool, pendingTxsSourceFromNode *bool, txFromFieldIncludable, allowIntroductoryTierAccess bool) {
 	log.Debugf("new web-socket connection from %v", r.RemoteAddr)
 	connection, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -258,17 +263,19 @@ func handleWSClientConnection(feedManager *FeedManager, w http.ResponseWriter, r
 	})
 
 	handler := &handlerObj{
-		FeedManager:              feedManager,
-		remoteAddress:            r.RemoteAddr,
-		connectionAccount:        accountModel,
-		getQuotaUsage:            getQuotaUsage,
-		enableBlockchainRPC:      enableBlockchainRPC,
-		pendingTxsSourceFromNode: pendingTxsSourceFromNode,
-		log:                      logger,
-		ethSubscribeIDToChanMap:  make(map[string]chan bool),
-		headers:                  types.SDKMetaFromHeaders(r.Header),
-		stats:                    feedManager.stats,
-		txFromFieldIncludable:    txFromFieldIncludable,
+		FeedManager:                 feedManager,
+		intentsManager:              intentsManager,
+		remoteAddress:               r.RemoteAddr,
+		connectionAccount:           accountModel,
+		getQuotaUsage:               getQuotaUsage,
+		enableBlockchainRPC:         enableBlockchainRPC,
+		pendingTxsSourceFromNode:    pendingTxsSourceFromNode,
+		log:                         logger,
+		ethSubscribeIDToChanMap:     make(map[string]chan bool),
+		headers:                     types.SDKMetaFromHeaders(r.Header),
+		stats:                       feedManager.stats,
+		txFromFieldIncludable:       txFromFieldIncludable,
+		allowIntroductoryTierAccess: allowIntroductoryTierAccess,
 	}
 
 	asyncHandler := jsonrpc2.AsyncHandler(handler)

@@ -65,16 +65,17 @@ type bundleRecord struct {
 }
 
 type bundleSentToBuilderRecord struct {
-	BundleHash  string                 `json:"bundle_hash"`
-	BlockNumber int64                  `json:"block_number"`
-	UUID        string                 `json:"uuid"`
-	UserSetUUID bool                   `json:"user_set_UUID"`
-	BuilderName string                 `json:"builder_name"`
-	NetworkNum  types.NetworkNum       `json:"network_num"`
-	AccountID   types.AccountID        `json:"account_id"`
-	AccountTier sdnmessage.AccountTier `json:"account_tier"`
-	BuilderURL  string                 `json:"builder_url"`
-	StatusCode  int                    `json:"status_code"`
+	EstimatedBundleReceivedTime string                 `json:"estimated_bundle_received_time"`
+	BundleHash                  string                 `json:"bundle_hash"`
+	BlockNumber                 int64                  `json:"block_number"`
+	UUID                        string                 `json:"uuid"`
+	UserSetUUID                 bool                   `json:"user_set_UUID"`
+	BuilderName                 string                 `json:"builder_name"`
+	NetworkNum                  types.NetworkNum       `json:"network_num"`
+	AccountID                   types.AccountID        `json:"account_id"`
+	AccountTier                 sdnmessage.AccountTier `json:"account_tier"`
+	BuilderURL                  string                 `json:"builder_url"`
+	StatusCode                  int                    `json:"status_code"`
 }
 
 type ethBlockContent struct {
@@ -135,7 +136,6 @@ type subscribeRecord struct {
 	FeedName       types.FeedType         `json:"feed_name"`
 	FeedInclude    []string               `json:"feed_include"`
 	NetworkNum     types.NetworkNum       `json:"network_num"`
-	FeedProject    string                 `json:"feed_project"`
 }
 
 type unsubscribeRecord struct {

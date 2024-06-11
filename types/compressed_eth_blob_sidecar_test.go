@@ -144,4 +144,7 @@ func TestHandler_TestCompressedEthBlobSidecarRoundtrip(t *testing.T) {
 	require.Equal(t, expectedSignedBlockHeaderBodyRoot, hex.EncodeToString(newRealBlobSidecarCheckUnmarshal.SignedBlockHeader.Header.BodyRoot))
 	require.Equal(t, expectedSignedBlockHeaderSignature, hex.EncodeToString(newRealBlobSidecarCheckUnmarshal.SignedBlockHeader.Signature))
 	require.Equal(t, expectedCommitmentInclusionProofBytes, newRealBlobSidecarCheckUnmarshal.CommitmentInclusionProof)
+
+	// check that in the end of the trip we have inital byte representation of the blob sidecar
+	require.Equal(t, data, newRealBlobSidecarBytes)
 }

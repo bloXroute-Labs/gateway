@@ -27,6 +27,12 @@ func (pm Pong) Pack(protocol Protocol) ([]byte, error) {
 	offset += types.UInt64Len
 	pm.TimeStamp = uint64(time.Now().UnixNano() / 1000)
 	binary.LittleEndian.PutUint64(buf[offset:], pm.TimeStamp)
+	offset += types.UInt64Len
+
+	if err := checkBuffEnd(&buf, offset); err != nil {
+		return nil, err
+	}
+
 	pm.Header.Pack(&buf, "pong")
 	return buf, nil
 }
@@ -34,8 +40,16 @@ func (pm Pong) Pack(protocol Protocol) ([]byte, error) {
 // Unpack deserializes a Pong from a buffer
 func (pm *Pong) Unpack(buf []byte, protocol Protocol) error {
 	offset := HeaderLen
+	if err := checkBufSize(&buf, offset, HeaderLen); err != nil {
+		return err
+	}
 	pm.Nonce = binary.LittleEndian.Uint64(buf[offset:])
+
 	offset += types.UInt64Len
+	if err := checkBufSize(&buf, offset, types.UInt64Len); err != nil {
+		return err
+	}
 	pm.TimeStamp = binary.LittleEndian.Uint64(buf[offset:])
+
 	return pm.Header.Unpack(buf, protocol)
 }

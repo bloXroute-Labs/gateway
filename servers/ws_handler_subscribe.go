@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
@@ -24,34 +25,46 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *jsonrpc2.Conn
 		return
 	}
 
-	request, err := h.createClientReq(req)
+	feed, rpcParams, err := h.parseSubscriptionRequest(req)
 	if err != nil {
 		SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
 		return
 	}
-	feedName := request.Feed
 
-	if len(h.FeedManager.nodeWSManager.Providers()) == 0 && feedName == types.NewBlocksFeed &&
+	// check if the account has the right tier to access
+	// if "allowIntroductoryTierAccess" == false, then this check was already done before creating the connection
+	if h.allowIntroductoryTierAccess && feed != types.UserIntentsFeed && feed != types.UserIntentSolutionsFeed && !h.connectionAccount.TierName.IsEnterprise() {
+		SendErrorMsg(ctx, jsonrpc.Blocked, "account must be enterprise / enterprise elite / ultra", conn, req.ID)
+		conn.Close()
+		return
+	}
+
+	if len(h.FeedManager.nodeWSManager.Providers()) == 0 && feed == types.NewBlocksFeed &&
 		h.FeedManager.networkNum != bxgateway.MainnetNum && h.FeedManager.networkNum != bxgateway.HoleskyNum {
-		errMsg := fmt.Sprintf("%v Feed requires a websockets endpoint to be specifed via either --eth-ws-uri or --multi-node startup parameter", feedName)
+		errMsg := fmt.Sprintf("%v Feed requires a websockets endpoint to be specifed via either --eth-ws-uri or --multi-node startup parameter", feed)
 		SendErrorMsg(ctx, jsonrpc.InvalidParams, errMsg, conn, req.ID)
 		return
 	}
 
-	var filters string
-	if request.Expr != nil {
-		filters = request.Expr.String()
+	var request *ClientReq
+	var postRun func()
+	if feed == types.UserIntentsFeed || feed == types.UserIntentSolutionsFeed {
+		request, postRun, err = h.createIntentClientReq(req, feed, rpcParams)
+	} else {
+		request, err = h.createClientReq(req, feed, rpcParams)
 	}
-	ro := types.ReqOptions{
-		Filters:  filters,
-		Includes: strings.Join(request.Includes, ","),
+	if err != nil {
+		SendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
+		return
 	}
-	ci := types.ClientInfo{
-		RemoteAddress: h.remoteAddress,
-		AccountID:     h.connectionAccount.AccountID,
-		Tier:          string(h.connectionAccount.TierName),
-		MetaInfo:      h.headers,
+
+	if request.MultiTxs && feed != types.NewTxsFeed && feed != types.PendingTxsFeed {
+		log.Debugf("multi tx support only in new txs or pending txs, account id %v, remote addr %v", h.connectionAccount.AccountID, h.remoteAddress)
+		SendErrorMsg(ctx, jsonrpc.InvalidParams, "multi tx support only in new txs or pending txs", conn, req.ID)
+		return
 	}
+
+	ci, ro := h.createClientInfoAndRequestOpts(feed, request)
 
 	sub, errSubscribe := h.FeedManager.Subscribe(request.Feed, types.WebSocketFeed, conn, ci, ro, false)
 	if errSubscribe != nil {
@@ -60,7 +73,13 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *jsonrpc2.Conn
 	}
 	subscriptionID := sub.SubscriptionID
 
-	defer h.FeedManager.Unsubscribe(subscriptionID, false, "")
+	defer func() {
+		h.FeedManager.Unsubscribe(subscriptionID, false, "")
+
+		if postRun != nil {
+			postRun()
+		}
+	}()
 
 	if err = conn.Reply(ctx, req.ID, subscriptionID); err != nil {
 		h.log.Errorf("error replying to %v, method %v: %v", h.remoteAddress, req.Method, err)
@@ -69,28 +88,24 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *jsonrpc2.Conn
 	}
 	h.FeedManager.stats.LogSubscribeStats(subscriptionID,
 		h.connectionAccount.AccountID,
-		feedName,
+		feed,
 		h.connectionAccount.TierName,
 		h.remoteAddress,
 		h.FeedManager.networkNum,
 		request.Includes,
-		filters,
-		"")
+		ro.Filters)
 
 	if request.MultiTxs {
-		if feedName != types.NewTxsFeed && feedName != types.PendingTxsFeed {
-			log.Debugf("multi tx support only in new txs or pending txs, subscription id %v, account id %v, remote addr %v", subscriptionID, h.connectionAccount.AccountID, h.remoteAddress)
-			SendErrorMsg(ctx, jsonrpc.InvalidParams, "multi tx support only in new txs or pending txs", conn, req.ID)
-			return
-		}
-		err = h.subscribeMultiTxs(ctx, sub.FeedChan, subscriptionID, request, conn, req, feedName)
+		err = h.subscribeMultiTxs(ctx, sub.FeedChan, subscriptionID, request, conn, req, feed)
 		if err != nil {
-			log.Errorf("error while processing %v (%v) with multi tx argument: %v", feedName, subscriptionID, err)
+			log.Errorf("error while processing %v (%v) with multi tx argument: %v", feed, subscriptionID, err)
 			return
 		}
+
+		return
 	}
 
-	h.handleRPCSubscribeNotify(ctx, conn, req.ID, sub, subscriptionID, feedName, request)
+	h.handleRPCSubscribeNotify(ctx, conn, req.ID, sub, subscriptionID, feed, request)
 }
 
 func (h *handlerObj) handleRPCSubscribeNotify(ctx context.Context, conn *jsonrpc2.Conn,
@@ -103,7 +118,7 @@ func (h *handlerObj) handleRPCSubscribeNotify(ctx context.Context, conn *jsonrpc
 		case errMsg := <-sub.ErrMsgChan:
 			SendErrorMsg(ctx, jsonrpc.InvalidParams, errMsg, conn, reqID)
 			return
-		case notification, ok := <-(sub.FeedChan):
+		case notification, ok := <-sub.FeedChan:
 			if !ok {
 				if h.FeedManager.SubscriptionExists(subscriptionID) {
 					SendErrorMsg(ctx, jsonrpc.InternalError, string(rune(websocket.CloseMessage)), conn, reqID)
@@ -142,9 +157,45 @@ func (h *handlerObj) handleRPCSubscribeNotify(ctx context.Context, conn *jsonrpc
 					SendErrorMsg(ctx, jsonrpc.InvalidRequest, err.Error(), conn, reqID)
 					return
 				}
+			case types.UserIntentsFeed:
+				in := notification.(*types.UserIntentNotification)
+				if h.sendIntentNotification(ctx, subscriptionID, request, conn, in) != nil {
+					return
+				}
+			case types.UserIntentSolutionsFeed:
+				in := notification.(*types.UserIntentSolutionNotification)
+				if in.DappAddress != "" && len(request.Includes) == 1 && in.DappAddress == request.Includes[0] {
+					if h.sendIntentSolutionNotification(ctx, subscriptionID, conn, in) != nil {
+						return
+					}
+				}
 			}
 		}
 	}
+}
+
+func (h *handlerObj) createClientInfoAndRequestOpts(feed types.FeedType, request *ClientReq) (types.ClientInfo, types.ReqOptions) {
+	ci := types.ClientInfo{
+		RemoteAddress: h.remoteAddress,
+		AccountID:     h.connectionAccount.AccountID,
+		Tier:          string(h.connectionAccount.TierName),
+		MetaInfo:      h.headers,
+	}
+
+	if feed == types.UserIntentsFeed || feed == types.UserIntentSolutionsFeed {
+		return ci, types.ReqOptions{}
+	}
+
+	var filters string
+	if request.Expr != nil {
+		filters = request.Expr.String()
+	}
+	ro := types.ReqOptions{
+		Filters:  filters,
+		Includes: strings.Join(request.Includes, ","),
+	}
+
+	return ci, ro
 }
 
 // sendTxNotification - build a response according to client request and notify client
@@ -255,4 +306,43 @@ func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan types.
 			}
 		}
 	}
+}
+
+func (h *handlerObj) sendIntentNotification(ctx context.Context, subscriptionID string, clientReq *ClientReq, conn *jsonrpc2.Conn, in *types.UserIntentNotification) error {
+	response := userIntentResponse{
+		Subscription: subscriptionID,
+		Result: userIntentNotification{
+			DappAddress:   in.DappAddress,
+			SenderAddress: in.SenderAddress,
+			IntentID:      in.ID,
+			Intent:        in.Intent,
+			Timestamp:     in.Timestamp.Format(time.RFC3339),
+		},
+	}
+
+	err := conn.Notify(ctx, "subscribe", response)
+	if err != nil {
+		h.log.Errorf("error reply to subscriptionID %v: %v", subscriptionID, err.Error())
+		return err
+	}
+
+	return nil
+}
+
+func (h *handlerObj) sendIntentSolutionNotification(ctx context.Context, subscriptionID string, conn *jsonrpc2.Conn, in *types.UserIntentSolutionNotification) error {
+	response := userIntentSolutionResponse{
+		Subscription: subscriptionID,
+		Result: userIntentSolutionNotification{
+			IntentID:       in.ID,
+			IntentSolution: in.Solution,
+		},
+	}
+
+	err := conn.Notify(ctx, "subscribe", response)
+	if err != nil {
+		h.log.Errorf("error reply to subscriptionID %v: %v", subscriptionID, err.Error())
+		return err
+	}
+
+	return nil
 }

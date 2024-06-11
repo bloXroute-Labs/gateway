@@ -3,7 +3,7 @@ package bxmessage
 import (
 	"encoding/binary"
 
-	utils2 "github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
+	"github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
@@ -25,17 +25,29 @@ func (getTxs *GetTxs) Pack(protocol Protocol) ([]byte, error) {
 		binary.LittleEndian.PutUint32(buf[offset:], uint32(shortID))
 		offset += types.UInt32Len
 	}
+
+	if err := checkBuffEnd(&buf, int(offset)); err != nil {
+		return nil, err
+	}
+
 	getTxs.Header.Pack(&buf, GetTransactionsType)
 	return buf, nil
 }
 
 // Unpack deserializes a GetTxs from a buffer
 func (getTxs *GetTxs) Unpack(buf []byte, protocol Protocol) error {
-	getTxs.Hash = utils2.DoubleSHA256(buf[:])
-	var shortIDs uint32
-	shortIDs = binary.LittleEndian.Uint32(buf[HeaderLen:])
-	offset := HeaderLen + types.UInt32Len
+	getTxs.Hash = utils.DoubleSHA256(buf[:])
+	offset := HeaderLen
+
+	if err := checkBufSize(&buf, offset, types.UInt32Len); err != nil {
+		return err
+	}
+	shortIDs := binary.LittleEndian.Uint32(buf[offset:])
+	offset += types.UInt32Len
 	for i := 0; i < int(shortIDs); i++ {
+		if err := checkBufSize(&buf, offset, types.UInt32Len); err != nil {
+			return err
+		}
 		shortID := binary.LittleEndian.Uint32(buf[offset:])
 		getTxs.ShortIDs = append(getTxs.ShortIDs, types.ShortID(shortID))
 		offset += types.UInt32Len

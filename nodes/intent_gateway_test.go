@@ -6,6 +6,12 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/sourcegraph/jsonrpc2"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
+	"google.golang.org/grpc/metadata"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
@@ -16,11 +22,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/test/mock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/sourcegraph/jsonrpc2"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
-	"google.golang.org/grpc/metadata"
 )
 
 //go:generate mockgen -destination ../test/mock/gw_intents_server_mock.go -package mock github.com/bloXroute-Labs/gateway/v2/protobuf Gateway_IntentsServer
@@ -80,7 +81,7 @@ func TestGateway_Intents(t *testing.T) {
 	})
 
 	intentsManagerMock.EXPECT().IntentsSubscriptionExists(rq.SolverAddress).Return(false)
-	intentsManagerMock.EXPECT().AddIntentsSubscription(rq)
+	intentsManagerMock.EXPECT().AddIntentsSubscription(rq.SolverAddress, rq.Hash, rq.Signature)
 
 	// register calls for broadcast of initial subscription message to the connected relay
 	relayConnMock.EXPECT().GetConnectionType().Return(utils.Relay)
@@ -199,67 +200,4 @@ func genIntentsRequest(t *testing.T) *gateway2.IntentsRequest {
 		Hash:          hash,
 		Signature:     sig,
 	}
-}
-
-func TestIntentsManager(t *testing.T) {
-	t.Run("SubscriptionMessages", func(t *testing.T) {
-		var target = newIntentsManager()
-		target.AddIntentsSubscription(&gateway2.IntentsRequest{SolverAddress: "1"})
-		target.AddSolutionsSubscription(&gateway2.IntentSolutionsRequest{DappAddress: "1"})
-		require.Len(t, target.SubscriptionMessages(), 2)
-	})
-
-	t.Run("AddIntentsSubscription", func(t *testing.T) {
-		var target = newIntentsManager()
-		target.AddIntentsSubscription(&gateway2.IntentsRequest{SolverAddress: "1"})
-		_, ok := target.intentsSubscriptions["1"]
-		require.True(t, ok)
-	})
-
-	t.Run("RmIntentsSubscription", func(t *testing.T) {
-		var target = newIntentsManager()
-		target.AddIntentsSubscription(&gateway2.IntentsRequest{SolverAddress: "1"})
-		_, ok := target.intentsSubscriptions["1"]
-		require.True(t, ok)
-
-		target.RmIntentsSubscription("1")
-		_, ok = target.intentsSubscriptions["1"]
-		require.False(t, ok)
-	})
-
-	t.Run("IntentsSubscriptionExists", func(t *testing.T) {
-		var target = newIntentsManager()
-		target.AddIntentsSubscription(&gateway2.IntentsRequest{SolverAddress: "1"})
-		require.True(t, target.IntentsSubscriptionExists("1"))
-
-		target.RmIntentsSubscription("1")
-		require.False(t, target.IntentsSubscriptionExists("1"))
-	})
-
-	t.Run("AddSolutionsSubscription", func(t *testing.T) {
-		var target = newIntentsManager()
-		target.AddSolutionsSubscription(&gateway2.IntentSolutionsRequest{DappAddress: "1"})
-		_, ok := target.solutionsSubscriptions["1"]
-		require.True(t, ok)
-	})
-
-	t.Run("RmSolutionsSubscription", func(t *testing.T) {
-		var target = newIntentsManager()
-		target.AddSolutionsSubscription(&gateway2.IntentSolutionsRequest{DappAddress: "1"})
-		_, ok := target.solutionsSubscriptions["1"]
-		require.True(t, ok)
-
-		target.RmSolutionsSubscription("1")
-		_, ok = target.solutionsSubscriptions["1"]
-		require.False(t, ok)
-	})
-
-	t.Run("SolutionsSubscriptionExists", func(t *testing.T) {
-		var target = newIntentsManager()
-		target.AddSolutionsSubscription(&gateway2.IntentSolutionsRequest{DappAddress: "1"})
-		require.True(t, target.SolutionsSubscriptionExists("1"))
-
-		target.RmSolutionsSubscription("1")
-		require.False(t, target.SolutionsSubscriptionExists("1"))
-	})
 }

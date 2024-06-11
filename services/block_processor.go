@@ -83,13 +83,7 @@ type bxBlockRLP struct {
 }
 
 func (bp *blockProcessor) BxBlockToBroadcast(block *types.BxBlock, networkNum types.NetworkNum, minTxAge time.Duration) (*bxmessage.Broadcast, types.ShortIDList, error) {
-	var blockHash string
-	switch block.Type {
-	case types.BxBlockTypeEth:
-		blockHash = block.Hash().String()
-	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella, types.BxBlockTypeBeaconDeneb:
-		blockHash = block.BeaconHash().String()
-	}
+	blockHash := block.Hash().String()
 	status := bp.processedBlocks.Status(blockHash)
 	switch status {
 	case SeenFromRelay:

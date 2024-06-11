@@ -4,7 +4,7 @@ import "fmt"
 
 // UnpackSolutionsUnsubscription unpacks SolutionsUnsubscription bxmessage from bytes
 func UnpackSolutionsUnsubscription(b []byte, protocol Protocol) (*SolutionsUnsubscription, error) {
-	var sub = new(SolutionsUnsubscription)
+	sub := new(SolutionsUnsubscription)
 	err := sub.Unpack(b, protocol)
 	if err != nil {
 		return nil, err
@@ -42,7 +42,7 @@ func (i *SolutionsUnsubscription) Pack(protocol Protocol) ([]byte, error) {
 		return nil, fmt.Errorf("calc pack size: %w", err)
 	}
 
-	var buf = make([]byte, bufLen)
+	buf := make([]byte, bufLen)
 	var offset int
 
 	n, err := packHeader(buf, i.Header, SolutionsUnsubscriptionType)
@@ -51,9 +51,14 @@ func (i *SolutionsUnsubscription) Pack(protocol Protocol) ([]byte, error) {
 	}
 
 	offset += n
-	_, err = packETHAddressHex(buf[offset:], i.DAppAddress)
+	n, err = packETHAddressHex(buf[offset:], i.DAppAddress)
 	if err != nil {
 		return nil, fmt.Errorf("pack DAppAddress: %w", err)
+	}
+
+	offset += n
+	if err := checkBuffEnd(&buf, offset); err != nil {
+		return nil, err
 	}
 
 	return buf, nil

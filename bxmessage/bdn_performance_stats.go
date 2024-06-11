@@ -2,7 +2,6 @@ package bxmessage
 
 import (
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"math"
 	"strconv"
@@ -187,7 +186,7 @@ func (bs *BdnPerformanceStats) LogNewTxFromNode(node types.NodeEndpoint) {
 
 	bs.getOrCreateNodeStats(node)
 	for endpoint, stats := range bs.nodeStats {
-		if (stats.IsBeacon && node.BlockchainNetwork == bxgateway.Mainnet) || !stats.IsConnected { // do not update tx counter for consensus layer
+		if (stats.IsBeacon && stats.BlockchainNetwork == bxgateway.Mainnet) || !stats.IsConnected { // do not update tx counter for consensus layer
 			continue
 		} else if endpoint == node.IPPort() {
 			stats.IsConnected = true
@@ -434,10 +433,15 @@ func (bs *BdnPerformanceStats) Pack(protocol Protocol) ([]byte, error) {
 		binary.LittleEndian.PutUint16(buf[offset:], bs.burstLimitedTransactionsPaid)
 		offset += types.UInt16Len
 		binary.LittleEndian.PutUint16(buf[offset:], bs.burstLimitedTransactionsUnpaid)
+		offset += types.UInt16Len
 	}
+
+	if err := checkBuffEnd(&buf, int(offset)); err != nil {
+		return nil, err
+	}
+
 	bs.Header.Pack(&buf, BDNPerformanceStatsType)
 
-	log.Debugf("BDN stats: %s", hex.EncodeToString(buf))
 	return buf, nil
 }
 
@@ -573,7 +577,25 @@ func (bs *BdnPerformanceStats) size(protocol Protocol) uint32 {
 	if protocol >= GatewayInboundConnections {
 		nodeStatsSize++
 	}
-	total := bs.Header.Size() + uint32((types.UInt64Len*2)+(types.UInt16Len*2)+(len(bs.nodeStats)*nodeStatsSize))
+
+	nodeStatsLen := len(bs.nodeStats)
+	if protocol < GatewayInboundConnections || protocol < IsConnectedToGateway {
+		for _, nodeStats := range bs.nodeStats {
+			switch {
+			case protocol < IsConnectedToGateway:
+				if !nodeStats.IsConnected {
+					nodeStatsLen--
+				}
+				fallthrough
+			case protocol < GatewayInboundConnections:
+				if nodeStats.Dynamic {
+					nodeStatsLen--
+				}
+			}
+		}
+	}
+
+	total := bs.Header.Size() + uint32((types.UInt64Len*2)+(types.UInt16Len*2)+(nodeStatsLen*nodeStatsSize))
 	if protocol >= FullTxTimeStampProtocol {
 		total += types.UInt16Len * 2
 	}

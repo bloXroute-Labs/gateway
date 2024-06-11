@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
@@ -34,6 +35,7 @@ type GRPCServer struct {
 	gatewayAccountID types.AccountID
 	server           *grpc.Server
 	gatewayServer    pb.GatewayServer
+	mu               sync.RWMutex
 }
 
 // NewGRPCServer is the constructor of the GRPCServer object
@@ -62,6 +64,17 @@ func NewGRPCServer(host string, port int, user string, secret string, stats stat
 
 // Run run grpc server
 func (gs *GRPCServer) Run() error {
+	serverOptions := []grpc.ServerOption{
+		grpc.WriteBufferSize(bufferSize),
+		grpc.InitialConnWindowSize(windowSize),
+		grpc.UnaryInterceptor(gs.authenticate),
+		grpc.ChainUnaryInterceptor(gs.authenticate, gs.reqSDKStats),
+	}
+	gs.mu.Lock()
+	gs.server = grpc.NewServer(serverOptions...)
+	gs.mu.Unlock()
+	pb.RegisterGatewayServer(gs.server, gs.gatewayServer)
+
 	listener, err := net.Listen("tcp", gs.listenAddr)
 	if err != nil {
 		return fmt.Errorf("failed to listen: %v", err)
@@ -69,16 +82,7 @@ func (gs *GRPCServer) Run() error {
 
 	log.Infof("GRPC server is starting on %v", gs.listenAddr)
 
-	serverOptions := []grpc.ServerOption{
-		grpc.WriteBufferSize(bufferSize),
-		grpc.InitialConnWindowSize(windowSize),
-		grpc.UnaryInterceptor(gs.authenticate),
-		grpc.ChainUnaryInterceptor(gs.authenticate, gs.reqSDKStats),
-	}
-	gs.server = grpc.NewServer(serverOptions...)
-	pb.RegisterGatewayServer(gs.server, gs.gatewayServer)
-	err = gs.server.Serve(listener)
-	if err != nil {
+	if err := gs.server.Serve(listener); err != nil {
 		return fmt.Errorf("failed to serve: %v", err)
 	}
 
@@ -87,6 +91,9 @@ func (gs *GRPCServer) Run() error {
 
 // Shutdown shutdown grpc server
 func (gs *GRPCServer) Shutdown() {
+	gs.mu.RLock()
+	defer gs.mu.RUnlock()
+
 	log.Infof("shutting down gRPC server")
 	gs.server.Stop()
 }

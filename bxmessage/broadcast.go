@@ -67,7 +67,7 @@ func NewBlockBroadcast(hash, beaconHash types.SHA256Hash, bType types.BxBlockTyp
 // String implements Stringer interface
 func (b Broadcast) String() string {
 	if b.IsBeaconBlock() {
-		return fmt.Sprintf("broadcast beacon(hash: %s, beacon hash: %s, type: %s, network: %d, short txs: %d)", b.hash, b.beaconHash, b.broadcastType, b.networkNumber, len(b.ShortIDs()))
+		return fmt.Sprintf("broadcast beacon(hash: %s, type: %s, network: %d, short txs: %d)", b.beaconHash, b.broadcastType, b.networkNumber, len(b.ShortIDs()))
 	}
 
 	return fmt.Sprintf("broadcast(hash: %s, type: %s, network: %d, short txs: %d)", b.hash, b.broadcastType, b.networkNumber, len(b.ShortIDs()))
@@ -180,6 +180,10 @@ func (b *Broadcast) Pack(protocol Protocol) ([]byte, error) {
 		offset += types.SHA256HashLen
 	}
 
+	if err := checkBuffEnd(&buf, offset); err != nil {
+		return nil, err
+	}
+
 	return buf, nil
 }
 
@@ -188,12 +192,19 @@ func (b *Broadcast) Unpack(buf []byte, protocol Protocol) error {
 	if err := b.BroadcastHeader.Unpack(buf, protocol); err != nil {
 		return err
 	}
-
 	offset := BroadcastHeaderOffset
+
+	if err := checkBufSize(&buf, offset, BroadcastTypeLen); err != nil {
+		return err
+	}
 	copy(b.broadcastType[:], buf[offset:])
 	offset += BroadcastTypeLen
 	if b.IsBeaconBlock() && protocol < BeaconBlockProtocol {
 		return fmt.Errorf("should not unpack beacon block from lower protocol %v", protocol)
+	}
+
+	if err := checkBufSize(&buf, offset, EncryptedTypeLen); err != nil {
+		return err
 	}
 	b.encrypted = int(buf[offset : offset+EncryptedTypeLen][0]) != 0
 	offset += EncryptedTypeLen

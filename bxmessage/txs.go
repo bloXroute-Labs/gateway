@@ -61,6 +61,10 @@ func (m Txs) Pack(protocol Protocol) ([]byte, error) {
 		offset += len(item.Content)
 	}
 
+	if err := checkBuffEnd(&buf, offset); err != nil {
+		return nil, err
+	}
+
 	m.Header.Pack(&buf, TransactionsType)
 	return buf, nil
 }

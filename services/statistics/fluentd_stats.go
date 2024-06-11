@@ -40,7 +40,7 @@ type Stats interface {
 	AddGatewayBlockEvent(name string, source connections.Conn, blockHash, beaconBlockHash types.SHA256Hash, networkNum types.NetworkNum,
 		sentPeers int, startTime time.Time, sentGatewayPeers int, originalSize int, compressSize int, shortIDsCount int, txsCount int, recoveredTxsCount int, block *types.BxBlock)
 	LogSubscribeStats(subscriptionID string, accountID types.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
-		ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string, feedProject string)
+		ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string)
 	AddBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum,
 		mevBuilderNames []string, uuid string, targetBlockNumber uint64, minTimestamp int, maxTimestamp int, bundlePrice int64, enforcePayout bool, sentPeers int, sentGatewayPeers int)
 	AddGatewayBundleEvent(name string, source connections.Conn, startTime time.Time, bundleHash string, networkNum types.NetworkNum,
@@ -82,7 +82,7 @@ func (NoStats) AddTxsByShortIDsEvent(name string, source connections.Conn, txInf
 
 // LogSubscribeStats does nothing
 func (NoStats) LogSubscribeStats(subscriptionID string, accountID types.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
-	ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string, feedProject string) {
+	ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string) {
 }
 
 // LogUnsubscribeStats does nothing
@@ -410,7 +410,7 @@ func (s FluentdStats) getLogPercentageByHash(networkNum types.NetworkNum) float6
 
 // LogSubscribeStats generates a fluentd STATS event
 func (s FluentdStats) LogSubscribeStats(subscriptionID string, accountID types.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
-	ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string, feedProject string) {
+	ip string, networkNum types.NetworkNum, feedInclude []string, feedFilter string) {
 	now := time.Now()
 	record := subscribeRecord{
 		Type:           "subscriptions",
@@ -423,7 +423,6 @@ func (s FluentdStats) LogSubscribeStats(subscriptionID string, accountID types.A
 		FeedName:       feedName,
 		FeedInclude:    feedInclude,
 		FeedFilters:    feedFilter,
-		FeedProject:    feedProject,
 	}
 	s.LogToFluentD(record, now, "stats.subscriptions.events")
 }
@@ -460,7 +459,8 @@ func (s FluentdStats) LogSDKInfo(blockchain, method, sourceCode, version string,
 }
 
 // BundleSentToBuilderStats generates a fluentd STATS event
-func (s FluentdStats) BundleSentToBuilderStats(timestamp time.Time, builderName string, bundleHash string, blockNumber string, uuid string, networkNum types.NetworkNum, accountID types.AccountID, accountTier sdnmessage.AccountTier, builderURL string, statusCode int) {
+func (s FluentdStats) BundleSentToBuilderStats(estimatedBundleReceivedTime time.Time, builderName string, bundleHash string, blockNumber string, uuid string, networkNum types.NetworkNum, accountID types.AccountID, accountTier sdnmessage.AccountTier, builderURL string, statusCode int) {
+	now := time.Now()
 	blockNumberInt64, err := hex2int64(blockNumber)
 	if err != nil {
 		log.Errorf("BundleSentToBuilderStats: parse blockNumber: %s", blockNumber)
@@ -470,19 +470,20 @@ func (s FluentdStats) BundleSentToBuilderStats(timestamp time.Time, builderName 
 	record := Record{
 		Type: "bundleSentToExternalBuilder",
 		Data: bundleSentToBuilderRecord{
-			BundleHash:  bundleHash,
-			BlockNumber: blockNumberInt64,
-			BuilderName: builderName,
-			UUID:        uuid,
-			NetworkNum:  networkNum,
-			AccountID:   accountID,
-			AccountTier: accountTier,
-			BuilderURL:  builderURL,
-			StatusCode:  statusCode,
+			EstimatedBundleReceivedTime: estimatedBundleReceivedTime.Format(DateFormat),
+			BundleHash:                  bundleHash,
+			BlockNumber:                 blockNumberInt64,
+			BuilderName:                 builderName,
+			UUID:                        uuid,
+			NetworkNum:                  networkNum,
+			AccountID:                   accountID,
+			AccountTier:                 accountTier,
+			BuilderURL:                  builderURL,
+			StatusCode:                  statusCode,
 		},
 	}
 
-	s.LogToFluentD(record, timestamp, "stats.bundles_sent_to_external_builder")
+	s.LogToFluentD(record, now, "stats.bundles_sent_to_external_builder")
 }
 
 // hex2int64 takes a hex string and returns the parsed integer value.

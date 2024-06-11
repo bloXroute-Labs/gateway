@@ -6,7 +6,7 @@ import (
 
 // UnpackIntentsSubscription unpacks IntentsSubscription bxmessage from bytes
 func UnpackIntentsSubscription(b []byte, protocol Protocol) (*IntentsSubscription, error) {
-	var sub = new(IntentsSubscription)
+	sub := new(IntentsSubscription)
 	err := sub.Unpack(b, protocol)
 	if err != nil {
 		return nil, err
@@ -46,12 +46,11 @@ func (i *IntentsSubscription) Pack(protocol Protocol) ([]byte, error) {
 		ECDSASignatureLen,
 		ControlByteLen,
 	)
-
 	if err != nil {
 		return nil, fmt.Errorf("calc pack size: %w", err)
 	}
 
-	var buf = make([]byte, bufLen)
+	buf := make([]byte, bufLen)
 	var offset int
 
 	n, err := packHeader(buf, i.Header, IntentsSubscriptionType)
@@ -72,9 +71,14 @@ func (i *IntentsSubscription) Pack(protocol Protocol) ([]byte, error) {
 	}
 
 	offset += n
-	_, err = packECDSASignature(buf[offset:], i.Signature)
+	n, err = packECDSASignature(buf[offset:], i.Signature)
 	if err != nil {
 		return nil, fmt.Errorf("pack Signature: %w", err)
+	}
+
+	offset += n
+	if err := checkBuffEnd(&buf, offset); err != nil {
+		return nil, err
 	}
 
 	return buf, nil

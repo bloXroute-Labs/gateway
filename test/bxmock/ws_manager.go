@@ -33,8 +33,8 @@ func (m *MockWSManager) SyncedProvider() (blockchain.WSProvider, bool) {
 }
 
 // ProviderWithBlock is a no-op
-func (m *MockWSManager) ProviderWithBlock(nodeEndpoint *types.NodeEndpoint, blockNumber uint64) (blockchain.WSProvider, bool) {
-	return nil, true
+func (m *MockWSManager) ProviderWithBlock(nodeEndpoint *types.NodeEndpoint, blockNumber uint64) (blockchain.WSProvider, error) {
+	return nil, nil
 }
 
 // Providers is a no-op

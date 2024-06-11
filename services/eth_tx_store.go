@@ -30,11 +30,12 @@ type EthTxStore struct {
 }
 
 // NewEthTxStore returns new manager for Ethereum transactions
-func NewEthTxStore(clock utils.Clock, cleanupInterval time.Duration, maxTxAge time.Duration,
+func NewEthTxStore(clock utils.Clock, cleanupInterval time.Duration,
 	noSIDAge time.Duration, assigner ShortIDAssigner, hashHistory HashHistory, cleanedShortIDsChannel chan types.ShortIDsByNetwork,
-	networkConfig sdnmessage.BlockchainNetworks, bloom BloomFilter, blobCompressorStorage BlobCompressorStorage) *EthTxStore {
+	networkConfig sdnmessage.BlockchainNetworks, bloom BloomFilter, blobCompressorStorage BlobCompressorStorage,
+) *EthTxStore {
 	return &EthTxStore{
-		BxTxStore:    newBxTxStore(clock, cleanupInterval, maxTxAge, noSIDAge, assigner, hashHistory, cleanedShortIDsChannel, timeToAvoidReEntry, bloom, blobCompressorStorage),
+		BxTxStore:    newBxTxStore(clock, networkConfig, cleanupInterval, noSIDAge, assigner, hashHistory, cleanedShortIDsChannel, timeToAvoidReEntry, bloom, blobCompressorStorage),
 		nonceTracker: newNonceTracker(clock, networkConfig, cleanNonceInterval),
 	}
 }
@@ -42,7 +43,8 @@ func NewEthTxStore(clock utils.Clock, cleanupInterval time.Duration, maxTxAge ti
 // Add validates an Ethereum transaction and checks that its nonce has not been seen before
 func (t *EthTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID types.ShortID,
 	network types.NetworkNum, validate bool, flags types.TxFlags, timestamp time.Time, networkChainID int64,
-	sender types.Sender) TransactionResult {
+	sender types.Sender,
+) TransactionResult {
 	result := t.add(hash, content, shortID, network, validate, flags, timestamp, networkChainID, sender)
 
 	if result.Transaction.Flags().IsReuseSenderNonce() {
@@ -58,8 +60,8 @@ func (t *EthTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID
 
 // Add validates an Ethereum transaction and checks that its nonce has not been seen before
 func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID types.ShortID,
-	network types.NetworkNum, validate bool, flags types.TxFlags, timestamp time.Time, networkChainID int64, sender types.Sender) TransactionResult {
-
+	network types.NetworkNum, validate bool, flags types.TxFlags, timestamp time.Time, networkChainID int64, sender types.Sender,
+) TransactionResult {
 	transaction := types.NewBxTransaction(hash, network, flags, timestamp)
 	var blockchainTx types.BlockchainTransaction
 	var err error
@@ -164,7 +166,7 @@ func (t *EthTxStore) Stop() {
 }
 
 type trackedTx struct {
-	tx *types.EthTransaction
+	hash types.SHA256Hash
 
 	// all gas prices should be increased to not consider the same transaction as duplicate
 	gasFeeCap  *big.Int
@@ -229,7 +231,7 @@ func (nt *nonceTracker) setTransaction(tx *types.EthTransaction, from *common.Ad
 	blobGasCap.Mul(blobGasCap, reuseNonceGasChange).Int(intBlobGasCap)
 
 	tracked := trackedTx{
-		tx:         tx,
+		hash:       tx.Hash(),
 		expireTime: nt.clock.Now().Add(reuseNonceDelay),
 		gasFeeCap:  intGasFeeCap,
 		gasTipCap:  intGasTipCap,
@@ -261,8 +263,7 @@ func (nt *nonceTracker) track(tx *types.EthTransaction, network types.NetworkNum
 		nt.setTransaction(tx, from, network)
 		return false, nil, nil
 	}
-	hash := oldTx.tx.Hash()
-	return true, &hash, nil
+	return true, &oldTx.hash, nil
 }
 
 func (nt *nonceTracker) cleanLoop() {

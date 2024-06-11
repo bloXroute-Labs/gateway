@@ -312,6 +312,7 @@ message TxStoreNetworkData{
   uint64 tx_count = 1;
   uint64 short_id_count = 2;
   BxTransaction oldest_tx = 3;
+  uint64 sizeBytes = 5;
 }
 
 message TxStoreReply {

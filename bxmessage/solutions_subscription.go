@@ -4,7 +4,7 @@ import "fmt"
 
 // UnpackSolutionsSubscription unpacks SolutionsSubscription bxmessage from bytes
 func UnpackSolutionsSubscription(b []byte, protocol Protocol) (*SolutionsSubscription, error) {
-	var sub = new(SolutionsSubscription)
+	sub := new(SolutionsSubscription)
 	err := sub.Unpack(b, protocol)
 	if err != nil {
 		return nil, err
@@ -44,12 +44,11 @@ func (i *SolutionsSubscription) Pack(protocol Protocol) ([]byte, error) {
 		ECDSASignatureLen,
 		ControlByteLen,
 	)
-
 	if err != nil {
 		return nil, fmt.Errorf("calc pack size: %w", err)
 	}
 
-	var buf = make([]byte, bufLen)
+	buf := make([]byte, bufLen)
 	var offset int
 
 	n, err := packHeader(buf, i.Header, SolutionsSubscriptionType)
@@ -70,9 +69,14 @@ func (i *SolutionsSubscription) Pack(protocol Protocol) ([]byte, error) {
 	}
 
 	offset += n
-	_, err = packECDSASignature(buf[offset:], i.Signature)
+	n, err = packECDSASignature(buf[offset:], i.Signature)
 	if err != nil {
 		return nil, fmt.Errorf("pack Signature: %w", err)
+	}
+
+	offset += n
+	if err := checkBuffEnd(&buf, offset); err != nil {
+		return nil, err
 	}
 
 	return buf, nil

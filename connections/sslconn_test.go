@@ -1,13 +1,11 @@
-package connections_test
+package connections
 
 import (
 	"runtime"
 	"testing"
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
-	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/test"
-	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/stretchr/testify/assert"
 )
@@ -27,6 +25,7 @@ func TestSSLConn_ClosingFromSend(t *testing.T) {
 	test.WaitUntilTrueOrFail(t, func() bool {
 		return runtime.NumGoroutine() == startCount+1
 	})
+	s.done()
 
 	am := bxmessage.Ack{}
 	_ = s.Send(&am)
@@ -43,14 +42,14 @@ func TestSSLConn_ClosingFromSend(t *testing.T) {
 	})
 }
 
-func sslConn(backlog int) (*bxmock.MockTLS, *connections.SSLConn) {
+func sslConn(backlog int) (*MockTLS, *SSLConn) {
 	ip := "127.0.0.1"
 	port := int64(3000)
 
-	tls := bxmock.NewMockTLS(ip, port, "", utils.ExternalGateway, "")
+	tls := NewMockTLS(ip, port, "", utils.ExternalGateway, "")
 	certs := utils.TestCerts()
-	s := connections.NewSSLConnection(
-		func() (connections.Socket, error) {
+	s := NewSSLConnection(
+		func() (Socket, error) {
 			return tls, nil
 		},
 		&certs, ip, port, bxmessage.CurrentProtocol, false, false, backlog, utils.RealClock{})

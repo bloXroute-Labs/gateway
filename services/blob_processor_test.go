@@ -61,7 +61,7 @@ func TestBlobProcessor_CompresDecompress(t *testing.T) {
 
 	blobCompressorStorage := NewBlobCompressorStorage().(*blobCompressorStorage)
 
-	txStore := NewEthTxStore(&utils.MockClock{}, 30*time.Second, 30*time.Second, 30*time.Second,
+	txStore := NewEthTxStore(&utils.MockClock{}, 30*time.Second, 30*time.Second,
 		NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{testNetworkNum: &blockchainNetwork}, newTestBloomFilter(t), blobCompressorStorage)
 
 	blobProcessor := NewBlobProcessor(txStore, nil).(*blobProcessor)

@@ -49,6 +49,7 @@ type BlockchainNetwork struct {
 	MediumTxNetworkFee                     int64                `json:"medium_tx_network_fee"`
 	MempoolExpectedTransactionsCount       int64                `json:"mempool_expected_transactions_count"`
 	MinTxAgeSeconds                        float64              `json:"min_tx_age_seconds"`
+	MaxTxAgeSeconds                        int64                `json:"max_tx_age_seconds"`
 	MinTxNetworkFee                        float64              `json:"min_tx_network_fee"`
 	Network                                string               `json:"network"`
 	NetworkNum                             types.NetworkNum     `json:"network_num"`

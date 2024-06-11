@@ -100,7 +100,10 @@ const EmptyProtocol = 0
 const MinProtocol = 19
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
-const CurrentProtocol = BlobCompressionProtocol
+const CurrentProtocol = IntentSolutionProtocol
+
+// IntentSolutionProtocol is the minimum protocol version that supports dApp address in intent solutions
+const IntentSolutionProtocol = 47
 
 // BlobCompressionProtocol is the minimum protocol version that supports blob compression
 const BlobCompressionProtocol = 46

@@ -2,6 +2,7 @@ package concurrent
 
 import (
 	"hash/maphash"
+	"runtime"
 	"time"
 	"unsafe"
 
@@ -24,25 +25,13 @@ type ExecuteFunc[Request comparable, Result any] func(req []Request) ([]Result, 
 // is processed only once concurrently. It is useful for scenarios where tasks or requests need to be deduplicated
 // and processed efficiently without overlap, such as network calls or database operations.
 type BatchExecutor[Request comparable, Result any] struct {
-	workChan    chan work[Request, Result]
-	data        *syncmap.SyncMap[Request, *resultWrapper[Result]]
-	executeFunc ExecuteFunc[Request, Result]
-	cleanDur    time.Duration
-}
-
-// NewBatchExecutor creates a new instance of BatchExecutor with the specified
-// execute function that defines how each batch of requests is processed.
-func NewBatchExecutor[Request comparable, Result any](executeFunc ExecuteFunc[Request, Result], hasher syncmap.Hasher[Request], batchSize int, flushDuration time.Duration, cleanDur time.Duration) *BatchExecutor[Request, Result] {
-	e := &BatchExecutor[Request, Result]{
-		workChan:    make(chan work[Request, Result]),
-		data:        syncmap.NewTypedMapOf[Request, *resultWrapper[Result]](hasher),
-		executeFunc: executeFunc,
-		cleanDur:    cleanDur,
-	}
-	go e.processRoutine(batchSize, flushDuration)
-	go e.cleanRoutine(cleanDur)
-
-	return e
+	workChan       chan work[Request, Result]
+	storeQueueChan chan work[Request, Result]
+	data           *syncmap.SyncMap[Request, *resultWrapper[Result]]
+	executeFunc    ExecuteFunc[Request, Result]
+	batchSize      int
+	flushDuration  time.Duration
+	cleanDur       time.Duration
 }
 
 // NewStringBatchExecutor creates a new instance of BatchExecutor with string requests.
@@ -64,6 +53,29 @@ func NewIntegerBatchExecutor[Request ~int | ~int8 | ~int16 | ~int32 | ~int64 | ~
 	}, batchSize, flushDuration, ttl)
 }
 
+// NewBatchExecutor creates a new instance of BatchExecutor with the specified
+// execute function that defines how each batch of requests is processed.
+func NewBatchExecutor[Request comparable, Result any](executeFunc ExecuteFunc[Request, Result], hasher syncmap.Hasher[Request], batchSize int, flushDuration time.Duration, cleanDur time.Duration) *BatchExecutor[Request, Result] {
+	e := &BatchExecutor[Request, Result]{
+		workChan:       make(chan work[Request, Result], 100000),
+		storeQueueChan: make(chan work[Request, Result], 100000),
+		data:           syncmap.NewTypedMapOf[Request, *resultWrapper[Result]](hasher),
+		executeFunc:    executeFunc,
+		batchSize:      batchSize,
+		flushDuration:  flushDuration,
+		cleanDur:       cleanDur,
+	}
+
+	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
+		go e.processRoutine(e.batchSize, e.flushDuration)
+	}
+
+	go e.processStores()
+	go e.cleanRoutine(cleanDur)
+
+	return e
+}
+
 // Execute takes a slice of requests and processes them using the provided ExecuteFunc.
 // It ensures that each request in the batch is processed only once, even if requested multiple times concurrently,
 // thus improving efficiency and preventing unnecessary work in concurrent environments.
@@ -77,38 +89,38 @@ func NewIntegerBatchExecutor[Request ~int | ~int8 | ~int16 | ~int32 | ~int64 | ~
 // Returns a slice of results corresponding to the input requests and any error encountered during processing.
 // Users of this method should consider handling errors by potentially retrying failed requests, taking into account
 // the nature of the error to avoid unnecessary retries in cases of permanent failures.
-func (m *BatchExecutor[Request, Result]) Execute(reqs []Request) ([]Result, []Request, error) {
+func (e *BatchExecutor[Request, Result]) Execute(reqs []Request) ([]Result, []Request, error) {
 	reqsToProcess := make([]Request, 0, len(reqs))
-	resultsToSubmit := make([]*resultWrapper[Result], 0, len(reqs))
+	resultsToProcess := make([]*resultWrapper[Result], 0, len(reqs))
 	resultWrappers := make([]*resultWrapper[Result], len(reqs))
 
-	var wrapper *resultWrapper[Result]
+	addTime := time.Now().Add(e.cleanDur)
+
 	var loaded bool
 	for i, req := range reqs {
-		wrapper, loaded = m.data.LoadOrStore(req, &resultWrapper[Result]{
-			cleanTime: time.Now().Add(m.cleanDur),
-			done:      make(chan struct{}),
-		})
+		resultWrappers[i], loaded = e.data.Load(req)
 		if !loaded {
-			// req is marked for processing by this goroutine.
+			resultWrappers[i] = &resultWrapper[Result]{
+				cleanTime: addTime,
+				done:      make(chan struct{}),
+			}
+
 			reqsToProcess = append(reqsToProcess, req)
-			resultsToSubmit = append(resultsToSubmit, wrapper)
+			resultsToProcess = append(resultsToProcess, resultWrappers[i])
 		}
-		resultWrappers[i] = wrapper
 	}
 
-	m.workChan <- work[Request, Result]{request: reqsToProcess, result: resultsToSubmit}
+	work := work[Request, Result]{request: reqsToProcess, result: resultsToProcess}
+	e.storeQueueChan <- work
+	e.workChan <- work
 
-	// Collect results, waiting if necessary.
 	results := make([]Result, len(reqs))
-	for i, wrapper := range resultWrappers {
-		// Non blocking if channel is closed which means the result is already set.
-		<-wrapper.done
-
-		if wrapper.err != nil {
-			return nil, reqsToProcess, wrapper.err
+	for i := range resultWrappers {
+		<-resultWrappers[i].done
+		if resultWrappers[i].err != nil {
+			return nil, reqsToProcess, resultWrappers[i].err
 		}
-		results[i] = wrapper.result
+		results[i] = resultWrappers[i].result
 	}
 
 	return results, reqsToProcess, nil
@@ -119,58 +131,78 @@ type work[Request comparable, Result any] struct {
 	result  []*resultWrapper[Result]
 }
 
-func (m *BatchExecutor[Request, Result]) processRoutine(batchSize int, flushDuration time.Duration) {
-	requests := make([]Request, 0, batchSize*2)
-	results := make([]*resultWrapper[Result], 0, batchSize*2)
-	ticker := time.NewTicker(flushDuration)
-
-	process := func() {
-		processedResults, err := m.executeFunc(requests)
-
-		for i, req := range requests {
-			result := results[i]
-
-			if err != nil {
-				result.err = err
-				m.data.Delete(req)
-			} else {
-				result.result = processedResults[i]
-			}
-
-			close(result.done)
-		}
-		requests = requests[:0]
-		results = results[:0]
-	}
-
-	for {
-		select {
-		case <-ticker.C:
-			if len(requests) == 0 {
-				break
-			}
-
-			process()
-		case work := <-m.workChan:
-			requests = append(requests, work.request...)
-			results = append(results, work.result...)
-
-			if len(requests) < batchSize {
-				break
-			}
-
-			process()
+func (e *BatchExecutor[Request, Result]) processStores() {
+	for work := range e.storeQueueChan {
+		for i := range work.request {
+			e.data.Store(work.request[i], work.result[i])
 		}
 	}
 }
 
-func (m *BatchExecutor[Request, Result]) cleanRoutine(cleanInterval time.Duration) {
+func (e *BatchExecutor[Request, Result]) processRoutine(batchSize int, flushDuration time.Duration) {
+	requests := make([]Request, 0, batchSize*2)
+	results := make([]*resultWrapper[Result], 0, batchSize*2)
+	ticker := time.NewTicker(flushDuration)
+
+	process := func(requests []Request, results []*resultWrapper[Result]) {
+		processedResults, err := e.executeFunc(requests)
+
+		for i, req := range requests {
+			if err != nil {
+				results[i].err = err
+				e.data.Delete(req)
+			} else {
+				results[i].result = processedResults[i]
+			}
+
+			close(results[i].done)
+		}
+	}
+
+	requestsCount := 0
+	for {
+		select {
+		case <-ticker.C:
+			if requestsCount == 0 {
+				break
+			}
+
+			process(requests, results)
+
+			ticker.Reset(flushDuration)
+			requests = make([]Request, 0, len(requests))
+			results = make([]*resultWrapper[Result], 0, len(results))
+			requestsCount = 0
+		case work := <-e.workChan:
+			requestsCount += len(work.request)
+			requests = append(requests, work.request...)
+			results = append(results, work.result...)
+			ticker.Reset(flushDuration)
+
+			if requestsCount < batchSize {
+				break
+			}
+
+			process(requests, results)
+
+			requests = make([]Request, 0, len(requests))
+			results = make([]*resultWrapper[Result], 0, len(results))
+			requestsCount = 0
+		}
+	}
+}
+
+func (e *BatchExecutor[Request, Result]) Clear() {
+	e.data.Clear()
+}
+
+func (e *BatchExecutor[Request, Result]) cleanRoutine(cleanInterval time.Duration) {
 	ticker := time.NewTicker(cleanInterval)
 
 	for range ticker.C {
-		m.data.Range(func(key Request, value *resultWrapper[Result]) bool {
+		e.data.Range(func(key Request, value *resultWrapper[Result]) bool {
 			if time.Now().After(value.cleanTime) {
-				m.data.Delete(key)
+				e.data.Delete(key)
 			}
 			return true
 		})

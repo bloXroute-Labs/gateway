@@ -81,7 +81,7 @@ func TestMultiNode(t *testing.T) {
 		{
 			Name:          "reject empty DNS",
 			Multinode:     "multiaddr:/dns//tcp/13000/p2p/16Uiu2HAm9VsYAuES1krVUZFQG8JmokMhxeRzvN1wMhB9jWeUouT8+prysm://1.1.1.1:1000",
-			ErrorContains: "IP or DNS address is missing",
+			ErrorContains: "empty dns addr",
 		},
 		{
 			Name:          "reject invalid DNS",

@@ -122,7 +122,7 @@ func NewRawBxBlock(hash, beaconHash SHA256Hash, bType BxBlockType, header []byte
 // String implements Stringer interface
 func (b BxBlock) String() string {
 	if b.IsBeaconBlock() {
-		return fmt.Sprintf("block beacon(hash: %s, beacon hash: %s, type: %s, number: %d, txs: %d)", b.hash, b.beaconHash, b.Type, b.Number.Uint64(), len(b.Txs))
+		return fmt.Sprintf("block beacon(hash: %s, type: %s, number: %d, txs: %d)", b.beaconHash, b.Type, b.Number.Uint64(), len(b.Txs))
 	}
 
 	return fmt.Sprintf("block(hash: %s, type: %s, number: %d, txs: %d)", b.hash, b.Type, b.Number.Uint64(), len(b.Txs))
@@ -158,12 +158,21 @@ func (b *BxBlock) Serialize() string {
 
 // Hash returns block hash
 func (b *BxBlock) Hash() SHA256Hash {
+	if b.IsBeaconBlock() {
+		// We don't do anything with execution layer blocks for Ethereum.
+		return b.BeaconHash()
+	}
 	return b.hash
 }
 
 // BeaconHash returns beacon hash
-func (b BxBlock) BeaconHash() SHA256Hash {
+func (b *BxBlock) BeaconHash() SHA256Hash {
 	return b.beaconHash
+}
+
+// ExecutionHash returns execution block hash
+func (b *BxBlock) ExecutionHash() SHA256Hash {
+	return b.hash
 }
 
 // Timestamp returns block add time

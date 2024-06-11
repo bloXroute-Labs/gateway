@@ -12,7 +12,9 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/google/uuid"
 	"github.com/sourcegraph/jsonrpc2"
+	"github.com/stretchr/testify/require"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
@@ -41,6 +43,7 @@ var accountIDToAccountModel = map[types.AccountID]sdnmessage.Account{
 	"a": {AccountInfo: sdnmessage.AccountInfo{AccountID: "a", TierName: sdnmessage.ATierElite}, SecretHash: "123456"},
 	"b": {AccountInfo: sdnmessage.AccountInfo{AccountID: "b", TierName: sdnmessage.ATierDeveloper}, SecretHash: "7891011"},
 	"c": {AccountInfo: sdnmessage.AccountInfo{AccountID: "c", TierName: sdnmessage.ATierElite}},
+	"i": {AccountInfo: sdnmessage.AccountInfo{AccountID: "i", TierName: sdnmessage.ATierIntroductory}, SecretHash: "654321"},
 	"gw": {
 		AccountInfo: sdnmessage.AccountInfo{
 			AccountID:  "gw",
@@ -139,7 +142,7 @@ func TestClientHandler(t *testing.T) {
 
 	blockchainPeers, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
 
-	fm := NewFeedManager(context.Background(), g, feedChan, services.NewNoOpSubscriptionServices(),
+	fm := NewFeedManager(context.Background(), g, feedChan, nil, services.NewNoOpSubscriptionServices(),
 		types.NetworkNum(1), 1, types.NodeID("nodeID"),
 		eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false),
 		gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil, nil)
@@ -153,8 +156,9 @@ func TestClientHandler(t *testing.T) {
 
 	var group errgroup.Group
 	sourceFromNode := false
-	wsServer := NewWSServer(fm, getMockQuotaUsage, true, &sourceFromNode, mockAuthorize, true)
-	clientHandler := NewClientHandler(fm, wsServer, NewHTTPServer(fm, cfg.HTTPPort), nil, true, nil, &sourceFromNode, mockAuthorize, true)
+	im := services.NewIntentsManager()
+	wsServer := NewWSServer(fm, im, getMockQuotaUsage, true, &sourceFromNode, mockAuthorize, true, false)
+	clientHandler := NewClientHandler(fm, im, wsServer, NewHTTPServer(fm, cfg.HTTPPort), nil, true, nil, &sourceFromNode, mockAuthorize, true, false)
 	go clientHandler.ManageServers(context.Background(), cfg.ManageWSServer)
 	group.Go(func() error {
 		return fm.Start(context.Background())
@@ -216,15 +220,18 @@ func TestClientHandler(t *testing.T) {
 			handleBlxrTxWithWrongChainID(t, ws)
 			handleNonBloxrouteRPCMethods(t, fm, ws, blockchainPeers)
 			handleNonBloxrouteSendTxMethod(t, fm, ws, blockchainPeers)
+			handleSubmitIntent(t, fm, ws)
 			handleSubscribe(t, fm, ws)
+			handleIntentsSubscribe(t, fm, ws)
 			handleEthSubscribe(t, fm, ws, blockchainPeers)
 			handleTxReceiptsSubscribe(t, fm, ws)
 			handleInvalidSubscribe(t, ws)
 			testWSShutdown(t, fm, ws, blockchainPeers)
 		})
 		// restart bc last test shut down ws server
-		fm = NewFeedManager(context.Background(), g, make(chan types.Notification), services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 1, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil, nil)
-		clientHandler := NewClientHandler(fm, wsServer, NewHTTPServer(fm, cfg.HTTPPort), nil, true, getMockQuotaUsage, &sourceFromNode, mockAuthorize, true)
+		im := services.NewIntentsManager()
+		fm = NewFeedManager(context.Background(), g, make(chan types.Notification), nil, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 1, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false), gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil, nil)
+		clientHandler := NewClientHandler(fm, im, wsServer, NewHTTPServer(fm, cfg.HTTPPort), nil, true, getMockQuotaUsage, &sourceFromNode, mockAuthorize, true, false)
 		go clientHandler.ManageServers(context.Background(), cfg.ManageWSServer)
 		group.Go(func() error {
 			return fm.Start(context.Background())
@@ -310,9 +317,10 @@ func TestClientHandler_BSC(t *testing.T) {
 
 	var group errgroup.Group
 	sourceFromNode := false
-	fmBSC := NewFeedManager(context.Background(), g, feedChan, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 56, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfoBSC, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false), gwAccount, getMockCustomerAccountModel, "", "", cfgBSC, stats, nil, nil)
-	wsServer := NewWSServer(fmBSC, getMockQuotaUsage, true, &sourceFromNode, mockAuthorize, true)
-	clientHandlerBSC := NewClientHandler(fmBSC, wsServer, NewHTTPServer(fmBSC, cfgBSC.HTTPPort), nil, false, getMockQuotaUsage, &sourceFromNode, mockAuthorize, true)
+	im := services.NewIntentsManager()
+	fmBSC := NewFeedManager(context.Background(), g, feedChan, nil, services.NewNoOpSubscriptionServices(), types.NetworkNum(1), 56, types.NodeID("nodeID"), eth.NewEthWSManager(blockchainPeersInfoBSC, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false), gwAccount, getMockCustomerAccountModel, "", "", cfgBSC, stats, nil, nil)
+	wsServer := NewWSServer(fmBSC, im, getMockQuotaUsage, true, &sourceFromNode, mockAuthorize, true, false)
+	clientHandlerBSC := NewClientHandler(fmBSC, im, wsServer, NewHTTPServer(fmBSC, cfgBSC.HTTPPort), nil, false, getMockQuotaUsage, &sourceFromNode, mockAuthorize, true, false)
 	go clientHandlerBSC.ManageServers(context.Background(), false)
 	group.Go(func() error {
 		return fmBSC.Start(context.Background())
@@ -333,6 +341,78 @@ func TestClientHandler_BSC(t *testing.T) {
 		handleBscBlxrTxRequestWithNextValidator(t, wsBSC)
 		// handleNonBloxrouteRPCMethodsDisabled(t, fmBSC, wsBSC, blockchainPeersBSC)
 	})
+}
+
+func TestClientHandlerAuth(t *testing.T) {
+	for _, allowIntroductoryTierAccess := range []bool{true, false} {
+		t.Run(fmt.Sprintf("allowIntroductoryTierAccess-%t", allowIntroductoryTierAccess), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+
+			g := bxmock.MockBxListener{}
+			stats := statistics.NoStats{}
+			feedChan := make(chan types.Notification)
+			url := "ws://127.0.0.1:28334/ws"
+			gwAccount, _ := getMockCustomerAccountModel("gw")
+			cfg := config.Bx{WebsocketPort: 28334, ManageWSServer: true, WebsocketTLSEnabled: false}
+			blockchainPeers, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
+
+			fm := NewFeedManager(context.Background(), g, feedChan, nil, services.NewNoOpSubscriptionServices(),
+				types.NetworkNum(1), 1, types.NodeID("nodeID"),
+				eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false),
+				gwAccount, getMockCustomerAccountModel, "", "", cfg, stats, nil, nil)
+
+			var group errgroup.Group
+			sourceFromNode := false
+			im := services.NewIntentsManager()
+			wsServer := NewWSServer(fm, im, getMockQuotaUsage, false, &sourceFromNode, mockAuthorize, true, allowIntroductoryTierAccess)
+			clientHandler := NewClientHandler(fm, im, wsServer, NewHTTPServer(fm, cfg.HTTPPort), nil, false, nil, &sourceFromNode, mockAuthorize, true, allowIntroductoryTierAccess)
+
+			group.Go(func() error {
+				return clientHandler.ManageServers(ctx, cfg.ManageWSServer)
+			})
+			group.Go(func() error {
+				return fm.Start(ctx)
+			})
+
+			markAllPeersWithSyncStatus(fm, blockchainPeers, blockchain.Synced)
+			time.Sleep(10 * time.Millisecond)
+
+			dialer := websocket.DefaultDialer
+			headers := make(http.Header)
+
+			dummyAuthHeader := "aTo2NTQzMjE=" // i:654321
+			headers.Set("Authorization", dummyAuthHeader)
+			ws, _, err := dialer.Dial(url, headers)
+			require.NoError(t, err)
+			handleError(t, ws, nil)
+
+			reqPayload := fmt.Sprintf(`{"jsonrpc": "2.0", "id": "1", "method": "eth_sendRawTransaction", "params": ["0x%v"]}`, fixtures.DynamicFeeTransaction)
+
+			var msg []byte
+			if allowIntroductoryTierAccess {
+				msg = writeMsgToWsAndReadResponse(t, ws, []byte(reqPayload), nil)
+				assert.Equal(t, `{"id":"1","error":{"code":-32001,"message":"Insufficient quota","data":"account must be enterprise / enterprise elite / ultra"},"jsonrpc":"2.0"}
+`, string(msg))
+				err = ws.WriteMessage(websocket.TextMessage, msg)
+				assert.NoError(t, err)
+				_, _, err = ws.ReadMessage()
+				assert.Error(t, err, "connection should be closed by the server")
+			} else {
+				msg = writeMsgToWsAndReadResponse(t, ws, []byte(reqPayload), nil)
+				assert.Equal(t, `{"id":"1","error":{"code":-32601,"message":"Invalid method","data":"got unsupported method name: eth_sendRawTransaction"},"jsonrpc":"2.0"}
+`, string(msg))
+				// client should be still connected
+				msg = writeMsgToWsAndReadResponse(t, ws, []byte(reqPayload), nil)
+				assert.Equal(t, `{"id":"1","error":{"code":-32601,"message":"Invalid method","data":"got unsupported method name: eth_sendRawTransaction"},"jsonrpc":"2.0"}
+`, string(msg))
+			}
+
+			cancel()
+
+			err = group.Wait()
+			require.NoError(t, err)
+		})
+	}
 }
 
 // TODO: Follow work to handle sync and unsync on another PR
@@ -445,6 +525,61 @@ func handleEthSubscribe(t *testing.T, fm *FeedManager, ws *websocket.Conn, block
 	handlePingRequest(t, ws)
 }
 
+func handleIntentsSubscribe(t *testing.T, fm *FeedManager, ws *websocket.Conn) {
+	unsubscribeFilter, subscriptionID := assertSubscribe(t, ws, fm, `{ "id": "2", "method": "subscribe", "params": [ "userIntentSolutionsFeed", { "dapp_address": "0x097399a35cfC20efE5FcD2e9b1d892884DAAd642", "hash": [183,2,62,89,100,47,176,195,131,57,253,105,100,82,169,64,29,188,156,99,54,36,235,232,173,157,89,149,61,184,76,66], "signature": [219,205,179,107,60,59,38,125,46,45,156,10,134,243,162,72,64,73,94,242,204,254,129,50,70,146,3,160,193,121,120,157,15,160,110,100,156,30,241,77,145,65,209,160,191,14,68,103,79,163,72,155,116,2,11,23,11,167,240,4,119,184,40,176,0]}]}`)
+
+	solution := &types.UserIntentSolution{
+		ID:            uuid.New().String(),
+		SolverAddress: "0x097399a35cfC20efE5FcD2e9b1d892884DAAd642",
+		DappAddress:   "0x097399a35cfC20efE5FcD2e9b1d892884DAAd642",
+		IntentID:      uuid.New().String(),
+		Solution:      []byte{71, 108, 111, 114, 121, 32, 116, 111, 32, 85, 107, 114, 97, 105, 110, 101, 33},
+		Hash:          []byte{183, 2, 62, 89, 100, 47, 176, 195, 131, 57, 253, 105, 100, 82, 169, 64, 29, 188, 156, 99, 54, 36, 235, 232, 173, 157, 89, 149, 61, 184, 76, 66},
+		Signature:     []byte{219, 205, 179, 107, 60, 59, 38, 125, 46, 45, 156, 10, 134, 243, 162, 72, 64, 73, 94, 242, 204, 254, 129, 50, 70, 146, 3, 160, 193, 121, 120, 157, 15, 160, 110, 100, 156, 30, 241, 77, 145, 65, 209, 160, 191, 14, 68, 103, 79, 163, 72, 155, 116, 2, 11, 23, 11, 167, 240, 4, 119, 184, 40, 176, 0},
+		Timestamp:     time.Now(),
+	}
+
+	fm.feed <- types.NewUserIntentSolutionNotification(solution)
+	time.Sleep(time.Millisecond)
+
+	_, message, err := ws.ReadMessage()
+	require.NoError(t, err)
+	var req jsonrpc2.Request
+	err = json.Unmarshal(message, &req)
+	require.NoError(t, err)
+
+	var m userIntentSolutionResponse
+	err = json.Unmarshal(*req.Params, &m)
+	assert.NoError(t, err)
+	assert.Equal(t, m.Subscription, subscriptionID)
+	assert.Equal(t, m.Result.IntentID, solution.ID)
+	assert.Equal(t, m.Result.IntentSolution, solution.Solution)
+
+	writeMsgToWsAndReadResponse(t, ws, []byte(unsubscribeFilter), nil)
+	time.Sleep(time.Millisecond)
+	assert.False(t, fm.SubscriptionExists(subscriptionID))
+	handlePingRequest(t, ws)
+}
+
+func handleSubmitIntent(t *testing.T, fm *FeedManager, ws *websocket.Conn) {
+	reqParams := &jsonrpc.RPCSubmitIntentPayload{
+		DappAddress:   "0x097399a35cfC20efE5FcD2e9b1d892884DAAd642",
+		SenderAddress: "0x097399a35cfC20efE5FcD2e9b1d892884DAAd642",
+		Intent:        []byte{71, 108, 111, 114, 121, 32, 116, 111, 32, 85, 107, 114, 97, 105, 110, 101, 33},
+		Hash:          []byte{183, 2, 62, 89, 100, 47, 176, 195, 131, 57, 253, 105, 100, 82, 169, 64, 29, 188, 156, 99, 54, 36, 235, 232, 173, 157, 89, 149, 61, 184, 76, 66},
+		Signature:     []byte{219, 205, 179, 107, 60, 59, 38, 125, 46, 45, 156, 10, 134, 243, 162, 72, 64, 73, 94, 242, 204, 254, 129, 50, 70, 146, 3, 160, 193, 121, 120, 157, 15, 160, 110, 100, 156, 30, 241, 77, 145, 65, 209, 160, 191, 14, 68, 103, 79, 163, 72, 155, 116, 2, 11, 23, 11, 167, 240, 4, 119, 184, 40, 176, 0},
+	}
+	intent, err := json.Marshal(reqParams)
+	require.NoError(t, err)
+	reqPayload := fmt.Sprintf(`{"id": "1", "method": "blxr_submit_intent", "params": %s}`, string(intent))
+	msg := writeMsgToWsAndReadResponse(t, ws, []byte(reqPayload), nil)
+	clientRes := getClientResponse(t, msg)
+	assert.Nil(t, clientRes.Error)
+	res := parseSubmitInternalTxResult(t, clientRes.Result)
+	_, err = uuid.Parse(res.IntentID)
+	require.NoError(t, err)
+}
+
 func handleInvalidSubscribe(t *testing.T, ws *websocket.Conn) {
 	subscribeMsg := writeMsgToWsAndReadResponse(t, ws, []byte(`{"id": "1", "method": "subscribe", "para": ["txReceipts", {"include": []}]}`), nil)
 	clientRes := getClientResponse(t, subscribeMsg)
@@ -452,63 +587,6 @@ func handleInvalidSubscribe(t *testing.T, ws *websocket.Conn) {
 	time.Sleep(time.Millisecond)
 	handlePingRequest(t, ws)
 }
-
-/* the below functions are not in use
-func handleTxReceiptsSubscribeClientCloseConnection(t *testing.T, fm *FeedManager, ws *websocket.Conn) {
-	subscribeMsg := writeMsgToWsAndReadResponse(t, ws, []byte(`{"id": "1", "method": "subscribe", "params": ["txReceipts", {"include": []}]}`), nil)
-	clientRes := getClientResponse(t, subscribeMsg)
-	subscriptionID, err := uuid.FromString(fmt.Sprintf("%v", clientRes.Result))
-	assert.NoError(t, err)
-	assert.True(t, fm.SubscriptionExists(subscriptionID))
-
-	fm.wsFeed <- mockBlockTransaction()
-
-	err = ws.Close()
-	assert.NoError(t, err)
-
-	time.Sleep(5 * time.Millisecond)
-	assert.False(t, fm.SubscriptionExists(subscriptionID))
-}
-
-func mockBlockTransaction() types.Notification {
-	var notification types.Notification
-	blockNotification := &types.BlockNotification{}
-	blockNotification.Transactions = getEthTransactions()
-	blockNotification.SetNotificationType(types.TxReceiptsFeed)
-	notification = blockNotification
-	return notification
-}
-
-func getEthTransactions() []map[string]interface{} {
-	var ret []map[string]interface{}
-	//var fromBytes common.Address
-	//rand.Read(fromBytes[:])
-	// todo: create ethTransaction with the new function
-	tx := types.EthTransaction{
-		GasTipCap: big.NewInt(100),
-		GasFeeCap: big.NewInt(100),
-	}.Fields(types.AllFields)
-	txSame := types.EthTransaction{
-		GasTipCap: big.NewInt(100),
-		GasFeeCap: big.NewInt(100),
-	}.Fields(types.AllFields)
-	txLowerGas := types.EthTransaction{
-		GasTipCap: big.NewInt(5),
-		GasFeeCap: big.NewInt(5),
-	}.Fields(types.AllFields)
-	txSlightlyHigherGas := types.EthTransaction{
-		GasTipCap: big.NewInt(101),
-		GasFeeCap: big.NewInt(101),
-	}.Fields(types.AllFields)
-	txHigherGas := types.EthTransaction{
-		GasTipCap: big.NewInt(111),
-		GasFeeCap: big.NewInt(111),
-	}.Fields(types.AllFields)
-	ret = append(ret, tx, txSame, txLowerGas, txSlightlyHigherGas, txHigherGas)
-
-	return ret
-}
-*/
 
 func handleTxReceiptsSubscribe(t *testing.T, fm *FeedManager, ws *websocket.Conn) {
 	unsubscribeFilter, subscriptionID := assertSubscribe(t, ws, fm, `{"id": "1", "method": "subscribe", "params": ["txReceipts", {"include": []}]}`)
@@ -969,7 +1047,9 @@ type clientResponse struct {
 func getClientResponse(t *testing.T, msg []byte) (cr clientResponse) {
 	res := clientResponse{}
 	err := json.Unmarshal(msg, &res)
-	assert.NoError(t, err)
+	if err != nil {
+		assert.NoError(t, err)
+	}
 	return res
 }
 
@@ -1006,6 +1086,15 @@ func parseBlxrTxResult(t *testing.T, rpcResponse interface{}) (tr rpcTxResponse)
 
 func parseBlxrTxsResult(t *testing.T, rpcResponse interface{}) (tr rpcBatchTxResponse) {
 	res := rpcBatchTxResponse{}
+	b, err := json.Marshal(rpcResponse)
+	assert.NoError(t, err)
+	err = json.Unmarshal(b, &res)
+	assert.NoError(t, err)
+	return res
+}
+
+func parseSubmitInternalTxResult(t *testing.T, rpcResponse interface{}) (tr rpcIntentResponse) {
+	res := rpcIntentResponse{}
 	b, err := json.Marshal(rpcResponse)
 	assert.NoError(t, err)
 	err = json.Unmarshal(b, &res)

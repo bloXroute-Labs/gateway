@@ -34,7 +34,8 @@ func TestBxConn_BDNIsDefaultForOldProtocol(t *testing.T) {
 	th.setConn(bx)
 
 	helloMessage := bxmessage.Hello{}
-	b, _ := helloMessage.Pack(bxmessage.FlashbotsGatewayProtocol - 1)
+	b, err := helloMessage.Pack(bxmessage.FlashbotsGatewayProtocol - 1)
+	require.NoError(t, err)
 	msg := bxmessage.NewMessageBytes(b, time.Now())
 	bx.ProcessMessage(msg)
 
@@ -50,7 +51,8 @@ func TestBxConn_ProtocolVersion(t *testing.T) {
 		helloMessage := bxmessage.Hello{
 			Protocol: bxmessage.CurrentProtocol - 2,
 		}
-		b, _ := helloMessage.Pack(bxmessage.CurrentProtocol) // with wich protocol to pack here is not important
+		b, err := helloMessage.Pack(bxmessage.CurrentProtocol) // with wich protocol to pack here is not important
+		require.NoError(t, err)
 		msg := bxmessage.NewMessageBytes(b, time.Now())
 		bx.ProcessMessage(msg)
 		require.Equal(t, bxmessage.Protocol(bxmessage.CurrentProtocol-2), bx.Protocol())
@@ -64,7 +66,8 @@ func TestBxConn_ProtocolVersion(t *testing.T) {
 		helloMessage := bxmessage.Hello{
 			Protocol: bxmessage.CurrentProtocol - 1,
 		}
-		b, _ := helloMessage.Pack(bxmessage.CurrentProtocol)
+		b, err := helloMessage.Pack(bxmessage.CurrentProtocol)
+		require.NoError(t, err)
 		msg := bxmessage.NewMessageBytes(b, time.Now())
 		bx.ProcessMessage(msg)
 		require.Equal(t, bxmessage.Protocol(bxmessage.CurrentProtocol-1), bx.Protocol())
@@ -75,7 +78,8 @@ func TestBxConn_ProtocolVersion(t *testing.T) {
 		helloMessage := bxmessage.Hello{
 			Protocol: bxmessage.CurrentProtocol + 2,
 		}
-		b, _ := helloMessage.Pack(bxmessage.CurrentProtocol)
+		b, err := helloMessage.Pack(bxmessage.CurrentProtocol)
+		require.NoError(t, err)
 		msg := bxmessage.NewMessageBytes(b, time.Now())
 		bx.ProcessMessage(msg)
 		require.Equal(t, bxmessage.Protocol(bxmessage.CurrentProtocol), bx.Protocol())
@@ -86,7 +90,8 @@ func TestBxConn_ProtocolVersion(t *testing.T) {
 		helloMessage := bxmessage.Hello{
 			Protocol: bxmessage.CurrentProtocol - 1,
 		}
-		b, _ := helloMessage.Pack(bxmessage.CurrentProtocol)
+		b, err := helloMessage.Pack(bxmessage.CurrentProtocol)
+		require.NoError(t, err)
 		msg := bxmessage.NewMessageBytes(b, time.Now())
 		bx.ProcessMessage(msg)
 		require.Equal(t, bxmessage.Protocol(bxmessage.CurrentProtocol-1), bx.Protocol())
@@ -131,11 +136,11 @@ func TestBxConn_ClosingFromHandler(t *testing.T) {
 	})
 }
 
-func bxConn(handler connections.ConnHandler) (*bxmock.MockTLS, *BxConn) {
+func bxConn(handler connections.ConnHandler) (*connections.MockTLS, *BxConn) {
 	ip := "127.0.0.1"
 	port := int64(3000)
 
-	tls := bxmock.NewMockTLS(ip, port, "", utils.ExternalGateway, "")
+	tls := connections.NewMockTLS(ip, port, "", utils.ExternalGateway, "")
 	certs := utils.TestCerts()
 	b := NewBxConn(bxmock.MockBxListener{},
 		func() (connections.Socket, error) {

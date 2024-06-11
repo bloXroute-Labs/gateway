@@ -56,9 +56,16 @@ type PendingNextValidatorTxInfo struct {
 	Source        connections.Conn
 }
 
+// ErrorNotification info about error notification
+type ErrorNotification struct {
+	ErrorMsg string
+	FeedType types.FeedType
+}
+
 // FeedManager - feed manager fields
 type FeedManager struct {
 	feed                                chan types.Notification
+	errFeed                             chan ErrorNotification
 	idToClientSubscription              map[string]ClientSubscription
 	subscriptionServices                services.SubscriptionServices
 	lock                                sync.RWMutex
@@ -84,7 +91,7 @@ type FeedManager struct {
 }
 
 // NewFeedManager - create a new feedManager
-func NewFeedManager(parent context.Context, node connections.BxListener, wsFeedChan chan types.Notification,
+func NewFeedManager(parent context.Context, node connections.BxListener, wsFeedChan chan types.Notification, errFeedChan chan ErrorNotification,
 	subscriptionServices services.SubscriptionServices,
 	networkNum types.NetworkNum, networkID types.NetworkID, nodeID types.NodeID,
 	wsManager blockchain.WSManager,
@@ -98,6 +105,7 @@ func NewFeedManager(parent context.Context, node connections.BxListener, wsFeedC
 
 	newServer := &FeedManager{
 		feed:                                wsFeedChan,
+		errFeed:                             errFeedChan,
 		idToClientSubscription:              make(map[string]ClientSubscription),
 		subscriptionServices:                subscriptionServices,
 		node:                                node,
@@ -142,7 +150,6 @@ func (f *FeedManager) checkForDuplicateFeed(clientSubscription *ClientSubscripti
 				v.network == clientSubscription.network &&
 				v.Includes == clientSubscription.Includes &&
 				v.Filters == clientSubscription.Filters &&
-				v.Project == clientSubscription.Project &&
 				strings.HasPrefix(v.RemoteAddress, remoteIP) {
 				return fmt.Errorf("duplicate feed request - account %v tier %v ip %v previous subscription ID %v", clientSubscription.AccountID, clientSubscription.Tier, remoteAddress, k)
 			}
@@ -194,7 +201,7 @@ func (f *FeedManager) Subscribe(feedName types.FeedType, feedConnectionType type
 	f.idToClientSubscription[id] = clientSubscription
 	f.lock.Unlock()
 
-	f.log.Infof("%v subscribed to %v id %v with includes [%v] and filter [%v]", ci.RemoteAddress, feedName, id, ro.Includes, ro.Filters)
+	f.log.Infof("%v subscribed to feed '%v', id %v with includes [%v] and filter [%v]", ci.RemoteAddress, feedName, id, ro.Includes, ro.Filters)
 
 	handlingInfo := ClientSubscriptionHandlingInfo{
 		SubscriptionID:     id,
@@ -202,6 +209,7 @@ func (f *FeedManager) Subscribe(feedName types.FeedType, feedConnectionType type
 		ErrMsgChan:         clientSubscription.errMsgChan,
 		PermissionRespChan: permissionRespChannel,
 	}
+
 	return &handlingInfo, nil
 }
 
@@ -334,6 +342,12 @@ func (f *FeedManager) run(ctx context.Context) {
 					log.Errorf("failed to remove feed subscription %v, %v", sid, err)
 				}
 			}
+		case errNotification, ok := <-f.errFeed:
+			if !ok {
+				f.log.Errorf("can't pull from ws error feed channel. Terminating")
+				break
+			}
+			f.sendErrorMsgToClient(errNotification)
 		case notification, ok := <-f.feed:
 			if !ok {
 				f.log.Errorf("can't pull from ws feed channel. Terminating")
@@ -352,19 +366,36 @@ func (f *FeedManager) run(ctx context.Context) {
 						// }
 					default:
 						f.log.Errorf("can't send %v to channel %v without blocking. Ignored hash %v and unsubscribing", clientSub.feedType, uid, notification.GetHash())
-						go func(subscriptionID string) {
-							// running as go-routine since we are holding the lock. Closing the connection since we can't write
-							if err := f.Unsubscribe(subscriptionID, true, ""); err != nil {
-								f.log.Debugf("unable to Unsubscribe %v - %v", subscriptionID, err)
-							}
-							// TODO: mark clientSub as "being closed" to prevent multiple Unsubscribe
-						}(uid)
+						go f.unsubscribeFromFeed(uid)
 					}
 				}
 			}
 			f.lock.RUnlock()
 		}
 	}
+}
+
+func (f *FeedManager) sendErrorMsgToClient(errNotification ErrorNotification) {
+	f.lock.RLock()
+	for uid, clientSub := range f.idToClientSubscription {
+		if (clientSub.feedConnectionType == types.WebSocketFeed || clientSub.feedConnectionType == types.GRPCFeed) && clientSub.feedType == errNotification.FeedType {
+			select {
+			case clientSub.errMsgChan <- errNotification.ErrorMsg:
+			default:
+				f.log.Errorf("can't send error %v to channel %v without blocking. Ignored error %v and unsubscribing", clientSub.feedType, uid, errNotification.ErrorMsg)
+				go f.unsubscribeFromFeed(uid)
+			}
+		}
+	}
+	f.lock.RUnlock()
+}
+
+func (f *FeedManager) unsubscribeFromFeed(subscriptionID string) {
+	// running as go-routine since we are holding the lock. Closing the connection since we can't write
+	if err := f.Unsubscribe(subscriptionID, true, ""); err != nil {
+		f.log.Debugf("unable to Unsubscribe %v - %v", subscriptionID, err)
+	}
+	// TODO: mark clientSub as "being closed" to prevent multiple Unsubscribe
 }
 
 // SubscriptionExists - check if subscription exists

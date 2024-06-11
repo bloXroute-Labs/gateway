@@ -357,10 +357,6 @@ var (
 		Aliases: []string{"polygon-heimdall-endpoint"},
 		Usage:   "tcp endpoints for Polygon mainnet heimdall server",
 	}
-	MEVRelayURL = &cli.StringFlag{
-		Name:  "mev-relay-url",
-		Usage: "mev relay connection for forwarding rpc requests",
-	}
 	CheckMevCredit = &cli.BoolFlag{
 		Name:  "check-mev-credit",
 		Usage: "enable this flag will forward the mev rpc request to cloud api",

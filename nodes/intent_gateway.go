@@ -1,10 +1,8 @@
 package nodes
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"sync"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
@@ -15,8 +13,8 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/servers"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/bloXroute-Labs/gateway/v2/utils/intent"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/sourcegraph/jsonrpc2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -94,21 +92,9 @@ func (g *GatewayGrpc) SubmitIntent(ctx context.Context, req *pb.SubmitIntentRequ
 		return nil, status.Errorf(codes.InvalidArgument, "Intent is required")
 	}
 
-	if len(req.Hash) != bxmessage.Keccak256HashLen {
-		return nil, status.Errorf(codes.InvalidArgument, "Hash is invalid")
-	}
-
-	if len(req.Signature) != bxmessage.ECDSASignatureLen {
-		return nil, status.Errorf(codes.InvalidArgument, "Signature is invalid")
-	}
-
-	ok, err := ValidateSignature(req.SenderAddress, req.Hash, req.Signature)
+	err = intent.ValidateSignature(req.SenderAddress, req.Hash, req.Signature)
 	if err != nil {
-		return nil, err
-	}
-
-	if !ok {
-		return nil, ErrInvalidSignature
+		return nil, status.Errorf(codes.InvalidArgument, err.Error())
 	}
 
 	intent, err := g.CreateIntent(req)
@@ -136,29 +122,13 @@ func (g *GatewayGrpc) SubmitIntentSolution(ctx context.Context, req *pb.SubmitIn
 
 	g.log.Infof("received SubmitIntentSolution request, solverAddress: %s", req.SolverAddress)
 
-	if !common.IsHexAddress(req.SolverAddress) {
-		return nil, status.Errorf(codes.InvalidArgument, "SolverAddress is invalid")
-	}
-
 	if len(req.IntentSolution) == 0 {
 		return nil, status.Errorf(codes.InvalidArgument, "IntentSolution is required")
 	}
 
-	if len(req.Hash) != bxmessage.Keccak256HashLen {
-		return nil, status.Errorf(codes.InvalidArgument, "Hash is invalid")
-	}
-
-	if len(req.Signature) != bxmessage.ECDSASignatureLen {
-		return nil, status.Errorf(codes.InvalidArgument, "Signature is invalid")
-	}
-
-	ok, err := ValidateSignature(req.SolverAddress, req.Hash, req.Signature)
+	err = intent.ValidateSignature(req.SolverAddress, req.Hash, req.Signature)
 	if err != nil {
-		return nil, err
-	}
-
-	if !ok {
-		return nil, ErrInvalidSignature
+		return nil, status.Errorf(codes.InvalidArgument, err.Error())
 	}
 
 	intentSolution, err := g.CreateIntentSolution(ctx, req)
@@ -190,20 +160,16 @@ func (g *GatewayGrpc) Intents(req *pb.IntentsRequest, stream pb.Gateway_IntentsS
 		return status.Error(codes.PermissionDenied, err.Error())
 	}
 
-	ok, err := ValidateSignature(req.SolverAddress, req.Hash, req.Signature)
+	err = intent.ValidateSignature(req.SolverAddress, req.Hash, req.Signature)
 	if err != nil {
-		return err
-	}
-
-	if !ok {
-		return status.Errorf(codes.InvalidArgument, ErrInvalidSignature.Error())
+		return status.Errorf(codes.InvalidArgument, err.Error())
 	}
 
 	if g.params.intentsManager.IntentsSubscriptionExists(req.SolverAddress) {
 		return status.Errorf(codes.AlreadyExists, "intents subscription for solver address %s already exists", req.SolverAddress)
 	}
 
-	g.params.intentsManager.AddIntentsSubscription(req)
+	g.params.intentsManager.AddIntentsSubscription(req.SolverAddress, req.Hash, req.Signature)
 	// send intentsSubscription to Relay
 	sub := bxmessage.NewIntentsSubscription(req.SolverAddress, req.Hash, req.Signature)
 	g.broadcast(sub, nil, utils.Relay)
@@ -227,20 +193,16 @@ func (g *GatewayGrpc) IntentSolutions(req *pb.IntentSolutionsRequest, stream pb.
 		return status.Error(codes.PermissionDenied, err.Error())
 	}
 
-	ok, err := ValidateSignature(req.DappAddress, req.Hash, req.Signature)
+	err = intent.ValidateSignature(req.DappAddress, req.Hash, req.Signature)
 	if err != nil {
-		return err
-	}
-
-	if !ok {
-		return status.Errorf(codes.InvalidArgument, ErrInvalidSignature.Error())
+		return status.Errorf(codes.InvalidArgument, err.Error())
 	}
 
 	if g.params.intentsManager.SolutionsSubscriptionExists(req.DappAddress) {
 		return status.Errorf(codes.AlreadyExists, "solutions subscription for dApp address %s already exists", req.DappAddress)
 	}
 
-	g.params.intentsManager.AddSolutionsSubscription(req)
+	g.params.intentsManager.AddSolutionsSubscription(req.DappAddress, req.Hash, req.Signature)
 	// send solutionsSubscription to Relay
 	sub := bxmessage.NewSolutionsSubscription(req.DappAddress, req.Hash, req.Signature)
 	g.broadcast(sub, nil, utils.Relay)
@@ -255,7 +217,7 @@ func (g *GatewayGrpc) IntentSolutions(req *pb.IntentSolutionsRequest, stream pb.
 	return g.handleSolutions(req, stream, types.UserIntentSolutionsFeed, *accountModel)
 }
 
-func (g *GatewayGrpc) handleSolutions(_ *pb.IntentSolutionsRequest, stream pb.Gateway_IntentSolutionsServer, feedType types.FeedType, account sdnmessage.Account) error {
+func (g *GatewayGrpc) handleSolutions(req *pb.IntentSolutionsRequest, stream pb.Gateway_IntentSolutionsServer, feedType types.FeedType, account sdnmessage.Account) error {
 	ci := types.ClientInfo{
 		AccountID:     account.AccountID,
 		Tier:          string(account.TierName),
@@ -280,6 +242,10 @@ func (g *GatewayGrpc) handleSolutions(_ *pb.IntentSolutionsRequest, stream pb.Ga
 		case notification := <-sub.FeedChan:
 			solutionNotification := (notification).(*types.UserIntentSolutionNotification)
 			intentSolution := solutionNotification.UserIntentSolution
+
+			if intentSolution.DappAddress != req.DappAddress {
+				continue
+			}
 
 			err = stream.Send(&pb.IntentSolutionsReply{
 				IntentId:       intentSolution.IntentID,
@@ -363,115 +329,4 @@ func (g *GatewayGrpc) validateIntentAuthHeader(authHeader string, required, allo
 	}
 
 	return &accountModel, nil
-}
-
-// ValidateSignature validates the signature
-func ValidateSignature(signingAddress string, hash []byte, signature []byte) (bool, error) {
-	addressBytes := common.HexToAddress(signingAddress)
-
-	pubKey, err := crypto.SigToPub(hash, signature)
-	if err != nil {
-		return false, err
-	}
-
-	recoveredAddress := crypto.PubkeyToAddress(*pubKey)
-
-	return bytes.Equal(recoveredAddress.Bytes(), addressBytes.Bytes()), nil
-}
-
-type subscription struct {
-	addr      string
-	hash      []byte
-	signature []byte
-}
-
-// IntentsManager interface for mocking
-type IntentsManager interface {
-	SubscriptionMessages() []bxmessage.Message
-	AddIntentsSubscription(req *pb.IntentsRequest)
-	RmIntentsSubscription(solverAddr string)
-	IntentsSubscriptionExists(solverAddr string) bool
-	AddSolutionsSubscription(req *pb.IntentSolutionsRequest)
-	RmSolutionsSubscription(dAppAddr string)
-	SolutionsSubscriptionExists(dAppAddr string) bool
-}
-
-func newIntentsManager() *intentsManager {
-	return &intentsManager{
-		intentsSubscriptions:   make(map[string]*subscription),
-		isMx:                   new(sync.RWMutex),
-		solutionsSubscriptions: make(map[string]*subscription),
-		ssMx:                   new(sync.RWMutex),
-	}
-}
-
-type intentsManager struct {
-	intentsSubscriptions   map[string]*subscription
-	isMx                   *sync.RWMutex
-	solutionsSubscriptions map[string]*subscription
-	ssMx                   *sync.RWMutex
-}
-
-func (i *intentsManager) SubscriptionMessages() []bxmessage.Message {
-	var m = make([]bxmessage.Message, 0)
-
-	i.isMx.RLock()
-	for _, v := range i.intentsSubscriptions {
-		m = append(m, bxmessage.NewIntentsSubscription(v.addr, v.hash, v.signature))
-	}
-	i.isMx.RUnlock()
-
-	i.ssMx.RLock()
-	for _, v := range i.solutionsSubscriptions {
-		m = append(m, bxmessage.NewSolutionsSubscription(v.addr, v.hash, v.signature))
-	}
-	i.ssMx.RUnlock()
-
-	return m
-}
-
-func (i *intentsManager) AddIntentsSubscription(req *pb.IntentsRequest) {
-	i.isMx.Lock()
-	defer i.isMx.Unlock()
-	i.intentsSubscriptions[req.SolverAddress] = &subscription{
-		addr:      req.SolverAddress,
-		hash:      req.Hash,
-		signature: req.Signature,
-	}
-}
-
-func (i *intentsManager) RmIntentsSubscription(solverAddr string) {
-	i.isMx.Lock()
-	defer i.isMx.Unlock()
-	delete(i.intentsSubscriptions, solverAddr)
-}
-
-func (i *intentsManager) IntentsSubscriptionExists(solverAddr string) bool {
-	i.isMx.RLock()
-	defer i.isMx.RUnlock()
-	_, ok := i.intentsSubscriptions[solverAddr]
-	return ok
-}
-
-func (i *intentsManager) AddSolutionsSubscription(req *pb.IntentSolutionsRequest) {
-	i.ssMx.Lock()
-	defer i.ssMx.Unlock()
-	i.solutionsSubscriptions[req.DappAddress] = &subscription{
-		addr:      req.DappAddress,
-		hash:      req.Hash,
-		signature: req.Signature,
-	}
-}
-
-func (i *intentsManager) RmSolutionsSubscription(dAppAddr string) {
-	i.ssMx.Lock()
-	defer i.ssMx.Unlock()
-	delete(i.solutionsSubscriptions, dAppAddr)
-}
-
-func (i *intentsManager) SolutionsSubscriptionExists(dAppAddr string) bool {
-	i.ssMx.Lock()
-	defer i.ssMx.Unlock()
-	_, ok := i.solutionsSubscriptions[dAppAddr]
-	return ok
 }

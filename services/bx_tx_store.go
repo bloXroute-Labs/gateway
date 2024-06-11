@@ -10,6 +10,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	pbbase "github.com/bloXroute-Labs/gateway/v2/protobuf"
+	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
@@ -17,9 +18,13 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
+const defaultMaxTxAge = 24 * 3 * time.Hour
+
 // BxTxStore represents the storage of transaction info for a given node
 type BxTxStore struct {
-	clock                 utils.Clock
+	clock         utils.Clock
+	networkConfig sdnmessage.BlockchainNetworks
+
 	hashToContent         *syncmap.SyncMap[string, *types.BxTransaction]
 	shortIDToHash         *syncmap.SyncMap[types.ShortID, types.SHA256Hash]
 	blobCompressorStorage BlobCompressorStorage
@@ -28,7 +33,6 @@ type BxTxStore struct {
 	timeToAvoidReEntry time.Duration
 
 	cleanupFreq            time.Duration
-	maxTxAge               time.Duration
 	noSIDAge               time.Duration
 	quit                   chan bool
 	lock                   sync.Mutex
@@ -38,24 +42,26 @@ type BxTxStore struct {
 }
 
 // NewBxTxStore creates a new BxTxStore to store and processes all relevant transactions
-func NewBxTxStore(cleanupFreq time.Duration, maxTxAge time.Duration, noSIDAge time.Duration,
+func NewBxTxStore(cleanupFreq time.Duration, networkConfig sdnmessage.BlockchainNetworks, noSIDAge time.Duration,
 	assigner ShortIDAssigner, seenTxs HashHistory, cleanedShortIDsChannel chan types.ShortIDsByNetwork,
-	timeToAvoidReEntry time.Duration, bloom BloomFilter, blobCompressorStorage BlobCompressorStorage) BxTxStore {
-	return newBxTxStore(utils.RealClock{}, cleanupFreq, maxTxAge, noSIDAge, assigner, seenTxs, cleanedShortIDsChannel, timeToAvoidReEntry, bloom, blobCompressorStorage)
+	timeToAvoidReEntry time.Duration, bloom BloomFilter, blobCompressorStorage BlobCompressorStorage,
+) BxTxStore {
+	return newBxTxStore(utils.RealClock{}, networkConfig, cleanupFreq, noSIDAge, assigner, seenTxs, cleanedShortIDsChannel, timeToAvoidReEntry, bloom, blobCompressorStorage)
 }
 
-func newBxTxStore(clock utils.Clock, cleanupFreq time.Duration, maxTxAge time.Duration,
+func newBxTxStore(clock utils.Clock, networkConfig sdnmessage.BlockchainNetworks, cleanupFreq time.Duration,
 	noSIDAge time.Duration, assigner ShortIDAssigner, seenTxs HashHistory, cleanedShortIDsChannel chan types.ShortIDsByNetwork,
-	timeToAvoidReEntry time.Duration, bloom BloomFilter, blobCompressorStorage BlobCompressorStorage) BxTxStore {
+	timeToAvoidReEntry time.Duration, bloom BloomFilter, blobCompressorStorage BlobCompressorStorage,
+) BxTxStore {
 	return BxTxStore{
 		clock:                  clock,
+		networkConfig:          networkConfig,
 		hashToContent:          syncmap.NewStringMapOf[*types.BxTransaction](),
 		shortIDToHash:          syncmap.NewIntegerMapOf[types.ShortID, types.SHA256Hash](),
 		blobCompressorStorage:  blobCompressorStorage,
 		seenTxs:                seenTxs,
 		timeToAvoidReEntry:     timeToAvoidReEntry,
 		cleanupFreq:            cleanupFreq,
-		maxTxAge:               maxTxAge,
 		noSIDAge:               noSIDAge,
 		quit:                   make(chan bool),
 		assigner:               assigner,
@@ -186,9 +192,8 @@ func (t *BxTxStore) RemoveHashes(hashes *types.SHA256HashList, reEntryProtection
 func (t *BxTxStore) Iter() (iter <-chan *types.BxTransaction) {
 	newChan := make(chan *types.BxTransaction)
 	go func() {
-
 		t.hashToContent.Range(func(key string, bxTransaction *types.BxTransaction) bool {
-			if t.clock.Now().Sub(bxTransaction.AddTime()) < t.maxTxAge {
+			if t.clock.Now().Sub(bxTransaction.AddTime()) < t.maxTxAge(bxTransaction.NetworkNum()) {
 				newChan <- bxTransaction
 			}
 			return true
@@ -201,13 +206,14 @@ func (t *BxTxStore) Iter() (iter <-chan *types.BxTransaction) {
 
 // Add adds a new transaction to BxTxStore
 func (t *BxTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID types.ShortID, networkNum types.NetworkNum,
-	_ bool, flags types.TxFlags, timestamp time.Time, _ int64, sender types.Sender) TransactionResult {
+	_ bool, flags types.TxFlags, timestamp time.Time, _ int64, sender types.Sender,
+) TransactionResult {
 	if shortID == types.ShortIDEmpty && len(content) == 0 {
 		debug.PrintStack()
 		panic("Bad usage of Add function - content and shortID can't be both missing")
 	}
 	result := TransactionResult{}
-	if t.clock.Now().Sub(timestamp) > t.maxTxAge {
+	if t.clock.Now().Sub(timestamp) > t.maxTxAge(networkNum) {
 		result.Transaction = types.NewBxTransaction(hash, networkNum, flags, timestamp)
 		result.DebugData = fmt.Sprintf("Transaction is too old - %v", timestamp)
 		return result
@@ -290,7 +296,7 @@ type networkData struct {
 func (t *BxTxStore) clean() (cleaned int, cleanedShortIDs types.ShortIDsByNetwork) {
 	currTime := t.clock.Now()
 
-	var networks = make(map[types.NetworkNum]*networkData)
+	networks := make(map[types.NetworkNum]*networkData)
 	cleanedShortIDs = make(types.ShortIDsByNetwork)
 
 	t.hashToContent.Range(func(key string, bxTransaction *types.BxTransaction) bool {
@@ -308,22 +314,21 @@ func (t *BxTxStore) clean() (cleaned int, cleanedShortIDs types.ShortIDsByNetwor
 	for net, netData := range networks {
 		// if we are below the number of allowed Txs, no need to do anything
 		if len(netData.ages) <= bxgateway.TxStoreMaxSize {
-			networks[net].maxAge = t.maxTxAge
+			networks[net].maxAge = t.maxTxAge(net)
 			continue
 		}
 		// per network, sort ages in ascending order
 		sort.Ints(netData.ages)
 		// in order to avoid many cleanup msgs, cleanup only 90% of the TxStoreMaxSize
 		networks[net].maxAge = time.Duration(netData.ages[int(bxgateway.TxStoreMaxSize*0.9)-1]) * time.Second
-		if networks[net].maxAge > t.maxTxAge {
-			networks[net].maxAge = t.maxTxAge
+		if networks[net].maxAge > t.maxTxAge(net) {
+			networks[net].maxAge = t.maxTxAge(net)
 		}
 		log.Debugf("TxStore size for network %v is %v. Cleaning %v transactions older than %v",
 			net, len(netData.ages), len(netData.ages)-bxgateway.TxStoreMaxSize, networks[net].maxAge)
 	}
 
 	t.hashToContent.Range(func(key string, bxTransaction *types.BxTransaction) bool {
-
 		networkNum := bxTransaction.NetworkNum()
 		netData, netDataExists := networks[networkNum]
 		removeReason := ""
@@ -422,12 +427,12 @@ func (t *BxTxStore) Summarize() *pbbase.TxStoreReply {
 	}
 
 	t.hashToContent.Range(func(key string, bxTransaction *types.BxTransaction) bool {
-
 		networkData, exists := networks[bxTransaction.NetworkNum()]
 		if !exists {
 			networkData = &pbbase.TxStoreNetworkData{}
 			networkData.OldestTx = bxTransaction.Protobuf()
 			networkData.TxCount++
+			networkData.SizeBytes += uint64(len(bxTransaction.Content()))
 			networkData.Network = uint64(bxTransaction.NetworkNum())
 			networkData.ShortIdCount += uint64(len(bxTransaction.ShortIDs()))
 			networks[bxTransaction.NetworkNum()] = networkData
@@ -441,6 +446,7 @@ func (t *BxTxStore) Summarize() *pbbase.TxStoreReply {
 			networkData.OldestTx = bxTransaction.Protobuf()
 		}
 		networkData.TxCount++
+		networkData.SizeBytes += uint64(len(bxTransaction.Content()))
 		networkData.ShortIdCount += uint64(len(bxTransaction.ShortIDs()))
 
 		return true
@@ -459,4 +465,13 @@ func (t *BxTxStore) refreshSeenTx(hash types.SHA256Hash) bool {
 		return true
 	}
 	return false
+}
+
+func (t *BxTxStore) maxTxAge(networkNum types.NetworkNum) time.Duration {
+	config := t.networkConfig[networkNum]
+	if config == nil || config.MaxTxAgeSeconds == 0 {
+		return defaultMaxTxAge
+	}
+
+	return time.Duration(config.MaxTxAgeSeconds) * time.Second
 }

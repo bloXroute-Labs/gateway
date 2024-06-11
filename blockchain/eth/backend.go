@@ -395,15 +395,6 @@ func (h *Handler) processBDNBlock(bdnBlock *types.BxBlock) {
 	} else {
 		h.broadcastBlock(ethBlock, ethBlockInfo.TotalDifficulty(), nil)
 	}
-
-	switch h.config.Network {
-	case network.BSCMainnetChainID, network.BSCTestnetChainID:
-		if ethBlock.Number().Uint64()%200 == 0 {
-			if err := h.processExtraData(ethBlock); err != nil {
-				log.Errorf("failed to process the epoch containing validator list, %v", err)
-			}
-		}
-	}
 }
 
 func (h *Handler) processBlockchainStatusRequest() {
@@ -708,75 +699,6 @@ func (h *Handler) processTransactionHashes(peer *Peer, txHashes []ethcommon.Hash
 	return err
 }
 
-func (h *Handler) processExtraData(block *ethtypes.Block) error {
-	var ed ExtraData
-	err := ed.UnmarshalJSON(block.Header().Extra)
-	if err != nil {
-		log.Errorf("can't extract extra data for block height %v", block.Number().Uint64())
-	} else {
-		// extraData contains list of validators now
-		validatorInfo := blockchain.ValidatorListInfo{
-			BlockHeight:   block.Number().Uint64(),
-			ValidatorList: ed.ValidatorList,
-		}
-		err = h.bridge.SendValidatorListInfo(&validatorInfo)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// ExtraData is used for processing extra data in a BSC block
-type ExtraData struct {
-	ValidatorList []string
-}
-
-// UnmarshalJSON is used for deserialize BSC block extra data
-func (ed *ExtraData) UnmarshalJSON(b []byte) error {
-	addressLength := 20
-	bLSPublicKeyLength := 48
-
-	// follow order in extra field, from Luban upgrade, https://github.com/bnb-chain/bsc/commit/c208d28a68c414541cfaf2651b7cff725d2d3221
-	// |---Extra Vanity---|---Validators Number and Validators Bytes (or Empty)---|---Vote Attestation (or Empty)---|---Extra Seal---|
-	extraVanityLength := 32  // Fixed number of extra-data prefix bytes reserved for signer vanity
-	validatorNumberSize := 1 // Fixed number of extra prefix bytes reserved for validator number after Luban
-	validatorBytesLength := addressLength + bLSPublicKeyLength
-	extraSealLength := 65 // Fixed number of extra-data suffix bytes reserved for signer seal
-
-	// 32 + 65 + 1
-	if len(b) < 98 {
-		return errors.New("wrong extra data, too small")
-	}
-
-	data := b[extraVanityLength : len(b)-extraSealLength]
-	dataLength := len(data)
-
-	// parse Validators and Vote Attestation
-	if dataLength > 0 {
-		// parse Validators
-		if data[0] != '\xf8' { // rlp format of attestation begin with 'f8'
-			validatorNum := int(data[0])
-			validatorBytesTotalLength := validatorNumberSize + validatorNum*validatorBytesLength
-			if dataLength < validatorBytesTotalLength {
-				return fmt.Errorf("parse validators failed, validator list is not aligned")
-			}
-
-			validatorList := make([]string, 0, validatorNum)
-			data = data[validatorNumberSize:]
-			for i := 0; i < validatorNum; i++ {
-				validatorAddr := ethcommon.BytesToAddress(data[i*validatorBytesLength : i*validatorBytesLength+ethcommon.AddressLength])
-				validatorList = append(validatorList, validatorAddr.String())
-			}
-
-			ed.ValidatorList = validatorList
-		}
-	}
-
-	return nil
-}
-
 func (h *Handler) processBlock(peer *Peer, blockInfo *BlockInfo) error {
 	block := blockInfo.Block
 	blockHash := block.Hash()
@@ -786,12 +708,6 @@ func (h *Handler) processBlock(peer *Peer, blockInfo *BlockInfo) error {
 	case network.EthMainnetChainID:
 		peer.Log().Errorf("ignoring block[hash=%s,height=%d] from old node", blockHash.String(), blockHeight)
 		return nil
-	case network.BSCMainnetChainID, network.BSCTestnetChainID:
-		if blockHeight.Uint64()%200 == 0 {
-			if err := h.processExtraData(block); err != nil {
-				log.Errorf("failed to process the epoch containing validator list, %v", err)
-			}
-		}
 	}
 
 	if err := h.chain.ValidateBlock(block); err != nil {
