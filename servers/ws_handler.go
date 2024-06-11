@@ -12,6 +12,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/sourcegraph/jsonrpc2"
@@ -23,18 +24,20 @@ var (
 )
 
 type handlerObj struct {
-	FeedManager              *FeedManager
-	ClientReq                *ClientReq
-	remoteAddress            string
-	connectionAccount        sdnmessage.Account
-	getQuotaUsage            func(accountID string) (*connections.QuotaResponseBody, error)
-	enableBlockchainRPC      bool
-	pendingTxsSourceFromNode *bool
-	log                      *log.Entry
-	ethSubscribeIDToChanMap  map[string]chan bool
-	headers                  map[string]string
-	stats                    statistics.Stats
-	txFromFieldIncludable    bool
+	FeedManager                 *FeedManager
+	ClientReq                   *ClientReq
+	intentsManager              services.IntentsManager
+	remoteAddress               string
+	connectionAccount           sdnmessage.Account
+	getQuotaUsage               func(accountID string) (*connections.QuotaResponseBody, error)
+	enableBlockchainRPC         bool
+	pendingTxsSourceFromNode    *bool
+	log                         *log.Entry
+	ethSubscribeIDToChanMap     map[string]chan bool
+	headers                     map[string]string
+	stats                       statistics.Stats
+	txFromFieldIncludable       bool
+	allowIntroductoryTierAccess bool
 }
 
 // Handle handling client requests
@@ -44,7 +47,15 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		h.log.Debugf("websocket handling for method %v ended. Duration %v", jsonrpc.RPCRequestType(req.Method), time.Since(start))
 	}()
 
-	switch jsonrpc.RPCRequestType(req.Method) {
+	method := jsonrpc.RPCRequestType(req.Method)
+
+	if !h.allowTier(method) {
+		SendErrorMsg(ctx, jsonrpc.Blocked, "account must be enterprise / enterprise elite / ultra", conn, req.ID)
+		conn.Close()
+		return
+	}
+
+	switch method {
 	case jsonrpc.RPCSubscribe:
 		h.handleRPCSubscribe(ctx, conn, req)
 	case jsonrpc.RPCUnsubscribe:
@@ -53,6 +64,10 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		h.handleRPCTx(ctx, conn, req)
 	case jsonrpc.RPCBatchTx:
 		h.handleRPCBatchTx(ctx, conn, req)
+	case jsonrpc.RPCSubmitIntent:
+		h.handleSubmitIntent(ctx, conn, req)
+	case jsonrpc.RPCSubmitIntentSolution:
+		h.handleSubmitIntentSolution(ctx, conn, req)
 	case jsonrpc.RPCPing:
 		response := rpcPingResponse{
 			Pong: time.Now().UTC().Format(bxgateway.MicroSecTimeFormat),
@@ -121,6 +136,21 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 			}
 		}
 	}
+}
+
+// check if the account has the right tier to access
+func (h *handlerObj) allowTier(method jsonrpc.RPCRequestType) bool {
+	if h.allowIntroductoryTierAccess && // if "allowIntroductoryTierAccess" == false, then this check was already done by the `authorize` method
+		method != jsonrpc.RPCSubscribe &&
+		method != jsonrpc.RPCUnsubscribe &&
+		method != jsonrpc.RPCSubmitIntent &&
+		method != jsonrpc.RPCSubmitIntentSolution &&
+		method != jsonrpc.RPCPing &&
+		!h.connectionAccount.TierName.IsEnterprise() {
+		return false
+	}
+
+	return true
 }
 
 // sendNotification - build a response according to client request and notify client

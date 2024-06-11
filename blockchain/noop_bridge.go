@@ -182,16 +182,6 @@ func (n NoOpBxBridge) ReceiveNodeConnectionCheckResponse() <-chan types.NodeEndp
 	return make(chan types.NodeEndpoint)
 }
 
-// SendValidatorListInfo is a no-op
-func (n *NoOpBxBridge) SendValidatorListInfo(info *ValidatorListInfo) error {
-	return nil
-}
-
-// ReceiveValidatorListInfo is a no-op
-func (n *NoOpBxBridge) ReceiveValidatorListInfo() <-chan *ValidatorListInfo {
-	return make(chan *ValidatorListInfo)
-}
-
 // SendBlockchainConnectionStatus is a no-op
 func (n NoOpBxBridge) SendBlockchainConnectionStatus(ConnectionStatus) error { return nil }
 

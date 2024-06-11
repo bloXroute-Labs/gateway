@@ -61,6 +61,11 @@ func (vu *ValidatorUpdates) Pack(protocol Protocol) ([]byte, error) {
 	binary.LittleEndian.PutUint16(buf[offset:], vu.onlineListLength)
 	offset += types.UInt16Len
 	copy(buf[offset:offset+len(vu.onlineList)*common.AddressLength], listBytes)
+	offset += len(vu.onlineList) * common.AddressLength
+
+	if err := checkBuffEnd(&buf, offset); err != nil {
+		return nil, err
+	}
 
 	return buf, nil
 }

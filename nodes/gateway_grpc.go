@@ -75,7 +75,7 @@ type GatewayGrpcParams struct {
 	txFromFieldIncludable       bool
 	blockProposer               bsc.BlockProposer
 	allowIntroductoryTierAccess bool
-	intentsManager              IntentsManager
+	intentsManager              services.IntentsManager
 	grpcFeedManager             GRPCFeedManager
 }
 
@@ -912,17 +912,20 @@ func (g *GatewayGrpc) txReceipts(req *pb.TxReceiptsRequest, stream pb.Gateway_Tx
 		includes = req.GetIncludes()
 	}
 
-	for notification := range sub.FeedChan {
-		txReceiptsNotificationReply := notification.WithFields(includes).(*types.TxReceiptsNotification)
-		for _, receipt := range txReceiptsNotificationReply.Receipts {
-			grpcTxReceiptsNotificationReply := generateTxReceiptReply(receipt)
-			if err := stream.Send(grpcTxReceiptsNotificationReply); err != nil {
-				return status.Error(codes.Internal, err.Error())
+	for {
+		select {
+		case errMsg := <-sub.ErrMsgChan:
+			return status.Error(codes.Internal, errMsg)
+		case notification := <-sub.FeedChan:
+			txReceiptsNotificationReply := notification.WithFields(includes).(*types.TxReceiptsNotification)
+			for _, receipt := range txReceiptsNotificationReply.Receipts {
+				grpcTxReceiptsNotificationReply := generateTxReceiptReply(receipt)
+				if err := stream.Send(grpcTxReceiptsNotificationReply); err != nil {
+					return status.Error(codes.Internal, err.Error())
+				}
 			}
 		}
 	}
-
-	return status.Error(codes.Internal, "error when reading new block from gRPC txReceipts")
 }
 
 func generateTxReceiptReply(n *types.TxReceipt) *pb.TxReceiptsReply {

@@ -115,8 +115,16 @@ func (h *Header) String() string {
 
 func checkBufSize(buf *[]byte, offset int, size int) error {
 	if len(*buf) < offset+size {
-		return fmt.Errorf("Invalid message format. %v bytes needed at offset %v but buff size is %v. buffer: %v",
+		return fmt.Errorf("invalid message format. %v bytes needed at offset %v but buff size is %v. buffer: %v",
 			size, offset, len(*buf), hex.EncodeToString(*buf))
 	}
+	return nil
+}
+
+func checkBuffEnd(buf *[]byte, offset int) error {
+	if offset != len(*buf)-1 {
+		return fmt.Errorf("invalid message format. Expected offset %v but got %v", len(*buf)-1, offset)
+	}
+
 	return nil
 }

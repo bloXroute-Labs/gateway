@@ -86,9 +86,9 @@ func (m *WSManager) SyncedProvider() (blockchain.WSProvider, bool) {
 // ProviderWithBlock returns a WSProvider that has the blockNumber
 // If preferredEndpoint is not nil, it will try to return a WSProvider that matches the endpoint
 // If preferredEndpoint is nil, it will return the first WSProvider that has the blockNumber
-func (m *WSManager) ProviderWithBlock(preferredEndpoint *types.NodeEndpoint, blockNumber uint64) (blockchain.WSProvider, bool) {
+func (m *WSManager) ProviderWithBlock(preferredEndpoint *types.NodeEndpoint, blockNumber uint64) (blockchain.WSProvider, error) {
 	if !m.Synced() {
-		return nil, false
+		return nil, fmt.Errorf("failed to provide block %v to TxReceipts, no synced ws connection", blockNumber)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), bxgateway.EthFetchBlockDeadlineInterval)
@@ -98,23 +98,21 @@ func (m *WSManager) ProviderWithBlock(preferredEndpoint *types.NodeEndpoint, blo
 		provider, ok := m.syncedPreferredProvider(preferredEndpoint)
 		if ok {
 			if err := m.waitProviderBlock(ctx, provider, blockNumber); err != nil {
-				log.Warnf("failed to wait for block %v from %v: %v", blockNumber, provider.BlockchainPeerEndpoint(), err)
-				return nil, false
+				return nil, fmt.Errorf("failed to wait for block %v from %v: %v", blockNumber, provider.BlockchainPeerEndpoint(), err)
 			}
 
 			log.Debugf("found blockchain provider %v", provider.BlockchainPeerEndpoint().IPPort())
 
-			return provider, true
+			return provider, nil
 		}
 	}
 
 	provider, err := m.firstSyncedProviderWithBlock(ctx, blockNumber)
 	if err != nil {
-		log.Warnf("failed to find synced provider for block %v: %v", blockNumber, err)
-		return nil, false
+		return nil, fmt.Errorf("failed to find synced provider for block %v: %v", blockNumber, err)
 	}
 
-	return provider, true
+	return provider, nil
 }
 
 func (m *WSManager) syncedPreferredProvider(preferredEndpoint *types.NodeEndpoint) (blockchain.WSProvider, bool) {

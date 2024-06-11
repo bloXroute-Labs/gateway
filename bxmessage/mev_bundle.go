@@ -396,6 +396,10 @@ func (m MEVBundle) Pack(protocol Protocol) ([]byte, error) {
 		offset += types.UInt8Len //nolint:ineffassign
 	}
 
+	if err := checkBuffEnd(&buf, offset); err != nil {
+		return nil, err
+	}
+
 	return buf, nil
 }
 
@@ -658,7 +662,7 @@ func checkBuilderSize(builderSize int) error {
 }
 
 func (m *MEVBundle) decodeTransactions() ([][]byte, error) {
-	var decoded = make([][]byte, 0, len(m.Transactions))
+	decoded := make([][]byte, 0, len(m.Transactions))
 
 	for _, tx := range m.Transactions {
 		txBytes, err := hex.DecodeString(strings.TrimPrefix(tx, "0x"))
@@ -673,7 +677,7 @@ func (m *MEVBundle) decodeTransactions() ([][]byte, error) {
 }
 
 func (m *MEVBundle) decodeRevertingHashes() ([][]byte, error) {
-	var decoded = make([][]byte, 0, len(m.RevertingHashes))
+	decoded := make([][]byte, 0, len(m.RevertingHashes))
 
 	for _, hash := range m.RevertingHashes {
 		// Remove the "0x" prefix and decode the hex string

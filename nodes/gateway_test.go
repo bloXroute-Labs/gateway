@@ -48,6 +48,7 @@ var (
 	networkNum           types.NetworkNum = 5
 	chainID              int64            = network.EthMainnetChainID
 	blockchainIPEndpoint                  = types.NodeEndpoint{IP: "123.45.6.78", Port: 8001}
+	blockchainNetworks                    = sdnmessage.BlockchainNetworks{5: bxmock.MockNetwork(networkNum, "Ethereum", "Mainnet", 0)}
 )
 
 func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
@@ -65,10 +66,9 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 	sdn.EXPECT().NetworkNum().Return(networkNum).AnyTimes()
 	sdn.EXPECT().NodeModel().Return(&nm).AnyTimes()
 	sdn.EXPECT().AccountModel().Return(sdnmessage.Account{}).AnyTimes()
-	networks := sdnmessage.BlockchainNetworks{5: bxmock.MockNetwork(networkNum, "Ethereum", "Mainnet", 0)}
-	sdn.EXPECT().Networks().Return(&networks).AnyTimes()
+	sdn.EXPECT().Networks().Return(&blockchainNetworks).AnyTimes()
 	sdn.EXPECT().FindNetwork(gomock.Any()).DoAndReturn(func(num types.NetworkNum) (*sdnmessage.BlockchainNetwork, error) {
-		return (networks)[5], nil
+		return (blockchainNetworks)[5], nil
 	}).AnyTimes()
 
 	logConfig := log.Config{
@@ -131,7 +131,7 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 	g.setSyncWithRelay()
 	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
 
-	g.feedManager = servers.NewFeedManager(g.context, g, g.feedManagerChan, services.NewNoOpSubscriptionServices(),
+	g.feedManager = servers.NewFeedManager(g.context, g, g.feedManagerChan, nil, services.NewNoOpSubscriptionServices(),
 		networkNum, types.NetworkID(chainID), g.sdn.NodeModel().NodeID,
 		g.wsManager, g.sdn.AccountModel(), nil,
 		"", "", *g.BxConfig, g.stats, nil, nil)
@@ -139,13 +139,13 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 }
 
 func newBP() (*services.BxTxStore, services.BlockProcessor) {
-	txStore := services.NewBxTxStore(time.Minute, time.Minute, time.Minute, services.NewEmptyShortIDAssigner(), services.NewHashHistory("seenTxs", time.Minute), nil, 30*time.Minute, services.NoOpBloomFilter{}, services.NewNoOpBlockCompressorStorage())
+	txStore := services.NewBxTxStore(time.Minute, blockchainNetworks, time.Minute, services.NewEmptyShortIDAssigner(), services.NewHashHistory("seenTxs", time.Minute), nil, 30*time.Minute, services.NoOpBloomFilter{}, services.NewNoOpBlockCompressorStorage())
 	bp := services.NewBlockProcessor(&txStore)
 	return &txStore, bp
 }
 
-func addRelayConn(g *gateway) (*bxmock.MockTLS, *handler.Relay) {
-	mockTLS := bxmock.NewMockTLS("1.1.1.1", 1800, "", utils.Relay, "")
+func addRelayConn(g *gateway) (*connections.MockTLS, *handler.Relay) {
+	mockTLS := connections.NewMockTLS("1.1.1.1", 1800, "", utils.Relay, "")
 	relayConn := handler.NewRelay(g,
 		func() (connections.Socket, error) {
 			return mockTLS, nil
@@ -206,7 +206,7 @@ func processEthTxOnBridge(t *testing.T, bridge blockchain.Bridge, ethTx *ethtype
 	assert.NoError(t, err)
 }
 
-func assertTransactionSentToRelay(t *testing.T, ethTx *ethtypes.Transaction, ethTxBytes []byte, relayTLS *bxmock.MockTLS, relayConn *handler.Relay) {
+func assertTransactionSentToRelay(t *testing.T, ethTx *ethtypes.Transaction, ethTxBytes []byte, relayTLS *connections.MockTLS, relayConn *handler.Relay) {
 	msgBytes, err := relayTLS.MockAdvanceSent()
 	if err != nil {
 		assert.FailNow(t, "no messages sent on relay connection")
@@ -226,12 +226,12 @@ func assertTransactionSentToRelay(t *testing.T, ethTx *ethtypes.Transaction, eth
 	}
 }
 
-func assertNoTransactionSentToRelay(t *testing.T, relayTLS *bxmock.MockTLS) {
+func assertNoTransactionSentToRelay(t *testing.T, relayTLS *connections.MockTLS) {
 	_, err := relayTLS.MockAdvanceSent()
 	assert.NotNil(t, err)
 }
 
-func assertNoBlockSentToRelay(t *testing.T, relayTLS *bxmock.MockTLS) {
+func assertNoBlockSentToRelay(t *testing.T, relayTLS *connections.MockTLS) {
 	_, err := relayTLS.MockAdvanceSent()
 	assert.NotNil(t, err)
 }
@@ -308,7 +308,7 @@ func TestGateway_HandleTransactionFromBlockchain_SeenInBloomFilter(t *testing.T)
 	defer func() { _ = os.Remove("bloom") }()
 	require.NoError(t, err)
 
-	g.TxStore = services.NewEthTxStore(g.clock, 30*time.Minute, 72*time.Hour, 10*time.Minute,
+	g.TxStore = services.NewEthTxStore(g.clock, 30*time.Minute, 10*time.Minute,
 		services.NewEmptyShortIDAssigner(), services.NewHashHistory("seenTxs", 30*time.Minute), nil,
 		*g.sdn.Networks(), bf, services.NewNoOpBlockCompressorStorage())
 
@@ -329,7 +329,7 @@ func TestGateway_HandleTransactionFromBlockchain_SeenInBloomFilter(t *testing.T)
 	time.Sleep(time.Microsecond)
 
 	// create empty TxStore to make sure transaction is ignored due to bloom_filter
-	g.TxStore = services.NewEthTxStore(g.clock, 30*time.Minute, 72*time.Hour, 10*time.Minute,
+	g.TxStore = services.NewEthTxStore(g.clock, 30*time.Minute, 10*time.Minute,
 		services.NewEmptyShortIDAssigner(), services.NewHashHistory("seenTxs", 30*time.Minute), nil,
 		*g.sdn.Networks(), bf, services.NewNoOpBlockCompressorStorage())
 
@@ -1506,7 +1506,6 @@ func TestGateway_SendStatsOnInterval(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("sendStats did not return within the expected time")
 	}
-
 }
 
 func TestGateway_Authorize(t *testing.T) {
@@ -1616,7 +1615,6 @@ func TestGateway_Authorize(t *testing.T) {
 		{
 			name: "success with enterprise account",
 			fields: fields{
-
 				sdnAccountModel: sdnAccountModelEnterprise,
 				accountFetcher: func(accountID types.AccountID) (*accountResult, error) {
 					return &accountResult{account: sdnAccountModelEnterprise}, nil
@@ -1666,7 +1664,6 @@ func TestGateway_Authorize(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
 			ctl := gomock.NewController(t)
 			mockedSdn := mock.NewMockSDNHTTP(ctl)
 

@@ -58,23 +58,47 @@ func (m *Hello) Pack(protocol Protocol) ([]byte, error) {
 		copy(buf[offset:], m.ClientVersion)
 		offset += ClientVersionLen
 	}
+
+	if err := checkBuffEnd(&buf, offset); err != nil {
+		return nil, err
+	}
+
 	m.Header.Pack(&buf, "hello")
 	return buf, nil
-
 }
 
 // Unpack deserializes a Hello from a buffer
 func (m *Hello) Unpack(buf []byte, protocol Protocol) error {
 	offset := HeaderLen
+
+	if err := checkBufSize(&buf, offset, ProtocolLen); err != nil {
+		return err
+	}
 	m.Protocol = Protocol(binary.LittleEndian.Uint32(buf[offset:]))
 	offset += ProtocolLen
+
+	if err := checkBufSize(&buf, offset, types.NetworkNumLen); err != nil {
+		return err
+	}
 	m.networkNumber = types.NetworkNum(binary.LittleEndian.Uint32(buf[offset:]))
 	offset += types.NetworkNumLen
+
+	if err := checkBufSize(&buf, offset, types.NodeIDLen); err != nil {
+		return err
+	}
 	m.NodeID = types.NodeID(buf[offset:])
 	offset += types.NodeIDLen
+
 	if m.Protocol >= MEVProtocol {
+		if err := checkBufSize(&buf, offset, CapabilitiesLen); err != nil {
+			return err
+		}
 		m.Capabilities = types.CapabilityFlags(binary.LittleEndian.Uint16(buf[offset:]))
 		offset += CapabilitiesLen
+
+		if err := checkBufSize(&buf, offset, ClientVersionLen); err != nil {
+			return err
+		}
 		m.ClientVersion = string(buf[offset:])
 		offset += ClientVersionLen
 	}

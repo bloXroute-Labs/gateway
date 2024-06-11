@@ -15,8 +15,7 @@ func (m *BlockConfirmation) size() uint32 {
 
 // Pack serializes a BlockConfirmation into a buffer for sending
 func (m BlockConfirmation) Pack(protocol Protocol) ([]byte, error) {
-	buf, err := m.abstractCleanup.Pack(protocol, BlockConfirmationType)
-	return buf, err
+	return m.abstractCleanup.Pack(protocol, BlockConfirmationType)
 }
 
 // Unpack deserializes a BlockConfirmation from a buffer

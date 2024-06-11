@@ -218,8 +218,9 @@ type BDNBasicService struct {
 
 // BDNFeedService is a placeholder for service model configs
 type BDNFeedService struct {
-	ExpireDate string         `json:"expire_date"`
-	Feed       FeedProperties `json:"feed"`
+	ExpireDate      string         `json:"expire_date"`
+	Feed            FeedProperties `json:"feed"`
+	AllowedNetworks []string       `json:"allowed_networks"`
 }
 
 // BundleProperties represent bundle properties for a specific network
@@ -271,8 +272,9 @@ type Account struct {
 	SolanaDexAPIRateLimit   BDNQuotaService `json:"solana_dex_api_rate_limit"`
 	SolanaDexAPIStreamLimit BDNQuotaService `json:"solana_dex_api_stream_limit"`
 
-	TwammStreaming         BDNFeedService `json:"twamm_streaming"`
-	PrivateOrdersStreaming BDNFeedService `json:"private_orders_streaming"`
+	TwammStreaming             BDNFeedService `json:"twamm_streaming"`
+	PrivateOrdersStreaming     BDNFeedService `json:"private_orders_streaming"`
+	PendingPrivateTxsStreaming BDNFeedService `json:"pending_private_txs_streaming"`
 
 	Bundles BDNBundlesService `json:"bundles"`
 

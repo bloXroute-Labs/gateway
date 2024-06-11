@@ -26,14 +26,25 @@ func (m *ErrorNotification) Pack(protocol Protocol) ([]byte, error) {
 	binary.LittleEndian.PutUint32(buf[offset:], uint32(m.Code))
 	offset += types.ErrorNotificationCodeLen
 	copy(buf[offset:], m.Reason)
+	offset += len(m.Reason)
+
+	if err := checkBuffEnd(&buf, offset); err != nil {
+		return nil, err
+	}
+
 	return buf, nil
 }
 
 // Unpack deserializes an ErrorNotification from a buffer
 func (m *ErrorNotification) Unpack(buf []byte, protocol Protocol) error {
 	offset := HeaderLen
+
+	if err := checkBufSize(&buf, offset, types.ErrorNotificationCodeLen); err != nil {
+		return err
+	}
 	m.Code = types.ErrorNotificationCode(binary.LittleEndian.Uint32(buf[offset:]))
 	offset += types.ErrorNotificationCodeLen
+
 	m.Reason = string(buf[offset : len(buf)-ControlByteLen])
 	return m.Header.Unpack(buf, protocol)
 }

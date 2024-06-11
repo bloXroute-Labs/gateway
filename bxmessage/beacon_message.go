@@ -176,6 +176,10 @@ func (m *BeaconMessage) Unpack(buf []byte, protocol Protocol) error {
 	copy(m.blockHash[:], buf[offset:])
 	offset += types.SHA256HashLen
 
+	if err := checkBuffEnd(&buf, offset); err != nil {
+		return err
+	}
+
 	return nil
 }
 

@@ -24,5 +24,4 @@ type ClientInfo struct {
 type ReqOptions struct {
 	Filters  string
 	Includes string
-	Project  string
 }

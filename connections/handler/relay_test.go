@@ -79,11 +79,11 @@ func TestRelay_ClosingFromRemote(t *testing.T) {
 	})
 }
 
-func relayConn() (*bxmock.MockTLS, *Relay) {
+func relayConn() (*connections.MockTLS, *Relay) {
 	ip := "127.0.0.1"
 	port := int64(3000)
 
-	tls := bxmock.NewMockTLS(ip, port, "", utils.ExternalGateway, "")
+	tls := connections.NewMockTLS(ip, port, "", utils.ExternalGateway, "")
 	certs := utils.TestCerts()
 	r := NewRelay(bxmock.MockBxListener{},
 		func() (connections.Socket, error) {

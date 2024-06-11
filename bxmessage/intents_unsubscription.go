@@ -4,7 +4,7 @@ import "fmt"
 
 // UnpackIntentsUnsubscription unpacks IntentsUnsubscription bxmessage from bytes
 func UnpackIntentsUnsubscription(b []byte, protocol Protocol) (*IntentsUnsubscription, error) {
-	var sub = new(IntentsUnsubscription)
+	sub := new(IntentsUnsubscription)
 	err := sub.Unpack(b, protocol)
 	if err != nil {
 		return nil, err
@@ -42,7 +42,7 @@ func (i *IntentsUnsubscription) Pack(protocol Protocol) ([]byte, error) {
 		return nil, fmt.Errorf("calc pack size: %w", err)
 	}
 
-	var buf = make([]byte, bufLen)
+	buf := make([]byte, bufLen)
 	var offset int
 
 	n, err := packHeader(buf, i.Header, IntentsUnsubscriptionType)

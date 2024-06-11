@@ -7,16 +7,20 @@ import (
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2"
+	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
+	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/bloXroute-Labs/gateway/v2/utils/intent"
 	"github.com/sourcegraph/jsonrpc2"
 	"github.com/zhouzhuojie/conditions"
 )
 
 var (
 	availableFeeds = []types.FeedType{types.NewTxsFeed, types.NewBlocksFeed, types.BDNBlocksFeed, types.PendingTxsFeed,
-		types.OnBlockFeed, types.TxReceiptsFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed}
+		types.OnBlockFeed, types.TxReceiptsFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed, types.UserIntentsFeed,
+		types.UserIntentSolutionsFeed}
 
 	txContentFields = []string{"tx_contents.nonce", "tx_contents.tx_hash",
 		"tx_contents.gas_price", "tx_contents.gas", "tx_contents.to", "tx_contents.value", "tx_contents.input",
@@ -57,47 +61,19 @@ func init() {
 	}
 }
 
-func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*ClientReq, error) {
-	if req.Params == nil {
-		return nil, errors.New(errParamsValueIsMissing)
+func (h *handlerObj) createClientReq(req *jsonrpc2.Request, feed types.FeedType, rpcParams json.RawMessage) (*ClientReq, error) {
+	request := subscriptionRequest{
+		feed: feed,
 	}
 
-	var rpcParams []json.RawMessage
-	err := json.Unmarshal(*req.Params, &rpcParams)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal params: %w", err)
-	}
-	if len(rpcParams) < 2 {
-		h.log.Debugf("invalid param from request id: %v. method: %v. params: %s. remote address: %v account id: %v.",
-			req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID)
-		return nil, fmt.Errorf("received invalid number of params: expected 2, got %d, params %s", len(rpcParams), string(*req.Params))
-	}
-
-	request := subscriptionRequest{}
-	err = json.Unmarshal(rpcParams[0], &request.feed)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal Feed name: %w", err)
-	}
-	if _, ok := availableFeedsMap[request.feed]; !ok {
-		h.log.Debugf("invalid request Feed param from request id: %v, method: %v, params: %s. remote address: %v account id: %v.",
-			req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID)
-		return nil, fmt.Errorf("got unsupported Feed name %v, possible feeds are: %v", request.feed, availableFeeds)
-	}
-	if h.connectionAccount.AccountID != h.FeedManager.accountModel.AccountID &&
-		(request.feed == types.OnBlockFeed || request.feed == types.TxReceiptsFeed) {
-		err = fmt.Errorf("%v Feed is not available via cloud services. %v Feed is only supported on gateways", request.feed, request.feed)
-		h.log.Errorf("%v. caller account ID: %v, node account ID: %v", err, h.connectionAccount.AccountID, h.FeedManager.accountModel.AccountID)
-		return nil, err
-	}
-
-	err = json.Unmarshal(rpcParams[1], &request.options)
+	err := json.Unmarshal(rpcParams, &request.options)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal options: %w", err)
 	}
 	if request.options.Include == nil {
 		h.log.Debugf("invalid param from request id: %v. method: %v. params: %s. remote address: %v account id: %v.",
 			req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID)
-		return nil, fmt.Errorf("got unsupported params: %v", string(rpcParams[1]))
+		return nil, fmt.Errorf("got unsupported params: %v", string(rpcParams))
 	}
 
 	requestedFields, err := ValidateIncludeParam(request.feed, request.options.Include, h.txFromFieldIncludable)
@@ -162,6 +138,107 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request) (*ClientReq, error) 
 		calls:    &calls,
 		MultiTxs: request.options.MultiTxs,
 	}, nil
+}
+
+func (h *handlerObj) createIntentClientReq(req *jsonrpc2.Request, feed types.FeedType, rpcParams json.RawMessage) (*ClientReq, func(), error) {
+	var params subscriptionIntentParams
+	err := json.Unmarshal(rpcParams, &params)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal subscription intent options: %w", err)
+	}
+
+	switch feed {
+	case types.UserIntentsFeed:
+		err = intent.ValidateSignature(params.SolverAddress, params.Hash, params.Signature)
+	case types.UserIntentSolutionsFeed:
+		err = intent.ValidateSignature(params.DappAddress, params.Hash, params.Signature)
+	default:
+		return nil, nil, fmt.Errorf("invalid intentoin feed type %v", feed)
+
+	}
+	if err != nil {
+		h.log.Debugf("error when validating signature. request id: %v. method: %v. params: %s. remote address: %v account id: %v error - %v",
+			req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID, err)
+		return nil, nil, err
+	}
+
+	var sub bxmessage.Message
+	var postRun func()
+	var includes []string
+
+	switch feed {
+	case types.UserIntentsFeed:
+		if h.intentsManager.IntentsSubscriptionExists(params.SolverAddress) {
+			return nil, nil, fmt.Errorf("intent subscription already exists for solver address %v", params.SolverAddress)
+		}
+		h.intentsManager.AddIntentsSubscription(params.SolverAddress, params.Hash, params.Signature)
+		sub = bxmessage.NewIntentsSubscription(params.SolverAddress, params.Hash, params.Signature)
+
+		postRun = func() {
+			h.intentsManager.RmIntentsSubscription(params.SolverAddress)
+			unsub := bxmessage.NewIntentsUnsubscription(params.SolverAddress)
+			_ = h.FeedManager.node.HandleMsg(unsub, nil, connections.RunBackground)
+		}
+	case types.UserIntentSolutionsFeed:
+		if h.intentsManager.SolutionsSubscriptionExists(params.DappAddress) {
+			return nil, nil, fmt.Errorf("intent solutions subscription already exists for dapp address %v", params.DappAddress)
+		}
+		h.intentsManager.AddSolutionsSubscription(params.DappAddress, params.Hash, params.Signature)
+		sub = bxmessage.NewSolutionsSubscription(params.DappAddress, params.Hash, params.Signature)
+
+		includes = []string{params.DappAddress}
+
+		postRun = func() {
+			h.intentsManager.RmSolutionsSubscription(params.DappAddress)
+			unsub := bxmessage.NewSolutionsUnsubscription(params.DappAddress)
+			_ = h.FeedManager.node.HandleMsg(unsub, nil, connections.RunBackground)
+		}
+	default:
+		return nil, nil, fmt.Errorf("invalid intentoin feed type %v", feed)
+	}
+
+	// send subscription to Relay
+	_ = h.FeedManager.node.HandleMsg(sub, nil, connections.RunBackground)
+
+	return &ClientReq{Feed: feed, Includes: includes}, postRun, nil
+}
+
+func (h *handlerObj) parseSubscriptionRequest(req *jsonrpc2.Request) (types.FeedType, json.RawMessage, error) {
+	if req.Params == nil {
+		return "", nil, errors.New(errParamsValueIsMissing)
+	}
+
+	var rpcParams []json.RawMessage
+	err := json.Unmarshal(*req.Params, &rpcParams)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to unmarshal params: %w", err)
+	}
+	if len(rpcParams) < 2 {
+		h.log.Debugf("invalid param from request id: %v. method: %v. params: %s. remote address: %v account id: %v.",
+			req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID)
+		return "", nil, fmt.Errorf("received invalid number of params: expected 2, got %d, params %s", len(rpcParams), string(*req.Params))
+	}
+
+	var feed types.FeedType
+	err = json.Unmarshal(rpcParams[0], &feed)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to unmarshal Feed name: %w", err)
+	}
+
+	if _, ok := availableFeedsMap[feed]; !ok {
+		h.log.Debugf("invalid request Feed param from request id: %v, method: %v, params: %s. remote address: %v account id: %v.",
+			req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID)
+		return "", nil, fmt.Errorf("got unsupported Feed name %v, possible feeds are: %v", feed, availableFeeds)
+	}
+
+	if h.connectionAccount.AccountID != h.FeedManager.accountModel.AccountID &&
+		(feed == types.OnBlockFeed || feed == types.TxReceiptsFeed) {
+		err = fmt.Errorf("%v Feed is not available via cloud services. %v Feed is only supported on gateways", feed, feed)
+		h.log.Errorf("%v. caller account ID: %v, node account ID: %v", err, h.connectionAccount.AccountID, h.FeedManager.accountModel.AccountID)
+		return "", nil, err
+	}
+
+	return feed, rpcParams[1], nil
 }
 
 func (h *handlerObj) validateFeed(feedName types.FeedType, feedStreaming sdnmessage.BDNFeedService, includes, filters []string) error {

@@ -9,6 +9,7 @@ import (
 type UserIntentSolution struct {
 	ID            string
 	SolverAddress string
+	DappAddress   string
 	IntentID      string
 	Solution      []byte // The intent payload
 	Hash          []byte

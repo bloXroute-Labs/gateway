@@ -52,24 +52,23 @@ const (
 	testWalletID2             = "0xAABBCCDDEEFFGGHHIIJJ00112233445566778899"
 )
 
-var (
-	testAccountModel = sdnmessage.Account{
-		AccountInfo: sdnmessage.AccountInfo{
-			AccountID: types.AccountID(testGatewayAccountID),
-			TierName:  testGatewaySecretHash,
-		},
-		SecretHash: testGatewaySecretHash,
-	}
-)
+var testAccountModel = sdnmessage.Account{
+	AccountInfo: sdnmessage.AccountInfo{
+		AccountID: types.AccountID(testGatewayAccountID),
+		TierName:  testGatewaySecretHash,
+	},
+	SecretHash: testGatewaySecretHash,
+}
 
 func spawnGRPCServer(t *testing.T, port int, user string, password string) (*gateway, blockchain.Bridge, *servers.GRPCServer, *GatewayGrpc) {
 	serverConfig := config.NewGRPC("0.0.0.0", port, user, password)
 	bridge, g := setup(t, 1)
 	g.BxConfig.GRPC = serverConfig
-	gwGrpc := NewGatewayGrpc(&g.Bx, GatewayGrpcParams{sdn: g.sdn, authorize: g.authorize, bridge: g.bridge, blockchainPeers: g.blockchainPeers, wsManager: g.wsManager,
+	gwGrpc := NewGatewayGrpc(&g.Bx, GatewayGrpcParams{
+		sdn: g.sdn, authorize: g.authorize, bridge: g.bridge, blockchainPeers: g.blockchainPeers, wsManager: g.wsManager,
 		bdnStats: g.bdnStats, timeStarted: g.timeStarted, txsQueue: g.txsQueue, txsOrderQueue: g.txsOrderQueue, gatewayPublicKey: g.gatewayPublicKey,
 		feedManager: g.feedManager, txFromFieldIncludable: false, blockProposer: g.blockProposer,
-		feedManagerChan: g.feedManagerChan, intentsManager: newIntentsManager(), grpcFeedManager: g.feedManager})
+		feedManagerChan: g.feedManagerChan, intentsManager: services.NewIntentsManager(), grpcFeedManager: g.feedManager})
 	grpcServer := servers.NewGRPCServer("0.0.0.0", port, user, password, g.stats, g.accountID, gwGrpc)
 	go func() {
 		_ = grpcServer.Run()
@@ -190,7 +189,6 @@ func TestGatewayGRPCNotGatewayUserHeaderAuth(t *testing.T) {
 }
 
 func TestInternalGatewayUnauthorizedAccess(t *testing.T) {
-
 	port := test.NextTestPort()
 
 	g, _, s, _ := spawnGRPCServer(t, port, "", "")
@@ -544,7 +542,7 @@ func TestGatewayGRPCBlxrTx(t *testing.T) {
 	}
 
 	setupFeedManager := func(g *gateway) *servers.FeedManager {
-		return servers.NewFeedManager(g.context, g, g.feedManagerChan, services.NewNoOpSubscriptionServices(),
+		return servers.NewFeedManager(g.context, g, g.feedManagerChan, nil, services.NewNoOpSubscriptionServices(),
 			networkNum, types.NetworkID(10), g.sdn.NodeModel().NodeID,
 			g.wsManager, g.sdn.AccountModel(), nil,
 			"", "", *g.BxConfig, g.stats, nil, nil)
@@ -562,7 +560,7 @@ func TestGatewayGRPCBlxrTx(t *testing.T) {
 			description:  "Wrong chainID",
 			setupSdnFunc: setupSdn,
 			setupFeedManagerFunc: func(g *gateway) *servers.FeedManager {
-				return servers.NewFeedManager(g.context, g, g.feedManagerChan, services.NewNoOpSubscriptionServices(),
+				return servers.NewFeedManager(g.context, g, g.feedManagerChan, nil, services.NewNoOpSubscriptionServices(),
 					networkNum, types.NetworkID(chainID), g.sdn.NodeModel().NodeID,
 					g.wsManager, g.sdn.AccountModel(), nil,
 					"", "", *g.BxConfig, g.stats, nil, nil)
@@ -645,7 +643,7 @@ func TestGatewayGRPCBlxrTx(t *testing.T) {
 				nextValidatorMap.Set(1, testWalletID)
 				nextValidatorMap.Set(2, testWalletID2)
 
-				return servers.NewFeedManager(g.context, g, g.feedManagerChan, services.NewNoOpSubscriptionServices(),
+				return servers.NewFeedManager(g.context, g, g.feedManagerChan, nil, services.NewNoOpSubscriptionServices(),
 					bxgateway.BSCMainnetNum, types.NetworkID(10), g.sdn.NodeModel().NodeID,
 					g.wsManager, g.sdn.AccountModel(), nil,
 					"", "", *g.BxConfig, g.stats, nextValidatorMap, validatorStatusMap)
@@ -659,7 +657,7 @@ func TestGatewayGRPCBlxrTx(t *testing.T) {
 			description:  "Wrong network on next validator",
 			setupSdnFunc: setupSdn,
 			setupFeedManagerFunc: func(g *gateway) *servers.FeedManager {
-				return servers.NewFeedManager(g.context, g, g.feedManagerChan, services.NewNoOpSubscriptionServices(),
+				return servers.NewFeedManager(g.context, g, g.feedManagerChan, nil, services.NewNoOpSubscriptionServices(),
 					1, types.NetworkID(10), g.sdn.NodeModel().NodeID,
 					g.wsManager, g.sdn.AccountModel(), nil,
 					"", "", *g.BxConfig, g.stats, nil, nil)
@@ -679,7 +677,7 @@ func TestGatewayGRPCBlxrTx(t *testing.T) {
 				return sdn
 			},
 			setupFeedManagerFunc: func(g *gateway) *servers.FeedManager {
-				return servers.NewFeedManager(g.context, g, g.feedManagerChan, services.NewNoOpSubscriptionServices(),
+				return servers.NewFeedManager(g.context, g, g.feedManagerChan, nil, services.NewNoOpSubscriptionServices(),
 					bxgateway.BSCMainnetNum, types.NetworkID(10), g.sdn.NodeModel().NodeID,
 					g.wsManager, g.sdn.AccountModel(), nil,
 					"", "", *g.BxConfig, g.stats, nil, nil)
@@ -703,7 +701,7 @@ func TestGatewayGRPCBlxrTx(t *testing.T) {
 				validatorStatusMap := syncmap.NewStringMapOf[bool]()
 				nextValidatorMap := orderedmap.New()
 
-				return servers.NewFeedManager(g.context, g, g.feedManagerChan, services.NewNoOpSubscriptionServices(),
+				return servers.NewFeedManager(g.context, g, g.feedManagerChan, nil, services.NewNoOpSubscriptionServices(),
 					bxgateway.BSCMainnetNum, types.NetworkID(10), g.sdn.NodeModel().NodeID,
 					g.wsManager, g.sdn.AccountModel(), nil,
 					"", "", *g.BxConfig, g.stats, nextValidatorMap, validatorStatusMap)
@@ -776,7 +774,7 @@ func TestGatewayGRPCBlxrBatchTx(t *testing.T) {
 	}
 
 	setupFeedManager := func(g *gateway) *servers.FeedManager {
-		return servers.NewFeedManager(g.context, g, g.feedManagerChan, services.NewNoOpSubscriptionServices(),
+		return servers.NewFeedManager(g.context, g, g.feedManagerChan, nil, services.NewNoOpSubscriptionServices(),
 			networkNum, types.NetworkID(10), g.sdn.NodeModel().NodeID,
 			g.wsManager, g.sdn.AccountModel(), nil,
 			"", "", *g.BxConfig, g.stats, nil, nil)
@@ -919,7 +917,7 @@ func TestGatewaySubmitBundle(t *testing.T) {
 	}
 
 	setupFeedManager := func(g *gateway) *servers.FeedManager {
-		return servers.NewFeedManager(g.context, g, g.feedManagerChan, services.NewNoOpSubscriptionServices(),
+		return servers.NewFeedManager(g.context, g, g.feedManagerChan, nil, services.NewNoOpSubscriptionServices(),
 			networkNum, types.NetworkID(1), g.sdn.NodeModel().NodeID,
 			g.wsManager, g.sdn.AccountModel(), nil,
 			"", "", *g.BxConfig, g.stats, nil, nil)
@@ -1081,7 +1079,7 @@ func TestGatewaySubmitBundle(t *testing.T) {
 			description:  "Wrong network number",
 			setupSdnFunc: setupSdn,
 			setupFeedManagerFunc: func(g *gateway) *servers.FeedManager {
-				return servers.NewFeedManager(g.context, g, g.feedManagerChan, services.NewNoOpSubscriptionServices(),
+				return servers.NewFeedManager(g.context, g, g.feedManagerChan, nil, services.NewNoOpSubscriptionServices(),
 					36, types.NetworkID(137), g.sdn.NodeModel().NodeID,
 					g.wsManager, g.sdn.AccountModel(), nil,
 					"", "", *g.BxConfig, g.stats, nil, nil)

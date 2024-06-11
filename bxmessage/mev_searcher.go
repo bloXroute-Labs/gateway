@@ -189,7 +189,6 @@ func (m MEVSearcher) size(protocol Protocol) uint32 {
 	}
 
 	return size
-
 }
 
 // Pack serializes a MEVBundle into a buffer for sending
@@ -259,6 +258,11 @@ func (m MEVSearcher) Pack(protocol Protocol) ([]byte, error) {
 	}
 
 	copy(buf[offset:], m.Params)
+	offset += len(m.Params)
+
+	if err := checkBuffEnd(&buf, offset); err != nil {
+		return nil, err
+	}
 
 	return buf, nil
 }

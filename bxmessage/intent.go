@@ -9,7 +9,7 @@ import (
 
 // UnpackIntent unpacks intent bxmessage
 func UnpackIntent(b []byte, protocol Protocol) (*Intent, error) {
-	var intent = new(Intent)
+	intent := new(Intent)
 	err := intent.Unpack(b, protocol)
 	if err != nil {
 		return nil, err
@@ -64,7 +64,6 @@ func (i *Intent) Pack(protocol Protocol) ([]byte, error) {
 		i.Intent,
 		ControlByteLen,
 	)
-
 	if err != nil {
 		return nil, fmt.Errorf("calc pack size: %w", err)
 	}
@@ -121,6 +120,11 @@ func (i *Intent) Pack(protocol Protocol) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("pack SenderAddress: %v", err)
 		}
+	}
+
+	offset += n
+	if err := checkBuffEnd(&buf, offset); err != nil {
+		return nil, err
 	}
 
 	return buf, nil

@@ -33,13 +33,16 @@ const (
 	RPCEthSubscribe               RPCRequestType = "eth_subscribe"
 	RPCEthSendRawTransaction      RPCRequestType = "eth_sendRawTransaction"
 	RPCEthUnsubscribe             RPCRequestType = "eth_unsubscribe"
+	RPCSubmitIntent               RPCRequestType = "blxr_submit_intent"
+	RPCSubmitIntentSolution       RPCRequestType = "blxr_submit_intent_solution"
 )
 
 // External RPCRequestType enumeration
 const (
-	RPCEthSendBundle   RPCRequestType = "eth_sendBundle"
-	RPCEthCallBundle   RPCRequestType = "eth_callBundle"
-	RPCEthCancelBundle RPCRequestType = "eth_cancelBundle"
+	RPCEthSendBundle          RPCRequestType = "eth_sendBundle"
+	RPCEthCallBundle          RPCRequestType = "eth_callBundle"
+	RPCEthCancelBundle        RPCRequestType = "eth_cancelBundle"
+	RPCEthSendExclusiveBundle RPCRequestType = "eth_sendExclusiveBundle"
 )
 
 // RPCMethodToRPCRequestType maps gRPC methods to RPCRequestType
@@ -191,4 +194,22 @@ type RPCSendBundle struct {
 // RPCCancelBundlePayload custom json-rpc required to cancel flashbots bundle
 type RPCCancelBundlePayload struct {
 	ReplacementUUID string `json:"replacementUuid"`
+}
+
+// RPCSubmitIntentPayload is the payload of blxr_submit_intent request
+type RPCSubmitIntentPayload struct {
+	DappAddress   string `json:"dapp_address"`
+	SenderAddress string `json:"sender_address"`
+	Intent        []byte `json:"intent"`
+	Hash          []byte `json:"hash"`
+	Signature     []byte `json:"signature"`
+}
+
+// RPCSubmitIntentPayloadSolution is the payload of blxr_submit_intent_solution request
+type RPCSubmitIntentPayloadSolution struct {
+	SolverAddress  string `json:"solver_address"`
+	IntentID       string `json:"intent_id"`
+	IntentSolution []byte `json:"intent_solution"`
+	Hash           []byte `json:"hash"`
+	Signature      []byte `json:"signature"`
 }

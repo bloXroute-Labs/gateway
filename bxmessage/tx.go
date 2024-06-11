@@ -324,7 +324,12 @@ func (m Tx) Pack(protocol Protocol) ([]byte, error) {
 			// do nothing. sender nonce added in protocol 25
 		default:
 			copy(buf[offset:], m.sender[:])
+			offset += len(m.sender)
 		}
+	}
+
+	if err := checkBuffEnd(&buf, offset); err != nil {
+		return nil, err
 	}
 
 	return buf, nil
@@ -403,6 +408,9 @@ func (m *Tx) Unpack(buf []byte, protocol Protocol) error {
 	case protocol < 22:
 		// do nothing. accountID added in protocol 22
 	default:
+		if err := checkBufSize(&buf, offset, AccountIDLen); err != nil {
+			return err
+		}
 		copy(m.accountID[:], buf[offset:])
 		offset += AccountIDLen
 	}
