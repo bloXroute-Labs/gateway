@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	uuid "github.com/satori/go.uuid"
 )
@@ -133,6 +134,7 @@ type RPCBundleSubmissionPayload struct {
 	AvoidMixedBundles       bool              `json:"avoidMixedBundles,omitempty"`
 	OriginalSenderAccountID string            `json:"original_sender_account_id"`
 	PriorityFeeRefund       bool              `json:"priority_fee_refund"`
+	IncomingRefundRecipient string            `json:"refund_recipient,omitempty"`
 }
 
 // Validate doing validation for blxr_submit_bundle payload
@@ -164,8 +166,13 @@ func (p RPCBundleSubmissionPayload) Validate() error {
 		return fmt.Errorf("blockNumber must be hex, %v", err)
 	}
 
-	return nil
+	if p.IncomingRefundRecipient != "" {
+		if !ethcommon.IsHexAddress(p.IncomingRefundRecipient) {
+			return fmt.Errorf("refund recipient must be a hex address, %v", err)
+		}
+	}
 
+	return nil
 }
 
 // RPCMEVSearcherPayload is the payload of blxr_searcher request
@@ -180,15 +187,14 @@ type RPCMEVSearcherPayload struct {
 // RPCSendBundle MEVBundle payload to be used
 type RPCSendBundle struct {
 	Txs               []string `json:"txs"`
-	UUID              string   `json:"uuid,omitempty"`
+	UUID              string   `json:"uuid,omitempty"` // TODO: this should be called `replacementUuid` according to eth_sendBundle spec
 	BlockNumber       string   `json:"blockNumber"`
-	MinTimestamp      int      `json:"minTimestamp"`
-	MaxTimestamp      int      `json:"maxTimestamp"`
-	RevertingTxHashes []string `json:"revertingTxHashes"`
+	MinTimestamp      int      `json:"minTimestamp,omitempty"`
+	MaxTimestamp      int      `json:"maxTimestamp,omitempty"`
+	RevertingTxHashes []string `json:"revertingTxHashes,omitempty"`
 	BundlePrice       int64    `json:"bundlePrice,omitempty"` // in wei
 	EnforcePayout     bool     `json:"enforcePayout,omitempty"`
 	AvoidMixedBundles bool     `json:"avoidMixedBundles,omitempty"`
-	PriorityFeeRefund bool     `json:"priorityFeeRefund"`
 }
 
 // RPCCancelBundlePayload custom json-rpc required to cancel flashbots bundle

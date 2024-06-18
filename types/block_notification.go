@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/ethereum/go-ethereum/common"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -387,7 +387,7 @@ type EthBlockNotification struct {
 }
 
 // NewEthBlockNotification creates ETH block notification
-func NewEthBlockNotification(hash ethcommon.Hash, block *ethtypes.Block, info []*FutureValidatorInfo, txIncludeSender bool) (*EthBlockNotification, error) {
+func NewEthBlockNotification(hash ethcommon.Hash, block *bxethcommon.Block, info []*FutureValidatorInfo, txIncludeSender bool) (*EthBlockNotification, error) {
 	if hash == (ethcommon.Hash{}) {
 		return nil, errors.New("empty block hash")
 	}
@@ -471,7 +471,7 @@ type Header struct {
 	WithdrawalsHash  *ethcommon.Hash    `json:"withdrawalsRoot,omitempty"`
 	BlobGasUsed      string             `json:"blobGasUsed,omitempty"`
 	ExcessBlobGas    string             `json:"excessBlobGas,omitempty"`
-	ParentBeaconRoot *common.Hash       `json:"parentBeaconBlockRoot,omitempty"`
+	ParentBeaconRoot *ethcommon.Hash    `json:"parentBeaconBlockRoot,omitempty"`
 	hexNumber        uint64
 }
 
@@ -489,7 +489,7 @@ func (h *Header) UpdateNumber(number uint64) {
 func ConvertEthHeaderToBlockNotificationHeader(ethHeader *ethtypes.Header) *Header {
 
 	var blobGasUsed, excessBlobGas string
-	var parentBeaconRoot *common.Hash
+	var parentBeaconRoot *ethcommon.Hash
 	if ethHeader.BlobGasUsed != nil {
 		blobGasUsed = hexutil.EncodeUint64(*ethHeader.BlobGasUsed)
 	}

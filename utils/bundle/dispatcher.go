@@ -76,17 +76,18 @@ func (d *Dispatcher) Dispatch(mevBundle *bxmessage.MEVBundle) error {
 		return nil
 	}
 
-	bundleJSON, err := d.bundleJSON(bundle)
+	bundleForBuildersJSON, err := d.bundleForBuildersJSON(bundle)
 	if err != nil {
 		return fmt.Errorf("failed to create new mevBundle http request for bundleHash: %v, err: %v", bundle.BundleHash, err)
 	}
 
-	d.makeRequests(bundle, bundleJSON)
+	d.makeRequests(bundle, bundleForBuildersJSON)
 
 	return nil
 }
 
-func (d *Dispatcher) bundleJSON(bundle *bxmessage.MEVBundle) ([]byte, error) {
+func (d *Dispatcher) bundleForBuildersJSON(bundle *bxmessage.MEVBundle) ([]byte, error) {
+	// Important: no internal fields should be here
 	params := []jsonrpc.RPCSendBundle{
 		{
 			Txs:               bundle.Transactions,
@@ -97,7 +98,6 @@ func (d *Dispatcher) bundleJSON(bundle *bxmessage.MEVBundle) ([]byte, error) {
 			RevertingTxHashes: bundle.RevertingHashes,
 			BundlePrice:       bundle.BundlePrice,
 			EnforcePayout:     bundle.EnforcePayout,
-			PriorityFeeRefund: bundle.PriorityFeeRefund,
 		},
 	}
 

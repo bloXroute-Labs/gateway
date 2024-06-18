@@ -9,6 +9,9 @@ import (
 	"math/big"
 	"sync"
 	"time"
+
+	"github.com/ethereum/go-ethereum/common"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
 // BxBlockType is block type
@@ -59,6 +62,24 @@ func NewBxBlockTransaction(hash SHA256Hash, content []byte) *BxBlockTransaction 
 	}
 }
 
+// BxBSCBlobSidecar represents a slice of BSC blob sidecars
+type BxBSCBlobSidecar struct {
+	TxIndex      uint64
+	TxHash       common.Hash
+	IsCompressed bool
+	TxSidecar    *ethtypes.BlobTxSidecar `rlp:"optional"`
+}
+
+// NewBxBSCBlobSidecar creates a new BSC blob sidecars
+func NewBxBSCBlobSidecar(txIndex uint64, txHash common.Hash, isCompressed bool, sidecar *ethtypes.BlobTxSidecar) *BxBSCBlobSidecar {
+	return &BxBSCBlobSidecar{
+		TxIndex:      txIndex,
+		TxHash:       txHash,
+		IsCompressed: isCompressed,
+		TxSidecar:    sidecar,
+	}
+}
+
 // NewRawBxBlockTransaction creates a new transaction that's not ready for compression. This should only be used when parsing the result of an existing BxBlock.
 func NewRawBxBlockTransaction(content []byte) *BxBlockTransaction {
 	return &BxBlockTransaction{
@@ -83,6 +104,7 @@ type BxBlock struct {
 	Type            BxBlockType
 	Header          []byte
 	Txs             []*BxBlockTransaction
+	BlobSidecars    []*BxBSCBlobSidecar
 	Trailer         []byte
 	TotalDifficulty *big.Int
 	Number          *big.Int
@@ -93,17 +115,17 @@ type BxBlock struct {
 }
 
 // NewBxBlock creates a new BxBlock that's ready for compression. This means that all transaction hashes must be included.
-func NewBxBlock(hash, beaconHash SHA256Hash, bType BxBlockType, header []byte, txs []*BxBlockTransaction, trailer []byte, totalDifficulty *big.Int, number *big.Int, size int) (*BxBlock, error) {
+func NewBxBlock(hash, beaconHash SHA256Hash, bType BxBlockType, header []byte, txs []*BxBlockTransaction, trailer []byte, totalDifficulty *big.Int, number *big.Int, size int, blobSidecars []*BxBSCBlobSidecar) (*BxBlock, error) {
 	for _, tx := range txs {
 		if tx.Hash() == (SHA256Hash{}) {
 			return nil, errors.New("all transactions must contain hashes")
 		}
 	}
-	return NewRawBxBlock(hash, beaconHash, bType, header, txs, trailer, totalDifficulty, number, size), nil
+	return NewRawBxBlock(hash, beaconHash, bType, header, txs, trailer, totalDifficulty, number, size, blobSidecars), nil
 }
 
 // NewRawBxBlock create a new BxBlock without compression restrictions. This should only be used when parsing the result of an existing BxBlock.
-func NewRawBxBlock(hash, beaconHash SHA256Hash, bType BxBlockType, header []byte, txs []*BxBlockTransaction, trailer []byte, totalDifficulty *big.Int, number *big.Int, size int) *BxBlock {
+func NewRawBxBlock(hash, beaconHash SHA256Hash, bType BxBlockType, header []byte, txs []*BxBlockTransaction, trailer []byte, totalDifficulty *big.Int, number *big.Int, size int, sidecars []*BxBSCBlobSidecar) *BxBlock {
 	bxBlock := &BxBlock{
 		hash:            hash,
 		beaconHash:      beaconHash,
@@ -115,6 +137,7 @@ func NewRawBxBlock(hash, beaconHash SHA256Hash, bType BxBlockType, header []byte
 		Number:          number,
 		timestamp:       time.Now(),
 		size:            size,
+		BlobSidecars:    sidecars,
 	}
 	return bxBlock
 }

@@ -972,7 +972,8 @@ func TestGateway_HandleBeaconBlockFromRelay(t *testing.T) {
 	txStore, bp := newBP()
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
-	bxBlock, _ := bridge.BlockBlockchainToBDN(ethBlock)
+
+	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, ethBlock.Difficulty()))
 
 	// compress a transaction
 	bxTransaction, _ := bridge.TransactionBlockchainToBDN(ethBlock.Transactions()[0])

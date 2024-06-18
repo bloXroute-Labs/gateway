@@ -4,6 +4,7 @@ import (
 	"math/big"
 	"time"
 
+	eth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -51,7 +52,7 @@ func NewEthBlockHeader(height uint64, parentHash common.Hash) *ethtypes.Header {
 }
 
 // NewEthBlockWithHeader generates an Ethereum block testing purposes from a header
-func NewEthBlockWithHeader(header *ethtypes.Header) *ethtypes.Block {
+func NewEthBlockWithHeader(header *ethtypes.Header) *eth.Block {
 	txs := []*ethtypes.Transaction{
 		NewSignedEthTx(ethtypes.LegacyTxType, 1, nil, nil),
 		NewSignedEthTx(ethtypes.AccessListTxType, 2, nil, nil),
@@ -63,12 +64,12 @@ func NewEthBlockWithHeader(header *ethtypes.Header) *ethtypes.Block {
 		NewEthBlockHeader(header.Number.Uint64(), common.Hash{}),
 	}
 
-	block := ethtypes.NewBlock(header, txs, uncles, nil, NewTestHasher())
+	block := eth.NewBlock(header, txs, uncles, nil, NewTestHasher())
 	return block
 }
 
 // NewEthBlock generates an Ethereum block for testing purposes
-func NewEthBlock(height uint64, parentHash common.Hash) *ethtypes.Block {
+func NewEthBlock(height uint64, parentHash common.Hash) *eth.Block {
 	if parentHash == (common.Hash{}) {
 		parentHash = common.BytesToHash(types.GenerateSHA256Hash().Bytes())
 	}

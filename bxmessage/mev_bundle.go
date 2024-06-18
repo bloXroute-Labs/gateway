@@ -16,6 +16,8 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	uuid "github.com/satori/go.uuid"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 const (
@@ -23,6 +25,7 @@ const (
 )
 
 var emptyUUID = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+var emptyAddress = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 
 // MEVBundleBuilders alias for map[string]string
 type MEVBundleBuilders map[string]string
@@ -66,6 +69,9 @@ type MEVBundle struct {
 
 	// From protocol version 45
 	PriorityFeeRefund bool `json:"priority_fee_refund"`
+
+	// From protocol version 48
+	IncomingRefundRecipient string `json:"refund_recipient"`
 }
 
 // NewMEVBundle creates a new MEVBundle
@@ -82,30 +88,32 @@ func NewMEVBundle(
 	enforcePayout,
 	avoidMixedBundles bool,
 	priorityFeeRefund bool,
+	incomingRefundRecipient string,
 ) (MEVBundle, error) {
 	if len(uuid) != 0 && len(uuid) != 36 {
 		return MEVBundle{}, errors.New("invalid uuid len")
 	}
 	return MEVBundle{
-		Transactions:      transaction,
-		UUID:              uuid,
-		BlockNumber:       blockNumber,
-		MinTimestamp:      minTimestamp,
-		MaxTimestamp:      maxTimestamp,
-		RevertingHashes:   revertingHashes,
-		MEVBuilders:       mevBuilders,
-		BundleHash:        bundleHash,
-		BundlePrice:       bundlePrice,
-		EnforcePayout:     enforcePayout,
-		AvoidMixedBundles: avoidMixedBundles,
-		PriorityFeeRefund: priorityFeeRefund,
+		Transactions:            transaction,
+		UUID:                    uuid,
+		BlockNumber:             blockNumber,
+		MinTimestamp:            minTimestamp,
+		MaxTimestamp:            maxTimestamp,
+		RevertingHashes:         revertingHashes,
+		MEVBuilders:             mevBuilders,
+		BundleHash:              bundleHash,
+		BundlePrice:             bundlePrice,
+		EnforcePayout:           enforcePayout,
+		AvoidMixedBundles:       avoidMixedBundles,
+		PriorityFeeRefund:       priorityFeeRefund,
+		IncomingRefundRecipient: incomingRefundRecipient,
 	}, nil
 }
 
 // String returns a string representation of the MEVBundle
 func (m MEVBundle) String() string {
-	return fmt.Sprintf("mev bundle(sender account ID: %s, hash: %s, blockNumber: %s, builders: %v, txs: %d, sent from cloud api: %v, tier: %v, allowMixedBundles: %v, priorityFeeRefund: %v, UUID: %s, EnforcePayout %v, BundlePrice %v, MinTimestamp %v , MaxTimestamp %v, RevertingHashes %v)",
-		m.OriginalSenderAccountID, m.BundleHash, m.BlockNumber, m.MEVBuilders, len(m.Transactions), m.SentFromCloudAPI, m.OriginalSenderAccountTier, m.AvoidMixedBundles, m.PriorityFeeRefund, m.UUID, m.EnforcePayout, m.BundlePrice, m.MinTimestamp, m.MaxTimestamp, len(m.RevertingHashes))
+	return fmt.Sprintf("mev bundle(sender account ID: %s, hash: %s, blockNumber: %s, builders: %v, txs: %d, sent from cloud api: %v, tier: %v, allowMixedBundles: %v, priorityFeeRefund: %v, incomingRefundRecipient: %v, UUID: %s, EnforcePayout %v, BundlePrice %v, MinTimestamp %v , MaxTimestamp %v, RevertingHashes %v)",
+		m.OriginalSenderAccountID, m.BundleHash, m.BlockNumber, m.MEVBuilders, len(m.Transactions), m.SentFromCloudAPI, m.OriginalSenderAccountTier, m.AvoidMixedBundles, m.PriorityFeeRefund, m.IncomingRefundRecipient, m.UUID, m.EnforcePayout, m.BundlePrice, m.MinTimestamp, m.MaxTimestamp, len(m.RevertingHashes))
 }
 
 // SetHash sets the hash based on the fields in BundleSubmission
@@ -209,6 +217,11 @@ func (m MEVBundle) size(protocol Protocol, txs [][]byte) uint32 {
 	// From protocol version 45: BundlePriorityFeeRefund
 	if protocol >= BundlePriorityFeeRefundProtocol {
 		size += types.UInt8Len // PriorityFeeRefund bool
+	}
+
+	// From protocol version 48: BundleRefundProtocol
+	if protocol >= BundleRefundProtocol {
+		size += common.AddressLength // IncomingRefundRecipient (address)
 	}
 
 	return size
@@ -396,6 +409,18 @@ func (m MEVBundle) Pack(protocol Protocol) ([]byte, error) {
 		offset += types.UInt8Len //nolint:ineffassign
 	}
 
+	if protocol >= BundleRefundProtocol {
+		if m.IncomingRefundRecipient != "" {
+			var address common.Address
+			err := address.UnmarshalText([]byte(m.IncomingRefundRecipient))
+			if err != nil {
+				return nil, fmt.Errorf("failed to set mev bundle refund_recipient %v", err)
+			}
+			copy(buf[offset:], address.Bytes())
+		}
+		offset += common.AddressLength //nolint:ineffassign
+	}
+
 	if err := checkBuffEnd(&buf, offset); err != nil {
 		return nil, err
 	}
@@ -428,11 +453,11 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 	offset += int(methodLen)
 
 	// UUID
-	if err := checkBufSize(&data, offset, types.UInt16Len); err != nil {
+	if err := checkBufSize(&data, offset, UUIDv4Len); err != nil {
 		return err
 	}
-	if bytes.Compare(data[offset:offset+UUIDv4Len], emptyUUID) != 0 {
-		uuidRaw, err := uuid.FromBytes(data[offset : offset+UUIDv4Len])
+	if uuidBytes := data[offset : offset+UUIDv4Len]; !bytes.Equal(uuidBytes, emptyUUID) {
+		uuidRaw, err := uuid.FromBytes(uuidBytes)
 		if err != nil {
 			return fmt.Errorf("failed to parse uuid from bytes, %v", err)
 		}
@@ -648,6 +673,17 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 
 		m.PriorityFeeRefund = data[offset] == 1
 		offset += types.UInt8Len //nolint:ineffassign
+	}
+
+	if protocol >= BundleRefundProtocol {
+		if err := checkBufSize(&data, offset, common.AddressLength); err != nil {
+			return err
+		}
+		if addressBytes := data[offset : offset+common.AddressLength]; !bytes.Equal(addressBytes, emptyAddress) {
+			address := common.BytesToAddress(addressBytes)
+			m.IncomingRefundRecipient = address.Hex()
+		}
+		offset += common.AddressLength //nolint:ineffassign
 	}
 
 	return nil

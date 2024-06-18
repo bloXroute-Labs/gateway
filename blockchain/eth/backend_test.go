@@ -3,6 +3,7 @@ package eth
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"math/big"
 	"sync"
 	"testing"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
+	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	testUtils "github.com/bloXroute-Labs/gateway/v2/test"
@@ -626,9 +629,9 @@ func TestHandler_HandleNewBlockHashes66(t *testing.T) {
 	bodiesID := getBodies.RequestId
 
 	// send header/body from peer (out of order with request IDs)
-	peerRW.QueueIncomingMessage(uint64(eth.BlockBodiesMsg), eth.BlockBodiesPacket{
-		RequestId: bodiesID,
-		BlockBodiesResponse: eth.BlockBodiesResponse{&eth.BlockBody{
+	peerRW.QueueIncomingMessage(uint64(eth.BlockBodiesMsg), BlockBodiesPacket{
+		RequestID: bodiesID,
+		BlockBodiesResponse: BlockBodiesResponse{&BlockBody{
 			Transactions: block.Transactions(),
 			Uncles:       block.Uncles(),
 		}},
@@ -822,6 +825,27 @@ func TestHandler_processBDNBlockUnresolvableDifficulty(t *testing.T) {
 	assert.Equal(t, blockHash, blockHashesPacket[0].Hash)
 }
 
+func createBxBlockFromEthHeader(header *ethtypes.Header, chain *Chain, bridge blockchain.Bridge) (*types.BxBlock, error) {
+	body, ok := chain.getBlockBody(header.Hash())
+	if !ok {
+		return nil, ErrBodyNotFound
+	}
+	ethBlock := bxcommoneth.NewBlockWithHeader(header).WithBody(body.Transactions, body.Uncles)
+
+	sidecars, ok := chain.getBlockBlobSidecars(header.Hash())
+	if ok {
+		ethBlock = ethBlock.WithSidecars(sidecars)
+	}
+
+	blockInfo := BlockInfo{ethBlock, header.Difficulty}
+	bxBlock, err := bridge.BlockBlockchainToBDN(&blockInfo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert block %v to BDN format: %v", header.Hash().String(), err)
+	}
+
+	return bxBlock, nil
+}
+
 func TestHandler_BlockAtDepth(t *testing.T) {
 	c := newChain(context.Background(), 10, 5, 5, time.Hour, 1000)
 	blockConfirmationCounts := 4
@@ -840,7 +864,8 @@ func TestHandler_BlockAtDepth(t *testing.T) {
 	addBlock(c, block5)
 
 	handler.chain = c
-	bxb1, err := handler.createBxBlockFromEthHeader(block1.Header())
+	bxb1, err := createBxBlockFromEthHeader(block1.Header(), c, handler.bridge)
+	assert.NoError(t, err)
 
 	// head of the chain state is block 5, for depth 4, the block should be 1
 	b1, err := handler.blockAtDepth(blockConfirmationCounts)
@@ -871,10 +896,10 @@ func TestHandler_blockForks(t *testing.T) {
 	block4b := bxmock.NewEthBlock(uint64(4), block3b.Hash())
 
 	// sequence of blocks received from blockchain
-	newBlock1 := eth.NewBlockPacket{Block: block1, TD: big.NewInt(100)}
-	newBlock2a := eth.NewBlockPacket{Block: block2a, TD: big.NewInt(201)}
+	newBlock1 := NewBlockPacket{Block: &block1.Block, TD: big.NewInt(100)}
+	newBlock2a := NewBlockPacket{Block: &block2a.Block, TD: big.NewInt(201)}
 	// newBlock3a sent as NewBlockHashes instead of block packet
-	newBlock4b := eth.NewBlockPacket{Block: block4b, TD: big.NewInt(402)}
+	newBlock4b := NewBlockPacket{Block: &block4b.Block, TD: big.NewInt(402)}
 
 	// sequence of blocks received from BDN
 	bxBlock1, _ := bridge.BlockBlockchainToBDN(NewBlockInfo(block1, big.NewInt(100)))
@@ -898,7 +923,7 @@ func TestHandler_blockForks(t *testing.T) {
 	*/
 
 	// expectation: block is sent to BDN
-	err = testHandleNewBlock(handler, peer, newBlock1.Block, newBlock1.TD)
+	err = testHandleNewBlock(handler, peer, block1, newBlock1.TD)
 	assert.NoError(t, err)
 	assertBlockSentToBDN(t, bridge, block1.Hash())
 	assertNoBlockSentToBlockchain(t, peerRW)
@@ -917,7 +942,7 @@ func TestHandler_blockForks(t *testing.T) {
 	assertNoConfirmationBlockSentToBDN(t, bridge)
 
 	// expectation: sent to gateway as confirmation
-	_ = testHandleNewBlock(handler, peer, newBlock2a.Block, newBlock2a.TD)
+	_ = testHandleNewBlock(handler, peer, block2a, newBlock2a.TD)
 	assertBlockSentToBDN(t, bridge, block2a.Hash())
 	assertNoBlockSentToBlockchain(t, peerRW)
 	assertNoConfirmationBlockSentToBDN(t, bridge)
@@ -954,7 +979,8 @@ func TestHandler_blockForks(t *testing.T) {
 
 	// expectation: send 2b, 3b, 4b to BDN (confirmed now)
 	err = handler.Handle(peer, &newBlock4b)
-	_ = testHandleNewBlock(handler, peer, newBlock4b.Block, newBlock4b.TD)
+	assert.NoError(t, err)
+	_ = testHandleNewBlock(handler, peer, block4b, newBlock4b.TD)
 	assertBlockSentToBDN(t, bridge, block2b.Hash())
 	assertBlockSentToBDN(t, bridge, block3b.Hash())
 	assertBlockSentToBDN(t, bridge, block4b.Hash())
@@ -1075,8 +1101,8 @@ func TestHandler_ConnectionCloseOnContextClosure(t *testing.T) {
 	require.True(t, ok)
 	// Run the runEthSub method in a goroutine
 	wg := new(sync.WaitGroup)
+	wg.Add(1) // calling before the goroutine starts to avoid the race
 	go func() {
-		wg.Add(1)
 		handler.runEthSub(ctx, provider, wg)
 	}()
 
@@ -1092,10 +1118,11 @@ func TestHandler_ConnectionCloseOnContextClosure(t *testing.T) {
 }
 
 // variety of handling functions here to trigger handlers in handlers.go instead of directly invoking the handler (useful for setting state on Peer during handling)
-func testHandleNewBlock(handler *Handler, peer *Peer, block *ethtypes.Block, td *big.Int) error {
-	newBlockPacket := eth.NewBlockPacket{
-		Block: block,
-		TD:    td,
+func testHandleNewBlock(handler *Handler, peer *Peer, block *bxethcommon.Block, td *big.Int) error {
+	newBlockPacket := NewBlockPacket{
+		Block:    &block.Block,
+		TD:       td,
+		Sidecars: block.Sidecars(),
 	}
 	return handleNewBlockMsg(handler, encodeRLP(eth.NewBlockMsg, newBlockPacket), peer)
 }
@@ -1119,24 +1146,6 @@ func encodeRLP(code uint64, data interface{}) Decoder {
 		Code:    code,
 		Size:    uint32(size),
 		Payload: r,
-	}
-}
-
-func assertNewHeadSentToPeer(t *testing.T, peer *Peer, hash common.Hash, height uint64) {
-	select {
-	case sentHead := <-peer.newHeadCh:
-		assert.Equal(t, hash, sentHead.hash)
-		assert.Equal(t, height, sentHead.height)
-	case <-time.After(expectTimeout):
-		assert.FailNow(t, "peer did not receive newHead", "hash=%v", hash)
-	}
-}
-
-func assertNoNewHeadSentToPeer(t *testing.T, peer *Peer) {
-	select {
-	case sentHead := <-peer.newHeadCh:
-		assert.FailNow(t, "peer received unexpected newHead", "hash=%v", sentHead.hash)
-	case <-time.After(expectTimeout):
 	}
 }
 

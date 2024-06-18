@@ -6,6 +6,7 @@ import (
 	"math/big"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
+	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -55,11 +56,17 @@ func (c Converter) BlockBlockchainToBDN(i interface{}) (*types.BxBlock, error) {
 		return c.ethBlockBlockchainToBDN(b)
 	case beacon.WrappedReadOnlySignedBeaconBlock:
 		return c.beaconBlockBlockchainToBDN(b)
-	case *ethtypes.Block:
-		return c.ethBlockBlockchainToBDN(NewBlockInfo(b, b.Difficulty()))
 	default:
 		return nil, fmt.Errorf("could not convert blockchain block type %v", b)
 	}
+}
+
+func (c Converter) bscSidecarsBlockchainToBDN(block *bxcommoneth.Block) []*types.BxBSCBlobSidecar {
+	bdnSidecars := make([]*types.BxBSCBlobSidecar, len(block.Sidecars()))
+	for i, sidecar := range block.Sidecars() {
+		bdnSidecars[i] = types.NewBxBSCBlobSidecar(sidecar.TxIndex, sidecar.TxHash, false, sidecar.BlobTxSidecar)
+	}
+	return bdnSidecars
 }
 
 func (c Converter) ethBlockBlockchainToBDN(blockInfo *BlockInfo) (*types.BxBlock, error) {
@@ -89,11 +96,16 @@ func (c Converter) ethBlockBlockchainToBDN(blockInfo *BlockInfo) (*types.BxBlock
 		txs = append(txs, compressedTx)
 	}
 
+	var bxSidecars []*types.BxBSCBlobSidecar
+	if len(block.Sidecars()) > 0 {
+		bxSidecars = c.bscSidecarsBlockchainToBDN(block)
+	}
+
 	difficulty := blockInfo.TotalDifficulty()
 	if difficulty == nil {
 		difficulty = big.NewInt(0)
 	}
-	return types.NewBxBlock(hash, types.EmptyHash, types.BxBlockTypeEth, encodedHeader, txs, encodedTrailer, difficulty, block.Number(), int(block.Size()))
+	return types.NewBxBlock(hash, types.EmptyHash, types.BxBlockTypeEth, encodedHeader, txs, encodedTrailer, difficulty, block.Number(), int(block.Size()), bxSidecars)
 }
 
 func (c Converter) beaconBlockBlockchainToBDN(wrappedBlock beacon.WrappedReadOnlySignedBeaconBlock) (*types.BxBlock, error) {
@@ -245,7 +257,7 @@ func (c Converter) beaconBlockBlockchainToBDN(wrappedBlock beacon.WrappedReadOnl
 		return nil, fmt.Errorf("could not encode block %v body: %v", beaconHash, err)
 	}
 
-	return types.NewBxBlock(hash, beaconHash, bxBlockType, nil, txs, encodedBlock, nil, new(big.Int).SetUint64(number), blockSize)
+	return types.NewBxBlock(hash, beaconHash, bxBlockType, nil, txs, encodedBlock, nil, new(big.Int).SetUint64(number), blockSize, nil)
 }
 
 // BlockBDNtoBlockchain converts a BDN block to an Ethereum block
@@ -260,6 +272,22 @@ func (c Converter) BlockBDNtoBlockchain(block *types.BxBlock) (interface{}, erro
 	}
 }
 
+func (c Converter) bscSidecarsBDNtoBlockchain(block *types.BxBlock) ([]*bxcommoneth.BlobSidecar, error) {
+	sidecars := make([]*bxcommoneth.BlobSidecar, len(block.BlobSidecars))
+	for i, sidecar := range block.BlobSidecars {
+		blockchainSidecar := &bxcommoneth.BlobSidecar{
+			BlobTxSidecar: sidecar.TxSidecar,
+			BlockNumber:   block.Number,
+			BlockHash:     ethcommon.Hash(block.Hash()),
+			TxIndex:       sidecar.TxIndex,
+			TxHash:        sidecar.TxHash,
+		}
+		sidecars[i] = blockchainSidecar
+	}
+
+	return sidecars, nil
+}
+
 func (c Converter) ethBlockBDNtoBlockchain(block *types.BxBlock) (*BlockInfo, error) {
 	txs := make([]rlp.RawValue, 0, len(block.Txs))
 	for _, tx := range block.Txs {
@@ -272,14 +300,23 @@ func (c Converter) ethBlockBDNtoBlockchain(block *types.BxBlock) (*BlockInfo, er
 		Trailer: block.Trailer,
 	})
 	if err != nil {
+		return nil, fmt.Errorf("could not encode block %v data bxBlockRLP format: %v", block.Hash(), err)
+	}
+
+	var commonBlock bxcommoneth.Block
+	if err = rlp.DecodeBytes(b, &commonBlock); err != nil {
 		return nil, fmt.Errorf("could not convert block %v to blockchain format: %v", block.Hash(), err)
 	}
 
-	var ethBlock ethtypes.Block
-	if err = rlp.DecodeBytes(b, &ethBlock); err != nil {
-		return nil, fmt.Errorf("could not convert block %v to blockchain format: %v", block.Hash(), err)
+	if len(block.BlobSidecars) > 0 {
+		sidecars, err := c.bscSidecarsBDNtoBlockchain(block)
+		if err != nil {
+			return nil, err
+		}
+		commonBlock.SetBlobSidecars(sidecars)
 	}
-	return NewBlockInfo(&ethBlock, block.TotalDifficulty), nil
+
+	return NewBlockInfo(&commonBlock, block.TotalDifficulty), nil
 }
 
 func (c Converter) beaconBlockBDNtoBlockchain(block *types.BxBlock) (interfaces.ReadOnlySignedBeaconBlock, error) {
@@ -376,7 +413,7 @@ func (c Converter) extractTransactionsFromBlock(block *types.BxBlock) ([][]byte,
 }
 
 // BeaconBlockToEthBlock converts beacon block to ETH block
-func BeaconBlockToEthBlock(block interfaces.ReadOnlySignedBeaconBlock) (*ethtypes.Block, error) {
+func BeaconBlockToEthBlock(block interfaces.ReadOnlySignedBeaconBlock) (*bxcommoneth.Block, error) {
 	execution, err := block.Block().Body().Execution()
 	if err != nil {
 		return nil, fmt.Errorf("could not get payload: %v", err)
@@ -466,7 +503,7 @@ func BeaconBlockToEthBlock(block interfaces.ReadOnlySignedBeaconBlock) (*ethtype
 		ParentBeaconRoot: &parentBeaconRoot,
 	}
 
-	return ethtypes.NewBlockWithHeader(header).WithBody(txs, nil /* uncles */).WithWithdrawals(ethWithdrawals), nil
+	return bxcommoneth.NewBlockWithHeader(header).WithBody(txs, nil /* uncles */).WithWithdrawals(ethWithdrawals), nil
 }
 
 // BeaconMessageToBDN converts a beacon message to a BDN beacon message

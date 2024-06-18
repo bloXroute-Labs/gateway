@@ -272,9 +272,10 @@ type Account struct {
 	SolanaDexAPIRateLimit   BDNQuotaService `json:"solana_dex_api_rate_limit"`
 	SolanaDexAPIStreamLimit BDNQuotaService `json:"solana_dex_api_stream_limit"`
 
-	TwammStreaming             BDNFeedService `json:"twamm_streaming"`
-	PrivateOrdersStreaming     BDNFeedService `json:"private_orders_streaming"`
-	PendingPrivateTxsStreaming BDNFeedService `json:"pending_private_txs_streaming"`
+	TwammStreaming                BDNFeedService `json:"twamm_streaming"`
+	PrivateOrdersStreaming        BDNFeedService `json:"private_orders_streaming"`
+	PendingPrivateTxsStreaming    BDNFeedService `json:"pending_private_txs_streaming"`
+	MEVProposerGetHeaderStreaming BDNFeedService `json:"mev_get_header_streaming"`
 
 	Bundles BDNBundlesService `json:"bundles"`
 

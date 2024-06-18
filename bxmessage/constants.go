@@ -100,7 +100,10 @@ const EmptyProtocol = 0
 const MinProtocol = 19
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
-const CurrentProtocol = IntentSolutionProtocol
+const CurrentProtocol = BundleRefundProtocol
+
+// BundleRefundProtocol is the minimum protocol version that supports bundle refund recipient address
+const BundleRefundProtocol = 48
 
 // IntentSolutionProtocol is the minimum protocol version that supports dApp address in intent solutions
 const IntentSolutionProtocol = 47

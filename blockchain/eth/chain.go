@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
@@ -38,10 +39,11 @@ type Chain struct {
 	// if a missing block too old discard to add it
 	ignoreBlockTimeout time.Duration
 
-	heightToBlockHeaders  *syncmap.SyncMap[uint64, []ethHeader]
-	blockHashMetadata     *syncmap.SyncMap[ethcommon.Hash, blockMetadata]
-	blockHashToBody       *syncmap.SyncMap[ethcommon.Hash, *ethtypes.Body]
-	blockHashToDifficulty *syncmap.SyncMap[ethcommon.Hash, *big.Int]
+	heightToBlockHeaders    *syncmap.SyncMap[uint64, []ethHeader]
+	blockHashMetadata       *syncmap.SyncMap[ethcommon.Hash, blockMetadata]
+	blockHashToBody         *syncmap.SyncMap[ethcommon.Hash, *ethtypes.Body]
+	blockHashToBlobSidecars *syncmap.SyncMap[ethcommon.Hash, bxethcommon.BlobSidecars]
+	blockHashToDifficulty   *syncmap.SyncMap[ethcommon.Hash, *big.Int]
 
 	chainState blockRefChain
 
@@ -54,17 +56,17 @@ type BlockSource string
 // enumerate types of BlockSource
 const (
 	BSBDN        BlockSource = "BDN"
-	BSBlockchain             = "Blockchain"
+	BSBlockchain BlockSource = "Blockchain"
 )
 
 // BlockInfo wraps an Ethereum block with its total difficulty.
 type BlockInfo struct {
-	Block           *ethtypes.Block
+	Block           *bxethcommon.Block
 	totalDifficulty *big.Int
 }
 
 // NewBlockInfo composes a new BlockInfo. nil is considered a valid total difficulty for constructing this struct
-func NewBlockInfo(block *ethtypes.Block, totalDifficulty *big.Int) *BlockInfo {
+func NewBlockInfo(block *bxethcommon.Block, totalDifficulty *big.Int) *BlockInfo {
 	info := &BlockInfo{
 		Block: block,
 	}
@@ -108,17 +110,18 @@ func NewChain(ctx context.Context, ignoreBlockTimeout time.Duration) *Chain {
 
 func newChain(ctx context.Context, ignoreBlockTimeout time.Duration, maxReorg, minValidChain int, cleanInterval time.Duration, maxSize int) *Chain {
 	c := &Chain{
-		chainLock:             sync.RWMutex{},
-		headerLock:            sync.RWMutex{},
-		heightToBlockHeaders:  syncmap.NewIntegerMapOf[uint64, []ethHeader](),
-		blockHashMetadata:     syncmap.NewTypedMapOf[ethcommon.Hash, blockMetadata](syncmap.EthCommonHasher),
-		blockHashToBody:       syncmap.NewTypedMapOf[ethcommon.Hash, *ethtypes.Body](syncmap.EthCommonHasher),
-		blockHashToDifficulty: syncmap.NewTypedMapOf[ethcommon.Hash, *big.Int](syncmap.EthCommonHasher),
-		chainState:            make([]blockRef, 0),
-		maxReorg:              maxReorg,
-		minValidChain:         minValidChain,
-		ignoreBlockTimeout:    ignoreBlockTimeout,
-		clock:                 utils.RealClock{},
+		chainLock:               sync.RWMutex{},
+		headerLock:              sync.RWMutex{},
+		heightToBlockHeaders:    syncmap.NewIntegerMapOf[uint64, []ethHeader](),
+		blockHashMetadata:       syncmap.NewTypedMapOf[ethcommon.Hash, blockMetadata](syncmap.EthCommonHasher),
+		blockHashToBody:         syncmap.NewTypedMapOf[ethcommon.Hash, *ethtypes.Body](syncmap.EthCommonHasher),
+		blockHashToBlobSidecars: syncmap.NewTypedMapOf[ethcommon.Hash, bxethcommon.BlobSidecars](syncmap.EthCommonHasher),
+		blockHashToDifficulty:   syncmap.NewTypedMapOf[ethcommon.Hash, *big.Int](syncmap.EthCommonHasher),
+		chainState:              make([]blockRef, 0),
+		maxReorg:                maxReorg,
+		minValidChain:           minValidChain,
+		ignoreBlockTimeout:      ignoreBlockTimeout,
+		clock:                   utils.RealClock{},
 	}
 	go c.cleanBlockStorage(ctx, cleanInterval, maxSize)
 	return c
@@ -217,9 +220,14 @@ func (c *Chain) GetNewHeadsForBDN(count int) ([]*BlockInfo, error) {
 			return heads, fmt.Errorf("inconsistent chainstate: no body stored for %v", head.hash)
 		}
 
-		block := ethtypes.NewBlockWithHeader(header).WithBody(body.Transactions, body.Uncles)
+		block := bxethcommon.NewBlockWithHeader(header).WithBody(body.Transactions, body.Uncles)
 		// ok for difficulty to not be found since not always available
 		td, _ := c.getBlockDifficulty(head.hash)
+
+		sidecars, ok := c.getBlockBlobSidecars(head.hash)
+		if ok {
+			block.SetBlobSidecars(sidecars)
+		}
 
 		heads = append(heads, NewBlockInfo(block, td))
 	}
@@ -228,7 +236,7 @@ func (c *Chain) GetNewHeadsForBDN(count int) ([]*BlockInfo, error) {
 }
 
 // ValidateBlock determines if block can potentially be added to the chain
-func (c *Chain) ValidateBlock(block *ethtypes.Block) error {
+func (c *Chain) ValidateBlock(block *bxethcommon.Block) error {
 	hash := block.Hash()
 	blockTime := time.Unix(int64(block.Time()), 0)
 
@@ -327,11 +335,13 @@ func (c *Chain) SetTotalDifficulty(info *BlockInfo) error {
 		return nil
 	}
 
-	parentHash := info.Block.ParentHash()
+	block := info.Block
+
+	parentHash := block.ParentHash()
 	parentDifficulty, ok := c.getBlockDifficulty(parentHash)
 	if ok {
-		info.SetTotalDifficulty(new(big.Int).Add(parentDifficulty, info.Block.Difficulty()))
-		c.storeBlockDifficulty(info.Block.Hash(), info.TotalDifficulty())
+		info.SetTotalDifficulty(new(big.Int).Add(parentDifficulty, block.Difficulty()))
+		c.storeBlockDifficulty(block.Hash(), info.TotalDifficulty())
 		return nil
 	}
 	return errors.New("could not calculate difficulty")
@@ -348,6 +358,19 @@ func (c *Chain) GetBodies(hashes []ethcommon.Hash) ([]*ethtypes.Body, error) {
 		bodies = append(bodies, body)
 	}
 	return bodies, nil
+}
+
+// GetBlobSidecars assembles and returns a set of blob sidecars
+func (c *Chain) GetBlobSidecars(hashes []ethcommon.Hash) ([]bxethcommon.BlobSidecars, error) {
+	sidecars := make([]bxethcommon.BlobSidecars, 0, len(hashes))
+	for _, hash := range hashes {
+		sidecar, ok := c.getBlockBlobSidecars(hash)
+		if !ok {
+			return nil, ErrBlobSidecarNotFound
+		}
+		sidecars = append(sidecars, sidecar)
+	}
+	return sidecars, nil
 }
 
 // GetHeaders assembles and returns a set of headers
@@ -440,7 +463,7 @@ func (c *Chain) GetHeaders(start eth.HashOrNumber, count int, skip int, reverse 
 }
 
 // BlockAtDepth returns the blockRefChain with depth from the head of the chain
-func (c *Chain) BlockAtDepth(chainDepth int) (*ethtypes.Block, error) {
+func (c *Chain) BlockAtDepth(chainDepth int) (*bxethcommon.Block, error) {
 	if len(c.chainState) <= chainDepth {
 		return nil, fmt.Errorf("not enough block in the chain state with length %v for depth lookup with depth of %v", len(c.chainState), chainDepth)
 	}
@@ -453,7 +476,12 @@ func (c *Chain) BlockAtDepth(chainDepth int) (*ethtypes.Block, error) {
 	if !ok {
 		return nil, fmt.Errorf("cannot get block body for block %v with height %v in the chain state ", ref.hash, ref.height)
 	}
-	block := ethtypes.NewBlockWithHeader(header).WithBody(body.Transactions, body.Uncles)
+	block := bxethcommon.NewBlockWithHeader(header).WithBody(body.Transactions, body.Uncles)
+
+	if sidecars, ok := c.getBlockBlobSidecars(ref.hash); ok {
+		block = block.WithSidecars(sidecars)
+	}
+
 	return block, nil
 }
 
@@ -579,10 +607,13 @@ func (c *Chain) getHeaderAtHeight(height uint64) (*ethtypes.Header, error) {
 	return header, nil
 }
 
-func (c *Chain) storeBlock(block *ethtypes.Block, difficulty *big.Int, source BlockSource) {
+func (c *Chain) storeBlock(block *bxethcommon.Block, difficulty *big.Int, source BlockSource) {
 	c.storeBlockHeader(block.Header(), source)
 	c.storeBlockBody(block.Hash(), block.Body())
 	c.storeBlockDifficulty(block.Hash(), difficulty)
+	if len(block.Sidecars()) > 0 {
+		c.storeBlockBlobSidecars(block.Hash(), block.Sidecars())
+	}
 }
 
 func (c *Chain) getBlockHeader(height uint64, hash ethcommon.Hash) (*ethtypes.Header, bool) {
@@ -690,12 +721,24 @@ func (c *Chain) storeBlockBody(hash ethcommon.Hash, body *ethtypes.Body) {
 	c.blockHashToBody.Store(hash, body)
 }
 
+func (c *Chain) storeBlockBlobSidecars(hash ethcommon.Hash, blobSidecars bxethcommon.BlobSidecars) {
+	c.blockHashToBlobSidecars.Store(hash, blobSidecars)
+}
+
 func (c *Chain) getBlockBody(hash ethcommon.Hash) (*ethtypes.Body, bool) {
 	body, ok := c.blockHashToBody.Load(hash)
 	if !ok {
 		return nil, ok
 	}
 	return body, ok
+}
+
+func (c *Chain) getBlockBlobSidecars(hash ethcommon.Hash) (bxethcommon.BlobSidecars, bool) {
+	sidecars, ok := c.blockHashToBlobSidecars.Load(hash)
+	if !ok {
+		return nil, ok
+	}
+	return sidecars, ok
 }
 
 func (c *Chain) hasBody(hash ethcommon.Hash) bool {
@@ -706,11 +749,16 @@ func (c *Chain) removeBlockBody(hash ethcommon.Hash) {
 	c.blockHashToBody.Delete(hash)
 }
 
+func (c *Chain) removeBlockBlobSidecars(hash ethcommon.Hash) {
+	c.blockHashToBlobSidecars.Delete(hash)
+}
+
 // removes all info corresponding to a given block in storage
 func (c *Chain) pruneHash(hash ethcommon.Hash) {
 	c.removeBlockMetadata(hash)
 	c.removeBlockBody(hash)
 	c.removeBlockDifficulty(hash)
+	c.removeBlockBlobSidecars(hash)
 }
 
 func (c *Chain) clean(maxSize int) (lowestCleaned int, highestCleaned int, numCleaned int) {

@@ -7,10 +7,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
-
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc/caller"
 	"github.com/bloXroute-Labs/gateway/v2/logger"
+	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"

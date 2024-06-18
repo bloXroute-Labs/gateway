@@ -105,7 +105,6 @@ func (s *HTTPServer) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 			BundlePrice:       bundlePayload[0].BundlePrice,
 			EnforcePayout:     bundlePayload[0].EnforcePayout,
 			AvoidMixedBundles: bundlePayload[0].AvoidMixedBundles,
-			PriorityFeeRefund: bundlePayload[0].PriorityFeeRefund,
 		}
 
 		mevBundle, bundleHash, err := mevBundleFromRequest(&payload, s.feedManager.networkNum)

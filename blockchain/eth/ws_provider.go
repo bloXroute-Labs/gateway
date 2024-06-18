@@ -21,11 +21,9 @@ type WSProvider struct {
 	peer          *Peer
 	client        *rpc.Client
 	log           *log.Entry
-	ctx           context.Context
 	timeout       time.Duration
 	subscriptions []blockchain.Subscription
 	syncStatus    blockchain.NodeSyncStatus
-	syncStatusCh  chan blockchain.NodeSyncStatus
 }
 
 // RPCResponse represents the Ethereum RPC response
