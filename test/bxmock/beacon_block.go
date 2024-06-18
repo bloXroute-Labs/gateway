@@ -7,7 +7,7 @@ import (
 
 	"github.com/prysmaticlabs/go-bitfield"
 
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/prysmaticlabs/prysm/v5/config/params"
 	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
 	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
@@ -17,7 +17,7 @@ import (
 )
 
 // NewDenebBeaconBlock creates beacon block using execution layer block
-func NewDenebBeaconBlock(t *testing.T, slot int, prevBlock interfaces.ReadOnlySignedBeaconBlock, ethBlock *ethtypes.Block) interfaces.ReadOnlySignedBeaconBlock {
+func NewDenebBeaconBlock(t *testing.T, slot int, prevBlock interfaces.ReadOnlySignedBeaconBlock, ethBlock *bxcommoneth.Block) interfaces.ReadOnlySignedBeaconBlock {
 	ezDecode := func(t *testing.T, str string) []byte {
 		b, err := hex.DecodeString(strings.TrimPrefix(str, "0x"))
 		assert.NoError(t, err)

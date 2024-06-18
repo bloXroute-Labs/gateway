@@ -140,7 +140,7 @@ func TestPeer_SendNewBlock(t *testing.T) {
 	assert.Equal(t, 1, len(rw.WriteMessages))
 
 	msg = rw.WriteMessages[0]
-	var blockPacket1 eth.NewBlockPacket
+	var blockPacket1 NewBlockPacket
 	assert.Equal(t, uint64(eth.NewBlockMsg), msg.Code)
 	err = msg.Decode(&blockPacket1)
 	assert.NoError(t, err)
@@ -167,7 +167,7 @@ func TestPeer_SendNewBlock(t *testing.T) {
 	assert.True(t, rw.ExpectWrite(maxWriteTimeout))
 	assert.Equal(t, 2, len(rw.WriteMessages))
 
-	var blockPacket2 eth.NewBlockPacket
+	var blockPacket2 NewBlockPacket
 	msg = rw.WriteMessages[1]
 	assert.Equal(t, uint64(eth.NewBlockMsg), msg.Code)
 	err = msg.Decode(&blockPacket2)
@@ -183,7 +183,7 @@ func TestPeer_SendNewBlock(t *testing.T) {
 	assert.True(t, rw.ExpectWrite(maxWriteTimeout))
 	assert.Equal(t, 3, len(rw.WriteMessages))
 
-	var blockPacket4 eth.NewBlockPacket
+	var blockPacket4 NewBlockPacket
 	msg = rw.WriteMessages[2]
 	assert.Equal(t, uint64(eth.NewBlockMsg), msg.Code)
 	err = msg.Decode(&blockPacket4)
@@ -204,7 +204,7 @@ func TestPeer_SendNewBlock(t *testing.T) {
 	assert.True(t, rw.ExpectWrite(maxWriteTimeout))
 	assert.Equal(t, 5, len(rw.WriteMessages))
 
-	var blockPacket5 eth.NewBlockPacket
+	var blockPacket5 NewBlockPacket
 	msg = rw.WriteMessages[4]
 	assert.Equal(t, uint64(eth.NewBlockMsg), msg.Code)
 	err = msg.Decode(&blockPacket5)
@@ -251,7 +251,7 @@ func TestPeer_SendNewBlock_HeadUpdates(t *testing.T) {
 	assert.True(t, rw.ExpectWrite(maxWriteTimeout))
 	assert.Equal(t, 1, len(rw.WriteMessages))
 
-	var blockPacket eth.NewBlockPacket
+	var blockPacket NewBlockPacket
 	msg = rw.WriteMessages[0]
 	assert.Equal(t, uint64(eth.NewBlockMsg), msg.Code)
 	err = msg.Decode(&blockPacket)

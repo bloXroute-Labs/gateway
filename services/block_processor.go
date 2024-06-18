@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
+	"github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
+	ethTypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
@@ -67,6 +69,10 @@ type bxCompressedTransaction struct {
 	Transaction       []byte `ssz-max:"1073741824"`
 }
 
+type bxBroadcastBSCBlobSidecar struct {
+	Data rlp.RawValue
+}
+
 // BxBlockSSZ is a struct for SSZ encoding/decoding of a block
 type BxBlockSSZ struct {
 	Block  []byte                     `ssz-max:"367832"`
@@ -80,6 +86,7 @@ type bxBlockRLP struct {
 	Trailer         rlp.RawValue
 	TotalDifficulty *big.Int
 	Number          *big.Int
+	Sidecars        []bxBroadcastBSCBlobSidecar `rlp:"optional"`
 }
 
 func (bp *blockProcessor) BxBlockToBroadcast(block *types.BxBlock, networkNum types.NetworkNum, minTxAge time.Duration) (*bxmessage.Broadcast, types.ShortIDList, error) {
@@ -184,6 +191,52 @@ func (bp *blockProcessor) BxBlockFromBroadcast(broadcast *bxmessage.Broadcast) (
 	return block, missingShortIDs, err
 }
 
+func (bp *blockProcessor) processSidecarsFromRLPBroadcast(rlpSidecars []bxBroadcastBSCBlobSidecar) ([]*types.BxBSCBlobSidecar, uint64, error) {
+	blobSidecars := make([]*types.BxBSCBlobSidecar, len(rlpSidecars))
+	sidecarsSizeBytes := uint64(0)
+
+	for i, rlpSidecar := range rlpSidecars {
+		sidecarsSizeBytes += uint64(len(rlpSidecar.Data))
+
+		blobSidecar := new(types.BxBSCBlobSidecar)
+		if err := rlp.DecodeBytes(rlpSidecar.Data, blobSidecar); err != nil {
+			return nil, 0, fmt.Errorf("failed to decode sidecar: %v", err)
+		}
+
+		if blobSidecar.IsCompressed {
+			hash, err := types.NewSHA256Hash(blobSidecar.TxHash[:])
+			if err != nil {
+				return nil, 0, fmt.Errorf("failed to create SHA256 hash from tx hash: %v", err)
+			}
+
+			tx, ok := bp.txStore.Get(hash)
+			if !ok {
+				return nil, 0, fmt.Errorf("failed to get blob sidecar by tx hash: %v", hash)
+			}
+
+			var ethTx ethTypes.Transaction
+			err = rlp.DecodeBytes(tx.Content(), &ethTx)
+			if err != nil {
+				return nil, 0, fmt.Errorf("failed to decode Ethereum transaction: %v", err)
+			}
+
+			if ethTx.BlobTxSidecar() == nil {
+				return nil, 0, fmt.Errorf("failed to get blob sidecar from Ethereum transaction")
+			}
+
+			logger.Tracef("successfully decompressed eth block blob sidecar, index: %d, tx hash: %s", blobSidecar.TxIndex, blobSidecar.TxHash.String())
+
+			blobSidecar.TxSidecar = ethTx.BlobTxSidecar()
+			blobSidecar.IsCompressed = false
+		} else {
+			logger.Tracef("eth block blob sidecar is not compressed, tx hash: %s", blobSidecar.TxHash.String())
+		}
+		blobSidecars[i] = blobSidecar
+	}
+
+	return blobSidecars, sidecarsSizeBytes, nil
+}
+
 func (bp *blockProcessor) newBxBlockFromRLPBroadcast(broadcast *bxmessage.Broadcast, bxTransactions []*types.BxTransaction) (*types.BxBlock, error) {
 	var rlpBlock bxBlockRLP
 	if err := rlp.DecodeBytes(broadcast.Block(), &rlpBlock); err != nil {
@@ -207,9 +260,19 @@ func (bp *blockProcessor) newBxBlockFromRLPBroadcast(broadcast *bxmessage.Broadc
 			txsBytes += uint64(len(tx.Transaction))
 		}
 	}
-	blockSize := int(rlp.ListSize(uint64(len(rlpBlock.Header)) + rlp.ListSize(txsBytes) + uint64(len(rlpBlock.Trailer))))
 
-	return types.NewRawBxBlock(broadcast.Hash(), types.EmptyHash, broadcast.BlockType(), rlpBlock.Header, txs, rlpBlock.Trailer, rlpBlock.TotalDifficulty, rlpBlock.Number, blockSize), nil
+	var blobSidecars []*types.BxBSCBlobSidecar
+	var err error
+	var blobSidecarsSize uint64
+	if len(rlpBlock.Sidecars) > 0 {
+		blobSidecars, blobSidecarsSize, err = bp.processSidecarsFromRLPBroadcast(rlpBlock.Sidecars)
+		if err != nil {
+			return nil, fmt.Errorf("failed to process sidecars: %v", err)
+		}
+	}
+	blockSize := int(rlp.ListSize(uint64(len(rlpBlock.Header)) + rlp.ListSize(txsBytes) + uint64(len(rlpBlock.Trailer)) + blobSidecarsSize))
+
+	return types.NewRawBxBlock(broadcast.Hash(), types.EmptyHash, broadcast.BlockType(), rlpBlock.Header, txs, rlpBlock.Trailer, rlpBlock.TotalDifficulty, rlpBlock.Number, blockSize, blobSidecars), nil
 }
 
 func (bp *blockProcessor) newBxBlockFromSSZBroadcast(broadcast *bxmessage.Broadcast, bxTransactions []*types.BxTransaction) (*types.BxBlock, error) {
@@ -238,7 +301,7 @@ func (bp *blockProcessor) newBxBlockFromSSZBroadcast(broadcast *bxmessage.Broadc
 
 	blockSize := len(sszBlock.Block) + txsBytes
 
-	return types.NewRawBxBlock(broadcast.Hash(), broadcast.BeaconHash(), broadcast.BlockType(), nil, txs, sszBlock.Block, nil, big.NewInt(int64(sszBlock.Number)), int(blockSize)), nil
+	return types.NewRawBxBlock(broadcast.Hash(), broadcast.BeaconHash(), broadcast.BlockType(), nil, txs, sszBlock.Block, nil, big.NewInt(int64(sszBlock.Number)), int(blockSize), nil), nil
 }
 
 func calcBeaconTransactionLength(rawTx []byte) int {
@@ -276,6 +339,33 @@ func calcBeaconTransactionLength(rawTx []byte) int {
 	return txLen
 }
 
+func (bp *blockProcessor) processBlobSidecarToRLPBroadcast(bxBlobSidecars []*types.BxBSCBlobSidecar, maxTimestampForCompression time.Time) ([]bxBroadcastBSCBlobSidecar, error) {
+	rlpBlobSidecars := make([]bxBroadcastBSCBlobSidecar, len(bxBlobSidecars))
+	for i, sidecar := range bxBlobSidecars {
+		hash, err := types.NewSHA256Hash(sidecar.TxHash[:])
+		if err != nil {
+			return nil, fmt.Errorf("failed to create SHA256 hash from tx hash: %v", err)
+		}
+
+		bxTransaction, ok := bp.txStore.Get(hash)
+		if ok && bxTransaction.AddTime().Before(maxTimestampForCompression) {
+			logger.Tracef("Successfully compressed eth block blob sidecar, index: %d, tx hash: %s", sidecar.TxIndex, sidecar.TxHash.String())
+			sidecar.IsCompressed = true
+			sidecar.TxSidecar = nil
+		} else {
+			logger.Tracef("Unable to compress eth block blob sidecar, sending as is: %s", sidecar.TxHash.String())
+			sidecar.IsCompressed = false
+		}
+
+		encodedSidecar, err := rlp.EncodeToBytes(sidecar)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode sidecar: %v", err)
+		}
+		rlpBlobSidecars[i] = bxBroadcastBSCBlobSidecar{Data: encodedSidecar}
+	}
+	return rlpBlobSidecars, nil
+}
+
 func (bp *blockProcessor) newRLPBlockBroadcast(block *types.BxBlock, networkNum types.NetworkNum, minTxAge time.Duration) (*bxmessage.Broadcast, types.ShortIDList, error) {
 	usedShortIDs := make(types.ShortIDList, 0)
 	txs := make([]bxCompressedTransaction, 0, len(block.Txs))
@@ -304,12 +394,25 @@ func (bp *blockProcessor) newRLPBlockBroadcast(block *types.BxBlock, networkNum 
 		})
 	}
 
+	var blobSidecars []bxBroadcastBSCBlobSidecar
+	var err error
+	if len(block.BlobSidecars) > 0 {
+		blobSidecars, err = bp.processBlobSidecarToRLPBroadcast(block.BlobSidecars, maxTimestampForCompression)
+		if err != nil {
+			return nil, usedShortIDs, err
+		}
+		logger.Tracef("Successfully processed %d blob sidecars in block %s", len(blobSidecars), block.Hash().String())
+	} else {
+		logger.Tracef("No blob sidecars found in block %s", block.Hash().String())
+	}
+
 	rlpBlock := bxBlockRLP{
 		Header:          block.Header,
 		Txs:             txs,
 		Trailer:         block.Trailer,
 		TotalDifficulty: block.TotalDifficulty,
 		Number:          block.Number,
+		Sidecars:        blobSidecars,
 	}
 
 	encodedBlock, err := rlp.EncodeToBytes(rlpBlock)

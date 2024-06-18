@@ -377,17 +377,18 @@ func (g *GatewayGrpc) BlxrSubmitBundle(ctx context.Context, req *pb.BlxrSubmitBu
 	}
 
 	mevBundleParams := &jsonrpc.RPCBundleSubmissionPayload{
-		MEVBuilders:       req.MevBuilders,
-		Transaction:       req.Transactions,
-		BlockNumber:       req.BlockNumber,
-		MinTimestamp:      int(req.MinTimestamp),
-		MaxTimestamp:      int(req.MaxTimestamp),
-		RevertingHashes:   req.RevertingHashes,
-		UUID:              req.Uuid,
-		BundlePrice:       req.BundlePrice,
-		EnforcePayout:     req.EnforcePayout,
-		AvoidMixedBundles: req.AvoidMixedBundles,
-		PriorityFeeRefund: req.PriorityFeeRefund,
+		MEVBuilders:             req.MevBuilders,
+		Transaction:             req.Transactions,
+		BlockNumber:             req.BlockNumber,
+		MinTimestamp:            int(req.MinTimestamp),
+		MaxTimestamp:            int(req.MaxTimestamp),
+		RevertingHashes:         req.RevertingHashes,
+		UUID:                    req.Uuid,
+		BundlePrice:             req.BundlePrice,
+		EnforcePayout:           req.EnforcePayout,
+		AvoidMixedBundles:       req.AvoidMixedBundles,
+		PriorityFeeRefund:       req.PriorityFeeRefund,
+		IncomingRefundRecipient: req.RefundRecipient,
 	}
 
 	grpc := connections.NewRPCConn(*accountID, servers.GetPeerAddr(ctx), g.params.sdn.NetworkNum(), utils.GRPC)

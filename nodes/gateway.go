@@ -39,6 +39,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc/blockproposer"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc/caller/rpc"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc/ticker"
+	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/polygon"
@@ -1056,6 +1057,7 @@ func (g *gateway) publishBlock(bxBlock *types.BxBlock, nodeSource *connections.B
 
 func (g *gateway) notifyBlockFeeds(bxBlock *types.BxBlock, nodeSource *connections.Blockchain, info []*types.FutureValidatorInfo, isBlockchainBlock bool) error {
 	// Not optimal. Block -> BxBlock -> Block
+	// Why not to check already seen before converting to blockchain block?
 	block, err := g.bridge.BlockBDNtoBlockchain(bxBlock)
 	if err != nil {
 		return fmt.Errorf("cannot convert BxBlock to blockchain block: %v", err)
@@ -1066,7 +1068,7 @@ func (g *gateway) notifyBlockFeeds(bxBlock *types.BxBlock, nodeSource *connectio
 	})
 	var addedNewBlock, addedBdnBlock bool
 
-	notifyEthBlockFeeds := func(block *ethtypes.Block, nodeSource *connections.Blockchain, info []*types.FutureValidatorInfo, isBlockchainBlock bool) error {
+	notifyEthBlockFeeds := func(block *bxcommoneth.Block, nodeSource *connections.Blockchain, info []*types.FutureValidatorInfo, isBlockchainBlock bool) error {
 		ethNotification, err := types.NewEthBlockNotification(common.Hash(bxBlock.Hash()), block, info, g.txIncludeSenderInFeed)
 		if err != nil {
 			return err

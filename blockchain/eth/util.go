@@ -13,6 +13,7 @@ var (
 	ErrInvalidRequest        = errors.New("invalid request")
 	ErrInvalidPacketType     = errors.New("invalid packet type")
 	ErrBodyNotFound          = errors.New("block body not stored")
+	ErrBlobSidecarNotFound   = errors.New("blob sidecar not stored")
 	ErrAlreadySeen           = errors.New("already seen")
 	ErrAncientHeaders        = errors.New("headers requested are ancient")
 	ErrFutureHeaders         = errors.New("headers requested are in the future")

@@ -6,11 +6,13 @@ import (
 	"testing"
 	"time"
 
+	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestChain_AddBlock(t *testing.T) {
@@ -189,11 +191,11 @@ func TestChain_GetHeaders_ByNumber(t *testing.T) {
 	)
 
 	// expected: err (neither header or hash provided)
-	headers, err = c.GetHeaders(eth.HashOrNumber{}, 1, 0, false)
+	_, err = c.GetHeaders(eth.HashOrNumber{}, 1, 0, false)
 	assert.Equal(t, ErrInvalidRequest, err)
 
 	// expected: err (headers in future)
-	headers, err = c.GetHeaders(eth.HashOrNumber{Number: 10}, 1, 0, false)
+	_, err = c.GetHeaders(eth.HashOrNumber{Number: 10}, 1, 0, false)
 	assert.Equal(t, ErrFutureHeaders, err)
 
 	// expected: 1
@@ -241,7 +243,7 @@ func TestChain_GetHeaders_ByNumber(t *testing.T) {
 	assert.Equal(t, block4.Header(), headers[3])
 
 	// expected: err (header couldn't be located at the requested height in the past, so most create error)
-	headers, err = c.GetHeaders(eth.HashOrNumber{Number: 1}, 100, 0, true)
+	_, err = c.GetHeaders(eth.HashOrNumber{Number: 1}, 100, 0, true)
 	assert.NotNil(t, err)
 }
 
@@ -386,6 +388,25 @@ func TestChain_GetNewHeadsForBDN(t *testing.T) {
 	assert.Equal(t, block3.Hash(), blocks[0].Block.Hash())
 }
 
+func TestChain_GetNewHeadsForBDN_WithSidecar(t *testing.T) {
+	c := newChain(context.Background(), 30*time.Second, 5, 5, time.Hour, 1000)
+
+	block1 := bxmock.NewEthBlock(1, common.Hash{})
+	block2 := bxmock.NewEthBlock(2, block1.Hash())
+
+	block2.SetBlobSidecars(BSCBlobSidecars)
+
+	addBlockWithTD(c, block1, block1.Difficulty())
+	addBlock(c, block2)
+
+	blocks, err := c.GetNewHeadsForBDN(2)
+	require.NoError(t, err)
+	require.Equal(t, block2.Hash(), blocks[0].Block.Hash())
+	require.Equal(t, block1.Hash(), blocks[1].Block.Hash())
+
+	require.Equal(t, BSCBlobSidecars, blocks[0].Block.Sidecars())
+}
+
 func TestChain_clean(t *testing.T) {
 	// -race can degradate clean performance
 	cleanInterval := 15 * time.Millisecond
@@ -429,6 +450,54 @@ func TestChain_clean(t *testing.T) {
 		}
 		c.heightToBlockHeaders.Delete(key)
 
+		return true
+	})
+
+	assert.Empty(t, expectedHashes)
+	assert.Zero(t, c.heightToBlockHeaders.Size())
+}
+
+func TestChain_clean_WithSidecar(t *testing.T) {
+	cleanInterval := 15 * time.Millisecond
+	c := newChain(context.Background(), 30*time.Second, 5, 5, cleanInterval, 1000)
+
+	block1 := bxmock.NewEthBlock(1, common.Hash{})
+	block2 := bxmock.NewEthBlock(2, block1.Hash())
+
+	block2.SetBlobSidecars(BSCBlobSidecars)
+
+	addBDNBlock(c, block1)
+	addBDNBlock(c, block2)
+
+	expectedHashes := map[common.Hash]struct{}{
+		block1.Hash(): {},
+		block2.Hash(): {},
+	}
+
+	expectedHashesSidecar := map[common.Hash]struct{}{
+		block2.Hash(): {},
+	}
+
+	assert.Equal(t, 2, c.heightToBlockHeaders.Size())
+
+	c.heightToBlockHeaders.Range(func(key uint64, headers []ethHeader) bool {
+		for _, header := range headers {
+			if _, ok := expectedHashes[header.Hash()]; !ok {
+				assert.Fail(t, "unexpected block", "height: %v", header.Number.Int64())
+			}
+			delete(expectedHashes, header.Hash())
+		}
+		c.heightToBlockHeaders.Delete(key)
+
+		return true
+	})
+
+	c.blockHashToBlobSidecars.Range(func(key common.Hash, sidecars bxethcommon.BlobSidecars) bool {
+		if _, ok := expectedHashesSidecar[key]; !ok {
+			assert.Fail(t, "unexpected block", "hash: %v", key)
+		}
+		delete(expectedHashesSidecar, key)
+		c.blockHashToBlobSidecars.Delete(key)
 		return true
 	})
 
@@ -482,23 +551,23 @@ func TestChain_cleanNoChainstate(t *testing.T) {
 	assert.Zero(t, c.heightToBlockHeaders.Size())
 }
 
-func addBDNBlock(c *Chain, block *ethtypes.Block) int {
+func addBDNBlock(c *Chain, block *bxethcommon.Block) int {
 	bi := NewBlockInfo(block, nil)
 	_ = c.SetTotalDifficulty(bi)
 	return c.AddBlock(bi, BSBDN)
 }
 
-func addBlock(c *Chain, block *ethtypes.Block) int {
+func addBlock(c *Chain, block *bxethcommon.Block) int {
 	return addBlockWithTD(c, block, nil)
 }
 
-func addBlockWithTD(c *Chain, block *ethtypes.Block, td *big.Int) int {
+func addBlockWithTD(c *Chain, block *bxethcommon.Block, td *big.Int) int {
 	bi := NewBlockInfo(block, td)
 	_ = c.SetTotalDifficulty(bi)
 	return c.AddBlock(bi, BSBlockchain)
 }
 
-func assertChainState(t *testing.T, c *Chain, block *ethtypes.Block, index int, length int) {
+func assertChainState(t *testing.T, c *Chain, block *bxethcommon.Block, index int, length int) {
 	assert.Equal(t, length, len(c.chainState))
 	assert.Equal(t, block.NumberU64(), c.chainState[index].height)
 	assert.Equal(t, block.Hash(), c.chainState[index].hash)

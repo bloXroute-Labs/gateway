@@ -82,32 +82,41 @@ func handleGetBlockBodies(backend Backend, msg Decoder, peer *Peer) error {
 	return peer.ReplyBlockBodies(query.RequestId, bodies)
 }
 
-func answerGetBlockBodies(backend Backend, query eth.GetBlockBodiesPacket) ([]*eth.BlockBody, error) {
+func answerGetBlockBodies(backend Backend, query eth.GetBlockBodiesPacket) ([]*BlockBody, error) {
 	bodies, err := backend.GetBodies(query.GetBlockBodiesRequest)
 	if err == ErrBodyNotFound {
 		log.Debugf("could not find all block bodies: %v", query)
-		return []*eth.BlockBody{}, nil
+		return []*BlockBody{}, nil
 	} else if err != nil {
 		return nil, err
 	}
 
-	blockBodies := make([]*eth.BlockBody, 0, len(bodies))
+	blockBodies := make([]*BlockBody, 0, len(bodies))
 	for _, body := range bodies {
-		blockBody := &eth.BlockBody{
+		blockBody := &BlockBody{
 			Transactions: body.Transactions,
 			Uncles:       body.Uncles,
 		}
 		blockBodies = append(blockBodies, blockBody)
 	}
 
+	sidecars, err := backend.GetBlobSidecars(query.GetBlockBodiesRequest)
+	if err == nil {
+		for idx, sidecar := range sidecars {
+			blockBodies[idx].Sidecars = sidecar
+		}
+	}
+
 	return blockBodies, nil
 }
 
 func handleNewBlockMsg(backend Backend, msg Decoder, peer *Peer) error {
-	var blockPacket eth.NewBlockPacket
+	var blockPacket NewBlockPacket
 	if err := msg.Decode(&blockPacket); err != nil {
+		log.Errorf("could not decode message %v: %v", msg, err)
 		return fmt.Errorf("could not decode message %v: %v", msg, err)
 	}
+
 	peer.UpdateHead(blockPacket.Block.NumberU64(), blockPacket.Block.Hash())
 	return backend.Handle(peer, &blockPacket)
 }
@@ -209,12 +218,12 @@ func handleBlockHeaders(backend Backend, msg Decoder, peer *Peer) error {
 }
 
 func handleBlockBodies(backend Backend, msg Decoder, peer *Peer) error {
-	var blockBodies eth.BlockBodiesPacket
+	var blockBodies BlockBodiesPacket
 	if err := msg.Decode(&blockBodies); err != nil {
 		return fmt.Errorf("could not decode message: %v: %v", msg, err)
 	}
 
-	_, err := peer.NotifyResponse(blockBodies.RequestId, &blockBodies)
+	_, err := peer.NotifyResponse(blockBodies.RequestID, &blockBodies)
 	return err
 }
 

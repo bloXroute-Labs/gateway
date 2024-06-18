@@ -92,12 +92,10 @@ func (m *MockWSProvider) NumRPCCalls() int {
 
 // SetBlockchainPeer sets the blockchain peer that corresponds to the ws client
 func (m *MockWSProvider) SetBlockchainPeer(peer interface{}) {
-	return
 }
 
 // UnsetBlockchainPeer unsets the blockchain peer that corresponds to the ws client
 func (m *MockWSProvider) UnsetBlockchainPeer() {
-	return
 }
 
 // BlockchainPeerEndpoint returns the blockchain peer that corresponds to the ws client
@@ -112,7 +110,7 @@ func (m *MockWSProvider) BlockchainPeer() interface{} {
 
 // Subscribe returns a dummy subscription
 func (m *MockWSProvider) Subscribe(responseChannel interface{}, feedName string, args ...interface{}) (*blockchain.Subscription, error) {
-	return &blockchain.Subscription{&rpc.ClientSubscription{}}, nil
+	return &blockchain.Subscription{Sub: &rpc.ClientSubscription{}}, nil
 }
 
 // CallRPC returns a fake response with no error

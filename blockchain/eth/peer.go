@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2"
+	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
@@ -65,11 +66,11 @@ type Peer struct {
 	responseQueue *syncmap.SyncMap[uint64, chan eth.Packet]
 
 	newHeadCh           chan blockRef
-	newBlockCh          chan *eth.NewBlockPacket
+	newBlockCh          chan *NewBlockPacket
 	blockConfirmationCh chan common.Hash
 	confirmedHead       blockRef
 	sentHead            blockRef
-	queuedBlocks        []*eth.NewBlockPacket
+	queuedBlocks        []*NewBlockPacket
 	mu                  sync.RWMutex
 
 	RequestConfirmations bool
@@ -91,9 +92,9 @@ func newPeer(parent context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version 
 		clock:                clock,
 		chainID:              chainID,
 		newHeadCh:            make(chan blockRef, headChannelBacklog),
-		newBlockCh:           make(chan *eth.NewBlockPacket, blockChannelBacklog),
+		newBlockCh:           make(chan *NewBlockPacket, blockChannelBacklog),
 		blockConfirmationCh:  make(chan common.Hash, blockConfirmationChannelBacklog),
-		queuedBlocks:         make([]*eth.NewBlockPacket, 0),
+		queuedBlocks:         make([]*NewBlockPacket, 0),
 		responseQueue:        syncmap.NewIntegerMapOf[uint64, chan eth.Packet](),
 		RequestConfirmations: true,
 	}
@@ -167,7 +168,7 @@ func (ep *Peer) getSentHead() blockRef {
 	return ep.sentHead
 }
 
-func (ep *Peer) getQueuedBlocks() []*eth.NewBlockPacket {
+func (ep *Peer) getQueuedBlocks() []*NewBlockPacket {
 	ep.mu.RLock()
 	defer ep.mu.RUnlock()
 	return ep.queuedBlocks
@@ -287,7 +288,7 @@ func (ep *Peer) blockLoop() {
 
 				ep.mu.Lock()
 				// insert block at insertion point
-				ep.queuedBlocks = append(ep.queuedBlocks, &eth.NewBlockPacket{})
+				ep.queuedBlocks = append(ep.queuedBlocks, &NewBlockPacket{})
 				copy(ep.queuedBlocks[insertionPoint+1:], ep.queuedBlocks[insertionPoint:])
 				ep.queuedBlocks[insertionPoint] = newBlock
 				ep.mu.Unlock()
@@ -570,10 +571,11 @@ func (ep *Peer) UpdateHead(height uint64, hash common.Hash) {
 }
 
 // QueueNewBlock adds a new block to the queue to be sent to the peer in the order the peer is ready for.
-func (ep *Peer) QueueNewBlock(block *ethtypes.Block, td *big.Int) {
-	packet := eth.NewBlockPacket{
-		Block: block,
-		TD:    td,
+func (ep *Peer) QueueNewBlock(block *bxcommoneth.Block, td *big.Int) {
+	packet := NewBlockPacket{
+		Block:    &block.Block,
+		TD:       td,
+		Sidecars: block.Sidecars(),
 	}
 	ep.newBlockCh <- &packet
 }
@@ -592,9 +594,9 @@ func (ep *Peer) SendBlockBodies(bodies []*eth.BlockBody) error {
 }
 
 // ReplyBlockBodies sends a batch of requested block bodies to the peer
-func (ep *Peer) ReplyBlockBodies(id uint64, bodies []*eth.BlockBody) error {
-	return ep.send(eth.BlockBodiesMsg, eth.BlockBodiesPacket{
-		RequestId:           id,
+func (ep *Peer) ReplyBlockBodies(id uint64, bodies []*BlockBody) error {
+	return ep.send(eth.BlockBodiesMsg, BlockBodiesPacket{
+		RequestID:           id,
 		BlockBodiesResponse: bodies,
 	})
 }
@@ -703,7 +705,7 @@ func (ep *Peer) RequestBlockHeaderRaw(origin eth.HashOrNumber, amount, skip uint
 	})
 }
 
-func (ep *Peer) sendNewBlock(packet *eth.NewBlockPacket) error {
+func (ep *Peer) sendNewBlock(packet *NewBlockPacket) error {
 	// For BSC, the timestamp in block header is an expected time provided by the validator, but sometimes it arrives at BDN before the timestamp provided
 	if ep.chainID == bxgateway.BSCChainID {
 		// delay if the header timestamp is later than the system timestamp

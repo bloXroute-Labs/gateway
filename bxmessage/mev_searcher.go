@@ -125,6 +125,7 @@ func (m *MEVSearcher) ToMEVBundle() (*MEVBundle, error) {
 		false,
 		false,
 		false,
+		"",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create mevBundle: %v", err)

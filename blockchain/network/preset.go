@@ -116,7 +116,7 @@ func newBSCMainnetConfig() EthConfig {
 		Genesis:                 common.HexToHash("0x0d21840abff46b96c84b2ac9e10e4f5cdaeb5693cb665db62a2f3b02d2d57b5b"),
 		IgnoreBlockTimeout:      30 * time.Second,
 		BootstrapNodes:          bootNodes,
-		ProgramName:             "Geth/v1.1.11-6073dbdf-20220626/linux-amd64/go1.18.4",
+		ProgramName:             "Geth/v1.4.5/linux-amd64/go1.21.7",
 	}
 }
 
@@ -150,7 +150,7 @@ func newBSCTestnetConfig() EthConfig {
 		Genesis:                 common.HexToHash("6d3c66c5357ec91d5c43af47e234a939b22557cbb552dc45bebbceeed90fbe34"),
 		IgnoreBlockTimeout:      30 * time.Second,
 		BootstrapNodes:          bootNodes,
-		ProgramName:             "Geth/v1.2.9-34b065ae-20230721/linux-amd64/go1.19.11",
+		ProgramName:             "Geth/v1.4.5/linux-amd64/go1.21.7",
 	}
 }
 

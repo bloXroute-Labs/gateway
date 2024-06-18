@@ -10,6 +10,7 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/datatype"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
@@ -38,6 +39,7 @@ type Backend interface {
 	Handle(peer *Peer, packet eth.Packet) error
 	GetHeaders(start eth.HashOrNumber, count int, skip int, reverse bool) ([]*ethtypes.Header, error)
 	GetBodies(hashes []ethcommon.Hash) ([]*ethtypes.Body, error)
+	GetBlobSidecars(hashes []ethcommon.Hash) ([]bxcommoneth.BlobSidecars, error)
 	GetBridge() blockchain.Bridge
 	RequestTransactions(hashes []ethcommon.Hash) ([]rlp.RawValue, error)
 }
@@ -97,6 +99,10 @@ func (h *Handler) handleFeeds(wsCtx context.Context, nodeWS blockchain.WSProvide
 		case newPendingTx := <-newPendingTxsRespCh:
 			activeFeeds = true
 			txHash, err := types.NewSHA256Hash(newPendingTx[:])
+			if err != nil {
+				nodeWS.Log().Errorf("got an error from NewSHA256Hash for %v - %v", newPendingTx, err)
+				continue
+			}
 			hashes := types.SHA256HashList{txHash}
 			// read all pending txs from channel into the list
 			morePendingTxs := true
@@ -381,19 +387,19 @@ func (h *Handler) processBDNBlock(bdnBlock *types.BxBlock) {
 	if ethBlockInfo == nil {
 		return
 	}
+	block := ethBlockInfo.Block
 
 	// In PoS the block difficulty is 0
-	if ethBlockInfo.Block.Difficulty() == nil || ethBlockInfo.Block.Difficulty().Cmp(big.NewInt(0)) == 0 {
+	if block.Difficulty() == nil || block.Difficulty().Cmp(big.NewInt(0)) == 0 {
 		return
 	}
 
-	ethBlock := ethBlockInfo.Block
 	err = h.chain.SetTotalDifficulty(ethBlockInfo)
 	if err != nil {
-		log.Debugf("could not resolve difficulty for block %v, announcing instead", ethBlock.Hash().String())
-		h.broadcastBlockAnnouncement(ethBlock)
+		log.Debugf("could not resolve difficulty for block %v, announcing instead", block.Hash().String())
+		h.broadcastBlockAnnouncement(block)
 	} else {
-		h.broadcastBlock(ethBlock, ethBlockInfo.TotalDifficulty(), nil)
+		h.broadcastBlock(block, ethBlockInfo.TotalDifficulty(), nil)
 	}
 }
 
@@ -471,10 +477,10 @@ func (h *Handler) awaitBlockResponse(peer *Peer, blockHash ethcommon.Hash, heade
 	}
 }
 
-func (h *Handler) fetchBlockResponse(peer *Peer, blockHash ethcommon.Hash, headersCh chan eth.Packet, bodiesCh chan eth.Packet) (*eth.BlockHeadersRequest, *eth.BlockBodiesPacket, error) {
+func (h *Handler) fetchBlockResponse(peer *Peer, blockHash ethcommon.Hash, headersCh chan eth.Packet, bodiesCh chan eth.Packet) (*eth.BlockHeadersRequest, *BlockBodiesPacket, error) {
 	var (
 		headers *eth.BlockHeadersRequest
-		bodies  *eth.BlockBodiesPacket
+		bodies  *BlockBodiesPacket
 		errCh   = make(chan error, 2)
 	)
 
@@ -501,7 +507,7 @@ func (h *Handler) fetchBlockResponse(peer *Peer, blockHash ethcommon.Hash, heade
 
 		select {
 		case rawBodies := <-bodiesCh:
-			bodies, ok = rawBodies.(*eth.BlockBodiesPacket)
+			bodies, ok = rawBodies.(*BlockBodiesPacket)
 			peer.Log().Debugf("received body for block %v", blockHash)
 			if !ok {
 				log.Errorf("could not convert bodies for block %v to the expected packet type, got %T", blockHash.String(), rawBodies)
@@ -528,14 +534,18 @@ func (h *Handler) fetchBlockResponse(peer *Peer, blockHash ethcommon.Hash, heade
 	return headers, bodies, nil
 }
 
-func (h *Handler) processBlockComponents(peer *Peer, headers *eth.BlockHeadersRequest, bodies *eth.BlockBodiesPacket) error {
+func (h *Handler) processBlockComponents(peer *Peer, headers *eth.BlockHeadersRequest, bodies *BlockBodiesPacket) error {
 	if len(*headers) != 1 || len(bodies.BlockBodiesResponse) != 1 {
 		return fmt.Errorf("received %v headers and %v bodies, instead of 1 of each", len(*headers), len(bodies.BlockBodiesResponse))
 	}
 
 	header := (*headers)[0]
 	body := bodies.BlockBodiesResponse[0]
-	block := ethtypes.NewBlockWithHeader(header).WithBody(body.Transactions, body.Uncles)
+	block := bxcommoneth.NewBlockWithHeader(header).WithBody(body.Transactions, body.Uncles)
+	if len(body.Sidecars) > 0 {
+		block = block.WithSidecars(body.Sidecars)
+	}
+
 	blockInfo := NewBlockInfo(block, nil)
 	_ = h.chain.SetTotalDifficulty(blockInfo)
 	return h.processBlock(peer, blockInfo)
@@ -543,6 +553,7 @@ func (h *Handler) processBlockComponents(peer *Peer, headers *eth.BlockHeadersRe
 
 // Handle processes Ethereum message packets that update internal backend state. In general, messages that require responses should not reach this function.
 func (h *Handler) Handle(peer *Peer, packet eth.Packet) error {
+
 	switch p := packet.(type) {
 	case *eth.StatusPacket:
 		h.chain.InitializeDifficulty(p.Head, p.TD)
@@ -566,8 +577,12 @@ func (h *Handler) Handle(peer *Peer, packet eth.Packet) error {
 		return h.processTransactionHashes(peer, *p)
 	case *eth.NewPooledTransactionHashesPacket:
 		return h.processTransactionHashes(peer, (*p).Hashes)
-	case *eth.NewBlockPacket:
-		return h.processBlock(peer, NewBlockInfo(p.Block, p.TD))
+	case *NewBlockPacket:
+		block := &bxcommoneth.Block{Block: *p.Block}
+		if len(p.Sidecars) > 0 {
+			block.SetBlobSidecars(p.Sidecars)
+		}
+		return h.processBlock(peer, NewBlockInfo(block, p.TD))
 	case *eth.NewBlockHashesPacket:
 		return h.processBlockAnnouncement(peer, *p)
 	case *eth.BlockHeadersRequest:
@@ -575,20 +590,6 @@ func (h *Handler) Handle(peer *Peer, packet eth.Packet) error {
 	default:
 		return fmt.Errorf("unexpected eth packet type: %v", packet)
 	}
-}
-
-func (h *Handler) createBxBlockFromEthHeader(header *ethtypes.Header) (*types.BxBlock, error) {
-	body, ok := h.chain.getBlockBody(header.Hash())
-	if !ok {
-		return nil, ErrBodyNotFound
-	}
-	ethBlock := ethtypes.NewBlockWithHeader(header).WithBody(body.Transactions, body.Uncles)
-	blockInfo := BlockInfo{ethBlock, header.Difficulty}
-	bxBlock, err := h.bridge.BlockBlockchainToBDN(&blockInfo)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert block %v to BDN format: %v", header.Hash().String(), err)
-	}
-	return bxBlock, nil
 }
 
 func (h *Handler) broadcastTransactions(p *datatype.ProcessingETHTransaction, sourceNode types.NodeEndpoint, connectionType utils.NodeType) {
@@ -618,7 +619,8 @@ func (h *Handler) broadcastPooledTransactionHashes(txHashes []ethcommon.Hash, ty
 	}
 }
 
-func (h *Handler) broadcastBlock(block *ethtypes.Block, totalDifficulty *big.Int, sourceBlockchainPeer *Peer) {
+func (h *Handler) broadcastBlock(block *bxcommoneth.Block, totalDifficulty *big.Int, sourceBlockchainPeer *Peer) {
+
 	source := "BDN"
 	if sourceBlockchainPeer != nil {
 		source = sourceBlockchainPeer.endpoint.IPPort()
@@ -637,7 +639,7 @@ func (h *Handler) broadcastBlock(block *ethtypes.Block, totalDifficulty *big.Int
 	}
 }
 
-func (h *Handler) broadcastBlockAnnouncement(block *ethtypes.Block) {
+func (h *Handler) broadcastBlockAnnouncement(block *bxcommoneth.Block) {
 	blockHash := block.Hash()
 	number := block.NumberU64()
 	for _, peer := range h.peers.getAll() {
@@ -779,18 +781,19 @@ func (h *Handler) sendConfirmedBlocksToBDN(count int, peerEndpoint types.NodeEnd
 	// iterate in reverse to send all new heads in ascending order to BDN
 	for i := len(newHeads) - 1; i >= 0; i-- {
 		newHead := newHeads[i]
+		hash := newHead.Block.Hash()
 
 		bdnBlock, err := h.bridge.BlockBlockchainToBDN(newHead)
 		if err != nil {
-			log.Errorf("could not convert block %v: %v", newHead.Block.Hash(), err)
+			log.Errorf("could not convert block %v: %v", hash, err)
 			continue
 		}
 		err = h.bridge.SendBlockToBDN(bdnBlock, peerEndpoint)
 		if err != nil {
-			log.Errorf("could not send block %v to BDN: %v", newHead.Block.Hash(), err)
+			log.Errorf("could not send block %v to BDN: %v", hash, err)
 			continue
 		}
-		h.chain.MarkSentToBDN(newHead.Block.Hash())
+		h.chain.MarkSentToBDN(hash)
 	}
 
 	b, err := h.blockAtDepth(h.config.BlockConfirmationsCount)
@@ -821,6 +824,11 @@ func (h *Handler) GetBridge() blockchain.Bridge {
 // GetBodies assembles and returns a set of block bodies
 func (h *Handler) GetBodies(hashes []ethcommon.Hash) ([]*ethtypes.Body, error) {
 	return h.chain.GetBodies(hashes)
+}
+
+// GetBlobSidecars assembles and returns a set of blob sidecars
+func (h *Handler) GetBlobSidecars(hashes []ethcommon.Hash) ([]bxcommoneth.BlobSidecars, error) {
+	return h.chain.GetBlobSidecars(hashes)
 }
 
 // GetHeaders assembles and returns a set of headers
