@@ -26,9 +26,9 @@ func TestTx_AccountIDNullBytes(t *testing.T) {
 	}
 	assert.Equal(t, types.AccountID(""), tx.AccountID())
 
-	b, _ := tx.Pack(AccountProtocol)
+	b, _ := tx.Pack(MinProtocol)
 	tx2 := Tx{}
-	_ = tx2.Unpack(b, AccountProtocol)
+	_ = tx2.Unpack(b, MinProtocol)
 	assert.Equal(t, types.AccountID(""), tx2.AccountID())
 }
 
@@ -49,24 +49,6 @@ func TestTx_SourceIDValid(t *testing.T) {
 	assert.NotNil(t, err)
 }
 
-func TestTx_SenderNonceProtocol(t *testing.T) {
-	accountID := [AccountIDLen]byte{}
-	copy(accountID[:], nullByteAccountID)
-
-	tx := Tx{
-		accountID: accountID,
-		content:   []byte{1},
-		sender:    types.Sender{1},
-	}
-	assert.Equal(t, types.AccountID(""), tx.AccountID())
-
-	b, _ := tx.Pack(SenderProtocol)
-	tx2 := Tx{}
-	_ = tx2.Unpack(b, SenderProtocol)
-	assert.Equal(t, types.AccountID(""), tx2.AccountID())
-	assert.Equal(t, tx.Sender(), tx2.Sender())
-}
-
 func TestTx_TimeStamp(t *testing.T) {
 	mockClock := utils.MockClock{}
 	clock = &mockClock
@@ -80,10 +62,10 @@ func TestTx_TimeStamp(t *testing.T) {
 	tx := Tx{
 		timestamp: packTime,
 	}
-	b, _ := tx.Pack(FullTxTimeStampProtocol)
+	b, _ := tx.Pack(MinProtocol)
 	tx1 := Tx{}
 	mockClock.IncTime(time.Second * 1)
-	_ = tx1.Unpack(b, FullTxTimeStampProtocol)
+	_ = tx1.Unpack(b, MinProtocol)
 	// microsecond precision
 	assert.Equal(t, packTime.UnixNano()>>10, tx1.Timestamp().UnixNano()>>10)
 
@@ -97,11 +79,11 @@ func TestTx_TimeStamp(t *testing.T) {
 	tx = Tx{
 		timestamp: packTime,
 	}
-	b, _ = tx.Pack(FullTxTimeStampProtocol)
+	b, _ = tx.Pack(MinProtocol)
 	tx2 := Tx{}
 	// advance time by 1 nanosecond to create overflow
 	mockClock.SetTime(time.Unix(0, 0x16dd840000000000)) // 2022-03-18 10:42:59.22
-	_ = tx2.Unpack(b, FullTxTimeStampProtocol)
+	_ = tx2.Unpack(b, MinProtocol)
 	assert.Equal(t, packTime.UnixNano()>>10, tx2.Timestamp().UnixNano()>>10)
 
 	// case 3, underflow
@@ -114,11 +96,11 @@ func TestTx_TimeStamp(t *testing.T) {
 	tx = Tx{
 		timestamp: packTime,
 	}
-	b, _ = tx.Pack(FullTxTimeStampProtocol)
+	b, _ = tx.Pack(MinProtocol)
 	tx3 := Tx{}
 	// unpack time is five seconds before pack time
 	mockClock.SetTime(time.Unix(0, 0x16dd83ffffffffff)) // 2022-03-18 10:42:54.22
-	_ = tx3.Unpack(b, FullTxTimeStampProtocol)
+	_ = tx3.Unpack(b, MinProtocol)
 	assert.Equal(t, packTime.UnixNano()>>10, tx3.Timestamp().UnixNano()>>10)
 }
 

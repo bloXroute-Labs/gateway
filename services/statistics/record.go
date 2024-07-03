@@ -158,3 +158,18 @@ type sdkInfoRecord struct {
 	Start      string          `json:"start"`
 	End        string          `json:"end"`
 }
+
+// BlobRecord represents a blob record
+type BlobRecord struct {
+	EventSubjectID string           `json:"event_subject_id"`
+	EventName      string           `json:"event_name"`
+	NodeID         types.NodeID     `json:"node_id"`
+	SourceID       types.NodeID     `json:"source_id"`
+	NetworkNum     types.NetworkNum `json:"network_num"`
+	StartDateTime  string           `json:"start_date_time"`
+	EndDateTime    string           `json:"end_date_time"`
+	OriginalSize   int              `json:"original_size"`
+	CompressSize   int              `json:"compress_size"`
+	BlobIndex      uint32           `json:"blob_index"`
+	BlockHash      string           `json:"block_hash"`
+}

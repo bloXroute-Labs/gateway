@@ -250,6 +250,7 @@ func (g *GatewayGrpc) handleSolutions(req *pb.IntentSolutionsRequest, stream pb.
 			err = stream.Send(&pb.IntentSolutionsReply{
 				IntentId:       intentSolution.IntentID,
 				IntentSolution: intentSolution.Solution,
+				SolutionId:     intentSolution.ID,
 			})
 			if err != nil {
 				return status.Error(codes.Internal, err.Error())

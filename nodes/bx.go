@@ -130,7 +130,7 @@ func (bn *Bx) HandleMsg(msg bxmessage.Message, source connections.Conn) error {
 		syncTxs := &bxmessage.SyncTxsMessage{}
 		syncTxs.SetNetworkNum(syncReq.GetNetworkNum())
 		priority := bxmessage.OnPongPriority
-		if source.GetConnectionType()&utils.RelayProxy != 0 || source.Protocol() >= bxmessage.MinFastSyncProtocol {
+		if source.GetConnectionType()&utils.RelayProxy != 0 || source.Protocol() >= bxmessage.MinProtocol {
 			priority = bxmessage.NormalPriority
 		}
 
@@ -182,9 +182,11 @@ func (bn *Bx) HandleMsg(msg bxmessage.Message, source connections.Conn) error {
 		bn.TxStore.RemoveHashes(&blockConfirmation.Hashes, services.ShortReEntryProtection, "BlockConfirmation message")
 		source.Log().Debugf("TxStore cleanup (go routine) by %v message took %v. Size before %v, size after %v, hashes %v",
 			bxmessage.BlockConfirmationType, time.Since(startTime), sizeBefore, bn.TxStore.Count(), len(blockConfirmation.Hashes))
-
+	case *bxmessage.ErrorNotification:
+		errorNotification := msg.(*bxmessage.ErrorNotification)
+		source.Log().Warnf("received unexpected error notification: code %v, reason %v", errorNotification.Code, errorNotification.Reason)
 	default:
-		source.Log().Errorf("unknown message type %v received", reflect.TypeOf(msg))
+		source.Log().Errorf("unknown message type %v received: ", reflect.TypeOf(msg))
 	}
 	return nil
 }

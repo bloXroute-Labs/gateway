@@ -420,7 +420,7 @@ func (bp *blockProcessor) newRLPBlockBroadcast(block *types.BxBlock, networkNum 
 		return nil, usedShortIDs, err
 	}
 
-	return bxmessage.NewBlockBroadcast(block.Hash(), types.EmptyHash, block.Type, encodedBlock, usedShortIDs, networkNum), usedShortIDs, nil
+	return bxmessage.NewBlockBroadcast(block.ExecutionHash(), types.EmptyHash, block.Type, encodedBlock, usedShortIDs, networkNum), usedShortIDs, nil
 }
 
 func (bp *blockProcessor) newSSZBlockBroadcast(block *types.BxBlock, networkNum types.NetworkNum, minTxAge time.Duration) (*bxmessage.Broadcast, types.ShortIDList, error) {
@@ -462,7 +462,7 @@ func (bp *blockProcessor) newSSZBlockBroadcast(block *types.BxBlock, networkNum 
 		return nil, usedShortIDs, err
 	}
 
-	return bxmessage.NewBlockBroadcast(block.Hash(), block.BeaconHash(), block.Type, encodedBlock, usedShortIDs, networkNum), usedShortIDs, nil
+	return bxmessage.NewBlockBroadcast(block.ExecutionHash(), block.BeaconHash(), block.Type, encodedBlock, usedShortIDs, networkNum), usedShortIDs, nil
 }
 
 func (bp *blockProcessor) markProcessed(hash types.SHA256Hash, status SeenStatus) {

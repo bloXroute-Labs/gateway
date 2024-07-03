@@ -541,6 +541,9 @@ func (g *gateway) Run() error {
 		if err != nil {
 			return fmt.Errorf("failed to create TxTrace logger: %v", err)
 		}
+
+		// close the file writer when the gateway is done
+		defer txTraceLogger.Close()
 	}
 	g.txTrace = loggers.NewTxTrace(txTraceLogger)
 
@@ -1069,7 +1072,7 @@ func (g *gateway) notifyBlockFeeds(bxBlock *types.BxBlock, nodeSource *connectio
 	var addedNewBlock, addedBdnBlock bool
 
 	notifyEthBlockFeeds := func(block *bxcommoneth.Block, nodeSource *connections.Blockchain, info []*types.FutureValidatorInfo, isBlockchainBlock bool) error {
-		ethNotification, err := types.NewEthBlockNotification(common.Hash(bxBlock.Hash()), block, info, g.txIncludeSenderInFeed)
+		ethNotification, err := types.NewEthBlockNotification(common.Hash(bxBlock.ExecutionHash()), block, info, g.txIncludeSenderInFeed)
 		if err != nil {
 			return err
 		}
@@ -1348,6 +1351,7 @@ func (g *gateway) handleBridgeMessages(ctx context.Context) error {
 }
 
 func (g *gateway) handleBeaconMessageFromBlockchain(beaconMessageFromNode *blockchain.BeaconMessageFromNode) error {
+	startTime := g.clock.Now()
 	if !g.seenBeaconMessages.SetIfAbsent(beaconMessageFromNode.Message.Hash.String(), 30*time.Minute) {
 		g.log.Tracef("skipping beacon message %v, already seen", beaconMessageFromNode.Message.Hash.String())
 		return eth.ErrAlreadySeen
@@ -1362,6 +1366,11 @@ func (g *gateway) handleBeaconMessageFromBlockchain(beaconMessageFromNode *block
 	source := connections.NewBlockchainConn(beaconMessageFromNode.PeerEndpoint)
 
 	results := g.broadcast(beaconMessage, source, utils.Relay)
+
+	eventName := "GatewayReceivedBeaconMessageFromBlockchain"
+	g.stats.AddBlobEvent(eventName, beaconMessage.Hash().String(), source.GetNodeID(), beaconMessage.GetNetworkNum(),
+		startTime, g.clock.Now(), len(beaconMessageFromNode.Message.Data), len(beaconMessage.Data()), beaconMessage.Index(),
+		beaconMessage.BlockHash().String())
 
 	g.log.Tracef("broadcasted beacon message from Blockchain to BDN %v, from %v to peers[%v]", beaconMessage, source, results)
 	return nil
@@ -1514,6 +1523,7 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 }
 
 func (g *gateway) processBeaconMessage(beaconMessage *bxmessage.BeaconMessage, source connections.Conn) {
+	start := g.clock.Now()
 	if !g.isSyncWithRelay() {
 		g.log.Tracef("skipping beacon message %v, gateway is not yet synced with relay", beaconMessage.Hash())
 		return
@@ -1528,6 +1538,11 @@ func (g *gateway) processBeaconMessage(beaconMessage *bxmessage.BeaconMessage, s
 		g.log.Errorf("failed to process beaconMessage from broadcast: %v", err)
 		return
 	}
+
+	eventName := "GatewayReceivedBeaconMessageFromBDN"
+	g.stats.AddBlobEvent(eventName, beaconMessage.Hash().String(), source.GetNodeID(), beaconMessage.GetNetworkNum(),
+		start, g.clock.Now(), len(bxBeaconMessage.Data), len(beaconMessage.Data()), beaconMessage.Index(),
+		beaconMessage.BlockHash().String())
 
 	if err := g.bridge.SendBeaconMessageToBlockchain(bxBeaconMessage); err != nil {
 		g.log.Errorf("could not send beacon message %v to blockchain: %v", beaconMessage, err)
@@ -1828,10 +1843,6 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 					if shouldSendTxFromNodeToOtherNodes {
 						g.bdnStats.LogTxSentToAllNodesExceptSourceNode(sourceEndpoint)
 					}
-
-					l.WithFields(log.Fields{
-						"flags": tx.Flags(),
-					}).Debug("tx sent to blockchain")
 				}
 			}
 
@@ -1860,7 +1871,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 	// usage of log.WithFields 7 times slower than usage of direct log.Tracef
 	handlingTime := g.clock.Now().Sub(tx.ReceiveTime()).Microseconds() - tx.WaitDuration().Microseconds()
 	l = l.WithFields(log.Fields{
-		"from":                    source,
+		"from":                    fmt.Sprintf("%s", source),
 		"nonce":                   txResult.Nonce,
 		"flags":                   tx.Flags(),
 		"newTx":                   txResult.NewTx,
