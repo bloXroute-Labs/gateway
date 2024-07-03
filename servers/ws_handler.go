@@ -84,8 +84,6 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		if err = conn.Reply(ctx, req.ID, response); err != nil {
 			h.log.Errorf("error replying to %v, method %v: %v", h.remoteAddress, req.Method, err)
 		}
-	case jsonrpc.RPCMEVSearcher:
-		h.handleRPCMevSearcher(ctx, conn, req)
 	case jsonrpc.RPCBundleSubmission:
 		h.handleRPCBundleSubmission(ctx, conn, req)
 	case jsonrpc.RPCChangeNewPendingTxFromNode:

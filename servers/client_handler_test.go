@@ -552,7 +552,8 @@ func handleIntentsSubscribe(t *testing.T, fm *FeedManager, ws *websocket.Conn) {
 	err = json.Unmarshal(*req.Params, &m)
 	assert.NoError(t, err)
 	assert.Equal(t, m.Subscription, subscriptionID)
-	assert.Equal(t, m.Result.IntentID, solution.ID)
+	assert.Equal(t, m.Result.IntentID, solution.IntentID)
+	assert.Equal(t, m.Result.SolutionID, solution.ID)
 	assert.Equal(t, m.Result.IntentSolution, solution.Solution)
 
 	writeMsgToWsAndReadResponse(t, ws, []byte(unsubscribeFilter), nil)

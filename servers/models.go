@@ -100,5 +100,6 @@ type userIntentSolutionResponse struct {
 
 type userIntentSolutionNotification struct {
 	IntentID       string `json:"intent_id"`
+	SolutionID     string `json:"solution_id"`
 	IntentSolution []byte `json:"intent_solution"`
 }

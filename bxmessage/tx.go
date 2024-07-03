@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"math"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/types"
@@ -14,14 +13,6 @@ const (
 	nanosInSecond        = 1e9
 	invalidWalletAddress = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
 )
-
-/*
-   as of protocol version 25 (FullTxTimeStampProtocol):
-      The timestamp field is in nanoseconds and not in seconds
-      The timestamp field records the send time for this TX message. If the Message received by B from A it records
-		the time A sent the message. If B is sending the same message to C, B should update the timestamp field before
-		sending to C. The timestamp field is now use to analyse the network latency.
-*/
 
 // Tx is the bloxroute message struct that carries a transaction from a specific blockchain
 type Tx struct {
@@ -263,29 +254,12 @@ func (m Tx) Pack(protocol Protocol) ([]byte, error) {
 	binary.LittleEndian.PutUint32(buf[offset:], uint32(m.shortID))
 	offset += types.ShortIDLen
 	flags := m.flags
-	switch {
-	case protocol < 20:
-		flags &= types.TFStatusMonitoring | types.TFPaidTx | types.TFNonceMonitoring | types.TFRePropagate | types.TFEnterpriseSender
-	default:
-	}
 	binary.LittleEndian.PutUint16(buf[offset:], uint16(flags))
 
 	offset += types.TxFlagsLen
-
-	switch {
-	case protocol < 21:
-		timestamp := float64(m.timestamp.UnixNano()) / nanosInSecond
-		binary.LittleEndian.PutUint32(buf[offset:], uint32(timestamp+1.0))
-		offset += types.UInt32Len
-	case protocol < FullTxTimeStampProtocol:
-		timestamp := float64(m.timestamp.UnixNano()) / nanosInSecond
-		binary.LittleEndian.PutUint64(buf[offset:], math.Float64bits(timestamp))
-		offset += TimestampLen
-	default:
-		timestamp := m.timestamp.UnixNano() >> 10
-		binary.LittleEndian.PutUint32(buf[offset:], uint32(timestamp))
-		offset += ShortTimestampLen
-	}
+	timestamp := m.timestamp.UnixNano() >> 10
+	binary.LittleEndian.PutUint32(buf[offset:], uint32(timestamp))
+	offset += ShortTimestampLen
 	switch {
 	case protocol >= NextValidatorMultipleProtocol:
 		if m.flags.IsNextValidator() {
@@ -305,27 +279,15 @@ func (m Tx) Pack(protocol Protocol) ([]byte, error) {
 		}
 	default:
 	}
-
-	switch {
-	case protocol < 22:
-		// do nothing. accountID added in protocol 22
-	default:
-		copy(buf[offset:], m.accountID[:])
-		offset += AccountIDLen
-	}
+	copy(buf[offset:], m.accountID[:])
+	offset += AccountIDLen
 
 	// should include sender and nonce only if content is included
 	if len(m.content) > 0 {
 		copy(buf[offset:], m.content)
 		offset += len(m.content)
-
-		switch {
-		case protocol < SenderProtocol:
-			// do nothing. sender nonce added in protocol 25
-		default:
-			copy(buf[offset:], m.sender[:])
-			offset += len(m.sender)
-		}
+		copy(buf[offset:], m.sender[:])
+		offset += len(m.sender)
 	}
 
 	if err := checkBuffEnd(&buf, offset); err != nil {
@@ -348,33 +310,14 @@ func (m *Tx) Unpack(buf []byte, protocol Protocol) error {
 	offset += types.ShortIDLen
 	m.flags = types.TxFlags(binary.LittleEndian.Uint16(buf[offset:]))
 	offset += types.TxFlagsLen
-	switch {
-	case protocol < 21:
-		if err := checkBufSize(&buf, offset, types.UInt32Len); err != nil {
-			return err
-		}
-		timestamp := float64(binary.LittleEndian.Uint32(buf[offset:]))
-		offset += types.UInt32Len
-		nanoseconds := int64(timestamp) * int64(nanosInSecond)
-		m.timestamp = time.Unix(0, nanoseconds)
-	case protocol < FullTxTimeStampProtocol:
-		if err := checkBufSize(&buf, offset, TimestampLen); err != nil {
-			return err
-		}
-		tmp := binary.LittleEndian.Uint64(buf[offset:])
-		timestamp := math.Float64frombits(tmp)
-		offset += TimestampLen
-		nanoseconds := int64(timestamp) * int64(nanosInSecond)
-		m.timestamp = time.Unix(0, nanoseconds)
-	default:
-		if err := checkBufSize(&buf, offset, ShortTimestampLen); err != nil {
-			return err
-		}
-		timestamp := binary.LittleEndian.Uint32(buf[offset:])
-		offset += ShortTimestampLen
-		result := decodeTimestamp(timestamp)
-		m.timestamp = time.Unix(0, result)
+
+	if err := checkBufSize(&buf, offset, ShortTimestampLen); err != nil {
+		return err
 	}
+	timestamp := binary.LittleEndian.Uint32(buf[offset:])
+	offset += ShortTimestampLen
+	result := decodeTimestamp(timestamp)
+	m.timestamp = time.Unix(0, result)
 
 	switch {
 	case protocol >= NextValidatorMultipleProtocol:
@@ -415,7 +358,7 @@ func (m *Tx) Unpack(buf []byte, protocol Protocol) error {
 		offset += AccountIDLen
 	}
 
-	if len(buf)-offset-ControlByteLen == 0 || protocol < SenderProtocol {
+	if len(buf)-offset-ControlByteLen == 0 {
 		m.content = buf[offset : len(buf)-ControlByteLen]
 	} else {
 		m.content = buf[offset : len(buf)-SenderLen-ControlByteLen]
@@ -461,17 +404,6 @@ func decodeTimestamp(timestamp uint32) int64 {
 
 // Size return size of tx
 func (m *Tx) Size(protocol Protocol) uint32 {
-	switch {
-	case protocol < 19:
-		return 0
-	case protocol < 21:
-		return m.BroadcastHeader.Size() + types.ShortIDLen + types.TxFlagsLen + ShortTimestampLen + uint32(len(m.content))
-	case protocol < 22:
-		return m.BroadcastHeader.Size() + types.ShortIDLen + types.TxFlagsLen + TimestampLen + uint32(len(m.content))
-	case protocol < SenderProtocol:
-		return m.BroadcastHeader.Size() + types.ShortIDLen + types.TxFlagsLen + TimestampLen + AccountIDLen + uint32(len(m.content))
-	}
-
 	contentSize := uint32(len(m.content))
 	if contentSize > 0 {
 		contentSize += SenderLen

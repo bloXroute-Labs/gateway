@@ -426,16 +426,10 @@ func (bs *BdnPerformanceStats) Pack(protocol Protocol) ([]byte, error) {
 			offset++
 		}
 	}
-
-	switch {
-	case protocol < FullTxTimeStampProtocol:
-	default:
-		binary.LittleEndian.PutUint16(buf[offset:], bs.burstLimitedTransactionsPaid)
-		offset += types.UInt16Len
-		binary.LittleEndian.PutUint16(buf[offset:], bs.burstLimitedTransactionsUnpaid)
-		offset += types.UInt16Len
-	}
-
+	binary.LittleEndian.PutUint16(buf[offset:], bs.burstLimitedTransactionsPaid)
+	offset += types.UInt16Len
+	binary.LittleEndian.PutUint16(buf[offset:], bs.burstLimitedTransactionsUnpaid)
+	offset += types.UInt16Len
 	if err := checkBuffEnd(&buf, int(offset)); err != nil {
 		return nil, err
 	}
@@ -546,16 +540,12 @@ func (bs *BdnPerformanceStats) Unpack(buf []byte, protocol Protocol) error {
 			bs.nodeStats[endpoint.IPPort()] = &singleNodeStats
 		}
 	}
-	switch {
-	case protocol < FullTxTimeStampProtocol:
-	default:
-		if err := checkBufSize(&buf, int(offset), 2*types.UInt16Len); err != nil {
-			return err
-		}
-		bs.burstLimitedTransactionsPaid = binary.LittleEndian.Uint16(buf[offset:])
-		offset += types.UInt16Len
-		bs.burstLimitedTransactionsUnpaid = binary.LittleEndian.Uint16(buf[offset:])
+	if err := checkBufSize(&buf, int(offset), 2*types.UInt16Len); err != nil {
+		return err
 	}
+	bs.burstLimitedTransactionsPaid = binary.LittleEndian.Uint16(buf[offset:])
+	offset += types.UInt16Len
+	bs.burstLimitedTransactionsUnpaid = binary.LittleEndian.Uint16(buf[offset:])
 	return bs.Header.Unpack(buf, protocol)
 }
 
@@ -595,8 +585,8 @@ func (bs *BdnPerformanceStats) size(protocol Protocol) uint32 {
 		}
 	}
 
-	total := bs.Header.Size() + uint32((types.UInt64Len*2)+(types.UInt16Len*2)+(nodeStatsLen*nodeStatsSize))
-	if protocol >= FullTxTimeStampProtocol {
+	total := bs.Header.Size() + uint32((types.UInt64Len*2)+(types.UInt16Len*2)+(len(bs.nodeStats)*nodeStatsSize))
+	if protocol >= MinProtocol {
 		total += types.UInt16Len * 2
 	}
 	return total

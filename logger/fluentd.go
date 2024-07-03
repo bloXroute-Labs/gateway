@@ -61,7 +61,7 @@ func fluentDWriter(fluentDHost string, level zerolog.Level) (*levelWriter, error
 	}
 
 	return &levelWriter{
-		Writer:      diode.NewWriter(w, backLog, 0, func(int) {}),
+		WriteCloser: diode.NewWriter(w, backLog, 0, func(int) {}),
 		minLevel:    zerolog.TraceLevel,
 		maxLevel:    zerolog.PanicLevel,
 		systemLevel: level,

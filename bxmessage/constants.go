@@ -67,7 +67,6 @@ const (
 	BDNPerformanceStatsType      = "bdnstats"
 	ValidatorUpdatesType         = "validator"
 	MEVBundleType                = "mevbundle"
-	MEVSearcherType              = "mevsearcher"
 	ErrorNotificationType        = "notify"
 	IntentType                   = "intent"
 	IntentSolutionType           = "intentsol"
@@ -97,7 +96,7 @@ const ProtocolLen = 4
 const EmptyProtocol = 0
 
 // MinProtocol provides the minimal supported protocol version
-const MinProtocol = 19
+const MinProtocol = IsBeaconProtocol
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
 const CurrentProtocol = BundleRefundProtocol
@@ -158,37 +157,6 @@ const IsConnectedToGateway = 31
 
 // IsBeaconProtocol tracks if the node is beacon
 const IsBeaconProtocol = 30
-
-// MevMaxProfitBuilder send mev searcher request with request
-const MevMaxProfitBuilder = 29
-
-// ETHPosProtocol is the protocol version happened after the merge
-const ETHPosProtocol = 28
-
-// MevSearcherWithUUID send mev searcher request with request
-const MevSearcherWithUUID = 27
-
-// FlashbotsGatewayProtocol is the minimum protocol version that supports flashbots gateway without BDN
-const FlashbotsGatewayProtocol = 26
-
-// SenderProtocol is the minimum protocol version that supports sender in tx msg
-const SenderProtocol = 25
-
-// FullTxTimeStampProtocol is the minimum protocol version that supports full timestamp in TX message
-// It includes BDN performance stat changes
-const FullTxTimeStampProtocol = 25
-
-// MinFastSyncProtocol is the minimum protocol version that supports fast sync
-const MinFastSyncProtocol = 24
-
-// MEVProtocol add to hello msg indication for the mev service
-const MEVProtocol = 24
-
-// UnifiedRelayProtocol is the version of gateways that expects broadcast messages from relay proxy and discontinues split relays
-const UnifiedRelayProtocol = 23
-
-// AccountProtocol is the version that the account ID was introduced in tx messages
-const AccountProtocol = 22
 
 // NullByte is a character that is packed at the end of strings in buffers
 const NullByte = "\x00"

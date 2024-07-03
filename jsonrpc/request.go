@@ -21,7 +21,6 @@ const (
 	RPCPrivateTx                  RPCRequestType = "blxr_private_tx"
 	RPCTx                         RPCRequestType = "blxr_tx"
 	RPCPing                       RPCRequestType = "ping"
-	RPCMEVSearcher                RPCRequestType = "blxr_mev_searcher" // Deprecated: use blxr_submit_bundle instead. Will be removed in the future.
 	RPCBatchTx                    RPCRequestType = "blxr_batch_tx"
 	RPCQuotaUsage                 RPCRequestType = "quota_usage"
 	RPCBundleSubmission           RPCRequestType = "blxr_submit_bundle"

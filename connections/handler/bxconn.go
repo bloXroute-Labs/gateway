@@ -321,10 +321,6 @@ func (b *BxConn) ProcessMessage(msgBytes bxmessage.MessageBytes) {
 		errorNotification := &bxmessage.ErrorNotification{}
 		_ = errorNotification.Unpack(msg, b.Protocol())
 		_ = b.Node.HandleMsg(errorNotification, b, connections.RunForeground)
-	case bxmessage.MEVSearcherType:
-		mevSearcher := &bxmessage.MEVSearcher{}
-		_ = mevSearcher.Unpack(msg, b.Protocol())
-		_ = b.Node.HandleMsg(mevSearcher, b, connections.RunForeground)
 	case bxmessage.MEVBundleType:
 		mevBundle := &bxmessage.MEVBundle{}
 		if err := mevBundle.Unpack(msg, b.Protocol()); err != nil {

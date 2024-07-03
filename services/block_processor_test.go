@@ -413,3 +413,38 @@ func TestRLPBlockProcessor_ProcessBlockFromRelayAndNode(t *testing.T) {
 	assert.Equal(t, err.(*ErrAlreadyProcessed), err)
 	assert.Equal(t, string(err.(*ErrAlreadyProcessed).Status()), SeenFromBoth)
 }
+
+func TestSSZBlockProcessor_BxBlockToBroadcast(t *testing.T) {
+	txHash1, _ := types.NewSHA256HashFromString(fixtures.BroadcastTransactionHash1)
+	txContent1 := common.Hex2Bytes(fixtures.BroadcastTransactionContent1)
+	txHash2, _ := types.NewSHA256HashFromString(fixtures.BroadcastTransactionHash2)
+	txContent2 := common.Hex2Bytes(fixtures.BroadcastTransactionContent2)
+	store := newTestBxTxStore()
+	store.Add(txHash1, txContent1, 1, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
+	store.Add(txHash2, txContent2, 2, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
+	bp := NewBlockProcessor(&store)
+	clock := utils.MockClock{}
+	clock.SetTime(time.Now())
+
+	blockHash := types.GenerateSHA256Hash()
+	header, _ := rlp.EncodeToBytes(test.GenerateBytes(300))
+	trailer, _ := rlp.EncodeToBytes(test.GenerateBytes(350))
+
+	// note that txs[0] is a huge tx
+	txs := []*types.BxBlockTransaction{
+		types.NewBxBlockTransaction(types.GenerateSHA256Hash(), test.GenerateBytes(25000)),
+		types.NewBxBlockTransaction(types.GenerateSHA256Hash(), test.GenerateBytes(250)),
+		types.NewBxBlockTransaction(types.GenerateSHA256Hash(), test.GenerateBytes(250)),
+		types.NewBxBlockTransaction(types.GenerateSHA256Hash(), test.GenerateBytes(250)),
+		types.NewBxBlockTransaction(types.GenerateSHA256Hash(), test.GenerateBytes(250)),
+	}
+	blockSize := int(rlp.ListSize(300 + rlp.ListSize(25000+250+250+250+250) + 350))
+
+	bxBlock, err := types.NewBxBlock(blockHash, types.EmptyHash, types.BxBlockTypeBeaconDeneb, header, txs, trailer, big.NewInt(10000), big.NewInt(10), blockSize, nil)
+	assert.NoError(t, err)
+
+	// assume the blockchain network MinTxAgeSecond is 2
+	broadcastMessage, _, err := bp.BxBlockToBroadcast(bxBlock, testNetworkNum, time.Second*2)
+	assert.NoError(t, err)
+	assert.NotEqual(t, broadcastMessage.Hash(), broadcastMessage.BeaconHash())
+}

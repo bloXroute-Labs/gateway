@@ -52,7 +52,7 @@ func TestBlobProcessor_BlobTypesConverting(t *testing.T) {
 	require.Equal(t, ethSidecar.CommitmentInclusionProof, compressedFromOriginalSidecar.CommitmentInclusionProof)
 }
 
-func TestBlobProcessor_CompresDecompress(t *testing.T) {
+func TestBlobProcessor_CompressDecompress(t *testing.T) {
 	var sidecar ethpb.BlobSidecar
 	data, err := os.ReadFile("../types/test_data/blob.ssz")
 	require.NoError(t, err)

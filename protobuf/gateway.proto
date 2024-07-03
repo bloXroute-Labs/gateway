@@ -569,4 +569,5 @@ message IntentSolutionsRequest {
 message IntentSolutionsReply {
   string intentId = 1;
   bytes intentSolution = 2; //The solution payload
+  string solutionId = 3;
 }

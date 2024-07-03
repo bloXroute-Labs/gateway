@@ -333,8 +333,9 @@ func (h *handlerObj) sendIntentSolutionNotification(ctx context.Context, subscri
 	response := userIntentSolutionResponse{
 		Subscription: subscriptionID,
 		Result: userIntentSolutionNotification{
-			IntentID:       in.ID,
+			IntentID:       in.IntentID,
 			IntentSolution: in.Solution,
+			SolutionID:     in.ID,
 		},
 	}
 

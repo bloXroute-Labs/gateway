@@ -9,7 +9,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,20 +25,6 @@ func (th *testHandler) ProcessMessage(msg bxmessage.MessageBytes) {
 
 func (th *testHandler) setConn(b *BxConn) {
 	th.BxConn = b
-}
-
-func TestBxConn_BDNIsDefaultForOldProtocol(t *testing.T) {
-	th := testHandler{}
-	_, bx := bxConn(&th)
-	th.setConn(bx)
-
-	helloMessage := bxmessage.Hello{}
-	b, err := helloMessage.Pack(bxmessage.FlashbotsGatewayProtocol - 1)
-	require.NoError(t, err)
-	msg := bxmessage.NewMessageBytes(b, time.Now())
-	bx.ProcessMessage(msg)
-
-	assert.True(t, bx.capabilities&types.CapabilityBDN != 0)
 }
 
 func TestBxConn_ProtocolVersion(t *testing.T) {

@@ -30,7 +30,7 @@ func NewGlobal() *GlobalTest {
 	}
 
 	lw := &levelWriter{
-		Writer:      w,
+		WriteCloser: w,
 		minLevel:    zerolog.TraceLevel,
 		maxLevel:    zerolog.FatalLevel,
 		systemLevel: zerolog.TraceLevel,

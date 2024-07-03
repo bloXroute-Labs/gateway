@@ -29,12 +29,7 @@ func (m *Hello) SetNetworkNum(networkNum types.NetworkNum) {
 }
 
 func (m *Hello) size() uint32 {
-	size := m.Header.Size() + ProtocolLen + types.NetworkNumLen + types.NodeIDLen
-	if m.Protocol >= MEVProtocol {
-		size += ClientVersionLen + CapabilitiesLen
-	}
-
-	return size
+	return m.Header.Size() + ProtocolLen + types.NetworkNumLen + types.NodeIDLen + ClientVersionLen + CapabilitiesLen
 }
 
 // Pack serializes a Hello into the buffer for sending
@@ -52,17 +47,13 @@ func (m *Hello) Pack(protocol Protocol) ([]byte, error) {
 	}
 	copy(buf[offset:], nodeID)
 	offset += types.NodeIDLen
-	if m.Protocol >= MEVProtocol {
-		binary.LittleEndian.PutUint16(buf[offset:], uint16(m.Capabilities))
-		offset += CapabilitiesLen
-		copy(buf[offset:], m.ClientVersion)
-		offset += ClientVersionLen
-	}
-
+	binary.LittleEndian.PutUint16(buf[offset:], uint16(m.Capabilities))
+	offset += CapabilitiesLen
+	copy(buf[offset:], m.ClientVersion)
+	offset += ClientVersionLen
 	if err := checkBuffEnd(&buf, offset); err != nil {
 		return nil, err
 	}
-
 	m.Header.Pack(&buf, "hello")
 	return buf, nil
 }
@@ -88,23 +79,15 @@ func (m *Hello) Unpack(buf []byte, protocol Protocol) error {
 	}
 	m.NodeID = types.NodeID(buf[offset:])
 	offset += types.NodeIDLen
-
-	if m.Protocol >= MEVProtocol {
-		if err := checkBufSize(&buf, offset, CapabilitiesLen); err != nil {
-			return err
-		}
-		m.Capabilities = types.CapabilityFlags(binary.LittleEndian.Uint16(buf[offset:]))
-		offset += CapabilitiesLen
-
-		if err := checkBufSize(&buf, offset, ClientVersionLen); err != nil {
-			return err
-		}
-		m.ClientVersion = string(buf[offset:])
-		offset += ClientVersionLen
+	m.Capabilities = types.CapabilityFlags(binary.LittleEndian.Uint16(buf[offset:]))
+	offset += CapabilitiesLen
+	if err := checkBufSize(&buf, offset, CapabilitiesLen); err != nil {
+		return err
 	}
-
-	if m.Protocol < FlashbotsGatewayProtocol {
-		m.Capabilities |= types.CapabilityBDN
+	m.ClientVersion = string(buf[offset:])
+	offset += ClientVersionLen
+	if err := checkBufSize(&buf, offset, ClientVersionLen); err != nil {
+		return err
 	}
 
 	return m.Header.Unpack(buf, protocol)

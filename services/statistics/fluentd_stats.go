@@ -50,6 +50,7 @@ type Stats interface {
 	BundleSentToBuilderStats(timestamp time.Time, builderName string, bundleHash string, blockNumber string, uuid string, networkNum types.NetworkNum, accountID types.AccountID, accountTier sdnmessage.AccountTier, builderURL string, statusCode int)
 	AddBuilderGatewaySentBundleToMEVBuilderEvent(timestamp time.Time, builderName, bundleHash, blockNumber, uuid, builderURL string,
 		networkNum types.NetworkNum, accountID types.AccountID, accountTier sdnmessage.AccountTier, statusCode int)
+	AddBlobEvent(name, eventSubjectID string, sourceID types.NodeID, networkNum types.NetworkNum, startTime, endTime time.Time, originalSize, compressSize int, blobIndex uint32, blockHash string)
 }
 
 // NoStats is used to generate empty stats
@@ -100,6 +101,10 @@ func (NoStats) BundleSentToBuilderStats(_ time.Time, _ string, _ string, _ strin
 // AddBuilderGatewaySentBundleToMEVBuilderEvent does nothing
 func (NoStats) AddBuilderGatewaySentBundleToMEVBuilderEvent(_ time.Time, _, _, _, _, _ string,
 	_ types.NetworkNum, _ types.AccountID, _ sdnmessage.AccountTier, _ int) {
+}
+
+// AddBlobEvent does nothing
+func (NoStats) AddBlobEvent(_, _ string, _ types.NodeID, _ types.NetworkNum, _, _ time.Time, _, _ int, _ uint32, _ string) {
 }
 
 // FluentdStats struct that represents fluentd stats info
@@ -523,4 +528,33 @@ func (s FluentdStats) AddBuilderGatewaySentBundleToMEVBuilderEvent(timestamp tim
 	}
 
 	s.LogToFluentD(record, timestamp, "stats.builder_gateway.sent_bundle")
+}
+
+// AddBlobEvent generates a fluentd STATS event
+func (s FluentdStats) AddBlobEvent(name, eventSubjectID string, sourceID types.NodeID, networkNum types.NetworkNum, startTime, endTime time.Time, originalSize, compressSize int, blobIndex uint32, blockHash string) {
+	// Currently, we have 32 Relay and 30 Gateway events for each bacon block.
+	// The decision was made to send events only for the 0 indexes of the blob sidecar,
+	// meaning we will have the same amount of blob events for each block containing blobs.
+	if blobIndex != 0 {
+		return
+	}
+
+	record := Record{
+		Type: "Blob",
+		Data: BlobRecord{
+			EventSubjectID: eventSubjectID,
+			EventName:      name,
+			NodeID:         s.NodeID,
+			SourceID:       sourceID,
+			NetworkNum:     networkNum,
+			StartDateTime:  startTime.Format(DateFormat),
+			EndDateTime:    endTime.Format(DateFormat),
+			OriginalSize:   originalSize,
+			CompressSize:   compressSize,
+			BlobIndex:      blobIndex,
+			BlockHash:      blockHash,
+		},
+	}
+
+	s.LogToFluentD(record, time.Now(), "stats.blobs")
 }
