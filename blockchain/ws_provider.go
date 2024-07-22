@@ -48,5 +48,16 @@ type WSProvider interface {
 	FetchBlock(payload []interface{}, options RPCOptions) (interface{}, error)
 	FetchTransactionReceipt(payload []interface{}, options RPCOptions) (interface{}, error)
 	SendTransaction(rawTx string, options RPCOptions) (interface{}, error)
+	TraceTransaction(payload []interface{}, options RPCOptions) (TraceTransactionResponse, error)
 	Log() *log.Entry
+}
+
+// TraceTransactionResponse is response from debug_traceTransaction call
+type TraceTransactionResponse struct {
+	Post map[string]struct {
+		Balance string `json:"balance"`
+	} `json:"post"`
+	Pre map[string]struct {
+		Balance string `json:"balance"`
+	} `json:"pre"`
 }

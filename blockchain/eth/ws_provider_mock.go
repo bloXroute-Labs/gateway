@@ -141,6 +141,11 @@ func (m *MockWSProvider) FetchBlock(_ []interface{}, _ blockchain.RPCOptions) (i
 	return textBlockMap, nil
 }
 
+// TraceTransaction returns a fake response with no error
+func (m *MockWSProvider) TraceTransaction(payload []interface{}, options blockchain.RPCOptions) (blockchain.TraceTransactionResponse, error) {
+	return blockchain.TraceTransactionResponse{}, nil
+}
+
 // Dial is a no-op
 func (m *MockWSProvider) Dial() {
 	m.open.Store(true)

@@ -20,11 +20,11 @@ func TestBroadcastPackUnpack(t *testing.T) {
 	blockBody := test.GenerateBytes(500)
 	broadcast := NewBlockBroadcast(blockHash, beaconBlockHash, types.BxBlockTypeBeaconBellatrix, blockBody, types.ShortIDList{}, networkNum)
 
-	b, err := broadcast.Pack(BeaconBlockProtocol)
+	b, err := broadcast.Pack(MinProtocol)
 	assert.NoError(t, err)
 
 	var decodedBroadcast Broadcast
-	err = decodedBroadcast.Unpack(b, BeaconBlockProtocol)
+	err = decodedBroadcast.Unpack(b, MinProtocol)
 	assert.NoError(t, err)
 
 	assert.Equal(t, blockHash, decodedBroadcast.Hash())

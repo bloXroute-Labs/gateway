@@ -51,7 +51,6 @@ func HandleBDNBeaconMessages(ctx context.Context, b blockchain.Bridge, n *Node, 
 			log.Infof("ending handleBDNBlobsSidecarBridge")
 			return
 		}
-
 	}
 }
 

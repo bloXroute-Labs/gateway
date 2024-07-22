@@ -135,10 +135,10 @@ func (t *BxTxStore) RemoveShortIDs(shortIDs *types.ShortIDList, reEntryProtectio
 }
 
 // GetTxByShortID lookup a transaction by its shortID. return error if not found
-func (t *BxTxStore) GetTxByShortID(shortID types.ShortID) (*types.BxTransaction, error) {
+func (t *BxTxStore) GetTxByShortID(shortID types.ShortID, withSidecar bool) (*types.BxTransaction, error) {
 	if hash, ok := t.shortIDToHash.Load(shortID); ok {
 		if tx, exists := t.hashToContent.Load(string(hash[:])); exists {
-			if tx.Flags().IsWithSidecar() {
+			if !withSidecar && tx.Flags().IsWithSidecar() {
 				var ethTx ethtypes.Transaction
 
 				err := rlp.DecodeBytes(tx.Content(), &ethTx)

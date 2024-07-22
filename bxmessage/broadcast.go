@@ -152,9 +152,6 @@ func (b *Broadcast) Pack(protocol Protocol) ([]byte, error) {
 	buf := make([]byte, bufLen)
 	b.BroadcastHeader.Pack(&buf, BroadcastType, protocol)
 	offset := BroadcastHeaderOffset
-	if b.IsBeaconBlock() && protocol < BeaconBlockProtocol {
-		return nil, fmt.Errorf("should not pack beacon block to lower protocol %v", protocol)
-	}
 	copy(buf[offset:], b.broadcastType[:])
 	offset += BroadcastTypeLen
 	if b.encrypted {
@@ -175,7 +172,7 @@ func (b *Broadcast) Pack(protocol Protocol) ([]byte, error) {
 	}
 
 	// Put in the end to provide back compatibility
-	if b.IsBeaconBlock() && protocol >= BeaconBlockProtocol {
+	if b.IsBeaconBlock() {
 		copy(buf[offset:], b.beaconHash[:])
 		offset += types.SHA256HashLen
 	}
@@ -199,9 +196,6 @@ func (b *Broadcast) Unpack(buf []byte, protocol Protocol) error {
 	}
 	copy(b.broadcastType[:], buf[offset:])
 	offset += BroadcastTypeLen
-	if b.IsBeaconBlock() && protocol < BeaconBlockProtocol {
-		return fmt.Errorf("should not unpack beacon block from lower protocol %v", protocol)
-	}
 
 	if err := checkBufSize(&buf, offset, EncryptedTypeLen); err != nil {
 		return err
@@ -237,7 +231,7 @@ func (b *Broadcast) Unpack(buf []byte, protocol Protocol) error {
 	}
 
 	// Put in the end to provide back compatibility
-	if b.IsBeaconBlock() && protocol >= BeaconBlockProtocol {
+	if b.IsBeaconBlock() {
 		copy(b.beaconHash[:], buf[offset:])
 		offset += types.SHA256HashLen
 	}
@@ -253,7 +247,7 @@ func (b *Broadcast) Size(protocol Protocol) uint32 {
 		types.UInt32Len + // sids len
 		(uint32(len(b.sids)) * types.UInt32Len)
 
-	if b.IsBeaconBlock() && protocol >= BeaconBlockProtocol {
+	if b.IsBeaconBlock() {
 		size += types.SHA256HashLen // beacon hash
 	}
 

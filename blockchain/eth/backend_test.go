@@ -30,8 +30,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const expectTimeout = 3 * time.Millisecond
-const transactionBacklog = 500
+const (
+	expectTimeout      = 3 * time.Millisecond
+	transactionBacklog = 500
+)
 
 func setup() (blockchain.Bridge, *Handler, []types.NodeEndpoint) {
 	bridge := blockchain.NewBxBridge(Converter{}, false)
@@ -830,7 +832,7 @@ func createBxBlockFromEthHeader(header *ethtypes.Header, chain *Chain, bridge bl
 	if !ok {
 		return nil, ErrBodyNotFound
 	}
-	ethBlock := bxcommoneth.NewBlockWithHeader(header).WithBody(body.Transactions, body.Uncles)
+	ethBlock := bxcommoneth.NewBlockWithHeader(header).WithBody(ethtypes.Body{Transactions: body.Transactions, Uncles: body.Uncles})
 
 	sidecars, ok := chain.getBlockBlobSidecars(header.Hash())
 	if ok {

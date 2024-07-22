@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -29,6 +28,7 @@ import (
 	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 	"github.com/r3labs/sse"
+	"golang.org/x/sync/errgroup"
 )
 
 // For the lighthouse client, we make different block encoding for now
@@ -77,40 +77,22 @@ type lightHouseBlobDecoder struct {
 
 // APIClient represents the client for subscribing to the Beacon API event stream.
 type APIClient struct {
-	URL                              string
-	log                              *log.Entry
-	bridge                           blockchain.Bridge
-	config                           *network.EthConfig
-	clock                            utils.Clock
-	ctx                              context.Context
-	httpClient                       *http.Client
-	nodeEndpoint                     types.NodeEndpoint
-	lastBlobsByBeaconHashSuccessSlot uint64
-	lastBlobsMutex                   sync.Mutex
-	processedBlobIndexesBitfield     uint64
-	blobDecoder                      blobDecoder
-	initialized                      atomic.Bool
-	lastSlot                         atomic.Uint64
-}
-
-func (c *APIClient) setProcessedBlobIndex(index uint64) {
-	if index > 63 {
-		c.log.Errorf("blob sidecar index %d is out of range", index)
-		return
-	}
-	c.processedBlobIndexesBitfield = c.processedBlobIndexesBitfield | (1 << index)
-}
-
-func (c *APIClient) isProcessedBlobIndex(index uint64) bool {
-	return c.processedBlobIndexesBitfield&(1<<index) != 0
-}
-
-func (c *APIClient) resetProcessedBlobIndexes() {
-	c.processedBlobIndexesBitfield = 0
+	URL          string
+	log          *log.Entry
+	bridge       blockchain.Bridge
+	config       *network.EthConfig
+	clock        utils.Clock
+	ctx          context.Context
+	httpClient   *http.Client
+	nodeEndpoint types.NodeEndpoint
+	blobDecoder  blobDecoder
+	initialized  atomic.Bool
+	sharedSync   *APISharedSync
 }
 
 // NewAPIClient creates a new APIClient with the specified URL.
-func NewAPIClient(ctx context.Context, httpClient *http.Client, config *network.EthConfig, bridge blockchain.Bridge, url string, endpoint types.NodeEndpoint) *APIClient {
+func NewAPIClient(ctx context.Context, httpClient *http.Client, config *network.EthConfig, bridge blockchain.Bridge, url string, endpoint types.NodeEndpoint,
+	sharedSync *APISharedSync) *APIClient {
 	return &APIClient{
 		ctx: ctx,
 		URL: url,
@@ -118,17 +100,14 @@ func NewAPIClient(ctx context.Context, httpClient *http.Client, config *network.
 			"connType":   "beaconApi",
 			"remoteAddr": url,
 		}),
-		bridge:                           bridge,
-		config:                           config,
-		clock:                            utils.RealClock{},
-		httpClient:                       httpClient,
-		blobDecoder:                      newDefaultBlobDecoder(),
-		nodeEndpoint:                     endpoint,
-		lastBlobsByBeaconHashSuccessSlot: 0,
-		processedBlobIndexesBitfield:     0,
-		initialized:                      atomic.Bool{},
-		lastSlot:                         atomic.Uint64{},
-		lastBlobsMutex:                   sync.Mutex{},
+		bridge:       bridge,
+		config:       config,
+		clock:        utils.RealClock{},
+		httpClient:   httpClient,
+		blobDecoder:  newDefaultBlobDecoder(),
+		nodeEndpoint: endpoint,
+		initialized:  atomic.Bool{},
+		sharedSync:   sharedSync,
 	}
 }
 
@@ -231,28 +210,49 @@ func (c *APIClient) requestClientVersionUntilSuccess() {
 	var err error
 
 	for {
-		version, err = c.requestClientVersion()
-		if err == nil {
-			c.log.Infof("Received beacon client verion: %s", version)
-			break
+		select {
+		case <-c.ctx.Done():
+			return
+		default:
+			version, err = c.requestClientVersion()
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return
+				}
+				c.log.Errorf("error retrieving beacon client version: %v", err)
+				break
+			}
+
+			if strings.Contains(version, lighthouse) {
+				c.blobDecoder = newLightHouseBlobDecoder()
+			}
+
+			c.initialized.Store(true)
+
+			return
 		}
 
-		c.log.Errorf("Error retrieving beacon client version: %v", err)
-		time.Sleep(time.Second * 10) // Wait before retrying
+		time.Sleep(time.Second * 10) // wait before retrying
 	}
-
-	if strings.Contains(version, lighthouse) {
-		c.blobDecoder = newLightHouseBlobDecoder()
-	}
-
-	c.initialized.Store(true)
 }
 
 // Start listens for events from the Beacon API event stream.
-func (c *APIClient) Start() {
-	go c.requestClientVersionUntilSuccess()
-	go c.subscribeToEvents(fmt.Sprintf(subscribeEventRoute, c.URL, topicsNewBlockHead), c.blockHeadEventHandler())
-	go c.subscribeToEvents(fmt.Sprintf(subscribeEventRoute, c.URL, topicsNewBlobsSidecar), c.blobSidecarEventHandler())
+func (c *APIClient) Start() error {
+	g := &errgroup.Group{}
+	g.Go(func() error {
+		c.requestClientVersionUntilSuccess()
+		return nil
+	})
+	g.Go(func() error {
+		c.subscribeToEvents(fmt.Sprintf(subscribeEventRoute, c.URL, topicsNewBlockHead), c.blockHeadEventHandler())
+		return nil
+	})
+	g.Go(func() error {
+		c.subscribeToEvents(fmt.Sprintf(subscribeEventRoute, c.URL, topicsNewBlobsSidecar), c.blobSidecarEventHandler())
+		return nil
+	})
+
+	return g.Wait()
 }
 
 // subscribeToEvents sets up a subscription to server-sent events from the beacon chain API.
@@ -360,9 +360,6 @@ func (c *APIClient) requestBlobSidecarWithRetries(beaconHash string, index strin
 }
 
 func (c *APIClient) isNeedToRequestBlobSidecar(blobSidecarEvent *structs.BlobSidecarEvent) bool {
-	c.lastBlobsMutex.Lock()
-	defer c.lastBlobsMutex.Unlock()
-
 	eventSlot, err := strconv.ParseUint(blobSidecarEvent.Slot, 10, 64)
 	if err != nil {
 		c.log.Errorf("could not parse slot from blob sidecar event, slot data: %s, err: %v ", blobSidecarEvent.Slot, err)
@@ -375,26 +372,14 @@ func (c *APIClient) isNeedToRequestBlobSidecar(blobSidecarEvent *structs.BlobSid
 		return false
 	}
 
-	// if the blob sidecar block is already processed, ignore it
-	if c.lastBlobsByBeaconHashSuccessSlot > eventSlot {
-		c.log.Tracef("blob sidecar request already processed: slot: %s, block hash: %s", blobSidecarEvent.Slot, blobSidecarEvent.BlockRoot)
-		return false
+	needToRequestBlobSidecar, err := c.sharedSync.needToRequestBlobSidecar(eventSlot, index)
+	if err != nil {
+		c.log.Errorf("%v", err)
 	}
-
-	if c.lastBlobsByBeaconHashSuccessSlot < eventSlot {
-		// reset processed blob indexes for each new slot
-		c.resetProcessedBlobIndexes()
-		c.lastBlobsByBeaconHashSuccessSlot = eventSlot
+	if !needToRequestBlobSidecar {
+		c.log.Tracef("blob sidecar request already processed: slot: %s, index: %d, block hash: %s", blobSidecarEvent.Slot, index, blobSidecarEvent.BlockRoot)
 	}
-
-	// if the blob sidecar index is already processed, ignore it
-	if c.isProcessedBlobIndex(index) {
-		c.log.Tracef("blob sidecar index %d for slot %d already processed, block hash: %s ", index, eventSlot, blobSidecarEvent.BlockRoot)
-		return false
-	}
-
-	c.setProcessedBlobIndex(index)
-	return true
+	return needToRequestBlobSidecar
 }
 
 // blobSidecarEventHandler returns a function to handle server-sent events.
@@ -467,12 +452,10 @@ func (c *APIClient) blockHeadEventHandler() func(msg *sse.Event) {
 			return
 		}
 
-		lastSlot := c.lastSlot.Load()
-		if data.Slot <= lastSlot {
-			c.log.Tracef("skip processing already processed block[slot=%d], last processed slot %d", data.Slot, lastSlot)
+		if c.sharedSync.isKnownSlot(data.Slot) {
+			c.log.Tracef("skip processing already processed block[slot=%d]", data.Slot)
 			return
 		}
-		c.lastSlot.Store(data.Slot)
 
 		block, err := c.requestBlock(data.Block)
 		if err != nil {
@@ -527,14 +510,11 @@ func (c *APIClient) BroadcastBlock(block *ethpb.SignedBeaconBlockContentsDeneb) 
 	if !c.initialized.Load() {
 		return fmt.Errorf("unknown client version")
 	}
-
-	lastSlot := c.lastSlot.Load()
 	blockSlot := block.GetBlock().GetBlock().GetSlot()
-	if uint64(blockSlot) <= lastSlot {
-		c.log.Tracef("skip broadcast already processed block[slot=%d], last processed slot is %d", blockSlot, lastSlot)
+	if c.sharedSync.isKnownSlot(uint64(blockSlot)) {
+		c.log.Tracef("skip broadcast already processed block[slot=%d]", blockSlot)
 		return nil
 	}
-	c.lastSlot.Store(uint64(blockSlot))
 
 	uri := fmt.Sprintf(broadcastBlockRoute, c.URL)
 

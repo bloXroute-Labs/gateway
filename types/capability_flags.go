@@ -5,9 +5,10 @@ type CapabilityFlags uint16
 
 // flag constant values
 const (
-	CapabilityFastSync CapabilityFlags = 1 << iota
+	_ CapabilityFlags = 1 << iota // Deprecated: CapabilityFastSync used only for unitests
 	CapabilityMEVBuilder
-	CapabilityMEVMiner
-	CapabilityBDN
+	_ // Deprecated: CapabilityMEVMiner used for indication if the connection is a mev-miner gateway
+	_ // Deprecated: CapabilityBDN used for indication if the connected gw is bdn/flashbot mode
 	CapabilityBlockchainRPCEnabled
+	CapabilityNoBlocks
 )

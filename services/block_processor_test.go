@@ -360,7 +360,7 @@ func TestRLPBlockProcessor_BroadcastToBxBlockFullTxs(t *testing.T) {
 
 	assert.Equal(t, fixtures.BroadcastDifficulty, bxBlock.TotalDifficulty)
 	assert.Equal(t, fixtures.BroadcastBlockNumber, bxBlock.Number)
-	assert.Equal(t, 2148, bxBlock.Size())
+	assert.Equal(t, 2149, bxBlock.Size())
 }
 
 func TestRLPBlockProcessor_ProcessBroadcast(t *testing.T) {

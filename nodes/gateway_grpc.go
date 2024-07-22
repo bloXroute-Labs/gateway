@@ -39,14 +39,18 @@ const (
 )
 
 var (
-	txContentFields = []string{"tx_contents.nonce", "tx_contents.tx_hash",
+	txContentFields = []string{
+		"tx_contents.nonce", "tx_contents.tx_hash",
 		"tx_contents.gas_price", "tx_contents.gas", "tx_contents.to", "tx_contents.value", "tx_contents.input",
 		"tx_contents.v", "tx_contents.r", "tx_contents.s", "tx_contents.from", "tx_contents.type", "tx_contents.access_list",
-		"tx_contents.chain_id", "tx_contents.max_priority_fee_per_gas", "tx_contents.max_fee_per_gas", "tx_contents.max_fee_per_blob_gas", "tx_contents.blob_versioned_hashes", "tx_contents.y_parity"}
+		"tx_contents.chain_id", "tx_contents.max_priority_fee_per_gas", "tx_contents.max_fee_per_gas", "tx_contents.max_fee_per_blob_gas", "tx_contents.blob_versioned_hashes", "tx_contents.y_parity",
+	}
 	validOnBlockParams   = []string{"name", "response", "block_height", "tag"}
-	validTxReceiptParams = []string{"block_hash", "block_number", "contract_address",
+	validTxReceiptParams = []string{
+		"block_hash", "block_number", "contract_address",
 		"cumulative_gas_used", "effective_gas_price", "from", "gas_used", "logs", "logs_bloom",
-		"status", "to", "transaction_hash", "transaction_index", "type", "txs_count"}
+		"status", "to", "transaction_hash", "transaction_index", "type", "txs_count",
+	}
 	validBlockParams = append(txContentFields, "tx_contents.from", "hash", "header", "transactions", "uncles", "future_validator_info", "withdrawals")
 )
 
@@ -96,13 +100,13 @@ func (g *GatewayGrpc) Peers(ctx context.Context, req *pb.PeersRequest) (*pb.Peer
 	return g.Bx.Peers(ctx, req)
 }
 
-func (g *GatewayGrpc) validateAuthHeader(authHeader string, required, allowAccessToInternalGateway bool, ip string) (*sdnmessage.Account, error) {
-	accountID, secretHash, err := g.accountIDAndHashFromAuthHeader(authHeader, required)
+func (g *GatewayGrpc) validateAuthHeader(authHeader string, isRequiredForExternalGateway, allowAccessByOtherAccounts bool, ip string) (*sdnmessage.Account, error) {
+	accountID, secretHash, err := g.accountIDAndHashFromAuthHeader(authHeader, isRequiredForExternalGateway)
 	if err != nil {
 		return nil, err
 	}
 
-	accountModel, err := g.params.authorize(accountID, secretHash, allowAccessToInternalGateway, false, ip)
+	accountModel, err := g.params.authorize(accountID, secretHash, allowAccessByOtherAccounts, false, ip)
 	if err != nil {
 		return nil, err
 	}
@@ -110,9 +114,9 @@ func (g *GatewayGrpc) validateAuthHeader(authHeader string, required, allowAcces
 	return &accountModel, nil
 }
 
-func (g *GatewayGrpc) accountIDAndHashFromAuthHeader(authHeader string, required bool) (accountID types.AccountID, secretHash string, err error) {
+func (g *GatewayGrpc) accountIDAndHashFromAuthHeader(authHeader string, isRequiredForExternalGateway bool) (accountID types.AccountID, secretHash string, err error) {
 	if authHeader == "" {
-		if required {
+		if isRequiredForExternalGateway {
 			err = errors.New("auth header is missing")
 			return
 		}
@@ -176,8 +180,8 @@ func (g *GatewayGrpc) Status(ctx context.Context, req *pb.StatusRequest) (*pb.St
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
 
-	var bdnConn = func() map[string]*pb.BDNConnStatus {
-		var mp = make(map[string]*pb.BDNConnStatus)
+	bdnConn := func() map[string]*pb.BDNConnStatus {
+		mp := make(map[string]*pb.BDNConnStatus)
 
 		g.ConnectionsLock.RLock()
 		for _, conn := range g.Connections {
@@ -226,7 +230,7 @@ func (g *GatewayGrpc) Status(ctx context.Context, req *pb.StatusRequest) (*pb.St
 		return mp
 	}
 
-	var nodeConn = func() map[string]*pb.NodeConnStatus {
+	nodeConn := func() map[string]*pb.NodeConnStatus {
 		if len(g.params.blockchainPeers) == 0 {
 			return nil // Gateway is not connected to nodes
 		}
@@ -237,12 +241,12 @@ func (g *GatewayGrpc) Status(ctx context.Context, req *pb.StatusRequest) (*pb.St
 			return nil
 		}
 
-		var wsProviders = g.params.wsManager.Providers()
+		wsProviders := g.params.wsManager.Providers()
 
 		select {
 		case status := <-g.params.bridge.ReceiveBlockchainStatusResponse():
-			var mp = make(map[string]*pb.NodeConnStatus)
-			var nodeStats = g.params.bdnStats.NodeStats()
+			mp := make(map[string]*pb.NodeConnStatus)
+			nodeStats := g.params.bdnStats.NodeStats()
 			for _, peer := range status {
 				connStatus := &pb.NodeConnStatus{
 					Dynamic: peer.IsDynamic(),
@@ -1029,7 +1033,7 @@ func (g *GatewayGrpc) TxsFromShortIDs(ctx context.Context, req *pb.ShortIDListRe
 			txList = append(txList, []byte{})
 			continue
 		}
-		txStoreTx, err := g.TxStore.GetTxByShortID(types.ShortID(shortID))
+		txStoreTx, err := g.TxStore.GetTxByShortID(types.ShortID(shortID), req.GetWithSidecars())
 		if err != nil {
 			return nil, errors.New("failed decompressing")
 		}

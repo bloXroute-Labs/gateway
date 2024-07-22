@@ -102,7 +102,6 @@ type gateway struct {
 	feedManagerChan      chan types.Notification
 	feedManagerErrorChan chan servers.ErrorNotification
 	asyncMsgChannel      chan services.MsgInfo
-	isBDN                bool
 	bdnStats             *bxmessage.BdnPerformanceStats
 	blockProcessor       services.BlockProcessor
 	blobProcessor        services.BlobProcessor
@@ -210,7 +209,6 @@ func NewGateway(parent context.Context,
 	g := &gateway{
 		Bx:                           NewBx(bxConfig, "datadir", nil),
 		bridge:                       bridge,
-		isBDN:                        bxConfig.GatewayMode.IsBDN(),
 		wsManager:                    wsManager,
 		context:                      parent,
 		blockchainPeers:              blockchainPeers,
@@ -424,7 +422,6 @@ func InitSDN(bxConfig *config.Bx, blockchainPeers []types.NodeEndpoint, gatewayP
 
 	privateCertDir := path.Join(bxConfig.DataDir, "ssl")
 	gatewayType := bxConfig.NodeType
-	gatewayMode := bxConfig.GatewayMode
 	privateCertFile, privateKeyFile, registrationOnlyCertFile, registrationOnlyKeyFile := utils.GetCertDir(bxConfig.RegistrationCertDir, privateCertDir, strings.ToLower(gatewayType.String()))
 	sslCerts := utils.NewSSLCertsFromFiles(privateCertFile, privateKeyFile, registrationOnlyCertFile, registrationOnlyKeyFile)
 	blockchainPeerEndpoint := types.NodeEndpoint{IP: "", Port: 0, PublicKey: ""}
@@ -436,7 +433,6 @@ func InitSDN(bxConfig *config.Bx, blockchainPeers []types.NodeEndpoint, gatewayP
 
 	nodeModel := sdnmessage.NodeModel{
 		NodeType:             gatewayType.String(),
-		GatewayMode:          string(gatewayMode),
 		ExternalIP:           bxConfig.ExternalIP,
 		ExternalPort:         bxConfig.ExternalPort,
 		BlockchainIP:         blockchainPeerEndpoint.IP,
@@ -670,10 +666,10 @@ func (g *gateway) updateRelayConnections(relayInstructions chan connections.Rela
 
 func (g *gateway) connectRelay(instruction connections.RelayInstruction, sslCerts utils.SSLCerts, networkNum types.NetworkNum) {
 	relay := handler.NewOutboundRelay(g, &sslCerts, instruction.IP, instruction.Port, g.sdn.NodeID(), utils.Relay,
-		g.BxConfig.PrioritySending, g.sdn.Networks(), true, false, utils.RealClock{}, false, g.isBDN)
+		g.BxConfig.PrioritySending, g.sdn.Networks(), true, false, utils.RealClock{}, false)
 	relay.SetNetworkNum(networkNum)
 
-	relay.Start()
+	go relay.Start(g.context)
 
 	g.log.WithFields(log.Fields{
 		"gateway":   g.sdn.NodeID(),
@@ -1383,12 +1379,12 @@ func (g *gateway) NodeStatus() connections.NodeStatus {
 		capabilities |= types.CapabilityMEVBuilder
 	}
 
-	if g.BxConfig.GatewayMode.IsBDN() {
-		capabilities |= types.CapabilityBDN
-	}
-
 	if g.BxConfig.EnableBlockchainRPC {
 		capabilities |= types.CapabilityBlockchainRPCEnabled
+	}
+
+	if g.BxConfig.NoBlocks {
+		capabilities |= types.CapabilityNoBlocks
 	}
 
 	return connections.NodeStatus{
@@ -2121,7 +2117,7 @@ func (g *gateway) getHeaderFromGateway() string {
 	return base64.StdEncoding.EncodeToString([]byte(accountIDAndHash))
 }
 
-func (g *gateway) authorize(accountID types.AccountID, secretHash string, allowAccessToInternalGateway, allowIntroductoryTierAccess bool, ip string) (sdnmessage.Account, error) {
+func (g *gateway) authorize(accountID types.AccountID, secretHash string, allowAccessByOtherAccounts, allowIntroductoryTierAccess bool, ip string) (sdnmessage.Account, error) {
 	// if gateway received request from a customer with a different account id, it should verify it with the SDN.
 	// if the gateway does not have permission to verify account id (which mostly happen with external gateways),
 	// SDN will return StatusUnauthorized and fail this connection. if SDN return any other error -
@@ -2135,21 +2131,27 @@ func (g *gateway) authorize(accountID types.AccountID, secretHash string, allowA
 	})
 
 	if accountID != connectionAccountModel.AccountID {
-		if !allowAccessToInternalGateway {
+		if !allowAccessByOtherAccounts {
 			l.Errorf("account %v is not authorized to call this method directly", g.sdn.AccountModel().AccountID)
 			return connectionAccountModel, errMethodNotAllowed
 		}
 		accountRes, err := g.accountsCacheManager.Get(accountID)
-		if err != nil {
-			l.Errorf("failed to get customer account model, connectionSecretHash: %v, error: %v", secretHash, err)
+		switch {
+		case err != nil:
+			l.Errorf("failed to get customer account model, using default elite account: %v", err)
 			connectionAccountModel = sdnmessage.GetDefaultEliteAccount(time.Now().UTC())
 			connectionAccountModel.AccountID = accountID
 			connectionAccountModel.SecretHash = secretHash
-		} else if accountRes.notAuthorizedErr != nil {
+
+			// return early here since elite tier satisfies IsEnterprise()
+			// and there is no need to check the hashes
+			return connectionAccountModel, nil
+		case accountRes.notAuthorizedErr != nil:
 			return accountRes.account, accountRes.notAuthorizedErr
+		default:
+			connectionAccountModel = accountRes.account
 		}
 
-		connectionAccountModel = accountRes.account
 		if !allowIntroductoryTierAccess && !connectionAccountModel.TierName.IsEnterprise() {
 			l.Warnf("customer must be enterprise / enterprise elite / ultra but it is %v", connectionAccountModel)
 			return connectionAccountModel, errTierTooLow

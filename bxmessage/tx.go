@@ -260,24 +260,13 @@ func (m Tx) Pack(protocol Protocol) ([]byte, error) {
 	timestamp := m.timestamp.UnixNano() >> 10
 	binary.LittleEndian.PutUint32(buf[offset:], uint32(timestamp))
 	offset += ShortTimestampLen
-	switch {
-	case protocol >= NextValidatorMultipleProtocol:
-		if m.flags.IsNextValidator() {
-			binary.LittleEndian.PutUint16(buf[offset:], m.fallback)
-			offset += types.UInt16Len
-			for _, walletID := range m.walletIDs {
-				copy(buf[offset:offset+types.WalletIDLen], walletID)
-				offset += types.WalletIDLen
-			}
-		}
-	case protocol >= NextValidatorProtocol:
-		if m.flags.IsNextValidator() {
-			binary.LittleEndian.PutUint16(buf[offset:], m.fallback)
-			offset += types.UInt16Len
-			copy(buf[offset:offset+types.WalletIDLen], m.walletIDs[0])
+	if m.flags.IsNextValidator() {
+		binary.LittleEndian.PutUint16(buf[offset:], m.fallback)
+		offset += types.UInt16Len
+		for _, walletID := range m.walletIDs {
+			copy(buf[offset:offset+types.WalletIDLen], walletID)
 			offset += types.WalletIDLen
 		}
-	default:
 	}
 	copy(buf[offset:], m.accountID[:])
 	offset += AccountIDLen
@@ -319,32 +308,17 @@ func (m *Tx) Unpack(buf []byte, protocol Protocol) error {
 	result := decodeTimestamp(timestamp)
 	m.timestamp = time.Unix(0, result)
 
-	switch {
-	case protocol >= NextValidatorMultipleProtocol:
-		if m.flags.IsNextValidator() {
-			m.walletIDs = make([]string, 2)
-			if err := checkBufSize(&buf, offset, types.UInt16Len+types.WalletIDLen+types.WalletIDLen); err != nil {
-				return err
-			}
-			m.fallback = binary.LittleEndian.Uint16(buf[offset:])
-			offset += types.UInt16Len
-			for i := 0; i < 2; i++ {
-				m.SetWalletID(i, string(buf[offset:offset+types.WalletIDLen]))
-				offset += types.WalletIDLen
-			}
+	if m.flags.IsNextValidator() {
+		m.walletIDs = make([]string, 2)
+		if err := checkBufSize(&buf, offset, types.UInt16Len+types.WalletIDLen+types.WalletIDLen); err != nil {
+			return err
 		}
-	case protocol >= NextValidatorProtocol:
-		if m.flags.IsNextValidator() {
-			m.walletIDs = make([]string, 2)
-			if err := checkBufSize(&buf, offset, types.UInt16Len+types.WalletIDLen); err != nil {
-				return err
-			}
-			m.fallback = binary.LittleEndian.Uint16(buf[offset:])
-			offset += types.UInt16Len
-			m.SetWalletID(0, string(buf[offset:offset+types.WalletIDLen]))
+		m.fallback = binary.LittleEndian.Uint16(buf[offset:])
+		offset += types.UInt16Len
+		for i := 0; i < 2; i++ {
+			m.SetWalletID(i, string(buf[offset:offset+types.WalletIDLen]))
 			offset += types.WalletIDLen
 		}
-	default:
 	}
 
 	switch {
@@ -409,12 +383,8 @@ func (m *Tx) Size(protocol Protocol) uint32 {
 		contentSize += SenderLen
 	}
 
-	if protocol >= NextValidatorProtocol && m.flags.IsNextValidator() {
-		contentSize += types.UInt16Len + types.WalletIDLen
-	}
-
-	if protocol >= NextValidatorMultipleProtocol && m.flags.IsNextValidator() {
-		contentSize += types.WalletIDLen
+	if m.flags.IsNextValidator() {
+		contentSize += types.WalletIDLen*2 + types.UInt16Len
 	}
 	return m.BroadcastHeader.Size() + types.ShortIDLen + types.TxFlagsLen + ShortTimestampLen + AccountIDLen + contentSize
 }

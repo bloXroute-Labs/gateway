@@ -55,82 +55,88 @@ func newPrysmClient(ctx context.Context, config *network.EthConfig, addr string,
 
 // Start starts subscription to prysm blocks
 func (c *PrysmClient) Start() {
-	go c.run()
+	c.run()
 }
 
 func (c *PrysmClient) run() {
 	for {
-		func() {
-			c.log.Trace("connecting to prysm")
+		select {
+		case <-c.ctx.Done():
+			c.log.Info("prysm client stopped")
+			return
+		default:
+			func() {
+				c.log.Trace("connecting to prysm")
 
-			conn, err := grpc.Dial(c.addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-			if err != nil {
-				c.log.Warnf("could not establish a connection to the Prysm: %v, retrying in %v seconds...", err, prysmClientTimeout)
-				return
-			}
-			defer conn.Close()
-
-			client := ethpb.NewBeaconNodeValidatorClient(conn)
-
-			stream, err := client.StreamBlocksAltair(c.ctx, &ethpb.StreamBlocksRequest{VerifiedOnly: true})
-			if err != nil {
-				c.log.Errorf("could not subscribe to Prysm: %v, retrying.", err)
-				return
-			}
-
-			for {
-				res, err := stream.Recv()
+				conn, err := grpc.DialContext(c.ctx, c.addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 				if err != nil {
-					c.log.Errorf("connection to the prysm was broken because: %v, retrying.", err)
+					c.log.Warnf("could not establish a connection to the Prysm: %v, retrying in %v seconds...", err, prysmClientTimeout)
+					return
+				}
+				defer conn.Close()
+
+				client := ethpb.NewBeaconNodeValidatorClient(conn)
+
+				stream, err := client.StreamBlocksAltair(c.ctx, &ethpb.StreamBlocksRequest{VerifiedOnly: true})
+				if err != nil {
+					c.log.Errorf("could not subscribe to Prysm: %v, retrying.", err)
 					return
 				}
 
-				var blk interfaces.ReadOnlySignedBeaconBlock
-				switch b := res.Block.(type) {
-				case *ethpb.StreamBlocksResponse_Phase0Block:
-					blk, err = blocks.NewSignedBeaconBlock(b.Phase0Block)
-				case *ethpb.StreamBlocksResponse_AltairBlock:
-					blk, err = blocks.NewSignedBeaconBlock(b.AltairBlock)
-				case *ethpb.StreamBlocksResponse_BellatrixBlock:
-					blk, err = blocks.NewSignedBeaconBlock(b.BellatrixBlock)
-				case *ethpb.StreamBlocksResponse_CapellaBlock:
-					blk, err = blocks.NewSignedBeaconBlock(b.CapellaBlock)
-				case *ethpb.StreamBlocksResponse_DenebBlock:
-					blk, err = blocks.NewSignedBeaconBlock(b.DenebBlock)
-				}
+				for {
+					res, err := stream.Recv()
+					if err != nil {
+						c.log.Errorf("connection to the prysm was broken because: %v, retrying.", err)
+						return
+					}
 
-				if err != nil {
-					c.log.Errorf("could not wrap signed beacon block: %v", err)
-					continue
-				}
+					var blk interfaces.ReadOnlySignedBeaconBlock
+					switch b := res.Block.(type) {
+					case *ethpb.StreamBlocksResponse_Phase0Block:
+						blk, err = blocks.NewSignedBeaconBlock(b.Phase0Block)
+					case *ethpb.StreamBlocksResponse_AltairBlock:
+						blk, err = blocks.NewSignedBeaconBlock(b.AltairBlock)
+					case *ethpb.StreamBlocksResponse_BellatrixBlock:
+						blk, err = blocks.NewSignedBeaconBlock(b.BellatrixBlock)
+					case *ethpb.StreamBlocksResponse_CapellaBlock:
+						blk, err = blocks.NewSignedBeaconBlock(b.CapellaBlock)
+					case *ethpb.StreamBlocksResponse_DenebBlock:
+						blk, err = blocks.NewSignedBeaconBlock(b.DenebBlock)
+					}
 
-				if blk.Block().Slot() <= currentSlot(c.config.GenesisTime)-prysmTypes.Slot(c.config.IgnoreSlotCount) {
-					c.log.Errorf("block slot=%d is too old to process", blk.Block().Slot())
-					continue
-				}
+					if err != nil {
+						c.log.Errorf("could not wrap signed beacon block: %v", err)
+						continue
+					}
 
-				// only process new blocks
-				if c.latestSlot >= blk.Block().Slot() {
-					continue
-				}
-				c.latestSlot = blk.Block().Slot()
+					if blk.Block().Slot() <= currentSlot(c.config.GenesisTime)-prysmTypes.Slot(c.config.IgnoreSlotCount) {
+						c.log.Errorf("block slot=%d is too old to process", blk.Block().Slot())
+						continue
+					}
 
-				wrappedBlock := NewWrappedReadOnlySignedBeaconBlock(blk)
-				blockHash, err := wrappedBlock.HashTreeRoot()
-				if err != nil {
-					c.log.Errorf("could not get beacon block[slot=%d] hash: %v", blk.Block().Slot(), err)
-					continue
-				}
-				blockHashHex := ethcommon.BytesToHash(blockHash[:]).String()
+					// only process new blocks
+					if c.latestSlot >= blk.Block().Slot() {
+						continue
+					}
+					c.latestSlot = blk.Block().Slot()
 
-				if err := SendBlockToBDN(c.clock, c.log, wrappedBlock, c.bridge, c.endpoint); err != nil {
-					c.log.Errorf("could not proccess beacon block[slot=%d,hash=%s] to eth: %v", blk.Block().Slot(), blockHashHex, err)
-					continue
-				}
+					wrappedBlock := NewWrappedReadOnlySignedBeaconBlock(blk)
+					blockHash, err := wrappedBlock.HashTreeRoot()
+					if err != nil {
+						c.log.Errorf("could not get beacon block[slot=%d] hash: %v", blk.Block().Slot(), err)
+						continue
+					}
+					blockHashHex := ethcommon.BytesToHash(blockHash[:]).String()
 
-				c.log.Tracef("received beacon block[slot=%d,hash=%s]", blk.Block().Slot(), blockHashHex)
-			}
-		}()
+					if err := SendBlockToBDN(c.clock, c.log, wrappedBlock, c.bridge, c.endpoint); err != nil {
+						c.log.Errorf("could not proccess beacon block[slot=%d,hash=%s] to eth: %v", blk.Block().Slot(), blockHashHex, err)
+						continue
+					}
+
+					c.log.Tracef("received beacon block[slot=%d,hash=%s]", blk.Block().Slot(), blockHashHex)
+				}
+			}()
+		}
 
 		time.Sleep(prysmClientTimeout)
 	}

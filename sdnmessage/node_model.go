@@ -12,7 +12,6 @@ import (
 // NodeModel represents metadata on a given node in the bloxroute network
 type NodeModel struct {
 	NodeType                  string           `json:"node_type"`
-	GatewayMode               string           `json:"gateway_mode"`
 	ExternalPort              int64            `json:"external_port"`
 	NonSSLPort                int              `json:"non_ssl_port"`
 	ExternalIP                string           `json:"external_ip"`

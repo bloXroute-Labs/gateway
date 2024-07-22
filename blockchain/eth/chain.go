@@ -220,7 +220,7 @@ func (c *Chain) GetNewHeadsForBDN(count int) ([]*BlockInfo, error) {
 			return heads, fmt.Errorf("inconsistent chainstate: no body stored for %v", head.hash)
 		}
 
-		block := bxethcommon.NewBlockWithHeader(header).WithBody(body.Transactions, body.Uncles)
+		block := bxethcommon.NewBlockWithHeader(header).WithBody(ethtypes.Body{Transactions: body.Transactions, Uncles: body.Uncles})
 		// ok for difficulty to not be found since not always available
 		td, _ := c.getBlockDifficulty(head.hash)
 
@@ -476,7 +476,7 @@ func (c *Chain) BlockAtDepth(chainDepth int) (*bxethcommon.Block, error) {
 	if !ok {
 		return nil, fmt.Errorf("cannot get block body for block %v with height %v in the chain state ", ref.hash, ref.height)
 	}
-	block := bxethcommon.NewBlockWithHeader(header).WithBody(body.Transactions, body.Uncles)
+	block := bxethcommon.NewBlockWithHeader(header).WithBody(ethtypes.Body{Transactions: body.Transactions, Uncles: body.Uncles})
 
 	if sidecars, ok := c.getBlockBlobSidecars(ref.hash); ok {
 		block = block.WithSidecars(sidecars)
@@ -795,7 +795,6 @@ func (c *Chain) clean(maxSize int) (lowestCleaned int, highestCleaned int, numCl
 	if numHeadersStored >= maxSize {
 
 		c.heightToBlockHeaders.Range(func(height uint64, headers []ethHeader) bool {
-
 			intHeight := int(height)
 
 			if intHeight < minHeight {

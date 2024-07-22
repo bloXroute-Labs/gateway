@@ -30,7 +30,6 @@ type Bx struct {
 	BlockchainNetwork  string
 	PrioritySending    bool
 	NodeType           utils.NodeType
-	GatewayMode        utils.GatewayMode
 	LogNetworkContent  bool
 	FluentDEnabled     bool
 	FluentDHost        string
@@ -85,14 +84,6 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		return nil, err
 	}
 
-	var gatewayMode utils.GatewayMode
-	if utils.IsGateway {
-		gatewayMode, err = utils.FromStringToGatewayMode(ctx.String(utils.GatewayModeFlag.Name))
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	var mevBuilders map[string]*bundle.Builder
 	if ctx.IsSet(utils.MEVBuildersFilePathFlag.Name) {
 		contents, err := os.ReadFile(ctx.String(utils.MEVBuildersFilePathFlag.Name))
@@ -114,7 +105,6 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		PrioritySending:    !ctx.Bool(utils.AvoidPrioritySendingFlag.Name),
 		Relays:             ctx.String(utils.RelayHostsFlag.Name),
 		NodeType:           nodeType,
-		GatewayMode:        gatewayMode,
 		LogNetworkContent:  ctx.Bool(utils.LogNetworkContentFlag.Name),
 		FluentDEnabled:     ctx.Bool(utils.FluentDFlag.Name),
 		FluentDHost:        ctx.String(utils.FluentdHostFlag.Name),

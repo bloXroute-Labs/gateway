@@ -32,7 +32,7 @@ func (lw *levelWriter) WriteLevel(l zerolog.Level, p []byte) (n int, err error) 
 // it should never write WARN, ERROR, etc. logs, since that's handled by stderr
 func stdoutWriter(level zerolog.Level) *levelWriter {
 	return &levelWriter{
-		WriteCloser: diode.NewWriter(newWriter(os.Stdout, false), backLog, 0, logOverflowAlerter),
+		WriteCloser: diode.NewWriter(newWriter(os.Stdout, true), backLog, 0, logOverflowAlerter),
 		minLevel:    zerolog.TraceLevel,
 		maxLevel:    zerolog.InfoLevel,
 		systemLevel: level,
@@ -43,7 +43,7 @@ func stdoutWriter(level zerolog.Level) *levelWriter {
 // it should never write INFO or more verbose logs
 func stderrWriter(level zerolog.Level) *levelWriter {
 	return &levelWriter{
-		WriteCloser: diode.NewWriter(newWriter(os.Stderr, false), backLog, 0, logOverflowAlerter),
+		WriteCloser: diode.NewWriter(newWriter(os.Stderr, true), backLog, 0, logOverflowAlerter),
 		minLevel:    zerolog.WarnLevel,
 		maxLevel:    zerolog.PanicLevel,
 		systemLevel: level,
