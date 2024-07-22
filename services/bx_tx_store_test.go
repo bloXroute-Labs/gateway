@@ -259,7 +259,7 @@ func TestHistory(t *testing.T) {
 	assert.True(t, result.NewContent)
 	assert.False(t, result.NewSID)
 	// make sure hash2 is already in store
-	tx, err := store.GetTxByShortID(shortID2)
+	tx, err := store.GetTxByShortID(shortID2, false)
 	assert.NoError(t, err)
 	assert.Equal(t, content2, tx.Content())
 	// make sure size is 2
@@ -271,7 +271,7 @@ func TestGetTxByShortID(t *testing.T) {
 
 	hash1 := types.SHA256Hash{1}
 	content1 := types.TxContent{1}
-	tx, err := store.GetTxByShortID(1)
+	tx, err := store.GetTxByShortID(1, false)
 	assert.Nil(t, tx)
 	assert.NotNil(t, err)
 
@@ -280,7 +280,7 @@ func TestGetTxByShortID(t *testing.T) {
 	assert.True(t, result11.NewTx)
 	assert.True(t, result11.NewContent)
 	assert.False(t, result11.NewSID)
-	tx, err = store.GetTxByShortID(1)
+	tx, err = store.GetTxByShortID(1, false)
 	assert.Nil(t, tx)
 	assert.NotNil(t, err)
 
@@ -288,13 +288,13 @@ func TestGetTxByShortID(t *testing.T) {
 	assert.False(t, result12.NewTx)
 	assert.False(t, result12.NewContent)
 	assert.True(t, result12.NewSID)
-	tx, err = store.GetTxByShortID(1)
+	tx, err = store.GetTxByShortID(1, false)
 	assert.NotNil(t, tx)
 	assert.NoError(t, err)
 	assert.Equal(t, content1, tx.Content())
 
 	store.remove(string(hash1[:]), FullReEntryProtection, "TestGetTxByShortID")
-	tx, err = store.GetTxByShortID(1)
+	tx, err = store.GetTxByShortID(1, false)
 	assert.Nil(t, tx)
 	assert.NotNil(t, err)
 }

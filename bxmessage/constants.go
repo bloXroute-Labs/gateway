@@ -96,7 +96,7 @@ const ProtocolLen = 4
 const EmptyProtocol = 0
 
 // MinProtocol provides the minimal supported protocol version
-const MinProtocol = IsBeaconProtocol
+const MinProtocol = NextValidatorMultipleProtocol
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
 const CurrentProtocol = BundleRefundProtocol
@@ -143,21 +143,6 @@ const ShanghaiProtocol = 36
 // NextValidatorMultipleProtocol is an enhancement to NextValidatorProtocol
 const NextValidatorMultipleProtocol = 35
 
-// BeaconBlockProtocol is the minimum protocol version that supports beacon blocks
-const BeaconBlockProtocol = 34
-
-// NextValidatorProtocol is the minimum protocol version that supports next validator
-const NextValidatorProtocol = 33
-
-// GatewayInboundConnections adds inbound connections data to BdnPerformanceStatsData.
-const GatewayInboundConnections = 32
-
-// IsConnectedToGateway adds flag to check if node is connected to the gateway in BdnPerformanceStatsData.
-const IsConnectedToGateway = 31
-
-// IsBeaconProtocol tracks if the node is beacon
-const IsBeaconProtocol = 30
-
 // NullByte is a character that is packed at the end of strings in buffers
 const NullByte = "\x00"
 
@@ -186,3 +171,9 @@ const Keccak256HashLen = 32
 
 // ECDSASignatureLen is the byte length of ECDSASignature in Ethereum ecosystem
 const ECDSASignatureLen = 65
+
+// IsConnectedLen is the byte of IsConnectedLen byte
+const IsConnectedLen = 1
+
+// IsDynamicLen is the byte of IsDynamicLen byte
+const IsDynamicLen = 1

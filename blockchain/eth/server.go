@@ -93,7 +93,6 @@ func NewServer(parent context.Context, port int, externalIP net.IP, config *netw
 			EnableMsgEvents:  false,
 			Logger:           logger,
 		},
-		DiscV5: nil,
 	}
 
 	if discovery {

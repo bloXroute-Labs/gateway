@@ -36,7 +36,7 @@ func (m mockTxStore) HasContent(types.SHA256Hash) (r bool)                  { re
 func (m mockTxStore) RemoveShortIDs(*types.ShortIDList, services.ReEntryProtectionFlags, string) {
 }
 func (m mockTxStore) RemoveHashes(*types.SHA256HashList, services.ReEntryProtectionFlags, string) {}
-func (m mockTxStore) GetTxByShortID(types.ShortID) (r *types.BxTransaction, e error)              { return }
+func (m mockTxStore) GetTxByShortID(types.ShortID, bool) (r *types.BxTransaction, e error)        { return }
 
 func (m mockTxStore) GetTxByKzgCommitment(string) (r *types.BxTransaction, e error) { return }
 func (m mockTxStore) Clear()                                                        {}
@@ -79,7 +79,6 @@ func TestConfigValidate(t *testing.T) {
 		config.SendingInfo = &SendingConfig{Enabled: true}
 
 		require.NoError(t, config.Validate())
-
 	})
 
 	t.Run("Valid configuration", func(t *testing.T) {

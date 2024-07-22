@@ -151,7 +151,7 @@ func addRelayConn(g *gateway) (*connections.MockTLS, *handler.Relay) {
 			return mockTLS, nil
 		},
 		&utils.SSLCerts{}, "1.1.1.1", 1800, "", utils.Relay, true, g.sdn.Networks(), true, true, connections.LocalInitiatedPort, utils.RealClock{},
-		false, true)
+		false)
 
 	// set connection as established and ready for broadcast
 	_ = relayConn.Connect()
@@ -948,6 +948,7 @@ func TestGateway_HandleBlockFromRelay(t *testing.T) {
 	assert.Equal(t, bxBlock.Header, receivedBxBlock.Header)
 	assert.Equal(t, bxBlock.Trailer, receivedBxBlock.Trailer)
 	assert.True(t, bxBlock.Equals(receivedBxBlock))
+
 	assert.Equal(t, bxBlock.Size(), receivedBxBlock.Size())
 
 	// duplicate, no processing

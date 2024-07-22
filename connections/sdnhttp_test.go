@@ -158,6 +158,8 @@ func TestDirectRelayConnections_IfPingOver40MSLogsWarning(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			defer cleanupFiles()
 
+			globalHook := log.NewGlobal()
+
 			sslCerts := utils.SSLCerts{}
 			handler3, _ := mockRelaysServer(t, jsonRespRelays)
 			var m []handlerArgs
@@ -170,7 +172,6 @@ func TestDirectRelayConnections_IfPingOver40MSLogsWarning(t *testing.T) {
 
 			sdn := NewSDNHTTP(&sslCerts, server.URL, nodeModel, "").(*realSDNHTTP)
 
-			globalHook := log.NewGlobal()
 			getPingLatenciesFunction := func(peers sdnmessage.Peers) []nodeLatencyInfo {
 				return testCase.latencies
 			}

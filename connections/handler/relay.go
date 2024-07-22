@@ -15,7 +15,6 @@ import (
 type Relay struct {
 	*BxConn
 	networks      *sdnmessage.BlockchainNetworks
-	sendSyncReq   bool
 	syncDoneCount uint32
 	endpoint      types.NodeEndpoint
 }
@@ -24,13 +23,13 @@ type Relay struct {
 func NewOutboundRelay(node connections.BxListener,
 	sslCerts *utils.SSLCerts, relayIP string, relayPort int64, nodeID types.NodeID, relayType utils.NodeType,
 	usePQ bool, networks *sdnmessage.BlockchainNetworks, localGEO bool, privateNetwork bool, clock utils.Clock,
-	sameRegion bool, sendSyncReq bool) *Relay {
+	sameRegion bool) *Relay {
 	return NewRelay(node,
 		func() (connections.Socket, error) {
 			return connections.NewTLS(relayIP, int(relayPort), sslCerts)
 		},
 		sslCerts, relayIP, relayPort, nodeID, relayType, usePQ, networks, localGEO, privateNetwork, connections.LocalInitiatedPort, clock,
-		sameRegion, sendSyncReq)
+		sameRegion)
 }
 
 // NewInboundRelay builds a relay connection from a socket event initiated by a remote relay node
@@ -38,13 +37,13 @@ func NewInboundRelay(node connections.BxListener,
 	socket connections.Socket, sslCerts *utils.SSLCerts, relayIP string, nodeID types.NodeID,
 	relayType utils.NodeType, usePQ bool, networks *sdnmessage.BlockchainNetworks,
 	localGEO bool, privateNetwork bool, localPort int64, clock utils.Clock,
-	sameRegion bool, sendSyncReq bool) *Relay {
+	sameRegion bool) *Relay {
 	return NewRelay(node,
 		func() (connections.Socket, error) {
 			return socket, nil
 		},
 		sslCerts, relayIP, connections.RemoteInitiatedPort, nodeID, relayType, usePQ, networks, localGEO, privateNetwork, localPort, clock,
-		sameRegion, sendSyncReq)
+		sameRegion)
 }
 
 // NewRelay should only be called from test cases or NewOutboundRelay. It allows specifying a particular connect function for the SSL socket. However, in essentially all usages this should not be necessary as any node will initiate a connection to the relay, and as such should just use the default connect function to open a new socket.
@@ -52,13 +51,12 @@ func NewRelay(node connections.BxListener,
 	connect func() (connections.Socket, error), sslCerts *utils.SSLCerts, relayIP string, relayPort int64,
 	nodeID types.NodeID, relayType utils.NodeType, usePQ bool, networks *sdnmessage.BlockchainNetworks,
 	localGEO bool, privateNetwork bool, localPort int64, clock utils.Clock,
-	sameRegion bool, sendSyncReq bool) *Relay {
+	sameRegion bool) *Relay {
 	if networks == nil {
 		log.Panicf("TxStore sync: networks not provided. Please provide empty list of networks")
 	}
 	r := &Relay{
-		networks:    networks,
-		sendSyncReq: sendSyncReq,
+		networks: networks,
 		endpoint: types.NodeEndpoint{
 			IP:   relayIP,
 			Port: int(relayPort),
@@ -94,9 +92,6 @@ func (r *Relay) ProcessMessage(msgBytes bxmessage.MessageBytes) {
 	case bxmessage.HelloType:
 		r.BxConn.ProcessMessage(msgBytes)
 		r.syncDoneCount = 0
-		if !r.sendSyncReq {
-			break
-		}
 
 		for _, network := range *r.networks {
 			r.Log().Debugf("TxStore sync: requesting network %v", network.NetworkNum)

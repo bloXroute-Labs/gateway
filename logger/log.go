@@ -3,6 +3,7 @@ package logger
 import (
 	"fmt"
 	"io"
+	gLog "log"
 	"os"
 	"strings"
 	"sync"
@@ -32,24 +33,35 @@ type FluentDConfig struct {
 }
 
 // Init initializes the logger with the given configuration
-func Init(logConfig *Config, fluentDConfig *FluentDConfig, version string) error {
+func Init(logConfig *Config, fluentDConfig *FluentDConfig, version string) (close func(), err error) {
 	fileLevel := toZeroLogLevel(logConfig.FileLevel)
 	consoleLevel := toZeroLogLevel(logConfig.ConsoleLevel)
 
+	var closeFuncs []func() error
+
+	stderr := stderrWriter(consoleLevel)
+	closeFuncs = append(closeFuncs, stderr.Close)
+
+	file := fileWriter(logConfig.FileName, logConfig.MaxSize, logConfig.MaxBackups, logConfig.MaxAge, fileLevel)
+	closeFuncs = append(closeFuncs, file.Close)
+
 	writers := []io.Writer{
-		stderrWriter(consoleLevel),
-		fileWriter(logConfig.FileName, logConfig.MaxSize, logConfig.MaxBackups, logConfig.MaxAge, fileLevel),
+		stderr,
+		file,
 	}
 
 	if consoleLevel <= zerolog.InfoLevel {
-		writers = append(writers, stdoutWriter(consoleLevel))
+		stdout := stdoutWriter(consoleLevel)
+		closeFuncs = append(closeFuncs, stdout.Close)
+		writers = append(writers, stdout)
 	}
 
 	if fluentDConfig != nil {
 		w, err := fluentDWriter(fluentDConfig.FluentDHost, toZeroLogLevel(fluentDConfig.Level))
 		if err != nil {
-			return fmt.Errorf("failed to create FluentD writer: %v", err)
+			return nil, fmt.Errorf("failed to create FluentD writer: %v", err)
 		}
+		closeFuncs = append(closeFuncs, w.Close)
 		writers = append(writers, w)
 	}
 
@@ -70,5 +82,11 @@ func Init(logConfig *Config, fluentDConfig *FluentDConfig, version string) error
 	log.Debug().Msg("log initiated")
 	log.Info().Str("version", version).Msgf("%v is starting with arguments %v", logConfig.AppName, strings.Join(os.Args[1:], " "))
 
-	return nil
+	return func() {
+		for _, f := range closeFuncs {
+			if err := f(); err != nil {
+				gLog.Printf("failed to close underlying log writer: %v", err)
+			}
+		}
+	}, nil
 }

@@ -459,6 +459,7 @@ message TxResult {
 message ShortIDListRequest {
   string auth_header = 1 [deprecated = true];
   repeated uint32 shortIDs = 2;
+  bool withSidecars = 3;
 }
 
 message TxListReply {

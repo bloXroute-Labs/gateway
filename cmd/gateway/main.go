@@ -73,7 +73,6 @@ func main() {
 			utils.AllTransactionsFlag,
 			utils.PrivateKeyFlag,
 			utils.NodeTypeFlag,
-			utils.GatewayModeFlag,
 			utils.DisableProfilingFlag,
 			utils.FluentDFlag,
 			utils.FluentdHostFlag,
@@ -122,6 +121,7 @@ func main() {
 
 func runGateway(c *cli.Context) error {
 	ctx := utils.ContextWithSignal(c.Context)
+	group, gCtx := errgroup.WithContext(ctx)
 
 	bxConfig, err := config.NewBxFromCLI(c)
 	if err != nil {
@@ -136,12 +136,11 @@ func runGateway(c *cli.Context) error {
 		}
 	}
 
-	err = log.Init(bxConfig.Config, fluentdCfg, version.BuildVersion)
+	closeLogger, err := log.Init(bxConfig.Config, fluentdCfg, version.BuildVersion)
 	if err != nil {
 		return err
 	}
-
-	group, ctx := errgroup.WithContext(ctx)
+	defer closeLogger()
 
 	var pprofServer *http.Server
 	if !c.Bool(utils.DisableProfilingFlag.Name) {
@@ -149,7 +148,8 @@ func runGateway(c *cli.Context) error {
 		group.Go(func() error {
 			log.Infof("pprof http server is running on 0.0.0.0:6060 - %v", "http://localhost:6060/debug/pprof")
 
-			if err := pprofServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			err := pprofServer.ListenAndServe()
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
 				return fmt.Errorf("failed to start pprof http server: %v", err)
 			}
 
@@ -177,10 +177,10 @@ func runGateway(c *cli.Context) error {
 	// create a set of recommended peers
 	recommendedPeers := make(map[string]struct{})
 
-	startupBeaconNode := bxConfig.GatewayMode.IsBDN() && len(ethConfig.StaticPeers.BeaconNodes()) > 0 || c.Int(utils.BeaconPort.Name) != 0
-	startupBeaconAPIClients := bxConfig.GatewayMode.IsBDN() && len(ethConfig.StaticPeers.BeaconAPIEndpoints()) > 0
+	startupBeaconNode := len(ethConfig.StaticPeers.BeaconNodes()) > 0 || c.Int(utils.BeaconPort.Name) != 0
+	startupBeaconAPIClients := len(ethConfig.StaticPeers.BeaconAPIEndpoints()) > 0
 	startupBlockchainClient := startupBeaconAPIClients || startupBeaconNode || len(ethConfig.StaticPeers.Enodes()) > 0 || bxConfig.EnableDynamicPeers // if beacon node running we need to receive txs also
-	startupPrysmClient := bxConfig.GatewayMode.IsBDN() && len(ethConfig.StaticPeers.PrysmAddrs()) > 0
+	startupPrysmClient := len(ethConfig.StaticPeers.PrysmAddrs()) > 0
 
 	var bridge blockchain.Bridge
 	if blockchainNetwork == bxgateway.Mainnet || startupBlockchainClient || startupPrysmClient {
@@ -215,7 +215,7 @@ func runGateway(c *cli.Context) error {
 			localGenesisFile = c.String(utils.GensisFilePath.Name)
 			genesisPath = localGenesisFile
 		} else {
-			genesisPath, err = downloadGenesisFile(c.String(utils.BlockchainNetworkFlag.Name), localGenesisFile)
+			genesisPath, err = downloadGenesisFile(gCtx, c.String(utils.BlockchainNetworkFlag.Name), localGenesisFile)
 			if err != nil {
 				return err
 			}
@@ -223,7 +223,7 @@ func runGateway(c *cli.Context) error {
 		log.Info("connecting to beacon node using ", genesisPath)
 
 		beaconNode, err = beacon.NewNode(beacon.NodeParams{
-			ParentContext:        ctx,
+			ParentContext:        gCtx,
 			NetworkName:          c.String(utils.BlockchainNetworkFlag.Name),
 			EthConfig:            ethConfig,
 			TrustedPeersFilePath: c.String(utils.BeaconTrustedPeersFileFlag.Name),
@@ -236,16 +236,17 @@ func runGateway(c *cli.Context) error {
 			return err
 		}
 
-		if err = beaconNode.Start(); err != nil {
-			return err
-		}
+		group.Go(beaconNode.Start)
 	}
 
 	beaconAPIClients := make([]*beacon.APIClient, 0)
 	if startupBeaconAPIClients {
+		apiShredSync := beacon.NewAPISharedSync()
 		for _, beaconAPI := range ethConfig.StaticPeers.BeaconAPIEndpoints() {
-			client := beacon.NewAPIClient(ctx, httpclient.Client(nil), ethConfig, bridge, beaconAPI.BeaconAPIURI, beaconAPI.Endpoint)
-			client.Start()
+			client := beacon.NewAPIClient(gCtx, httpclient.Client(nil), ethConfig, bridge, beaconAPI.BeaconAPIURI, beaconAPI.Endpoint, apiShredSync)
+
+			group.Go(client.Start)
+
 			beaconAPIClients = append(beaconAPIClients, client)
 		}
 	}
@@ -253,12 +254,18 @@ func runGateway(c *cli.Context) error {
 	var blobsManager *beacon.BlobSidecarCacheManager
 	if startupBeaconNode || startupBeaconAPIClients {
 		blobsManager = beacon.NewBlobSidecarCacheManager(ethConfig.GenesisTime)
-		go beacon.HandleBDNBeaconMessages(ctx, bridge, beaconNode, blobsManager)
-		go beacon.HandleBDNBlocks(ctx, bridge, beaconNode, beaconAPIClients, blobsManager)
+		group.Go(func() error {
+			beacon.HandleBDNBeaconMessages(gCtx, bridge, beaconNode, blobsManager)
+			return nil
+		})
+		group.Go(func() error {
+			beacon.HandleBDNBlocks(gCtx, bridge, beaconNode, beaconAPIClients, blobsManager)
+			return nil
+		})
 	}
 
 	gateway, err := nodes.NewGateway(
-		ctx,
+		gCtx,
 		bxConfig,
 		bridge,
 		wsManager,
@@ -291,12 +298,10 @@ func runGateway(c *cli.Context) error {
 		return err
 	}
 
-	group.Go(func() error {
-		return gateway.Run()
-	})
+	group.Go(gateway.Run)
 
 	// Required for beacon node and prysm to sync
-	ethChain := eth.NewChain(ctx, ethConfig.IgnoreBlockTimeout)
+	ethChain := eth.NewChain(gCtx, ethConfig.IgnoreBlockTimeout)
 
 	var blockchainServer *eth.Server
 	if startupBlockchainClient {
@@ -312,7 +317,7 @@ func runGateway(c *cli.Context) error {
 
 		dialRatio := c.Int(utils.DialRatio.Name)
 
-		blockchainServer, err = eth.NewServerWithEthLogger(ctx, port, externalIP, ethConfig, ethChain, bridge, dataDir, wsManager, dynamicPeers, dialRatio, recommendedPeers)
+		blockchainServer, err = eth.NewServerWithEthLogger(gCtx, port, externalIP, ethConfig, ethChain, bridge, dataDir, wsManager, dynamicPeers, dialRatio, recommendedPeers)
 		if err != nil {
 			return err
 		}
@@ -321,26 +326,29 @@ func runGateway(c *cli.Context) error {
 			log.Warnf("skipping reconfiguration of eth p2p server logger due to error: %v", err)
 		}
 
-		if err = blockchainServer.Start(); err != nil {
-			return err
-		}
+		group.Go(blockchainServer.Start)
 	} else {
 		log.Infof("skipping starting blockchain client as no enodes have been provided")
 	}
 
 	if startupPrysmClient {
 		for _, prysmAddr := range ethConfig.StaticPeers.PrysmAddrs() {
-			prysmClient := beacon.NewPrysmClient(ctx, ethConfig, prysmAddr.PrysmAddr, bridge, prysmAddr.Endpoint)
-			prysmClient.Start()
+			prysmClient := beacon.NewPrysmClient(gCtx, ethConfig, prysmAddr.PrysmAddr, bridge, prysmAddr.Endpoint)
+			group.Go(func() error {
+				prysmClient.Start()
+				return nil
+			})
 		}
 	}
 
-	<-ctx.Done()
+	<-gCtx.Done()
 
 	log.Infof("shutting down...")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	gErr := group.Wait()
+	if gErr != nil {
+		log.Errorf("one or more components failed to start: %v", gErr)
+	}
 
 	err = gateway.Close()
 	if err != nil {
@@ -348,6 +356,9 @@ func runGateway(c *cli.Context) error {
 	}
 
 	if pprofServer != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
 		if err = pprofServer.Shutdown(shutdownCtx); err != nil {
 			log.Errorf("error shutting down pprof server: %v", err)
 		}
@@ -363,10 +374,10 @@ func runGateway(c *cli.Context) error {
 		beaconNode.Stop()
 	}
 
-	return group.Wait()
+	return gErr
 }
 
-func downloadGenesisFile(network, genesisFilePath string) (string, error) {
+func downloadGenesisFile(ctx context.Context, network, genesisFilePath string) (string, error) {
 	var genesisFileURL string
 	switch network {
 	case bxgateway.Mainnet:
@@ -383,7 +394,12 @@ func downloadGenesisFile(network, genesisFilePath string) (string, error) {
 	}
 	defer out.Close()
 
-	resp, err := http.Get(genesisFileURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, genesisFileURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed creating request for genesis.ssz from %v %v", genesisFileURL, err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed calling server for genesis.ssz from %v %v", genesisFileURL, err)
 	}

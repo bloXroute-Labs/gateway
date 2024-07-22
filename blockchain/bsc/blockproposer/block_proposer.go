@@ -62,9 +62,7 @@ var (
 	errSendBlockToBlockProposer = errors.New("failed to send block to block proposer")
 )
 
-var (
-	inTurnDifficulty = big.NewInt(2)
-)
+var inTurnDifficulty = big.NewInt(2)
 
 // BlockProposer is responsible for proposing blocks to the gateway
 type BlockProposer struct {
@@ -342,11 +340,11 @@ func (b *BlockProposer) prepareProposedBlockReq(ctx context.Context, req *pb.Pro
 			continue
 		}
 
-		if txStoreTx, err = txStore.GetTxByShortID(types.ShortID(proposedBlockTx.GetShortId())); err != nil {
+		if txStoreTx, err = txStore.GetTxByShortID(types.ShortID(proposedBlockTx.GetShortId()), false); err != nil {
 			return nil, errors.WithMessage(err, "failed decompressing tx")
 		}
 
-		var blockchainTx = new(ethtypes.Transaction)
+		blockchainTx := new(ethtypes.Transaction)
 
 		if err = blockchainTx.UnmarshalBinary(txStoreTx.Content()); err == nil {
 			proposedBlockReq.args.Payload[i] = hexutil.Bytes(txStoreTx.Content())

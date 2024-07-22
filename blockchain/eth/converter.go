@@ -364,7 +364,6 @@ func (c Converter) beaconBlockBDNtoBlockchain(block *types.BxBlock) (interfaces.
 		b := new(ethpb.SignedBeaconBlockDeneb)
 		if err := b.UnmarshalSSZ(block.Trailer); err != nil {
 			return nil, fmt.Errorf("could not convert block %v body to blockchain format: %v", block.Hash(), err)
-
 		}
 
 		txs, err := c.extractTransactionsFromBlock(block)
@@ -380,6 +379,7 @@ func (c Converter) beaconBlockBDNtoBlockchain(block *types.BxBlock) (interfaces.
 
 	return blocks.NewSignedBeaconBlock(blk)
 }
+
 func (c Converter) extractTransactionsFromBlock(block *types.BxBlock) ([][]byte, error) {
 	txs := make([][]byte, 0, len(block.Txs))
 	for i, tx := range block.Txs {
@@ -403,7 +403,6 @@ func (c Converter) extractTransactionsFromBlock(block *types.BxBlock) ([][]byte,
 		txBytes, err := t.MarshalBinary()
 		if err != nil {
 			return nil, fmt.Errorf("invalid transaction %d: %v", i, err)
-
 		}
 
 		txs = append(txs, txBytes)
@@ -503,7 +502,7 @@ func BeaconBlockToEthBlock(block interfaces.ReadOnlySignedBeaconBlock) (*bxcommo
 		ParentBeaconRoot: &parentBeaconRoot,
 	}
 
-	return bxcommoneth.NewBlockWithHeader(header).WithBody(txs, nil /* uncles */).WithWithdrawals(ethWithdrawals), nil
+	return bxcommoneth.NewBlockWithHeader(header).WithBody(ethtypes.Body{Transactions: txs, Uncles: nil, Withdrawals: ethWithdrawals}), nil
 }
 
 // BeaconMessageToBDN converts a beacon message to a BDN beacon message

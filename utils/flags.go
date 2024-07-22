@@ -301,11 +301,6 @@ var (
 		Usage: "set node type",
 		Value: "external_gateway",
 	}
-	GatewayModeFlag = &cli.StringFlag{
-		Name:  "mode",
-		Usage: "set gateway mode",
-		Value: "bdn",
-	}
 	SSLFlag = &cli.BoolFlag{
 		Name:  "ssl",
 		Usage: "Opens a http/websocket server with TLS",

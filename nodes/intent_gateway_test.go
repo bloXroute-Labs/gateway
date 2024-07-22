@@ -61,7 +61,6 @@ func TestGateway_Intents(t *testing.T) {
 	// simulate new relay connection and expect calls by bx.OnConnEstablished
 	relayConnMock.EXPECT().Log().Return(logEntry)
 	relayConnMock.EXPECT().GetConnectionType().Return(utils.Relay).Times(2)
-	relayConnMock.EXPECT().GetCapabilities().Return(types.CapabilityFlags(0))
 	relayConnMock.EXPECT().Protocol().Return(bxmessage.Protocol(bxmessage.CurrentProtocol))
 	relayConnMock.EXPECT().GetNetworkNum().Return(types.AllNetworkNum)
 	relayConnMock.EXPECT().GetLocalPort().Return(int64(2222))
@@ -151,7 +150,6 @@ func TestGateway_Intents(t *testing.T) {
 	// mock calls by bx.OnConnEstablished
 	relayConnMock2.EXPECT().Log().Return(logEntry)
 	relayConnMock2.EXPECT().GetConnectionType().Return(utils.Relay).Times(2)
-	relayConnMock2.EXPECT().GetCapabilities().Return(types.CapabilityFlags(0))
 	relayConnMock2.EXPECT().Protocol().Return(bxmessage.Protocol(bxmessage.CurrentProtocol))
 	relayConnMock2.EXPECT().GetNetworkNum().Return(types.AllNetworkNum)
 	relayConnMock2.EXPECT().GetLocalPort().Return(int64(2222))

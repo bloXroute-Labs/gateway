@@ -343,30 +343,9 @@ func (bs *BdnPerformanceStats) Pack(protocol Protocol) ([]byte, error) {
 	offset += types.UInt16Len
 
 	nodeStatsLen := len(bs.nodeStats)
-	if protocol < GatewayInboundConnections {
-		for _, nodeStats := range bs.nodeStats {
-			if nodeStats.Dynamic {
-				nodeStatsLen--
-			}
-		}
-	}
-	if protocol < IsConnectedToGateway {
-		for _, nodeStats := range bs.nodeStats {
-			if !nodeStats.IsConnected {
-				nodeStatsLen--
-			}
-		}
-	}
-
 	binary.LittleEndian.PutUint16(buf[offset:], uint16(nodeStatsLen))
 	offset += types.UInt16Len
 	for endpoint, nodeStats := range bs.nodeStats {
-		if protocol < GatewayInboundConnections && nodeStats.Dynamic {
-			continue
-		}
-		if protocol < IsConnectedToGateway && !nodeStats.IsConnected {
-			continue
-		}
 		ipPort := strings.Split(endpoint, " ")
 		log.Tracef("sending bdnperformancestats with %v, %v, %v", endpoint, nodeStats.IsConnected, nodeStats.Dynamic)
 		port, err := strconv.Atoi(ipPort[1])
@@ -394,37 +373,25 @@ func (bs *BdnPerformanceStats) Pack(protocol Protocol) ([]byte, error) {
 		binary.LittleEndian.PutUint32(buf[offset:], nodeStats.DuplicateTxFromNode)
 		offset += types.UInt32Len
 
-		switch {
-		case protocol < IsBeaconProtocol:
-		default:
-			if nodeStats.IsBeacon {
-				copy(buf[offset:], []uint8{1})
-			} else {
-				copy(buf[offset:], []uint8{0})
-			}
-			offset += IsBeaconLen
+		if nodeStats.IsBeacon {
+			copy(buf[offset:], []uint8{1})
+		} else {
+			copy(buf[offset:], []uint8{0})
 		}
-		switch {
-		case protocol < IsConnectedToGateway:
-		default:
-			if nodeStats.IsConnected {
-				copy(buf[offset:], []uint8{1})
-			} else {
-				copy(buf[offset:], []uint8{0})
-			}
-			offset++
+		offset += IsBeaconLen
+		if nodeStats.IsConnected {
+			copy(buf[offset:], []uint8{1})
+		} else {
+			copy(buf[offset:], []uint8{0})
 		}
-		switch {
-		case protocol < GatewayInboundConnections:
-		default:
-			if nodeStats.Dynamic {
-				copy(buf[offset:], []uint8{1})
-			} else {
-				copy(buf[offset:], []uint8{0})
-			}
+		offset++
 
-			offset++
+		if nodeStats.Dynamic {
+			copy(buf[offset:], []uint8{1})
+		} else {
+			copy(buf[offset:], []uint8{0})
 		}
+		offset++
 	}
 	binary.LittleEndian.PutUint16(buf[offset:], bs.burstLimitedTransactionsPaid)
 	offset += types.UInt16Len
@@ -460,16 +427,7 @@ func (bs *BdnPerformanceStats) Unpack(buf []byte, protocol Protocol) error {
 	nodesStatsLen := binary.LittleEndian.Uint16(buf[offset:])
 	offset += types.UInt16Len
 
-	nodeStatsSize := int(nodesStatsLen) * ((utils.IPAddrSizeInBytes) + (types.UInt32Len * 7) + (types.UInt16Len * 3))
-	if protocol >= IsBeaconProtocol {
-		nodeStatsSize += IsBeaconLen
-	}
-	if protocol >= IsConnectedToGateway {
-		nodeStatsSize += int(nodesStatsLen)
-	}
-	if protocol >= GatewayInboundConnections {
-		nodeStatsSize += int(nodesStatsLen)
-	}
+	nodeStatsSize := int(nodesStatsLen)*((utils.IPAddrSizeInBytes)+(types.UInt32Len*7)+(types.UInt16Len*3)) + IsBeaconLen + (int(nodesStatsLen) * 2)
 	if err := checkBufSize(&buf, int(offset), nodeStatsSize); err != nil {
 		return err
 	}
@@ -505,36 +463,18 @@ func (bs *BdnPerformanceStats) Unpack(buf []byte, protocol Protocol) error {
 		if endpoint.IPPort() != emptyEndpoint.IPPort() {
 			bs.nodeStats[endpoint.IPPort()] = &singleNodeStats
 		}
+		singleNodeStats.IsBeacon = int(buf[offset : offset+IsBeaconLen][0]) != 0
+		offset += IsBeaconLen
+		singleNodeStats.IsConnected = int(buf[offset]) != 0
+		offset++
 
-		switch {
-		case protocol < IsBeaconProtocol:
-		default:
-			singleNodeStats.IsBeacon = int(buf[offset : offset+IsBeaconLen][0]) != 0
-			offset += IsBeaconLen
+		singleNodeStats.Dynamic = int(buf[offset]) != 0
+		if singleNodeStats.Dynamic && singleNodeStats.IsConnected {
+			bs.dynamicConnections++
+		} else if !singleNodeStats.IsBeacon && singleNodeStats.IsConnected {
+			bs.staticConnections++
 		}
-
-		switch {
-		case protocol < IsConnectedToGateway:
-			singleNodeStats.IsConnected = true
-		default:
-			singleNodeStats.IsConnected = int(buf[offset]) != 0
-			offset++
-		}
-
-		switch {
-		case protocol < GatewayInboundConnections:
-			if !singleNodeStats.IsBeacon && (protocol < IsConnectedToGateway || singleNodeStats.IsConnected) {
-				bs.staticConnections++
-			}
-		default:
-			singleNodeStats.Dynamic = int(buf[offset]) != 0
-			if singleNodeStats.Dynamic && singleNodeStats.IsConnected {
-				bs.dynamicConnections++
-			} else if !singleNodeStats.IsBeacon && (protocol < IsConnectedToGateway || singleNodeStats.IsConnected) {
-				bs.staticConnections++
-			}
-			offset++
-		}
+		offset++
 
 		if endpoint.IPPort() != emptyEndpoint.IPPort() {
 			bs.nodeStats[endpoint.IPPort()] = &singleNodeStats
@@ -557,38 +497,9 @@ func (bs *BdnPerformanceStats) Log() {
 }
 
 func (bs *BdnPerformanceStats) size(protocol Protocol) uint32 {
-	nodeStatsSize := utils.IPAddrSizeInBytes + (types.UInt32Len * 7) + (types.UInt16Len * 3)
-	if protocol >= IsBeaconProtocol {
-		nodeStatsSize += IsBeaconLen
-	}
-	if protocol >= IsConnectedToGateway {
-		nodeStatsSize++
-	}
-	if protocol >= GatewayInboundConnections {
-		nodeStatsSize++
-	}
-
-	nodeStatsLen := len(bs.nodeStats)
-	if protocol < GatewayInboundConnections || protocol < IsConnectedToGateway {
-		for _, nodeStats := range bs.nodeStats {
-			switch {
-			case protocol < IsConnectedToGateway:
-				if !nodeStats.IsConnected {
-					nodeStatsLen--
-				}
-				fallthrough
-			case protocol < GatewayInboundConnections:
-				if nodeStats.Dynamic {
-					nodeStatsLen--
-				}
-			}
-		}
-	}
-
+	nodeStatsSize := utils.IPAddrSizeInBytes + (types.UInt32Len * 7) + (types.UInt16Len * 3) + IsBeaconLen + IsConnectedLen + IsDynamicLen
 	total := bs.Header.Size() + uint32((types.UInt64Len*2)+(types.UInt16Len*2)+(len(bs.nodeStats)*nodeStatsSize))
-	if protocol >= MinProtocol {
-		total += types.UInt16Len * 2
-	}
+	total += types.UInt16Len * 2
 	return total
 }
 

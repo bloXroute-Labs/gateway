@@ -160,6 +160,19 @@ func (ws *WSProvider) CallRPC(method string, payload []interface{}, options bloc
 	return response, err
 }
 
+func callRPCWithModel[T any](client *rpc.Client, model *T, method string, payload []any, options blockchain.RPCOptions) (T, error) {
+	var err error
+	for retries := 0; retries < options.RetryAttempts; retries++ {
+		err = client.Call(&model, method, payload...)
+		if (err != nil && strings.Contains(err.Error(), "header not found")) || model == nil {
+			time.Sleep(options.RetryInterval)
+			continue
+		}
+		break
+	}
+	return *model, err
+}
+
 // SendTransaction sends signed transaction in payload to node via CallRPC
 func (ws *WSProvider) SendTransaction(rawTx string, options blockchain.RPCOptions) (interface{}, error) {
 	return ws.CallRPC("eth_sendRawTransaction", []interface{}{rawTx}, options)
@@ -178,6 +191,13 @@ func (ws *WSProvider) FetchTransaction(payload []interface{}, options blockchain
 // FetchBlock query a block given height via CallRPC
 func (ws *WSProvider) FetchBlock(payload []interface{}, options blockchain.RPCOptions) (interface{}, error) {
 	return ws.CallRPC("eth_getBlockByNumber", payload, options)
+}
+
+// TraceTransaction fetches trace of a transaction via CallRPC
+func (ws *WSProvider) TraceTransaction(payload []interface{}, options blockchain.RPCOptions) (blockchain.TraceTransactionResponse, error) {
+	resp := blockchain.TraceTransactionResponse{}
+	return callRPCWithModel[blockchain.TraceTransactionResponse](ws.client, &resp, "debug_traceTransaction", payload, options)
+
 }
 
 // Log - returns WSProvider log entry

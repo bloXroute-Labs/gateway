@@ -94,8 +94,10 @@ func (gs *GRPCServer) Shutdown() {
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
 
-	log.Infof("shutting down gRPC server")
-	gs.server.Stop()
+	if gs.server != nil {
+		log.Infof("shutting down gRPC server")
+		gs.server.Stop()
+	}
 }
 
 func (gs *GRPCServer) authenticate(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {

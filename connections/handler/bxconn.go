@@ -2,6 +2,7 @@ package handler
 
 import (
 	"container/list"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -96,10 +97,9 @@ func (b *BxConn) readFromChannel() {
 	}
 }
 
-// Start kicks off main goroutine of the connection
-func (b *BxConn) Start() error {
-	go b.readLoop()
-	return nil
+// Start kicks off main read loop
+func (b *BxConn) Start(ctx context.Context) {
+	b.readLoop(ctx)
 }
 
 // Send sends a message to the peer.
@@ -188,7 +188,7 @@ func (b *BxConn) Connect() error {
 	return nil
 }
 
-// Close marks the connection for termination from this Node's side. Close will not allow this connection to be retried. Close will not actually stop this connection's event loop, only trigger the readLoop to exit, which will then close the event loop.
+// Close marks the connection for termination from this Node's side. Close will not allow this connection to be retried. Close will not actually stop this connection's event loop, only trigger the read to exit, which will then close the event loop.
 func (b *BxConn) Close(reason string) error {
 	b.lock.Lock()
 	defer b.lock.Unlock()
@@ -422,39 +422,61 @@ func (b *BxConn) processMessage(msgBytes bxmessage.MessageBytes) {
 	}
 }
 
-// readLoop connects and reads messages from the socket.
-// If we are the initiator of the connection we auto-recover on disconnect.
-func (b *BxConn) readLoop() {
+// readLoop is the main loop of the connection. It reads messages from the socket and processes them.
+func (b *BxConn) readLoop(ctx context.Context) {
 	isInitiator := b.IsInitiator()
 	defer close(b.receiveChan)
+
 	for {
-		err := b.Connect()
-		if err != nil {
-			b.Log().Errorf("encountered connection error while connecting: %v", err)
-
-			reason := "could not connect to remote"
-			if !isInitiator {
-				_ = b.Close(reason)
-				break
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			proceed := b.read(ctx, isInitiator)
+			if !proceed {
+				return
 			}
-
-			_ = b.closeWithRetry(reason)
 			// sleep before next connection attempt
+			// note - in docker environment the docker-proxy may keep the port open after the docker was stopped. we
+			// need this sleep to avoid fast connect/disconnect loop
 			b.clock.Sleep(connTimeout)
-			continue
+		}
+	}
+}
+
+// read connects and reads messages from the socket.
+// If we are the initiator of the connection we auto-recover on disconnect.
+func (b *BxConn) read(ctx context.Context, isInitiator bool) bool {
+	err := b.Connect()
+	if err != nil {
+		b.Log().Errorf("encountered connection error while connecting: %v", err)
+
+		reason := "could not connect to remote"
+		if !isInitiator {
+			_ = b.Close(reason)
+			return false
 		}
 
-		if isInitiator {
-			hello := bxmessage.Hello{NodeID: b.nodeID, Protocol: bxmessage.CurrentProtocol}
-			hello.SetNetworkNum(b.networkNum)
-			nodeStatus := b.Node.NodeStatus()
-			hello.ClientVersion = nodeStatus.Version
-			hello.Capabilities = nodeStatus.Capabilities
-			_ = b.Send(&hello)
-		}
+		_ = b.closeWithRetry(reason)
 
-		closeReason := "read loop closed"
-		for b.Conn.IsOpen() {
+		return true
+	}
+
+	if isInitiator {
+		hello := bxmessage.Hello{NodeID: b.nodeID, Protocol: bxmessage.CurrentProtocol}
+		hello.SetNetworkNum(b.networkNum)
+		nodeStatus := b.Node.NodeStatus()
+		hello.ClientVersion = nodeStatus.Version
+		hello.Capabilities = nodeStatus.Capabilities
+		_ = b.Send(&hello)
+	}
+
+	closeReason := "read loop closed"
+	for b.Conn.IsOpen() {
+		select {
+		case <-ctx.Done():
+			return false
+		default:
 			_, err := b.ReadMessages(b.processMessage, 30*time.Second, bxmessage.HeaderLen,
 				func(b []byte) int {
 					return int(binary.LittleEndian.Uint32(b[bxmessage.PayloadSizeOffset:]))
@@ -465,20 +487,18 @@ func (b *BxConn) readLoop() {
 				break
 			}
 		}
-		if !isInitiator {
-			_ = b.Close(closeReason)
-			break
-		}
-
-		_ = b.closeWithRetry(closeReason)
-		if b.closed {
-			break
-		}
-		// sleep before next connection attempt
-		// note - in docker environment the docker-proxy may keep the port open after the docker was stopped. we
-		// need this sleep to avoid fast connect/disconnect loop
-		b.clock.Sleep(connTimeout)
 	}
+	if !isInitiator {
+		_ = b.Close(closeReason)
+		return false
+	}
+
+	_ = b.closeWithRetry(closeReason)
+	if b.closed {
+		return false
+	}
+
+	return true
 }
 
 // IsBloxroute detect if the peer belongs to bloxroute

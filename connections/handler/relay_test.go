@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"runtime"
 	"testing"
 
@@ -18,11 +19,10 @@ func TestRelay_ClosingFromLocal(t *testing.T) {
 	startCount := runtime.NumGoroutine()
 
 	tls, r := relayConn()
-	err := r.Start()
-	assert.NoError(t, err)
+	go r.Start(context.Background())
 
 	// wait for hello message to be sent on connection so all goroutines are started
-	_, err = tls.MockAdvanceSent()
+	_, err := tls.MockAdvanceSent()
 	assert.NoError(t, err)
 
 	test.WaitUntilTrueOrFail(t, func() bool {
@@ -50,11 +50,10 @@ func TestRelay_ClosingFromRemote(t *testing.T) {
 	startCount := runtime.NumGoroutine()
 
 	tls, r := relayConn()
-	err := r.Start()
-	assert.NoError(t, err)
+	go r.Start(context.Background())
 
 	// allow small wait for goroutines to start, returns when connection is ready and hello message sent out
-	_, err = tls.MockAdvanceSent()
+	_, err := tls.MockAdvanceSent()
 	assert.NoError(t, err)
 
 	test.WaitUntilTrueOrFail(t, func() bool {
@@ -90,6 +89,6 @@ func relayConn() (*connections.MockTLS, *Relay) {
 			return tls, nil
 		},
 		&certs, ip, port, "", utils.RelayTransaction, true, &sdnmessage.BlockchainNetworks{}, true, false, 0, utils.RealClock{},
-		false, true)
+		false)
 	return tls, r
 }

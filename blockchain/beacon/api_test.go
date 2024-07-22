@@ -14,11 +14,11 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	httpclient "github.com/bloXroute-Labs/gateway/v2/utils/httpclient"
-	httpmock "github.com/jarcoal/httpmock"
+	"github.com/bloXroute-Labs/gateway/v2/utils/httpclient"
+	"github.com/jarcoal/httpmock"
 	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	blocks "github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	interfaces "github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
+	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
+	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
 	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
 	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
 	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
@@ -99,7 +99,7 @@ func TestNewAPIClient(t *testing.T) {
 	httpmock.ActivateNonDefault(httpClient)
 	defer httpmock.DeactivateAndReset()
 
-	client := NewAPIClient(ctx, httpClient, config, bridge, url, types.NodeEndpoint{})
+	client := NewAPIClient(ctx, httpClient, config, bridge, url, types.NodeEndpoint{}, NewAPISharedSync())
 
 	time.Sleep(time.Second)
 	assert.NoError(t, err)
@@ -121,7 +121,7 @@ func TestAPIClient_requestBlock(t *testing.T) {
 		},
 	)
 
-	client := NewAPIClient(ctx, httpClient, config, bridge, url, types.NodeEndpoint{})
+	client := NewAPIClient(ctx, httpClient, config, bridge, url, types.NodeEndpoint{}, NewAPISharedSync())
 	tests := []struct {
 		name        string
 		version     string
@@ -174,7 +174,7 @@ func TestAPIClient_hashOfBlock(t *testing.T) {
 		},
 	)
 
-	client := NewAPIClient(ctx, httpClient, config, bridge, url, types.NodeEndpoint{})
+	client := NewAPIClient(ctx, httpClient, config, bridge, url, types.NodeEndpoint{}, NewAPISharedSync())
 	respHeaders := http.Header{}
 	respHeaders.Add("Eth-Consensus-Version", "deneb")
 	httpmock.RegisterResponder("GET", "http://"+client.URL+"/eth/v2/beacon/blocks/"+blockID,
@@ -242,7 +242,7 @@ func TestAPIClient_processResponse(t *testing.T) {
 	)
 
 	// Initialize Beacon API client
-	client := NewAPIClient(ctx, httpClient, config, bridge, url, types.NodeEndpoint{})
+	client := NewAPIClient(ctx, httpClient, config, bridge, url, types.NodeEndpoint{}, NewAPISharedSync())
 
 	version := "deneb"
 
@@ -294,8 +294,8 @@ func TestAPIClient_broadcastBlock(t *testing.T) {
 	defer cancel()
 
 	// Initialize Beacon API client
-	client := NewAPIClient(ctx, httpClient, config, bridge, url, types.NodeEndpoint{})
-	client.Start()
+	client := NewAPIClient(ctx, httpClient, config, bridge, url, types.NodeEndpoint{}, NewAPISharedSync())
+	go client.Start()
 
 	test.WaitUntilTrueOrFail(t, client.initialized.Load)
 

@@ -541,7 +541,7 @@ func (h *Handler) processBlockComponents(peer *Peer, headers *eth.BlockHeadersRe
 
 	header := (*headers)[0]
 	body := bodies.BlockBodiesResponse[0]
-	block := bxcommoneth.NewBlockWithHeader(header).WithBody(body.Transactions, body.Uncles)
+	block := bxcommoneth.NewBlockWithHeader(header).WithBody(ethtypes.Body{Transactions: body.Transactions, Uncles: body.Uncles})
 	if len(body.Sidecars) > 0 {
 		block = block.WithSidecars(body.Sidecars)
 	}
@@ -553,7 +553,6 @@ func (h *Handler) processBlockComponents(peer *Peer, headers *eth.BlockHeadersRe
 
 // Handle processes Ethereum message packets that update internal backend state. In general, messages that require responses should not reach this function.
 func (h *Handler) Handle(peer *Peer, packet eth.Packet) error {
-
 	switch p := packet.(type) {
 	case *eth.StatusPacket:
 		h.chain.InitializeDifficulty(p.Head, p.TD)
@@ -620,7 +619,6 @@ func (h *Handler) broadcastPooledTransactionHashes(txHashes []ethcommon.Hash, ty
 }
 
 func (h *Handler) broadcastBlock(block *bxcommoneth.Block, totalDifficulty *big.Int, sourceBlockchainPeer *Peer) {
-
 	source := "BDN"
 	if sourceBlockchainPeer != nil {
 		source = sourceBlockchainPeer.endpoint.IPPort()

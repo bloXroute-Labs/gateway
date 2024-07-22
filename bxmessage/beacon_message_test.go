@@ -14,11 +14,11 @@ func TestBeaconMessagePackUnpack(t *testing.T) {
 	blobBody := test.GenerateBytes(500)
 
 	beaconMessage := NewBeaconMessage(hash, blockHash, types.BxBeaconMessageTypeEthBlob, blobBody, 3, 2, 1)
-	b, err := beaconMessage.Pack(BeaconBlockProtocol)
+	b, err := beaconMessage.Pack(MinProtocol)
 	assert.NoError(t, err)
 
 	var decodedBeaconMessage BeaconMessage
-	err = decodedBeaconMessage.Unpack(b, BeaconBlockProtocol)
+	err = decodedBeaconMessage.Unpack(b, MinProtocol)
 	assert.NoError(t, err)
 
 	beaconMessage.msgType = BeaconMessageType // TODO: fix ?

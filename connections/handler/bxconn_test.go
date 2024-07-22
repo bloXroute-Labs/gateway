@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"runtime"
 	"testing"
 	"time"
@@ -91,11 +92,10 @@ func TestBxConn_ClosingFromHandler(t *testing.T) {
 	tls, bx := bxConn(&th)
 	th.setConn(bx)
 
-	err := bx.Start()
-	assert.NoError(t, err)
+	go bx.Start(context.Background())
 
 	// wait for hello message to be sent on connection so all goroutines are started
-	_, err = tls.MockAdvanceSent()
+	_, err := tls.MockAdvanceSent()
 	assert.NoError(t, err)
 
 	test.WaitUntilTrueOrFail(t, func() bool {

@@ -157,7 +157,7 @@ func (bp *blockProcessor) BxBlockFromBroadcast(broadcast *bxmessage.Broadcast) (
 
 	// looking for missing sids
 	for _, sid := range shortIDs {
-		bxTransaction, err := bp.txStore.GetTxByShortID(sid)
+		bxTransaction, err := bp.txStore.GetTxByShortID(sid, false)
 		if err == nil { // sid exists in TxStore
 			bxTransactions = append(bxTransactions, bxTransaction)
 		} else {
@@ -270,7 +270,7 @@ func (bp *blockProcessor) newBxBlockFromRLPBroadcast(broadcast *bxmessage.Broadc
 			return nil, fmt.Errorf("failed to process sidecars: %v", err)
 		}
 	}
-	blockSize := int(rlp.ListSize(uint64(len(rlpBlock.Header)) + rlp.ListSize(txsBytes) + uint64(len(rlpBlock.Trailer)) + blobSidecarsSize))
+	blockSize := int(rlp.ListSize(uint64(len(rlpBlock.Header))+rlp.ListSize(txsBytes)+uint64(len(rlpBlock.Trailer))+blobSidecarsSize)) + 1 // empty withdrawals list
 
 	return types.NewRawBxBlock(broadcast.Hash(), types.EmptyHash, broadcast.BlockType(), rlpBlock.Header, txs, rlpBlock.Trailer, rlpBlock.TotalDifficulty, rlpBlock.Number, blockSize, blobSidecars), nil
 }
