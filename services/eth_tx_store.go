@@ -33,9 +33,11 @@ type EthTxStore struct {
 func NewEthTxStore(clock utils.Clock, cleanupInterval time.Duration,
 	noSIDAge time.Duration, assigner ShortIDAssigner, hashHistory HashHistory, cleanedShortIDsChannel chan types.ShortIDsByNetwork,
 	networkConfig sdnmessage.BlockchainNetworks, bloom BloomFilter, blobCompressorStorage BlobCompressorStorage,
+	blobsCleanerEnabled bool,
 ) *EthTxStore {
+	bxStore := newBxTxStore(clock, networkConfig, cleanupInterval, noSIDAge, assigner, hashHistory, cleanedShortIDsChannel, timeToAvoidReEntry, bloom, blobCompressorStorage, blobsCleanerEnabled)
 	return &EthTxStore{
-		BxTxStore:    newBxTxStore(clock, networkConfig, cleanupInterval, noSIDAge, assigner, hashHistory, cleanedShortIDsChannel, timeToAvoidReEntry, bloom, blobCompressorStorage),
+		BxTxStore:    bxStore,
 		nonceTracker: newNonceTracker(clock, networkConfig, cleanNonceInterval),
 	}
 }
@@ -113,7 +115,11 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 	result := t.BxTxStore.Add(hash, content, shortID, network, false, transaction.Flags(), timestamp, networkChainID, sender)
 
 	// if no new content we can leave
-	if !result.NewContent || result.FailedValidation {
+	if !result.NewContent {
+		return result
+	}
+
+	if !result.Transaction.Flags().IsWithSidecar() && (!t.isReuseNonceActive(network) || sender == types.EmptySender) {
 		return result
 	}
 

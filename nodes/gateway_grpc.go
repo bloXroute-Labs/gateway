@@ -187,7 +187,7 @@ func (g *GatewayGrpc) Status(ctx context.Context, req *pb.StatusRequest) (*pb.St
 		for _, conn := range g.Connections {
 			connectionType := conn.GetConnectionType()
 
-			if connectionType&utils.Relay == 0 {
+			if connectionType&utils.RelayProxy == 0 {
 				continue
 			}
 

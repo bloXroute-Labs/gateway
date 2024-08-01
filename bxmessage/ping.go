@@ -31,6 +31,10 @@ func (pm Ping) Pack(protocol Protocol) ([]byte, error) {
 
 // Unpack deserializes a Ping from a buffer
 func (pm *Ping) Unpack(buf []byte, protocol Protocol) error {
-	pm.Nonce = binary.LittleEndian.Uint64(buf[HeaderLen:])
+	offset := HeaderLen
+	if err := checkBufSize(&buf, offset, types.UInt64Len); err != nil {
+		return err
+	}
+	pm.Nonce = binary.LittleEndian.Uint64(buf[offset:])
 	return pm.Header.Unpack(buf, protocol)
 }

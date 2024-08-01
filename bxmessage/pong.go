@@ -40,7 +40,7 @@ func (pm Pong) Pack(protocol Protocol) ([]byte, error) {
 // Unpack deserializes a Pong from a buffer
 func (pm *Pong) Unpack(buf []byte, protocol Protocol) error {
 	offset := HeaderLen
-	if err := checkBufSize(&buf, offset, HeaderLen); err != nil {
+	if err := checkBufSize(&buf, offset, types.UInt64Len); err != nil {
 		return err
 	}
 	pm.Nonce = binary.LittleEndian.Uint64(buf[offset:])

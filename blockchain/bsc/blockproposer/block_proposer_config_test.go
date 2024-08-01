@@ -35,8 +35,11 @@ func (m mockTxStore) Known(types.SHA256Hash) (r bool)                       { re
 func (m mockTxStore) HasContent(types.SHA256Hash) (r bool)                  { return }
 func (m mockTxStore) RemoveShortIDs(*types.ShortIDList, services.ReEntryProtectionFlags, string) {
 }
-func (m mockTxStore) RemoveHashes(*types.SHA256HashList, services.ReEntryProtectionFlags, string) {}
-func (m mockTxStore) GetTxByShortID(types.ShortID, bool) (r *types.BxTransaction, e error)        { return }
+
+func (m mockTxStore) RemoveHashes(*types.SHA256HashList, services.ReEntryProtectionFlags, string) (r types.ShortIDList) {
+	return
+}
+func (m mockTxStore) GetTxByShortID(types.ShortID, bool) (r *types.BxTransaction, e error) { return }
 
 func (m mockTxStore) GetTxByKzgCommitment(string) (r *types.BxTransaction, e error) { return }
 func (m mockTxStore) Clear()                                                        {}

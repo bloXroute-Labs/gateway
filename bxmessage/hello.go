@@ -79,16 +79,16 @@ func (m *Hello) Unpack(buf []byte, protocol Protocol) error {
 	}
 	m.NodeID = types.NodeID(buf[offset:])
 	offset += types.NodeIDLen
+	if err := checkBufSize(&buf, offset, CapabilitiesLen); err != nil {
+		return err
+	}
 	m.Capabilities = types.CapabilityFlags(binary.LittleEndian.Uint16(buf[offset:]))
 	offset += CapabilitiesLen
-	if err := checkBufSize(&buf, offset, CapabilitiesLen); err != nil {
+	if err := checkBufSize(&buf, offset, ClientVersionLen); err != nil {
 		return err
 	}
 	m.ClientVersion = string(buf[offset:])
 	offset += ClientVersionLen
-	if err := checkBufSize(&buf, offset, ClientVersionLen); err != nil {
-		return err
-	}
 
 	return m.Header.Unpack(buf, protocol)
 }

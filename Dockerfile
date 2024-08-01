@@ -1,7 +1,7 @@
 ARG GO_VERSION=alpine
 ARG BASE=golang:1.21.7-alpine3.19
 
-FROM ${BASE} as builder
+FROM ${BASE} AS builder
 
 RUN apk update \
  && apk add --no-cache \

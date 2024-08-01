@@ -61,7 +61,7 @@ func generateRandTxHash() types.SHA256Hash {
 
 func BenchmarkTxService(b *testing.B) {
 	testNetworks := sdnmessage.BlockchainNetworks{testNetworkNum: {MaxTxAgeSeconds: 60 * 300}}
-	txManager := NewBxTxStore(10*time.Second, testNetworks, 10*time.Minute, NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, 30*time.Minute, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage())
+	txManager := NewBxTxStore(10*time.Second, testNetworks, 10*time.Minute, NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, 30*time.Minute, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage(), false)
 	go func() {
 		_ = txManager.Start()
 	}()
@@ -136,7 +136,7 @@ func BenchmarkTxService(b *testing.B) {
 		}
 	}()
 	time.Sleep(11 * time.Minute)
-	//stop
+	// stop
 	testManager.quit1 <- true
 	<-testManager.quit1
 	testManager.quit2 <- true
@@ -146,7 +146,7 @@ func BenchmarkTxService(b *testing.B) {
 
 func TestRemoveTxsByShortIDs(t *testing.T) {
 	testNetworks := sdnmessage.BlockchainNetworks{testNetworkNum: {MaxTxAgeSeconds: 60 * 300}}
-	txService := NewBxTxStore(10*time.Second, testNetworks, 30*time.Second, NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, 30*time.Minute, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage())
+	txService := NewBxTxStore(10*time.Second, testNetworks, 30*time.Second, NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, 30*time.Minute, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage(), false)
 
 	content := generateRandTxContent()
 	h := sha256.New()

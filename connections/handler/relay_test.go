@@ -88,7 +88,7 @@ func relayConn() (*connections.MockTLS, *Relay) {
 		func() (connections.Socket, error) {
 			return tls, nil
 		},
-		&certs, ip, port, "", utils.RelayTransaction, true, &sdnmessage.BlockchainNetworks{}, true, false, 0, utils.RealClock{},
+		&certs, ip, port, "", utils.RelayProxy, true, &sdnmessage.BlockchainNetworks{}, true, false, 0, utils.RealClock{},
 		false)
 	return tls, r
 }

@@ -107,3 +107,8 @@ func (entry *Entry) Warn(args ...interface{}) {
 func (entry *Entry) Error(args ...interface{}) {
 	entry.Log(ErrorLevel, args...)
 }
+
+// Fatalf logs fatal level
+func (entry *Entry) Fatalf(format string, args ...interface{}) {
+	entry.ee.Fatal().Msgf(format, args...)
+}

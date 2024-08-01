@@ -139,18 +139,18 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 }
 
 func newBP() (*services.BxTxStore, services.BlockProcessor) {
-	txStore := services.NewBxTxStore(time.Minute, blockchainNetworks, time.Minute, services.NewEmptyShortIDAssigner(), services.NewHashHistory("seenTxs", time.Minute), nil, 30*time.Minute, services.NoOpBloomFilter{}, services.NewNoOpBlockCompressorStorage())
+	txStore := services.NewBxTxStore(time.Minute, blockchainNetworks, time.Minute, services.NewEmptyShortIDAssigner(), services.NewHashHistory("seenTxs", time.Minute), nil, 30*time.Minute, services.NoOpBloomFilter{}, services.NewNoOpBlockCompressorStorage(), false)
 	bp := services.NewBlockProcessor(&txStore)
 	return &txStore, bp
 }
 
 func addRelayConn(g *gateway) (*connections.MockTLS, *handler.Relay) {
-	mockTLS := connections.NewMockTLS("1.1.1.1", 1800, "", utils.Relay, "")
+	mockTLS := connections.NewMockTLS("1.1.1.1", 1800, "", utils.RelayProxy, "")
 	relayConn := handler.NewRelay(g,
 		func() (connections.Socket, error) {
 			return mockTLS, nil
 		},
-		&utils.SSLCerts{}, "1.1.1.1", 1800, "", utils.Relay, true, g.sdn.Networks(), true, true, connections.LocalInitiatedPort, utils.RealClock{},
+		&utils.SSLCerts{}, "1.1.1.1", 1800, "", utils.RelayProxy, true, g.sdn.Networks(), true, true, connections.LocalInitiatedPort, utils.RealClock{},
 		false)
 
 	// set connection as established and ready for broadcast
@@ -310,7 +310,7 @@ func TestGateway_HandleTransactionFromBlockchain_SeenInBloomFilter(t *testing.T)
 
 	g.TxStore = services.NewEthTxStore(g.clock, 30*time.Minute, 10*time.Minute,
 		services.NewEmptyShortIDAssigner(), services.NewHashHistory("seenTxs", 30*time.Minute), nil,
-		*g.sdn.Networks(), bf, services.NewNoOpBlockCompressorStorage())
+		*g.sdn.Networks(), bf, services.NewNoOpBlockCompressorStorage(), false)
 
 	go func() {
 		err := g.handleBridgeMessages(context.Background())
@@ -331,7 +331,7 @@ func TestGateway_HandleTransactionFromBlockchain_SeenInBloomFilter(t *testing.T)
 	// create empty TxStore to make sure transaction is ignored due to bloom_filter
 	g.TxStore = services.NewEthTxStore(g.clock, 30*time.Minute, 10*time.Minute,
 		services.NewEmptyShortIDAssigner(), services.NewHashHistory("seenTxs", 30*time.Minute), nil,
-		*g.sdn.Networks(), bf, services.NewNoOpBlockCompressorStorage())
+		*g.sdn.Networks(), bf, services.NewNoOpBlockCompressorStorage(), false)
 
 	processEthTxOnBridge(t, bridge, ethTx, g.blockchainPeers[0])
 	assertNoTransactionSentToRelay(t, mockTLS)

@@ -409,7 +409,7 @@ func (g *gateway) setSyncWithRelay() {
 func (g *gateway) setupTxStore() {
 	assigner := services.NewEmptyShortIDAssigner()
 	g.TxStore = services.NewEthTxStore(g.clock, 30*time.Minute, 10*time.Minute,
-		assigner, services.NewHashHistory("seenTxs", 30*time.Minute), nil, *g.sdn.Networks(), g.bloomFilter, services.NewBlobCompressorStorage())
+		assigner, services.NewHashHistory("seenTxs", 30*time.Minute), nil, *g.sdn.Networks(), g.bloomFilter, services.NewBlobCompressorStorage(), false)
 	g.blockProcessor = services.NewBlockProcessor(g.TxStore)
 	g.blobProcessor = services.NewBlobProcessor(g.TxStore, g.blobsManager)
 }
@@ -665,7 +665,7 @@ func (g *gateway) updateRelayConnections(relayInstructions chan connections.Rela
 }
 
 func (g *gateway) connectRelay(instruction connections.RelayInstruction, sslCerts utils.SSLCerts, networkNum types.NetworkNum) {
-	relay := handler.NewOutboundRelay(g, &sslCerts, instruction.IP, instruction.Port, g.sdn.NodeID(), utils.Relay,
+	relay := handler.NewOutboundRelay(g, &sslCerts, instruction.IP, instruction.Port, g.sdn.NodeID(), utils.RelayProxy,
 		g.BxConfig.PrioritySending, g.sdn.Networks(), true, false, utils.RealClock{}, false)
 	relay.SetNetworkNum(networkNum)
 
@@ -854,10 +854,14 @@ func (g *gateway) generateBSCValidator(blockHeight uint64) []*types.FutureValida
 		}
 
 		g.nextValidatorMap.Set(targetingBlockHeight, strings.ToLower(vi[i-1].WalletID)) // nextValidatorMap is simulating a queue with height as expiration key. Regardless of the accessible status, next walletID will be appended to the queue
-		accessible, exist := g.validatorStatusMap.Load(strings.ToLower(vi[i-1].WalletID))
-		if exist {
-			vi[i-1].Accessible = accessible
-		}
+
+		// Deprecated
+		// accessible, exist := g.validatorStatusMap.Load(strings.ToLower(vi[i-1].WalletID))
+		// if exist {
+		// 	vi[i-1].Accessible = accessible
+		// }
+
+		vi[i-1].Accessible = true
 	}
 
 	g.cleanUpNextValidatorMap(blockHeight)
@@ -1310,8 +1314,7 @@ func (g *gateway) handleBridgeMessages(ctx context.Context) error {
 			// or gateway is not running with web3 bridge enabled (currently enterprise and above)
 			if !g.sdn.AccountTier().IsElite() && !(g.BxConfig.EnableBlockchainRPC && g.sdn.AccountTier().IsEnterprise()) {
 				// TODO should fix code to stop gateway appropriately
-				g.log.Errorf("Gateway does not have an active blockchain connection. Enterprise-Elite account is required in order to run gateway without a blockchain node.")
-				log.Exit(0)
+				g.log.Fatalf("Gateway does not have an active blockchain connection. Enterprise-Elite account is required in order to run gateway without a blockchain node.")
 			}
 		case confirmBlock := <-g.bridge.ReceiveConfirmedBlockFromNode():
 			if !g.BxConfig.NoBlocks {
@@ -1342,6 +1345,8 @@ func (g *gateway) handleBridgeMessages(ctx context.Context) error {
 				g.handleBeaconMessageFromBlockchain(&beaconMessage)
 			},
 				fmt.Sprintf("handleBeaconMessageFromBlockchain hash=[%s]", beaconMessage.Message.Hash), beaconMessage.PeerEndpoint.String(), 1)
+		case endpoint := <-g.bridge.ReceiveConnectEvent():
+			g.bdnStats.SetNodeToConnected(endpoint)
 		}
 	}
 }
@@ -1361,7 +1366,7 @@ func (g *gateway) handleBeaconMessageFromBlockchain(beaconMessageFromNode *block
 
 	source := connections.NewBlockchainConn(beaconMessageFromNode.PeerEndpoint)
 
-	results := g.broadcast(beaconMessage, source, utils.Relay)
+	results := g.broadcast(beaconMessage, source, utils.RelayProxy)
 
 	eventName := "GatewayReceivedBeaconMessageFromBlockchain"
 	g.stats.AddBlobEvent(eventName, beaconMessage.Hash().String(), source.GetNodeID(), beaconMessage.GetNetworkNum(),
@@ -1434,9 +1439,8 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 		if typedMsg.Code < types.MinErrorNotificationCode {
 			source.Log().Warnf("received a warn notification %v.", typedMsg.Reason)
 		} else {
-			source.Log().Errorf("received an error notification %v. terminating the gateway", typedMsg.Reason)
+			source.Log().Fatalf("received an error notification %v. terminating the gateway", typedMsg.Reason)
 			// TODO should also close the gateway while notify the bridge and other go routine (web socket server, ...)
-			log.Exit(0)
 		}
 	case *bxmessage.Hello:
 		source.Log().Tracef("received hello msg")
@@ -1474,7 +1478,7 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 				g.log.Debug("gateway is not sending block confirm message to relay")
 			} else if source.GetConnectionType() == utils.Blockchain {
 				g.log.Tracef("gateway broadcasting block confirmation of block %v to relays", hashString)
-				g.broadcast(typedMsg, source, utils.Relay)
+				g.broadcast(typedMsg, source, utils.RelayProxy)
 			}
 			_ = g.Bx.HandleMsg(msg, source)
 		}
@@ -1489,7 +1493,7 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 			Timestamp:     typedMsg.Timestamp,
 		}
 
-		g.broadcast(typedMsg, source, utils.Relay)
+		g.broadcast(typedMsg, source, utils.RelayProxy)
 
 		g.notify(types.NewUserIntentNotification(userIntent))
 	case *bxmessage.IntentSolution:
@@ -1504,11 +1508,11 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 			DappAddress:   typedMsg.DappAddress,
 		}
 
-		g.broadcast(typedMsg, source, utils.Relay)
+		g.broadcast(typedMsg, source, utils.RelayProxy)
 
 		g.notify(types.NewUserIntentSolutionNotification(solution))
 	case *bxmessage.IntentsSubscription, *bxmessage.IntentsUnsubscription, *bxmessage.SolutionsSubscription, *bxmessage.SolutionsUnsubscription:
-		g.broadcast(typedMsg, source, utils.Relay)
+		g.broadcast(typedMsg, source, utils.RelayProxy)
 	case *bxmessage.BeaconMessage:
 		go g.processBeaconMessage(typedMsg, source)
 	default:
@@ -1754,7 +1758,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 					tx.SetSender(txResult.Transaction.Sender())
 					// set timestamp so relay can analyze communication delay
 					tx.SetTimestamp(g.clock.Now())
-					broadcastRes = g.broadcast(tx, source, utils.RelayTransaction)
+					broadcastRes = g.broadcast(tx, source, utils.RelayProxy)
 					sentToBDN = true
 				}
 			}
@@ -1977,7 +1981,7 @@ func (g *gateway) handleBlockFromBlockchain(blockchainBlock blockchain.BlockFrom
 			source.Log().Debugf("compressed %v from blockchain node: compressed %v short IDs", bxBlock, len(usedShortIDs))
 			source.Log().Infof("propagating %v from blockchain node to BDN", bxBlock)
 
-			_ = g.broadcast(broadcastMessage, source, utils.RelayBlock)
+			_ = g.broadcast(broadcastMessage, source, utils.RelayProxy)
 
 			g.bdnStats.LogNewBlockFromNode(source.NodeEndpoint())
 
@@ -2074,7 +2078,7 @@ func (g *gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source c
 
 		// set timestamp as late as possible.
 		mevBundle.PerformanceTimestamp = time.Now()
-		broadcastRes := g.broadcast(&mevBundle, source, utils.RelayTransaction|utils.RelayProxy)
+		broadcastRes := g.broadcast(&mevBundle, source, utils.RelayProxy)
 
 		source.Log().Tracef("broadcasting %s %s duration: %v ms, time in network: %v ms", mevBundle, broadcastRes, time.Since(start).Milliseconds(), start.Sub(mevBundle.PerformanceTimestamp).Milliseconds())
 	}
@@ -2207,7 +2211,7 @@ func (g *gateway) sendStats() {
 
 	closedIntervalBDNStatsMsg := g.bdnStats.CloseInterval()
 
-	broadcastRes := g.broadcast(closedIntervalBDNStatsMsg, nil, utils.Relay)
+	broadcastRes := g.broadcast(closedIntervalBDNStatsMsg, nil, utils.RelayProxy)
 
 	closedIntervalBDNStatsMsg.Log()
 	g.log.Tracef("sent bdnStats msg to relays, result: [%v]", broadcastRes)

@@ -60,7 +60,7 @@ func TestGateway_Intents(t *testing.T) {
 
 	// simulate new relay connection and expect calls by bx.OnConnEstablished
 	relayConnMock.EXPECT().Log().Return(logEntry)
-	relayConnMock.EXPECT().GetConnectionType().Return(utils.Relay).Times(2)
+	relayConnMock.EXPECT().GetConnectionType().Return(utils.RelayProxy).Times(2)
 	relayConnMock.EXPECT().Protocol().Return(bxmessage.Protocol(bxmessage.CurrentProtocol))
 	relayConnMock.EXPECT().GetNetworkNum().Return(types.AllNetworkNum)
 	relayConnMock.EXPECT().GetLocalPort().Return(int64(2222))
@@ -83,7 +83,7 @@ func TestGateway_Intents(t *testing.T) {
 	intentsManagerMock.EXPECT().AddIntentsSubscription(rq.SolverAddress, rq.Hash, rq.Signature)
 
 	// register calls for broadcast of initial subscription message to the connected relay
-	relayConnMock.EXPECT().GetConnectionType().Return(utils.Relay)
+	relayConnMock.EXPECT().GetConnectionType().Return(utils.RelayProxy)
 	relayConnMock.EXPECT().IsOpen().Return(true)
 	relayConnMock.EXPECT().Send(&bxmessage.IntentsSubscription{
 		SolverAddress: rq.SolverAddress,
@@ -128,7 +128,7 @@ func TestGateway_Intents(t *testing.T) {
 	intentsManagerMock.EXPECT().RmIntentsSubscription(rq.SolverAddress)
 
 	// register calls for broadcast of unsubscription message (called in defer)
-	relayConnMock.EXPECT().GetConnectionType().Return(utils.Relay)
+	relayConnMock.EXPECT().GetConnectionType().Return(utils.RelayProxy)
 	relayConnMock.EXPECT().IsOpen().Return(true)
 	relayConnMock.EXPECT().Send(&bxmessage.IntentsUnsubscription{
 		SolverAddress: rq.SolverAddress,
@@ -149,7 +149,7 @@ func TestGateway_Intents(t *testing.T) {
 
 	// mock calls by bx.OnConnEstablished
 	relayConnMock2.EXPECT().Log().Return(logEntry)
-	relayConnMock2.EXPECT().GetConnectionType().Return(utils.Relay).Times(2)
+	relayConnMock2.EXPECT().GetConnectionType().Return(utils.RelayProxy).Times(2)
 	relayConnMock2.EXPECT().Protocol().Return(bxmessage.Protocol(bxmessage.CurrentProtocol))
 	relayConnMock2.EXPECT().GetNetworkNum().Return(types.AllNetworkNum)
 	relayConnMock2.EXPECT().GetLocalPort().Return(int64(2222))
@@ -168,7 +168,7 @@ func TestGateway_Intents(t *testing.T) {
 		Do(func(_ bxmessage.Message) { cancel() }) // kill gRPC request after sending the subscription to a newly connected relay
 
 	// expect unsubscription message to be sent to the new relay after the cancel
-	relayConnMock2.EXPECT().GetConnectionType().Return(utils.Relay)
+	relayConnMock2.EXPECT().GetConnectionType().Return(utils.RelayProxy)
 	relayConnMock2.EXPECT().IsOpen().Return(true)
 	relayConnMock2.EXPECT().Send(&bxmessage.IntentsUnsubscription{
 		SolverAddress: rq.SolverAddress,

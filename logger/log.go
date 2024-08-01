@@ -40,7 +40,6 @@ func Init(logConfig *Config, fluentDConfig *FluentDConfig, version string) (clos
 	var closeFuncs []func() error
 
 	stderr := stderrWriter(consoleLevel)
-	closeFuncs = append(closeFuncs, stderr.Close)
 
 	file := fileWriter(logConfig.FileName, logConfig.MaxSize, logConfig.MaxBackups, logConfig.MaxAge, fileLevel)
 	closeFuncs = append(closeFuncs, file.Close)

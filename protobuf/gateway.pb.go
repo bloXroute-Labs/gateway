@@ -1234,7 +1234,7 @@ type FutureValidatorInfo struct {
 
 	BlockHeight string `protobuf:"bytes,1,opt,name=block_height,json=blockHeight,proto3" json:"block_height,omitempty"`
 	WalletId    string `protobuf:"bytes,2,opt,name=wallet_id,json=walletId,proto3" json:"wallet_id,omitempty"`
-	Accessible  string `protobuf:"bytes,3,opt,name=accessible,proto3" json:"accessible,omitempty"`
+	Accessible  string `protobuf:"bytes,3,opt,name=accessible,proto3" json:"accessible,omitempty"` // Deprecated
 }
 
 func (x *FutureValidatorInfo) Reset() {

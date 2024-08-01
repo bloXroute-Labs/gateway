@@ -15,8 +15,10 @@ import (
 )
 
 // ChainID ethereum chain ID
-var ChainID = big.NewInt(10)
-var pKey, _ = crypto.HexToECDSA("dae2cb3b03f8a1bbaedae4d43e159360c8d07ffab119d5d7311a81a9d4f53bd1")
+var (
+	ChainID = big.NewInt(10)
+	pKey, _ = crypto.HexToECDSA("dae2cb3b03f8a1bbaedae4d43e159360c8d07ffab119d5d7311a81a9d4f53bd1") //nolint:errcheck
+)
 
 // NewSignedEthTx generates a valid signed Ethereum transaction from a provided private key. nil can be specified to use a hardcoded key.
 func NewSignedEthTx(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey, chainID *big.Int) *ethtypes.Transaction {
@@ -70,7 +72,7 @@ func NewSignedEthBlobTxWithSidecar(nonce uint64, privateKey *ecdsa.PrivateKey, c
 		Value:      uint256.NewInt(1),
 		Data:       []byte{},
 		BlobFeeCap: uint256.NewInt(100),
-		BlobHashes: []common.Hash{},
+		BlobHashes: blobSidecar.BlobHashes(),
 		Sidecar:    blobSidecar,
 		AccessList: ethtypes.AccessList{},
 		V:          &uint256.Int{},

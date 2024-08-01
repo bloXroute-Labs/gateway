@@ -18,8 +18,6 @@ import (
 	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
 	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 )
 
 type bxBlockRLP struct {
@@ -386,15 +384,6 @@ func (c Converter) extractTransactionsFromBlock(block *types.BxBlock) ([][]byte,
 		t := new(ethtypes.Transaction)
 		if err := rlp.DecodeBytes(tx.Content(), t); err != nil {
 			return nil, fmt.Errorf("could not decode transaction %d: %v", i, err)
-		}
-
-		// Transaction inside block should not have sidecar.
-		// This function works with any type of transaction.
-		// [TODO] This should be removed when BDN will be synced and broadcast
-		// bxmessages with sidecar flag
-		if t.BlobTxSidecar() != nil {
-			log.Debugf("Transaction %s has sidecar when extracting from the block, removing it", t.Hash().String())
-			t = t.WithoutBlobTxSidecar()
 		}
 
 		// This is for back compatibility

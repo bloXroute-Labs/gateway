@@ -3,7 +3,6 @@ package logger
 import (
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -116,9 +115,4 @@ func ParseLevel(lvl string) (Level, error) {
 // IsLevelEnabled checks if the log level of the standard logger is greater than the level param
 func IsLevelEnabled(level Level) bool {
 	return fromZeroLogLevel(log.Logger.GetLevel()) >= level
-}
-
-// Exit change the logger to be blocking, flush all pending records and perform os.Exit
-func Exit(rc int) {
-	os.Exit(rc)
 }

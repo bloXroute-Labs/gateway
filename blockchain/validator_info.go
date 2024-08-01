@@ -13,6 +13,7 @@ func DefaultValidatorInfo(blockHeight uint64) []*types.FutureValidatorInfo {
 		validatorInfo = append(validatorInfo, &types.FutureValidatorInfo{
 			BlockHeight: blockHeight + uint64(i+1),
 			WalletID:    "nil",
+			Accessible:  true,
 		})
 	}
 
