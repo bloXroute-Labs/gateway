@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"runtime/debug"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2"
@@ -18,16 +17,22 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
-const defaultMaxTxAge = 24 * 3 * time.Hour
+const (
+	defaultMaxTxAge = 24 * 3 * time.Hour
+
+	defaultMaxTotalBlobTxSizeBytes = 500 * 1024 * 1024 // 500Mb
+	blobTxCleanCoef                = 0.8               // clean to defaultMaxTotalBlobTxSize * blobTxCleanCoef
+)
 
 // BxTxStore represents the storage of transaction info for a given node
 type BxTxStore struct {
 	clock         utils.Clock
 	networkConfig sdnmessage.BlockchainNetworks
 
-	hashToContent         *syncmap.SyncMap[string, *types.BxTransaction]
-	shortIDToHash         *syncmap.SyncMap[types.ShortID, types.SHA256Hash]
-	blobCompressorStorage BlobCompressorStorage
+	hashToContent              *syncmap.SyncMap[string, *types.BxTransaction]
+	shortIDToHash              *syncmap.SyncMap[types.ShortID, types.SHA256Hash]
+	blobTxSizeCleanerByNetwork *syncmap.SyncMap[uint32, *TxSizeCleaner]
+	blobCompressorStorage      BlobCompressorStorage
 
 	seenTxs            HashHistory
 	timeToAvoidReEntry time.Duration
@@ -35,25 +40,27 @@ type BxTxStore struct {
 	cleanupFreq            time.Duration
 	noSIDAge               time.Duration
 	quit                   chan bool
-	lock                   sync.Mutex
 	assigner               ShortIDAssigner
 	cleanedShortIDsChannel chan types.ShortIDsByNetwork
 	bloom                  BloomFilter
+	blobsCleanerEnabled    bool
 }
 
 // NewBxTxStore creates a new BxTxStore to store and processes all relevant transactions
 func NewBxTxStore(cleanupFreq time.Duration, networkConfig sdnmessage.BlockchainNetworks, noSIDAge time.Duration,
 	assigner ShortIDAssigner, seenTxs HashHistory, cleanedShortIDsChannel chan types.ShortIDsByNetwork,
 	timeToAvoidReEntry time.Duration, bloom BloomFilter, blobCompressorStorage BlobCompressorStorage,
+	blobsCleanerEnabled bool,
 ) BxTxStore {
-	return newBxTxStore(utils.RealClock{}, networkConfig, cleanupFreq, noSIDAge, assigner, seenTxs, cleanedShortIDsChannel, timeToAvoidReEntry, bloom, blobCompressorStorage)
+	return newBxTxStore(utils.RealClock{}, networkConfig, cleanupFreq, noSIDAge, assigner, seenTxs, cleanedShortIDsChannel, timeToAvoidReEntry, bloom, blobCompressorStorage, blobsCleanerEnabled)
 }
 
 func newBxTxStore(clock utils.Clock, networkConfig sdnmessage.BlockchainNetworks, cleanupFreq time.Duration,
 	noSIDAge time.Duration, assigner ShortIDAssigner, seenTxs HashHistory, cleanedShortIDsChannel chan types.ShortIDsByNetwork,
 	timeToAvoidReEntry time.Duration, bloom BloomFilter, blobCompressorStorage BlobCompressorStorage,
+	blobsCleanerEnabled bool,
 ) BxTxStore {
-	return BxTxStore{
+	bxStore := BxTxStore{
 		clock:                  clock,
 		networkConfig:          networkConfig,
 		hashToContent:          syncmap.NewStringMapOf[*types.BxTransaction](),
@@ -67,7 +74,14 @@ func newBxTxStore(clock utils.Clock, networkConfig sdnmessage.BlockchainNetworks
 		assigner:               assigner,
 		cleanedShortIDsChannel: cleanedShortIDsChannel,
 		bloom:                  bloom,
+		blobsCleanerEnabled:    blobsCleanerEnabled,
 	}
+
+	if blobsCleanerEnabled {
+		bxStore.blobTxSizeCleanerByNetwork = syncmap.NewIntegerMapOf[uint32, *TxSizeCleaner]()
+	}
+
+	return bxStore
 }
 
 // Start initializes all relevant goroutines for the BxTxStore
@@ -96,30 +110,36 @@ func (t *BxTxStore) Count() int {
 }
 
 // remove deletes a single transaction, including its shortIDs
-func (t *BxTxStore) remove(hash string, reEntryProtection ReEntryProtectionFlags, reason string) {
-	if tx, ok := t.hashToContent.LoadAndDelete(hash); ok {
-		bxTransaction := tx
-		for _, shortID := range bxTransaction.ShortIDs() {
-			t.shortIDToHash.Delete(shortID)
-		}
-		// if asked, add the hash to the history map so we remember this transaction for some time
-		// and prevent if from being added back to the TxStore
-		switch reEntryProtection {
-		case NoReEntryProtection:
-		case ShortReEntryProtection:
-			t.seenTxs.Add(hash, ShortReEntryProtectionDuration)
-			t.bloom.Add([]byte(hash))
-		case FullReEntryProtection:
-			t.seenTxs.Add(hash, t.timeToAvoidReEntry)
-			t.bloom.Add([]byte(hash))
-		default:
-			log.Fatalf("unknown reEntryProtection value %v for hash %v", reEntryProtection, hash)
-		}
-		log.Tracef("TxStore: transaction %v, network %v, shortIDs %v removed (%v). reEntryProtection %v",
-			bxTransaction.Hash(), bxTransaction.NetworkNum(), bxTransaction.ShortIDs(), reason, reEntryProtection)
+func (t *BxTxStore) remove(hash string, bxTransaction *types.BxTransaction, reEntryProtection ReEntryProtectionFlags, reason string) {
+	t.hashToContent.Delete(hash)
+
+	for _, shortID := range bxTransaction.ShortIDs() {
+		t.shortIDToHash.Delete(shortID)
 	}
+	// if asked, add the hash to the history map so we remember this transaction for some time
+	// and prevent if from being added back to the TxStore
+	switch reEntryProtection {
+	case NoReEntryProtection:
+	case ShortReEntryProtection:
+		t.seenTxs.Add(hash, ShortReEntryProtectionDuration)
+		t.bloom.Add([]byte(hash))
+	case FullReEntryProtection:
+		t.seenTxs.Add(hash, t.timeToAvoidReEntry)
+		t.bloom.Add([]byte(hash))
+	default:
+		log.Fatalf("unknown reEntryProtection value %v for hash %v", reEntryProtection, hash)
+	}
+
 	// remove the hash also from the blobCompressorStorage
 	t.blobCompressorStorage.RemoveByTxHash(hash)
+
+	// remove the hash from the blob cleaner if it is a blob transaction
+	if t.blobsCleanerEnabled && bxTransaction.Flags().IsWithSidecar() {
+		t.getBlobTxCleaner(bxTransaction.NetworkNum()).Remove(hash)
+	}
+
+	log.Tracef("TxStore: transaction %v, network %v, shortIDs %v removed (%v). reEntryProtection %v",
+		bxTransaction.Hash(), bxTransaction.NetworkNum(), bxTransaction.ShortIDs(), reason, reEntryProtection)
 }
 
 // RemoveShortIDs deletes a series of transactions by their short IDs. RemoveShortIDs can take a potentially large short ID array, so it should be passed by reference.
@@ -182,10 +202,18 @@ func (t *BxTxStore) GetTxByKzgCommitment(kzgCommitment string) (*types.BxTransac
 }
 
 // RemoveHashes deletes a series of transactions by their hash from BxTxStore. RemoveHashes can take a potentially large hash array, so it should be passed by reference.
-func (t *BxTxStore) RemoveHashes(hashes *types.SHA256HashList, reEntryProtection ReEntryProtectionFlags, reason string) {
+func (t *BxTxStore) RemoveHashes(hashes *types.SHA256HashList, reEntryProtection ReEntryProtectionFlags, reason string) types.ShortIDList {
+	shortIDList := make(types.ShortIDList, 0)
 	for _, hash := range *hashes {
-		t.remove(string(hash[:]), reEntryProtection, reason)
+		hashStr := string(hash.Bytes())
+
+		if bxTransaction, ok := t.hashToContent.Load(hashStr); ok {
+			t.remove(hashStr, bxTransaction, reEntryProtection, reason)
+			shortIDList = append(shortIDList, bxTransaction.ShortIDs()...)
+		}
 	}
+
+	return shortIDList
 }
 
 // Iter returns a channel iterator for all transactions in BxTxStore
@@ -241,6 +269,10 @@ func (t *BxTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID 
 		bxTransaction = tx
 	} else {
 		result.NewTx = true
+
+		if bxTransaction.Flags().IsWithSidecar() && t.blobsCleanerEnabled {
+			t.getBlobTxCleaner(networkNum).AddTx(hashStr, len(content), timestamp)
+		}
 	}
 
 	// make sure we are the only process that makes changes to the transaction
@@ -348,7 +380,7 @@ func (t *BxTxStore) clean() (cleaned int, cleanedShortIDs types.ShortIDsByNetwor
 			// remove the transaction by hash from both maps
 			// no need to add the hash to the history as it is deleted after long time
 			// dec-5-2021: add to hash history to prevent a lot of reentry (BSC, Polygon)
-			t.remove(key, FullReEntryProtection, removeReason)
+			t.remove(key, bxTransaction, FullReEntryProtection, removeReason)
 
 			cleanedShortIDs[networkNum] = append(cleanedShortIDs[networkNum], bxTransaction.ShortIDs()...)
 		}
@@ -457,6 +489,31 @@ func (t *BxTxStore) Summarize() *pbbase.TxStoreReply {
 	}
 
 	return &res
+}
+
+func (t *BxTxStore) getBlobTxCleaner(networkNum types.NetworkNum) *TxSizeCleaner {
+	cleaner, _ := t.blobTxSizeCleanerByNetwork.LoadOrStore(uint32(networkNum), NewTxSizeCleaner(fmt.Sprintf("blobs cleaner %d network", networkNum), t.totalMaxBlobTxSize(networkNum), blobTxCleanCoef, func(hashes *types.SHA256HashList) {
+		shortIDs := t.RemoveHashes(hashes, FullReEntryProtection, "blob storage out of space")
+
+		if t.cleanedShortIDsChannel != nil && len(shortIDs) > 0 {
+			t.cleanedShortIDsChannel <- types.ShortIDsByNetwork{networkNum: shortIDs}
+		}
+	}))
+
+	return cleaner
+}
+
+func (t *BxTxStore) totalMaxBlobTxSize(networkNum types.NetworkNum) uint64 {
+	network, ok := t.networkConfig[networkNum]
+	if !ok {
+		return defaultMaxTotalBlobTxSizeBytes
+	}
+
+	if network.MaxTotalBlobTxSizeBytes == 0 {
+		return defaultMaxTotalBlobTxSizeBytes
+	}
+
+	return network.MaxTotalBlobTxSizeBytes
 }
 
 func (t *BxTxStore) refreshSeenTx(hash types.SHA256Hash) bool {

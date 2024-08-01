@@ -1,6 +1,3 @@
-service:
-  golangci-lint-version: 1.52.x
-
 # full list: https://golangci-lint.run/usage/linters/
 linters:
   disable-all: true
@@ -22,6 +19,7 @@ linters:
     - goimports
     - gosec
     - noctx
+    - nolintlint
     - prealloc
     - revive
     - stylecheck
@@ -38,7 +36,7 @@ linters-settings:
   errcheck:
     check-blank: true
   govet:
-    check-shadowing: true
+    shadow: true
   dupl:
     threshold: 500
 
@@ -68,9 +66,12 @@ issues:
     - EXC0014
 
 run:
-  go: "1.19"
-  skip-files:
+  go: "1.21"
+  allow-parallel-runners: true
+  exclude-files:
     - ".*\\.pb\\.go$" # skip protobuf generated code
 
 output:
-  format: tab
+  formats:
+    - format: tab
+      path: stderr

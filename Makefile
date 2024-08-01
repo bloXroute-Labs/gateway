@@ -15,7 +15,7 @@ V = 0
 Q = $(if $(filter 1,$V),,@)
 M = $(shell printf "\033[34;1m▶\033[0m")
 
-export GO111MODULE=on
+GOLANGCI_LINT_VERSION=v1.59.0
 
 .PHONY: all
 all: gateway
@@ -79,17 +79,16 @@ test-coverage: fmt lint test-coverage-tools ; $(info $(M) running coverage tests
 	$Q $(GO) tool cover -html=$(COVERAGE_PROFILE) -o $(COVERAGE_HTML)
 	$Q $(GOCOV) convert $(COVERAGE_PROFILE) | $(GOCOVXML) > $(COVERAGE_XML)
 
-GOLANGCI_VERSION=v1.52.2
-GOLANGCI_REV=8cdecc968bf7b87ce85e09e42cabb3e3540e9344
-
 .PHONY: lint
-lint: bin/golangci-lint-${GOLANGCI_VERSION}
-	@bin/golangci-lint-${GOLANGCI_VERSION} run
+lint: golangci-lint
+	@golangci-lint run --timeout 10m0s
 
-bin/golangci-lint-${GOLANGCI_VERSION}:
-	@mkdir -p bin
-	@curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/${GOLANGCI_REV}/install.sh | BINARY=golangci-lint bash -s -- ${GOLANGCI_VERSION}
-	@mv bin/golangci-lint $@
+.PHONY: golangci-lint
+golangci-lint:
+	@if ! command -v golangci-lint >/dev/null 2>&1; then \
+		echo "golangci-lint not found, installing..."; \
+		$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}; \
+	fi
 
 .PHONY: fmt
 fmt: ; $(info $(M) running gofmt) @ ## Run gofmt on all source files

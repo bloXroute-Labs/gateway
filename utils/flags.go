@@ -24,35 +24,6 @@ var (
 		Aliases: []string{"p"},
 		Value:   1809,
 	}
-	LegacyTxPortFlag = &cli.IntFlag{
-		Name:  "legacy-tx-port",
-		Usage: "tx port for accepting 'RELAY_TRANSACTION' gateway connection (legacy flag)",
-		Value: 1810,
-	}
-	RelayBlockPortFlag = &cli.Int64Flag{
-		Name:    "relay-block-port",
-		Usage:   "port of block relay",
-		Aliases: []string{"rb"},
-		Value:   0, // was 1809
-	}
-	RelayBlockHostFlag = &cli.StringFlag{
-		Name:    "relay-block-host",
-		Usage:   "host of block relay",
-		Aliases: []string{"rbh"},
-		Value:   "localhost",
-	}
-	RelayTxPortFlag = &cli.Int64Flag{
-		Name:    "relay-tx-port",
-		Usage:   "port of transaction relay",
-		Aliases: []string{"rp"},
-		Value:   0, // was 1811
-	}
-	RelayTxHostFlag = &cli.StringFlag{
-		Name:    "relay-tx-host",
-		Usage:   "host of transaction relay",
-		Aliases: []string{"rth"},
-		Value:   "localhost",
-	}
 	RelayHostsFlag = &cli.StringFlag{
 		Name:    "relays",
 		Usage:   "host of relay",

@@ -131,7 +131,7 @@ func bxConn(handler connections.ConnHandler) (*connections.MockTLS, *BxConn) {
 		func() (connections.Socket, error) {
 			return tls, nil
 		},
-		handler, &certs, ip, port, "", utils.RelayTransaction, true, false, true, false, connections.LocalInitiatedPort, utils.RealClock{},
+		handler, &certs, ip, port, "", utils.RelayProxy, true, false, true, false, connections.LocalInitiatedPort, utils.RealClock{},
 		false)
 	return tls, b
 }

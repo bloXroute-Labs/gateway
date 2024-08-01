@@ -25,7 +25,7 @@ import (
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/nodes"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/bloXroute-Labs/gateway/v2/utils/httpclient"
+	httputils "github.com/bloXroute-Labs/gateway/v2/utils/http"
 	"github.com/bloXroute-Labs/gateway/v2/version"
 )
 
@@ -243,7 +243,7 @@ func runGateway(c *cli.Context) error {
 	if startupBeaconAPIClients {
 		apiShredSync := beacon.NewAPISharedSync()
 		for _, beaconAPI := range ethConfig.StaticPeers.BeaconAPIEndpoints() {
-			client := beacon.NewAPIClient(gCtx, httpclient.Client(nil), ethConfig, bridge, beaconAPI.BeaconAPIURI, beaconAPI.Endpoint, apiShredSync)
+			client := beacon.NewAPIClient(gCtx, httputils.Client(nil), ethConfig, bridge, beaconAPI.BeaconAPIURI, beaconAPI.Endpoint, apiShredSync)
 
 			group.Go(client.Start)
 

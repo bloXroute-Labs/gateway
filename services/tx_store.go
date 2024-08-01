@@ -32,7 +32,7 @@ type TxStore interface {
 	HasContent(hash types.SHA256Hash) bool
 
 	RemoveShortIDs(*types.ShortIDList, ReEntryProtectionFlags, string)
-	RemoveHashes(*types.SHA256HashList, ReEntryProtectionFlags, string)
+	RemoveHashes(*types.SHA256HashList, ReEntryProtectionFlags, string) types.ShortIDList
 	GetTxByShortID(types.ShortID, bool) (*types.BxTransaction, error)
 
 	GetTxByKzgCommitment(string) (*types.BxTransaction, error)

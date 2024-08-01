@@ -46,6 +46,7 @@ type BlockchainNetwork struct {
 	LogCompressedBlockDebugInfoOnRelay     bool                 `json:"log_compressed_block_debug_info_on_relay"`
 	MaxBlockSizeBytes                      int64                `json:"max_block_size_bytes"`
 	MaxTxSizeBytes                         int64                `json:"max_tx_size_bytes"`
+	MaxTotalBlobTxSizeBytes                uint64               `json:"max_total_blob_tx_size_bytes"`
 	MediumTxNetworkFee                     int64                `json:"medium_tx_network_fee"`
 	MempoolExpectedTransactionsCount       int64                `json:"mempool_expected_transactions_count"`
 	MinTxAgeSeconds                        float64              `json:"min_tx_age_seconds"`

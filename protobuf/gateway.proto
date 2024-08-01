@@ -166,7 +166,7 @@ message BlockHeader{
 message FutureValidatorInfo{
   string block_height = 1;
   string wallet_id = 2;
-  string accessible = 3;
+  string accessible = 3; // Deprecated
 }
 
 message Withdrawal{

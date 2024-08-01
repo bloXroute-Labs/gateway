@@ -14,7 +14,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils/httpclient"
+	httputils "github.com/bloXroute-Labs/gateway/v2/utils/http"
 	"github.com/jarcoal/httpmock"
 	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
 	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
@@ -95,7 +95,7 @@ func newBlock(slot uint64) interfaces.ReadOnlySignedBeaconBlock {
 
 func TestNewAPIClient(t *testing.T) {
 	// Initialize httpmock
-	httpClient := httpclient.Client(nil)
+	httpClient := httputils.Client(nil)
 	httpmock.ActivateNonDefault(httpClient)
 	defer httpmock.DeactivateAndReset()
 
@@ -111,7 +111,7 @@ func TestNewAPIClient(t *testing.T) {
 
 func TestAPIClient_requestBlock(t *testing.T) {
 	// Initialize httpmock
-	httpClient := httpclient.Client(nil)
+	httpClient := httputils.Client(nil)
 	httpmock.ActivateNonDefault(httpClient)
 	defer httpmock.DeactivateAndReset()
 	// Mock the clientVersion function
@@ -164,7 +164,7 @@ func TestAPIClient_requestBlock(t *testing.T) {
 
 func TestAPIClient_hashOfBlock(t *testing.T) {
 	// Initialize httpmock
-	httpClient := httpclient.Client(nil)
+	httpClient := httputils.Client(nil)
 	httpmock.ActivateNonDefault(httpClient)
 	defer httpmock.DeactivateAndReset()
 	// Mock the getBeaconNodeClientVersion function
@@ -230,7 +230,7 @@ func TestAPIClient_hashOfBlock(t *testing.T) {
 
 func TestAPIClient_processResponse(t *testing.T) {
 	// Initialize httpmock
-	httpClient := httpclient.Client(nil)
+	httpClient := httputils.Client(nil)
 	httpmock.ActivateNonDefault(httpClient)
 	defer httpmock.DeactivateAndReset()
 
@@ -279,7 +279,7 @@ func TestAPIClient_processResponse(t *testing.T) {
 
 func TestAPIClient_broadcastBlock(t *testing.T) {
 	// Initialize httpmock
-	httpClient := httpclient.Client(nil)
+	httpClient := httputils.Client(nil)
 	httpmock.ActivateNonDefault(httpClient)
 	defer httpmock.DeactivateAndReset()
 

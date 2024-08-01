@@ -211,9 +211,11 @@ func (b *BxConn) ProcessMessage(msgBytes bxmessage.MessageBytes) {
 	switch msgType {
 	case bxmessage.HelloType:
 		helloMsg := &bxmessage.Hello{}
-		_ = helloMsg.Unpack(msg, 0)
-		err := b.Node.HandleMsg(helloMsg, b, connections.RunForeground)
-		if err != nil {
+		if err := helloMsg.Unpack(msg, 0); err != nil {
+			b.Log().Errorf("could not unpack hello message %v. Failed bytes: %v", err, msg)
+			return
+		}
+		if err := b.Node.HandleMsg(helloMsg, b, connections.RunForeground); err != nil {
 			return
 		}
 
@@ -233,8 +235,7 @@ func (b *BxConn) ProcessMessage(msgBytes bxmessage.MessageBytes) {
 
 		b.Log().Debugf("completed handshake: network %v, protocol %v, peer id %v ", b.networkNum, b.Protocol(), b.peerID)
 
-		err = b.Node.ValidateConnection(b)
-		if err != nil {
+		if err := b.Node.ValidateConnection(b); err != nil {
 			// invalid connection has been disabled
 			b.setConnectionEstablished()
 			return
@@ -259,12 +260,18 @@ func (b *BxConn) ProcessMessage(msgBytes bxmessage.MessageBytes) {
 
 	case bxmessage.PingType:
 		ping := &bxmessage.Ping{}
-		_ = ping.Unpack(msg, b.Protocol())
+		if err := ping.Unpack(msg, b.Protocol()); err != nil {
+			b.Log().Errorf("could not unpack ping message %v. Failed bytes: %v", err, msg)
+			return
+		}
 		b.msgPing(ping)
 
 	case bxmessage.PongType:
 		pong := &bxmessage.Pong{}
-		_ = pong.Unpack(msg, b.Protocol())
+		if err := pong.Unpack(msg, b.Protocol()); err != nil {
+			b.Log().Errorf("could not unpack pong message %v. Failed bytes: %v", err, msg)
+			return
+		}
 		b.msgPong(pong)
 		// now, check if there are queued message that should be delivered on pong message
 		b.lock.Lock()
@@ -287,16 +294,14 @@ func (b *BxConn) ProcessMessage(msgBytes bxmessage.MessageBytes) {
 		}
 	case bxmessage.ValidatorUpdatesType:
 		vu := &bxmessage.ValidatorUpdates{}
-		err := vu.Unpack(msg, b.Protocol())
-		if err != nil {
+		if err := vu.Unpack(msg, b.Protocol()); err != nil {
 			b.Log().Errorf("could not unpack validator update message %v. Failed bytes: %v", err, msg)
 			return
 		}
 		_ = b.Node.HandleMsg(vu, b, connections.RunForeground)
 	case bxmessage.BroadcastType:
 		block := &bxmessage.Broadcast{}
-		err := block.Unpack(msg, b.Protocol())
-		if err != nil {
+		if err := block.Unpack(msg, b.Protocol()); err != nil {
 			b.Log().Errorf("could not unpack broadcast message: %v. Failed bytes: %v", err, msg)
 			return
 		}
@@ -306,20 +311,32 @@ func (b *BxConn) ProcessMessage(msgBytes bxmessage.MessageBytes) {
 
 	case bxmessage.TxCleanupType:
 		txcleanup := &bxmessage.TxCleanup{}
-		_ = txcleanup.Unpack(msg, b.Protocol())
+		if err := txcleanup.Unpack(msg, b.Protocol()); err != nil {
+			b.Log().Errorf("could not unpack txcleanup message: %v. Failed bytes: %v", err, msg)
+			return
+		}
 		_ = b.Node.HandleMsg(txcleanup, b, connections.RunBackground)
 	case bxmessage.BlockConfirmationType:
 		blockConfirmation := &bxmessage.BlockConfirmation{}
-		_ = blockConfirmation.Unpack(msg, b.Protocol())
+		if err := blockConfirmation.Unpack(msg, b.Protocol()); err != nil {
+			b.Log().Errorf("could not unpack block confirmation message: %v. Failed bytes: %v", err, msg)
+			return
+		}
 		_ = b.Node.HandleMsg(blockConfirmation, b, connections.RunBackground)
 	case bxmessage.SyncReqType:
 		syncReq := &bxmessage.SyncReq{}
-		_ = syncReq.Unpack(msg, b.Protocol())
+		if err := syncReq.Unpack(msg, b.Protocol()); err != nil {
+			b.Log().Errorf("could not unpack sync message: %v. Failed bytes: %v", err, msg)
+			return
+		}
 		b.Log().Debugf("TxStore sync: got a request for network %v", syncReq.GetNetworkNum())
 		_ = b.Node.HandleMsg(syncReq, b, connections.RunBackground)
 	case bxmessage.ErrorNotificationType:
 		errorNotification := &bxmessage.ErrorNotification{}
-		_ = errorNotification.Unpack(msg, b.Protocol())
+		if err := errorNotification.Unpack(msg, b.Protocol()); err != nil {
+			b.Log().Errorf("could not unpack error notification message: %v. Failed bytes: %v", err, msg)
+			return
+		}
 		_ = b.Node.HandleMsg(errorNotification, b, connections.RunForeground)
 	case bxmessage.MEVBundleType:
 		mevBundle := &bxmessage.MEVBundle{}

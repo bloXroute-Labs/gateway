@@ -104,7 +104,7 @@ func (g *GatewayGrpc) SubmitIntent(ctx context.Context, req *pb.SubmitIntentRequ
 
 	// send intent to connected Relays
 	intentMsg := bxmessage.NewIntent(intent.ID, intent.DappAddress, intent.SenderAddress, intent.Hash, intent.Signature, intent.Timestamp, intent.Intent)
-	g.broadcast(intentMsg, nil, utils.Relay)
+	g.broadcast(intentMsg, nil, utils.RelayProxy)
 
 	// send intent notification into FeedManager for propagation to subscribers if any
 	g.sendIntentNotification(intent)
@@ -144,7 +144,7 @@ func (g *GatewayGrpc) SubmitIntentSolution(ctx context.Context, req *pb.SubmitIn
 		intentSolution.Signature,
 		intentSolution.Timestamp,
 		intentSolution.Solution)
-	g.broadcast(intentMsg, nil, utils.Relay)
+	g.broadcast(intentMsg, nil, utils.RelayProxy)
 
 	// send solution notification into FeedManager for propagation to subscribers
 	g.sendSolutionNotification(intentSolution)
@@ -172,13 +172,13 @@ func (g *GatewayGrpc) Intents(req *pb.IntentsRequest, stream pb.Gateway_IntentsS
 	g.params.intentsManager.AddIntentsSubscription(req.SolverAddress, req.Hash, req.Signature)
 	// send intentsSubscription to Relay
 	sub := bxmessage.NewIntentsSubscription(req.SolverAddress, req.Hash, req.Signature)
-	g.broadcast(sub, nil, utils.Relay)
+	g.broadcast(sub, nil, utils.RelayProxy)
 
 	defer func() {
 		g.params.intentsManager.RmIntentsSubscription(req.SolverAddress)
 		// send intentsUnsubscription to Relay
 		unsub := bxmessage.NewIntentsUnsubscription(req.SolverAddress)
-		g.broadcast(unsub, nil, utils.Relay)
+		g.broadcast(unsub, nil, utils.RelayProxy)
 		g.log.Debugf("unsubscribed from intents feed for solverAddress: %s, sent IntentsUnsubscribe msg", req.SolverAddress)
 	}()
 
@@ -205,13 +205,13 @@ func (g *GatewayGrpc) IntentSolutions(req *pb.IntentSolutionsRequest, stream pb.
 	g.params.intentsManager.AddSolutionsSubscription(req.DappAddress, req.Hash, req.Signature)
 	// send solutionsSubscription to Relay
 	sub := bxmessage.NewSolutionsSubscription(req.DappAddress, req.Hash, req.Signature)
-	g.broadcast(sub, nil, utils.Relay)
+	g.broadcast(sub, nil, utils.RelayProxy)
 
 	defer func() {
 		g.params.intentsManager.RmSolutionsSubscription(req.DappAddress)
 		// send solutionsUnsubscription to Relay
 		unsub := bxmessage.NewSolutionsUnsubscription(req.DappAddress)
-		g.broadcast(unsub, nil, utils.Relay)
+		g.broadcast(unsub, nil, utils.RelayProxy)
 	}()
 
 	return g.handleSolutions(req, stream, types.UserIntentSolutionsFeed, *accountModel)

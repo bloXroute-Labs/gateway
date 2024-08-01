@@ -19,7 +19,7 @@ const (
 
 func newTestBxTxStore() BxTxStore {
 	return newBxTxStore(&utils.MockClock{}, sdnmessage.BlockchainNetworks{testNetworkNum: {MaxTxAgeSeconds: 30}}, 30*time.Second, 10*time.Second,
-		NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, 30*time.Minute, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage())
+		NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, 30*time.Minute, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage(), false)
 }
 
 func TestBxTxStore_Add(t *testing.T) {
@@ -129,7 +129,7 @@ func TestBxTxStore_clean(t *testing.T) {
 	clock := utils.MockClock{}
 
 	cleanedShortIDsChan := make(chan types.ShortIDsByNetwork)
-	store := newBxTxStore(&clock, sdnmessage.BlockchainNetworks{testNetworkNum: {MaxTxAgeSeconds: 30}}, 30*time.Second, 10*time.Second, NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), cleanedShortIDsChan, 30*time.Minute, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage())
+	store := newBxTxStore(&clock, sdnmessage.BlockchainNetworks{testNetworkNum: {MaxTxAgeSeconds: 30}}, 30*time.Second, 10*time.Second, NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), cleanedShortIDsChan, 30*time.Minute, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage(), false)
 	hash1 := types.SHA256Hash{1}
 	content1 := types.TxContent{1}
 	hash2 := types.SHA256Hash{2}
@@ -165,7 +165,7 @@ func TestBxTxStore_clean256K(t *testing.T) {
 	store := newBxTxStore(&clock, sdnmessage.BlockchainNetworks{
 		testNetworkNum:     {MaxTxAgeSeconds: 60 * 60 * 300},
 		testNetworkNum + 1: {MaxTxAgeSeconds: 60 * 60 * 300},
-	}, 300*time.Hour, 10*time.Second, NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, 30*time.Minute, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage())
+	}, 300*time.Hour, 10*time.Second, NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, 30*time.Minute, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage(), false)
 	// add some Tx from a different network to check that these will not be cleaned
 	for i := 0; i < otherNetworkTxs; i++ {
 		var h types.SHA256Hash
@@ -212,7 +212,7 @@ func TestHistory(t *testing.T) {
 
 	cleanedShortIDsChan := make(chan types.ShortIDsByNetwork)
 	store := newBxTxStore(&clock, sdnmessage.BlockchainNetworks{testNetworkNum: &sdnmessage.BlockchainNetwork{MaxTxAgeSeconds: 30}}, 3*24*time.Hour, 10*time.Minute,
-		NewEmptyShortIDAssigner(), newHashHistory("seenTxs", &clock, 30*time.Minute), cleanedShortIDsChan, 30*time.Minute, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage())
+		NewEmptyShortIDAssigner(), newHashHistory("seenTxs", &clock, 30*time.Minute), cleanedShortIDsChan, 30*time.Minute, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage(), false)
 	shortIDsByNetwork := make(types.ShortIDsByNetwork)
 	go func() {
 		for {
@@ -293,7 +293,7 @@ func TestGetTxByShortID(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, content1, tx.Content())
 
-	store.remove(string(hash1[:]), FullReEntryProtection, "TestGetTxByShortID")
+	store.remove(string(hash1[:]), result12.Transaction, FullReEntryProtection, "TestGetTxByShortID")
 	tx, err = store.GetTxByShortID(1, false)
 	assert.Nil(t, tx)
 	assert.NotNil(t, err)
@@ -303,7 +303,7 @@ func TestHistoryTxWithShortID(t *testing.T) {
 	clock := utils.MockClock{}
 
 	cleanedShortIDsChan := make(chan types.ShortIDsByNetwork)
-	store := newBxTxStore(&clock, sdnmessage.BlockchainNetworks{testNetworkNum: &sdnmessage.BlockchainNetwork{MaxTxAgeSeconds: 30}}, 30*time.Second, 10*time.Second, NewEmptyShortIDAssigner(), newHashHistory("seenTxs", &clock, 60*time.Minute), cleanedShortIDsChan, 30*time.Minute, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage())
+	store := newBxTxStore(&clock, sdnmessage.BlockchainNetworks{testNetworkNum: &sdnmessage.BlockchainNetwork{MaxTxAgeSeconds: 30}}, 30*time.Second, 10*time.Second, NewEmptyShortIDAssigner(), newHashHistory("seenTxs", &clock, 60*time.Minute), cleanedShortIDsChan, 30*time.Minute, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage(), false)
 	hash1 := types.SHA256Hash{1}
 	content1 := types.TxContent{1}
 
@@ -332,7 +332,7 @@ func TestHistoryTxWithShortID(t *testing.T) {
 func TestBxTxStore_ResetSeenTxTime(t *testing.T) {
 	clock := utils.MockClock{}
 	cleanedShortIDsChan := make(chan types.ShortIDsByNetwork)
-	store := newBxTxStore(&clock, sdnmessage.BlockchainNetworks{testNetworkNum: &sdnmessage.BlockchainNetwork{MaxTxAgeSeconds: 30}}, 30*time.Second, 10*time.Second, NewEmptyShortIDAssigner(), newHashHistory("seenTxs", &clock, 60*time.Minute), cleanedShortIDsChan, 30*time.Second, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage())
+	store := newBxTxStore(&clock, sdnmessage.BlockchainNetworks{testNetworkNum: &sdnmessage.BlockchainNetwork{MaxTxAgeSeconds: 30}}, 30*time.Second, 10*time.Second, NewEmptyShortIDAssigner(), newHashHistory("seenTxs", &clock, 60*time.Minute), cleanedShortIDsChan, 30*time.Second, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage(), false)
 
 	// Case 1:
 	// ConnDetails case, add hash1 to TxStore and wait for TxStore to clean up, so hash1 is stored in SeenTx

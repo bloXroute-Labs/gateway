@@ -79,7 +79,7 @@ func (bn *Bx) OnConnClosed(conn connections.Conn) error {
 	defer bn.ConnectionsLock.Unlock()
 	for idx, connection := range bn.Connections {
 		if connection.ID() == conn.ID() {
-			if conn.GetConnectionType()&utils.RelayTransaction != 0 {
+			if conn.GetConnectionType()&utils.RelayProxy != 0 && !bn.isThereOtherConnectedRelay(conn) {
 				bn.TxStore.Clear()
 			}
 			bn.Connections = append(bn.Connections[:idx], bn.Connections[idx+1:]...)
@@ -90,6 +90,18 @@ func (bn *Bx) OnConnClosed(conn connections.Conn) error {
 	err := fmt.Errorf("connection can't be removed from connection list - not found")
 	conn.Log().Debug(err)
 	return err
+}
+
+func (bn *Bx) isThereOtherConnectedRelay(conn connections.Conn) bool {
+	for _, connection := range bn.Connections {
+		if connection.ID() == conn.ID() {
+			continue
+		}
+		if conn.GetConnectionType()&utils.RelayProxy != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // HandleMsg - a callback function. Generic handling for common bloXroute messages
@@ -210,7 +222,7 @@ func (bn *Bx) Peers(_ context.Context, req *pbbase.PeersRequest) (*pbbase.PeersR
 	case "gw", "gateway":
 		nodeType = utils.Gateway
 	case "relay":
-		nodeType = utils.Relay
+		nodeType = utils.RelayProxy
 	}
 	resp := &pbbase.PeersReply{}
 	bn.ConnectionsLock.RLock()
@@ -259,7 +271,7 @@ func (bn *Bx) Peers(_ context.Context, req *pbbase.PeersRequest) (*pbbase.PeersR
 func (bn *Bx) PingLoop() {
 	pingTicker := bn.clock.Ticker(pingInterval)
 	ping := &bxmessage.Ping{}
-	to := utils.Gateway | utils.RelayProxy | utils.Relay
+	to := utils.Gateway | utils.RelayProxy
 	for {
 		select {
 		case <-pingTicker.Alert():

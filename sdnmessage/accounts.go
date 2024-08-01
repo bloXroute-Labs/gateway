@@ -272,7 +272,6 @@ type Account struct {
 	SolanaDexAPIRateLimit   BDNQuotaService `json:"solana_dex_api_rate_limit"`
 	SolanaDexAPIStreamLimit BDNQuotaService `json:"solana_dex_api_stream_limit"`
 
-	TwammStreaming                BDNFeedService `json:"twamm_streaming"`
 	PrivateOrdersStreaming        BDNFeedService `json:"private_orders_streaming"`
 	PendingPrivateTxsStreaming    BDNFeedService `json:"pending_private_txs_streaming"`
 	MEVProposerGetHeaderStreaming BDNFeedService `json:"mev_get_header_streaming"`
@@ -488,13 +487,6 @@ func GetDefaultEliteAccount(now time.Time) Account {
 				Limit:       50,
 			},
 			ExpireDateTime: now.Add(time.Hour),
-		},
-		TwammStreaming: BDNFeedService{
-			ExpireDate: now.AddDate(0, 0, 1).Format("2006-01-02"),
-			Feed: FeedProperties{
-				AllowFiltering:  true,
-				AvailableFields: []string{"all"},
-			},
 		},
 		SecretHash: "",
 		Bundles: BDNBundlesService{

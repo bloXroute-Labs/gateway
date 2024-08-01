@@ -18,11 +18,7 @@ const (
 	// ExternalGateway is a gateway run by anyone
 	ExternalGateway
 
-	// RelayTransaction is a relay routing transaction messages only
-	RelayTransaction
-
-	// RelayBlock is a relay routing block messages only
-	RelayBlock
+	_ //Deprecated: RelayTransaction used for legacy relay
 
 	// API is the bloxroute SDN
 	API
@@ -56,47 +52,32 @@ const (
 
 	// Gateway collects all the various gateway types
 	Gateway = InternalGateway | ExternalGateway | GatewayGo
-
-	// GatewayType aliases Gateway
-	GatewayType = Gateway
-
-	// Relay collects all the relay types
-	Relay = RelayTransaction | RelayBlock
-
-	// RelayType aliases Relay
-	RelayType = Relay
 )
 
 var nodeTypeNames = map[NodeType]string{
-	InternalGateway:  "INTERNAL_GATEWAY",
-	ExternalGateway:  "EXTERNAL_GATEWAY",
-	RelayTransaction: "RELAY_TRANSACTION",
-	RelayBlock:       "RELAY_BLOCK",
-	API:              "API",
-	APISocket:        "API_SOCKET",
-	CloudAPI:         "BLOXROUTE_CLOUD_API",
-	Jobs:             "JOBS",
-	GatewayGo:        "GATEWAY_GO",
-	Gateway:          "GATEWAY",
-	Relay:            "RELAY",
-	RelayProxy:       "RELAY_PROXY",
-	Websocket:        "WEBSOCKET",
-	GRPC:             "GRPC",
-	Blockchain:       "BLOCKCHAIN",
-	SolanaRelay:      "SOLANA_RELAY",
+	InternalGateway: "INTERNAL_GATEWAY",
+	ExternalGateway: "EXTERNAL_GATEWAY",
+	API:             "API",
+	APISocket:       "API_SOCKET",
+	CloudAPI:        "BLOXROUTE_CLOUD_API",
+	Jobs:            "JOBS",
+	GatewayGo:       "GATEWAY_GO",
+	Gateway:         "GATEWAY",
+	RelayProxy:      "RELAY_PROXY",
+	Websocket:       "WEBSOCKET",
+	GRPC:            "GRPC",
+	Blockchain:      "BLOCKCHAIN",
+	SolanaRelay:     "SOLANA_RELAY",
 }
 var nodeNameTypes = map[string]NodeType{
 	"INTERNAL_GATEWAY":    InternalGateway,
 	"EXTERNAL_GATEWAY":    ExternalGateway,
-	"RELAY_TRANSACTION":   RelayTransaction,
-	"RELAY_BLOCK":         RelayBlock,
 	"API":                 API,
 	"API_SOCKET":          APISocket,
 	"BLOXROUTE_CLOUD_API": CloudAPI,
 	"JOBS":                Jobs,
 	"GATEWAY_GO":          GatewayGo,
 	"GATEWAY":             Gateway,
-	"RELAY":               Relay,
 	"WEBSOCKET":           Websocket,
 	"GRPC":                GRPC,
 	"RELAY_PROXY":         RelayProxy,
@@ -139,7 +120,7 @@ func (n NodeType) FormatShortNodeType() string {
 	if n&Gateway != 0 {
 		return "G"
 	}
-	if n&RelayTransaction != 0 {
+	if n&RelayProxy != 0 {
 		return "R"
 	}
 	return n.String()
