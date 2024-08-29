@@ -70,11 +70,13 @@ const (
 	ErrorNotificationType        = "notify"
 	IntentType                   = "intent"
 	IntentSolutionType           = "intentsol"
+	IntentSolutionsType          = "intentsols"
 	IntentsSubscriptionType      = "intentssub"
 	IntentsUnsubscriptionType    = "intentsunsub"
 	SolutionsSubscriptionType    = "solssub"
 	SolutionsUnsubscriptionType  = "solsunsub"
 	BeaconMessageType            = "beaconmsg"
+	GetIntentSolutionsType       = "getintsol"
 )
 
 // SenderLen is the byte length of sender
@@ -99,7 +101,11 @@ const EmptyProtocol = 0
 const MinProtocol = NextValidatorMultipleProtocol
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
-const CurrentProtocol = BundleRefundProtocol
+const CurrentProtocol = SolutionSenderAddressProtocol
+
+// SolutionSenderAddressProtocol is the minimum protocol version that supports solution sender address
+// in the intent solution broadcast message
+const SolutionSenderAddressProtocol = 49
 
 // BundleRefundProtocol is the minimum protocol version that supports bundle refund recipient address
 const BundleRefundProtocol = 48

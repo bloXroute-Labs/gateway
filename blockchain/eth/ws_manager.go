@@ -307,3 +307,17 @@ func (m *WSManager) UpdateNodeSyncStatus(nodeEndpoint types.NodeEndpoint, syncSt
 func (m *WSManager) ReceiveNodeSyncStatusUpdate() chan blockchain.NodeSyncStatus {
 	return m.syncStatusCh
 }
+
+// GetSyncedWSProvider returns synced websocket provider
+func (m *WSManager) GetSyncedWSProvider(preferredProviderEndpoint *types.NodeEndpoint) (blockchain.WSProvider, bool) {
+	if !m.Synced() {
+		return nil, false
+	}
+
+	nodeWS, ok := m.Provider(preferredProviderEndpoint)
+	if !ok || nodeWS.SyncStatus() != blockchain.Synced {
+		nodeWS, ok = m.SyncedProvider()
+	}
+
+	return nodeWS, ok
+}

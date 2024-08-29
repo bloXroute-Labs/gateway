@@ -29,11 +29,9 @@ const (
 	// CloudAPI is the cloud API instances
 	CloudAPI
 
-	// Jobs is the jobs instances that proxy feeds
-	Jobs
+	_ // Deprecated: Jobs used for legacy jobs that used for monitor cloud services
 
-	// GatewayGo is a gateway running in Go
-	GatewayGo
+	_ // Deprecated: GatewayGo used for legacy gateway
 
 	// RelayProxy is the proxy relay that connects to gateways and sits in front of relays
 	RelayProxy
@@ -51,7 +49,7 @@ const (
 	SolanaRelay
 
 	// Gateway collects all the various gateway types
-	Gateway = InternalGateway | ExternalGateway | GatewayGo
+	Gateway = InternalGateway | ExternalGateway
 )
 
 var nodeTypeNames = map[NodeType]string{
@@ -60,8 +58,6 @@ var nodeTypeNames = map[NodeType]string{
 	API:             "API",
 	APISocket:       "API_SOCKET",
 	CloudAPI:        "BLOXROUTE_CLOUD_API",
-	Jobs:            "JOBS",
-	GatewayGo:       "GATEWAY_GO",
 	Gateway:         "GATEWAY",
 	RelayProxy:      "RELAY_PROXY",
 	Websocket:       "WEBSOCKET",
@@ -69,14 +65,13 @@ var nodeTypeNames = map[NodeType]string{
 	Blockchain:      "BLOCKCHAIN",
 	SolanaRelay:     "SOLANA_RELAY",
 }
+
 var nodeNameTypes = map[string]NodeType{
 	"INTERNAL_GATEWAY":    InternalGateway,
 	"EXTERNAL_GATEWAY":    ExternalGateway,
 	"API":                 API,
 	"API_SOCKET":          APISocket,
 	"BLOXROUTE_CLOUD_API": CloudAPI,
-	"JOBS":                Jobs,
-	"GATEWAY_GO":          GatewayGo,
 	"GATEWAY":             Gateway,
 	"WEBSOCKET":           Websocket,
 	"GRPC":                GRPC,

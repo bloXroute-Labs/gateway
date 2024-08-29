@@ -14,21 +14,21 @@ func UnpackSolutionsSubscription(b []byte, protocol Protocol) (*SolutionsSubscri
 }
 
 // NewSolutionsSubscription constructor for SolutionsSubscription bxmessage
-func NewSolutionsSubscription(dAppAddr string, hash, signature []byte) Message {
+func NewSolutionsSubscription(dAppOrSenderAddr string, hash, signature []byte) Message {
 	return &SolutionsSubscription{
-		Header:      Header{},
-		DAppAddress: dAppAddr,
-		Hash:        hash,
-		Signature:   signature,
+		Header:              Header{},
+		DAppOrSenderAddress: dAppOrSenderAddr,
+		Hash:                hash,
+		Signature:           signature,
 	}
 }
 
 // SolutionsSubscription describes solutions subscription bxmessage
 type SolutionsSubscription struct {
 	Header
-	DAppAddress string
-	Hash        []byte
-	Signature   []byte
+	DAppOrSenderAddress string
+	Hash                []byte
+	Signature           []byte
 }
 
 // Pack packs SolutionsSubscription into bytes array
@@ -57,7 +57,7 @@ func (i *SolutionsSubscription) Pack(protocol Protocol) ([]byte, error) {
 	}
 
 	offset += n
-	n, err = packETHAddressHex(buf[offset:], i.DAppAddress)
+	n, err = packETHAddressHex(buf[offset:], i.DAppOrSenderAddress)
 	if err != nil {
 		return nil, fmt.Errorf("pack DAppAddress: %w", err)
 	}
@@ -99,7 +99,7 @@ func (i *SolutionsSubscription) Unpack(buf []byte, protocol Protocol) error {
 	}
 
 	offset += n
-	i.DAppAddress, n, err = unpackETHAddressHex(buf[offset:])
+	i.DAppOrSenderAddress, n, err = unpackETHAddressHex(buf[offset:])
 	if err != nil {
 		return fmt.Errorf("unpack DAppAddress: %w", err)
 	}

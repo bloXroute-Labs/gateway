@@ -124,3 +124,18 @@ func WaitServerStarted(t *testing.T, addr string) {
 		return false
 	})
 }
+
+// WaitServerStopped waits until the server is stopped or fails the test after a second
+func WaitServerStopped(t *testing.T, addr string) {
+	WaitUntilTrueOrFail(t, func() bool {
+		conn, err := net.Dial("tcp", addr)
+		if err == nil {
+			conn.Close()
+			return false
+		}
+		if strings.Contains(err.Error(), "connection refused") {
+			return true
+		}
+		return false
+	})
+}

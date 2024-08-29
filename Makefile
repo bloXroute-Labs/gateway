@@ -18,7 +18,12 @@ M = $(shell printf "\033[34;1m▶\033[0m")
 GOLANGCI_LINT_VERSION=v1.59.0
 
 .PHONY: all
-all: gateway
+all: check-go-mod gateway 
+
+check-go-mod: ; $(info $(M) checking if go.mod and go.sum are up-to-date...)
+	$Q $(GO) mod tidy
+	$Q git diff --quiet --exit-code go.mod go.sum || { echo "go.mod or go.sum is not up-to-date"; exit 1; }
+
 gateway: fmt | $(BIN); $(info $(M) building gateway executable) @ ## Build program binary
 	$Q $(GO) build \
 		-tags release \

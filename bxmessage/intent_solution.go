@@ -21,7 +21,7 @@ func UnpackIntentSolution(b []byte, protocol Protocol) (*IntentSolution, error) 
 // NewIntentSolution constructor for IntentSolution bxmessage
 func NewIntentSolution(id, solverAddr, intentID string, hash, signature []byte, timestamp time.Time, solution []byte) Message {
 	return &IntentSolution{
-		Header:        Header{},
+		Header:        Header{msgType: IntentSolutionType},
 		ID:            id,
 		SolverAddress: solverAddr,
 		IntentID:      intentID,
@@ -42,7 +42,8 @@ type IntentSolution struct {
 	Hash          []byte    // Keccak256
 	Signature     []byte    // ECDSA Signature
 	Timestamp     time.Time // Short timestamp
-	DappAddress   string    // ETH Address
+	DappAddress   string    // ETH Address -> set up by relay
+	SenderAddress string    // ETH Address -> set up by relay
 }
 
 // GetNetworkNum implements BroadcastMessage interface
@@ -109,11 +110,19 @@ func (i *IntentSolution) Pack(protocol Protocol) ([]byte, error) {
 		return nil, fmt.Errorf("pack Timestamp: %w", err)
 	}
 
-	if protocol >= IntentSolutionProtocol {
+	if protocol >= IntentSolutionProtocol { // DappAddress
 		offset += n
 		n, err = packETHAddressHex(buf[offset:], i.DappAddress)
 		if err != nil {
 			return nil, fmt.Errorf("pack DappAddress: %w", err)
+		}
+	}
+
+	if protocol >= SolutionSenderAddressProtocol { // SenderAddress
+		offset += n
+		n, err = packETHAddressHex(buf[offset:], i.SenderAddress)
+		if err != nil {
+			return nil, fmt.Errorf("pack SenderAddress: %w", err)
 		}
 	}
 
@@ -184,11 +193,19 @@ func (i *IntentSolution) Unpack(buf []byte, protocol Protocol) error {
 		return fmt.Errorf("unpack Timestamp: %v", err)
 	}
 
-	if protocol >= IntentSolutionProtocol {
+	if protocol >= IntentSolutionProtocol { // DappAddress
 		offset += n
-		i.DappAddress, _, err = unpackETHAddressHex(buf[offset:])
+		i.DappAddress, n, err = unpackETHAddressHex(buf[offset:])
 		if err != nil {
 			return fmt.Errorf("unpack DappAddress: %v", err)
+		}
+	}
+
+	if protocol >= SolutionSenderAddressProtocol { // SenderAddress
+		offset += n
+		i.SenderAddress, _, err = unpackETHAddressHex(buf[offset:])
+		if err != nil {
+			return fmt.Errorf("unpack SenderAddress: %v", err)
 		}
 	}
 
@@ -212,7 +229,11 @@ func (i *IntentSolution) size(protocol Protocol) (uint32, error) {
 	}
 
 	if protocol >= IntentSolutionProtocol {
-		size += ETHAddressLen
+		size += ETHAddressLen // DappAddress
+	}
+
+	if protocol >= SolutionSenderAddressProtocol {
+		size += ETHAddressLen // SenderAddress
 	}
 
 	return size, nil

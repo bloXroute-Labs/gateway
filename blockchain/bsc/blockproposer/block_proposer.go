@@ -292,11 +292,11 @@ func (b *BlockProposer) prepareProposedBlockReq(ctx context.Context, req *pb.Pro
 
 	b.blockReward.Store(blockReward)
 
-	if b.cfg.TxStore == nil || *b.cfg.TxStore == nil {
+	if b.cfg.TxStore == nil {
 		return nil, errors.New("tx store is not initialized")
 	}
 
-	txStore := *b.cfg.TxStore
+	txStore := b.cfg.TxStore
 
 	unReverted := req.GetUnRevertedHashes()
 	unRevertedHashes := make([]common.Hash, len(unReverted))

@@ -462,7 +462,7 @@ func (c *APIClient) blockHeadEventHandler() func(msg *sse.Event) {
 			}
 		}
 
-		if c.sharedSync.isKnownSlot(data.Slot) {
+		if c.sharedSync.isKnownSlot(data.Slot, true) {
 			c.log.Tracef("skip processing already processed block[slot=%d]", data.Slot)
 			return
 		}
@@ -520,8 +520,9 @@ func (c *APIClient) BroadcastBlock(block *ethpb.SignedBeaconBlockContentsDeneb) 
 	if !c.initialized.Load() {
 		return fmt.Errorf("unknown client version")
 	}
-	blockSlot := block.GetBlock().GetBlock().GetSlot()
-	if c.sharedSync.isKnownSlot(uint64(blockSlot)) {
+
+	blockSlot := uint64(block.GetBlock().GetBlock().GetSlot())
+	if c.sharedSync.isKnownSlot(blockSlot, false) {
 		c.log.Tracef("skip broadcast already processed block[slot=%d]", blockSlot)
 		return nil
 	}

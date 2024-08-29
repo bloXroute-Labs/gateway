@@ -81,7 +81,7 @@ func (b ConnDetails) IsPrivateNetwork() bool { return false }
 
 // IsCustomerGateway indicates whether the connected gateway belongs to a customer
 func IsCustomerGateway(connectionType utils.NodeType, accountID types.AccountID) bool {
-	return connectionType&(utils.ExternalGateway|utils.GatewayGo) != 0 && accountID != types.BloxrouteAccountID
+	return connectionType&utils.ExternalGateway != 0 && accountID != types.BloxrouteAccountID
 }
 
 // IsBloxrouteGateway indicates if the connected gateway belongs to bloxroute

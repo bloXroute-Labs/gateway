@@ -35,13 +35,15 @@ func (a *APISharedSync) resetProcessedBlobIndexes() {
 	a.processedBlobIndexesBitfield = 0
 }
 
-func (a *APISharedSync) isKnownSlot(slot uint64) bool {
+func (a *APISharedSync) isKnownSlot(slot uint64, setSlot bool) bool {
 	a.lastSlotMutex.Lock()
 	defer a.lastSlotMutex.Unlock()
 	if slot <= a.lastSlot {
 		return true
 	}
-	a.lastSlot = slot
+	if setSlot {
+		a.lastSlot = slot
+	}
 	return false
 }
 

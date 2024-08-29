@@ -15,6 +15,7 @@ type UserIntentSolution struct {
 	Hash          []byte
 	Signature     []byte
 	Timestamp     time.Time
+	SenderAddress string
 }
 
 // UserIntentSolutionNotification describes IntentSolution user notification

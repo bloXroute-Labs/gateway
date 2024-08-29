@@ -103,6 +103,7 @@ func (d *Dispatcher) bundleForBuildersJSON(bundle *bxmessage.MEVBundle) ([]byte,
 
 	if bundle.GetNetworkNum() == bxgateway.BSCMainnetNum {
 		params[0].AvoidMixedBundles = bundle.AvoidMixedBundles
+		params[0].RefundRecipient = bundle.IncomingRefundRecipient
 	}
 
 	paramsBytes, err := json.Marshal(params)

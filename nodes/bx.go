@@ -1,7 +1,6 @@
 package nodes
 
 import (
-	"context"
 	"encoding/hex"
 	"fmt"
 	"reflect"
@@ -16,16 +15,16 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/connections/handler"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	pbbase "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 const (
-	pingInterval = 15 * time.Second
+	pingInterval                 = 15 * time.Second
+	connectionStatusConnected    = "connected"
+	connectionStatusNotConnected = "not_connected"
 )
 
 // AccountsFetcher method for getting sdnmessage.Account.
@@ -216,15 +215,17 @@ func (bn *Bx) DisconnectConn(id types.NodeID) {
 }
 
 // Peers provides a list of current peers for the requested type
-func (bn *Bx) Peers(_ context.Context, req *pbbase.PeersRequest) (*pbbase.PeersReply, error) {
+func (bn *Bx) Peers(peerType string) []bxmessage.PeerInfo {
 	var nodeType utils.NodeType = -1 // all types
-	switch req.Type {
+	switch peerType {
 	case "gw", "gateway":
 		nodeType = utils.Gateway
 	case "relay":
 		nodeType = utils.RelayProxy
 	}
-	resp := &pbbase.PeersReply{}
+
+	peers := make([]bxmessage.PeerInfo, 0, len(bn.Connections))
+
 	bn.ConnectionsLock.RLock()
 	defer bn.ConnectionsLock.RUnlock()
 
@@ -244,27 +245,73 @@ func (bn *Bx) Peers(_ context.Context, req *pbbase.PeersRequest) (*pbbase.PeersR
 			}
 		}
 
-		peer := &pbbase.Peer{
-			Ip:         conn.GetPeerIP(),
-			NodeId:     string(conn.GetNodeID()),
+		peer := bxmessage.PeerInfo{
+			IP:         conn.GetPeerIP(),
+			NodeID:     string(conn.GetNodeID()),
 			Protocol:   uint32(conn.Protocol()),
 			Type:       connType,
 			State:      conn.GetConnectionState(),
 			Network:    uint32(conn.GetNetworkNum()),
-			Initiator:  &wrapperspb.BoolValue{Value: conn.IsInitiator()},
-			AccountId:  string(accountID),
+			Initiator:  conn.IsInitiator(),
+			AccountID:  string(accountID),
 			Port:       conn.GetLocalPort(),
-			Disabled:   &wrapperspb.BoolValue{Value: conn.IsDisabled()},
+			Disabled:   conn.IsDisabled(),
 			Capability: uint32(conn.GetCapabilities()),
 			Trusted:    trusted,
 		}
 		if bxConn, ok := conn.(*handler.BxConn); ok {
 			peer.MinUsFromPeer, peer.MinUsToPeer, peer.SlowTrafficCount, peer.MinUsRoundTrip = bxConn.GetMinLatencies()
 		}
-		resp.Peers = append(resp.Peers, peer)
+		peers = append(peers, peer)
 
 	}
-	return resp, nil
+
+	return peers
+}
+
+// Relays provides a list of current relays
+func (bn *Bx) Relays() map[string]bxmessage.RelayConnectionInfo {
+	bn.ConnectionsLock.RLock()
+	defer bn.ConnectionsLock.RUnlock()
+
+	mp := make(map[string]bxmessage.RelayConnectionInfo)
+
+	for _, conn := range bn.Connections {
+		connectionType := conn.GetConnectionType()
+
+		if connectionType&utils.RelayProxy == 0 {
+			continue
+		}
+
+		var connectionLatency *bxmessage.ConnectionLatency
+		if bxConn, ok := conn.(*handler.BxConn); ok {
+			minMsFromPeer, minMsToPeer, slowTrafficCount, minMsRoundTrip := bxConn.GetMinLatencies()
+			connectionLatency = &bxmessage.ConnectionLatency{
+				MinMsFromPeer:    minMsFromPeer,
+				MinMsToPeer:      minMsToPeer,
+				SlowTrafficCount: slowTrafficCount,
+				MinMsRoundTrip:   minMsRoundTrip,
+			}
+		}
+
+		peerIP := conn.GetPeerIP()
+
+		if !conn.IsOpen() {
+			mp[peerIP] = bxmessage.RelayConnectionInfo{
+				Status: connectionStatusNotConnected,
+			}
+
+			continue
+		}
+
+		mp[peerIP] = bxmessage.RelayConnectionInfo{
+			Status:      connectionStatusConnected,
+			ConnectedAt: conn.GetConnectedAt().Format(time.RFC3339),
+			Latency:     connectionLatency,
+		}
+	}
+
+	return mp
 }
 
 // PingLoop send a ping request every pingInterval to gateway, relays, and proxies. Can't use broadcast due to geo constrains
@@ -291,4 +338,42 @@ func (bn *Bx) PingLoop() {
 			log.Tracef("ping message sent to %v connections", count)
 		}
 	}
+}
+
+// Broadcast sends a message to all connections of the specified type
+func (bn *Bx) Broadcast(msg bxmessage.Message, source connections.Conn, to utils.NodeType) types.BroadcastResults {
+	results := types.BroadcastResults{}
+
+	bn.ConnectionsLock.RLock()
+	defer bn.ConnectionsLock.RUnlock()
+
+	for _, conn := range bn.Connections {
+		connectionType := conn.GetConnectionType()
+
+		// if connection type is not in target - skip
+		if connectionType&to == 0 {
+			continue
+		}
+
+		results.RelevantPeers++
+		if !conn.IsOpen() || source != nil && conn.ID() == source.ID() {
+			results.NotOpenPeers++
+			continue
+		}
+
+		err := conn.Send(msg)
+		if err != nil {
+			conn.Log().Errorf("error writing to connection, closing")
+			results.ErrorPeers++
+			continue
+		}
+
+		if connections.IsGateway(connectionType) {
+			results.SentGatewayPeers++
+		}
+
+		results.SentPeers++
+	}
+
+	return results
 }
