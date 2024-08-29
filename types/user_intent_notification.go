@@ -5,6 +5,11 @@ import (
 	"time"
 )
 
+// EmptyFilteredIntentMap is a map of key,value that can be used to filter intents
+var EmptyFilteredIntentMap = map[string]interface{}{
+	"dapp_address": "0x0",
+}
+
 // UserIntent describes user request for submitting intent
 type UserIntent struct {
 	ID            string

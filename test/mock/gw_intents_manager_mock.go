@@ -10,6 +10,7 @@
 package mock
 
 import (
+	context "context"
 	reflect "reflect"
 
 	bxmessage "github.com/bloXroute-Labs/gateway/v2/bxmessage"
@@ -39,6 +40,18 @@ func (m *MockIntentsManager) EXPECT() *MockIntentsManagerMockRecorder {
 	return m.recorder
 }
 
+// AddIntentOfInterest mocks base method.
+func (m *MockIntentsManager) AddIntentOfInterest(intentID string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "AddIntentOfInterest", intentID)
+}
+
+// AddIntentOfInterest indicates an expected call of AddIntentOfInterest.
+func (mr *MockIntentsManagerMockRecorder) AddIntentOfInterest(intentID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddIntentOfInterest", reflect.TypeOf((*MockIntentsManager)(nil).AddIntentOfInterest), intentID)
+}
+
 // AddIntentsSubscription mocks base method.
 func (m *MockIntentsManager) AddIntentsSubscription(solverAddr string, hash, signature []byte) {
 	m.ctrl.T.Helper()
@@ -61,6 +74,42 @@ func (m *MockIntentsManager) AddSolutionsSubscription(dAppAddr string, hash, sig
 func (mr *MockIntentsManagerMockRecorder) AddSolutionsSubscription(dAppAddr, hash, signature any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddSolutionsSubscription", reflect.TypeOf((*MockIntentsManager)(nil).AddSolutionsSubscription), dAppAddr, hash, signature)
+}
+
+// AppendSolutionForIntent mocks base method.
+func (m *MockIntentsManager) AppendSolutionForIntent(solution *bxmessage.IntentSolution) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "AppendSolutionForIntent", solution)
+}
+
+// AppendSolutionForIntent indicates an expected call of AppendSolutionForIntent.
+func (mr *MockIntentsManagerMockRecorder) AppendSolutionForIntent(solution any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AppendSolutionForIntent", reflect.TypeOf((*MockIntentsManager)(nil).AppendSolutionForIntent), solution)
+}
+
+// AppendSolutionsForIntent mocks base method.
+func (m *MockIntentsManager) AppendSolutionsForIntent(solutions *bxmessage.IntentSolutions) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "AppendSolutionsForIntent", solutions)
+}
+
+// AppendSolutionsForIntent indicates an expected call of AppendSolutionsForIntent.
+func (mr *MockIntentsManagerMockRecorder) AppendSolutionsForIntent(solutions any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AppendSolutionsForIntent", reflect.TypeOf((*MockIntentsManager)(nil).AppendSolutionsForIntent), solutions)
+}
+
+// CleanupExpiredSolutions mocks base method.
+func (m *MockIntentsManager) CleanupExpiredSolutions(ctx context.Context) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "CleanupExpiredSolutions", ctx)
+}
+
+// CleanupExpiredSolutions indicates an expected call of CleanupExpiredSolutions.
+func (mr *MockIntentsManagerMockRecorder) CleanupExpiredSolutions(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupExpiredSolutions", reflect.TypeOf((*MockIntentsManager)(nil).CleanupExpiredSolutions), ctx)
 }
 
 // IntentsSubscriptionExists mocks base method.
@@ -99,6 +148,20 @@ func (m *MockIntentsManager) RmSolutionsSubscription(dAppAddr string) {
 func (mr *MockIntentsManagerMockRecorder) RmSolutionsSubscription(dAppAddr any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RmSolutionsSubscription", reflect.TypeOf((*MockIntentsManager)(nil).RmSolutionsSubscription), dAppAddr)
+}
+
+// SolutionsForIntent mocks base method.
+func (m *MockIntentsManager) SolutionsForIntent(intentID string) []bxmessage.IntentSolution {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SolutionsForIntent", intentID)
+	ret0, _ := ret[0].([]bxmessage.IntentSolution)
+	return ret0
+}
+
+// SolutionsForIntent indicates an expected call of SolutionsForIntent.
+func (mr *MockIntentsManagerMockRecorder) SolutionsForIntent(intentID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SolutionsForIntent", reflect.TypeOf((*MockIntentsManager)(nil).SolutionsForIntent), intentID)
 }
 
 // SolutionsSubscriptionExists mocks base method.

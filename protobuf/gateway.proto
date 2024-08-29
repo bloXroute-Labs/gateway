@@ -551,6 +551,7 @@ message IntentsRequest {
   bytes hash = 3; //Keccak256Hash of the solverAddress bytes
   bytes signature = 4; //ECDSA signature
   google.protobuf.Timestamp fromTimestamp = 5;
+  string filters = 6;
 }
 
 message IntentsReply {
@@ -562,9 +563,9 @@ message IntentsReply {
 }
 
 message IntentSolutionsRequest {
-  string dappAddress = 1;
-  bytes hash = 2; //Keccak256Hash of the dappAddress bytes
-  bytes signature = 3; //ECDSA signature of the hash
+  string dappAddress = 1; // dApp or sender address
+  bytes hash = 2; // Keccak256Hash of the dappAddress bytes
+  bytes signature = 3; // ECDSA signature of the hash
 }
 
 message IntentSolutionsReply {

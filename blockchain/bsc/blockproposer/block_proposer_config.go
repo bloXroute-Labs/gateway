@@ -25,7 +25,7 @@ type Config struct {
 	Clock utils.Clock
 
 	// TxStore is a pointer to the TxStore instance managed from the outside.
-	TxStore *services.TxStore
+	TxStore services.TxStore
 
 	// Log is the logger instance.
 	Log *logger.Entry
@@ -52,7 +52,7 @@ func (b *Config) Validate() error {
 		return errClockNotInitialized
 	}
 
-	if b.TxStore == nil || *b.TxStore == nil {
+	if b.TxStore == nil {
 		return errTxStoreNotInitialized
 	}
 

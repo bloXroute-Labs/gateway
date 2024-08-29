@@ -7,6 +7,7 @@ import "github.com/bloXroute-Labs/gateway/v2/types"
 // WSManager provides an interface to manage websocket providers
 type WSManager interface {
 	Synced() bool
+	GetSyncedWSProvider(preferredProviderEndpoint *types.NodeEndpoint) (WSProvider, bool)
 	UpdateNodeSyncStatus(types.NodeEndpoint, NodeSyncStatus)
 	ReceiveNodeSyncStatusUpdate() chan NodeSyncStatus
 	SyncedProvider() (WSProvider, bool)

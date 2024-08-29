@@ -209,7 +209,11 @@ func (b *bloomFilter) newBfPair() (curr, prev *bloom.BloomFilter, counter uint32
 		curr = b.newEmptyBf()
 		log.Infof("BloomFilter bloom file %s does not exist", currentBloomFilePath)
 	case err != nil:
-		return nil, nil, 0, err
+		log.Warnf("BloomFilter file is corrupted: %v", err)
+		if err = os.Remove(currentBloomFilePath); err != nil {
+			return nil, nil, 0, fmt.Errorf("cannot remove bloom filter file: %v", err)
+		}
+		curr = b.newEmptyBf()
 	default:
 		log.Infof("BloomFilter read bloom filter from file %s, bytes %v", currentBloomFilePath, readBytes)
 	}
@@ -220,7 +224,11 @@ func (b *bloomFilter) newBfPair() (curr, prev *bloom.BloomFilter, counter uint32
 		prev = b.newEmptyBf()
 		log.Infof("BloomFilter bloom file %s does not exist", previousBloomFilePath)
 	case err != nil:
-		return nil, nil, 0, err
+		log.Warnf("BloomFilter file is corrupted: %v", err)
+		if err = os.Remove(currentBloomFilePath); err != nil {
+			return nil, nil, 0, fmt.Errorf("cannot remove bloom filter file: %v", err)
+		}
+		curr = b.newEmptyBf()
 	default:
 		log.Infof("BloomFilter read bloom filter from file %s, bytes %v", previousBloomFilePath, readBytes)
 	}

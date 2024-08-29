@@ -10,14 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/rpc"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
-	"google.golang.org/grpc/metadata"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
@@ -31,22 +29,23 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/connections/handler"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
+	"github.com/bloXroute-Labs/gateway/v2/rpc"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/servers"
 	"github.com/bloXroute-Labs/gateway/v2/services"
+	"github.com/bloXroute-Labs/gateway/v2/services/account"
+	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/services/loggers"
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/test/mock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 	"github.com/bloXroute-Labs/gateway/v2/utils/utilmock"
 )
 
 var (
 	networkNum           types.NetworkNum = 5
-	chainID              int64            = network.EthMainnetChainID
 	blockchainIPEndpoint                  = types.NodeEndpoint{IP: "123.45.6.78", Port: 8001}
 	blockchainNetworks                    = sdnmessage.BlockchainNetworks{5: bxmock.MockNetwork(networkNum, "Ethereum", "Mainnet", 0)}
 )
@@ -60,6 +59,7 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 	utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
 	ctl := gomock.NewController(t)
 	sdn := mock.NewMockSDNHTTP(ctl)
+	sdn.EXPECT().NodeID().Return(types.NodeID("node_id")).AnyTimes()
 	sdn.EXPECT().FetchAllBlockchainNetworks().Return(nil).AnyTimes()
 	sdn.EXPECT().FetchCustomerAccountModel(gomock.Any()).Return(sdnmessage.Account{}, nil).AnyTimes()
 	sdn.EXPECT().MinTxAge().Return(time.Millisecond).AnyTimes()
@@ -129,12 +129,11 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 	g.setupTxStore()
 	g.txTrace = loggers.NewTxTrace(nil)
 	g.setSyncWithRelay()
-	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	g.feedManager = feed.NewManager(g.sdn, services.NewNoOpSubscriptionServices(),
+		g.sdn.AccountModel(), g.stats, networkNum, true)
 
-	g.feedManager = servers.NewFeedManager(g.context, g, g.feedManagerChan, nil, services.NewNoOpSubscriptionServices(),
-		networkNum, types.NetworkID(chainID), g.sdn.NodeModel().NodeID,
-		g.wsManager, g.sdn.AccountModel(), nil,
-		"", "", *g.BxConfig, g.stats, nil, nil)
+	go g.feedManager.Start(g.context)
+
 	return bridge, g
 }
 
@@ -186,14 +185,6 @@ func addRelayConn(g *gateway) (*connections.MockTLS, *handler.Relay) {
 	}
 
 	return mockTLS, relayConn
-}
-
-func bxBlockFromEth(b blockchain.Bridge, height uint64, parentHash types.SHA256Hash) *types.BxBlock {
-	ethBlock := bxmock.NewEthBlock(height, common.BytesToHash(parentHash.Bytes()))
-	blockInfo := &eth.BlockInfo{Block: ethBlock}
-	blockInfo.SetTotalDifficulty(big.NewInt(int64(10 * height)))
-	bxBlock, _ := b.BlockBlockchainToBDN(blockInfo)
-	return bxBlock
 }
 
 func processEthTxOnBridge(t *testing.T, bridge blockchain.Bridge, ethTx *ethtypes.Transaction, blockchainPeer types.NodeEndpoint) {
@@ -529,29 +520,6 @@ func TestGateway_HandleTransactionFromRPC_BurstLimitUnpaid(t *testing.T) {
 	})
 }
 
-func mockAccountBurstRateLimit(g *gateway, limit sdnmessage.BDNServiceLimit) *sdnmessage.Account {
-	account := &sdnmessage.Account{
-		AccountInfo: sdnmessage.AccountInfo{
-			AccountID: g.accountID,
-		},
-		UnpaidTransactionBurstLimit: sdnmessage.BDNQuotaService{
-			ExpireDateTime: time.Now().Add(12 * time.Hour),
-			MsgQuota: sdnmessage.BDNService{
-				Limit:             limit,
-				BehaviorLimitFail: sdnmessage.BehaviorBlock,
-			},
-		},
-		PaidTransactionBurstLimit: sdnmessage.BDNQuotaService{
-			ExpireDateTime: time.Now().Add(12 * time.Hour),
-			MsgQuota: sdnmessage.BDNService{
-				Limit:             limit,
-				BehaviorLimitFail: sdnmessage.BehaviorBlock,
-			},
-		},
-	}
-	return account
-}
-
 func TestGateway_HandleBlockConfirmationFromBackend(t *testing.T) {
 	bridge, g := setup(t, 1)
 	mockTLS, _ := addRelayConn(g)
@@ -783,9 +751,12 @@ func TestGateway_HandleBlockFromBlockchain(t *testing.T) {
 	}()
 
 	g.BxConfig.WebsocketEnabled = true
-	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	s1, _ := g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	s2, _ := g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	s3, _ := g.feedManager.Subscribe(types.NewBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	s4, _ := g.feedManager.Subscribe(types.OnBlockFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+
+	feedChan := subscribeAll(s1.FeedChan, s2.FeedChan, s3.FeedChan, s4.FeedChan)
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
 	bxBlock, err := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
@@ -815,7 +786,8 @@ func TestGateway_HandleBlockFromBlockchain(t *testing.T) {
 	// times out, nothing sent (already processed)
 	msgBytes, err = mockTLS.MockAdvanceSent()
 	assert.NotNil(t, err, "unexpected bytes %v", string(msgBytes))
-	expectFeedNotificationCount(t, g.feedManagerChan, 4)
+
+	expectFeedNotificationCount(t, feedChan, 4)
 }
 
 func TestGateway_HandleBlockFromInboundBlockchain(t *testing.T) {
@@ -828,9 +800,11 @@ func TestGateway_HandleBlockFromInboundBlockchain(t *testing.T) {
 	}()
 
 	g.BxConfig.WebsocketEnabled = true
-	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	s1, _ := g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	s2, _ := g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	s3, _ := g.feedManager.Subscribe(types.OnBlockFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+
+	feedChan := subscribeAll(s1.FeedChan, s2.FeedChan, s3.FeedChan)
 
 	blockchainIPEndpoint = types.NodeEndpoint{IP: "127.0.0.1", Port: 8001, Dynamic: true}
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
@@ -861,7 +835,7 @@ func TestGateway_HandleBlockFromInboundBlockchain(t *testing.T) {
 	// times out, nothing sent (already processed)
 	msgBytes, err = mockTLS.MockAdvanceSent()
 	assert.NotNil(t, err, "unexpected bytes %v", string(msgBytes))
-	expectFeedNotificationCount(t, g.feedManagerChan, 3)
+	expectFeedNotificationCount(t, feedChan, 3)
 }
 
 func TestGateway_HandleBlockFromBlockchain_TwoRelays(t *testing.T) {
@@ -1068,114 +1042,108 @@ func TestGateway_HandleBeaconBlockFromRelay(t *testing.T) {
 
 func TestGateway_ValidateHeightBDNBlocksWithNode(t *testing.T) {
 	bridge, g := setup(t, 1)
-	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	s1, _ := g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	s2, _ := g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	s3, _ := g.feedManager.Subscribe(types.OnBlockFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	s4, _ := g.feedManager.Subscribe(types.NewBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+
+	feedManagerChan := subscribeAll(s1.FeedChan, s2.FeedChan, s3.FeedChan, s4.FeedChan)
+
 	g.BxConfig.WebsocketEnabled = true
 
 	// block from node
 	heightFromNode := 10
-	expectFeedNotification(t, bridge, g, false, heightFromNode, heightFromNode, 0)
+	expectFeedNotification(t, bridge, feedManagerChan, g, false, heightFromNode, heightFromNode, 0)
 
 	// skip 1st too far ahead block from BDN
 	tooFarAheadHeight := heightFromNode + bxgateway.BDNBlocksMaxBlocksAway + 1
-	expectNoFeedNotification(t, bridge, g, true, tooFarAheadHeight, heightFromNode, 1)
+	expectNoFeedNotification(t, bridge, feedManagerChan, g, true, tooFarAheadHeight, heightFromNode, 1)
 
 	// skip 2nd too far ahead block from BDN
 	offset := 5
-	expectNoFeedNotification(t, bridge, g, true, tooFarAheadHeight+offset, heightFromNode, 2)
+	expectNoFeedNotification(t, bridge, feedManagerChan, g, true, tooFarAheadHeight+offset, heightFromNode, 2)
 
 	// skip 3rd too far ahead block from BDN
 	offset++
-	expectNoFeedNotification(t, bridge, g, true, tooFarAheadHeight+offset, heightFromNode, 3)
+	expectNoFeedNotification(t, bridge, feedManagerChan, g, true, tooFarAheadHeight+offset, heightFromNode, 3)
 
 	// should publish block from BDN after 3 skipped, clear best height, clear skip count
 	offset++
-	expectFeedNotification(t, bridge, g, true, tooFarAheadHeight+offset, 0, 0)
+	expectFeedNotification(t, bridge, feedManagerChan, g, true, tooFarAheadHeight+offset, 0, 0)
 
 	// block from node - set bestBlockHeight
 	offset++
 	bestBlockHeight := tooFarAheadHeight + offset
-	expectFeedNotification(t, bridge, g, false, tooFarAheadHeight+offset, bestBlockHeight, 0)
+	expectFeedNotification(t, bridge, feedManagerChan, g, false, tooFarAheadHeight+offset, bestBlockHeight, 0)
 
 	// skip 1st too far ahead block from BDN
 	tooFarAheadHeight = tooFarAheadHeight + offset + bxgateway.BDNBlocksMaxBlocksAway + 1
-	expectNoFeedNotification(t, bridge, g, true, tooFarAheadHeight, bestBlockHeight, 1)
+	expectNoFeedNotification(t, bridge, feedManagerChan, g, true, tooFarAheadHeight, bestBlockHeight, 1)
 
 	// skip 2nd too far ahead block from BDN
 	offset = 1
-	expectNoFeedNotification(t, bridge, g, true, tooFarAheadHeight+offset, bestBlockHeight, 2)
+	expectNoFeedNotification(t, bridge, feedManagerChan, g, true, tooFarAheadHeight+offset, bestBlockHeight, 2)
 
 	// skip 3rd too far block from BDN
 	offset++
-	expectNoFeedNotification(t, bridge, g, true, tooFarAheadHeight+offset, bestBlockHeight, 3)
+	expectNoFeedNotification(t, bridge, feedManagerChan, g, true, tooFarAheadHeight+offset, bestBlockHeight, 3)
 
 	// old block from BDN - skip
 	tooOldHeight := bestBlockHeight - bxgateway.BDNBlocksMaxBlocksAway - 1
-	expectNoFeedNotification(t, bridge, g, true, tooOldHeight, bestBlockHeight, 3)
+	expectNoFeedNotification(t, bridge, feedManagerChan, g, true, tooOldHeight, bestBlockHeight, 3)
 
 	// publish 4th too far ahead block, clear best height and skipped block count
 	offset++
-	expectFeedNotification(t, bridge, g, true, tooFarAheadHeight+offset, 0, 0)
+	expectFeedNotification(t, bridge, feedManagerChan, g, true, tooFarAheadHeight+offset, 0, 0)
 
 	// block from node - set bestBlockHeight
-	expectFeedNotification(t, bridge, g, false, bestBlockHeight+1, bestBlockHeight+1, 0)
+	expectFeedNotification(t, bridge, feedManagerChan, g, false, bestBlockHeight+1, bestBlockHeight+1, 0)
 
 	// skip 1st too far ahead block from BDN
 	offset++
-	expectNoFeedNotification(t, bridge, g, true, tooFarAheadHeight+offset, bestBlockHeight+1, 1)
+	expectNoFeedNotification(t, bridge, feedManagerChan, g, true, tooFarAheadHeight+offset, bestBlockHeight+1, 1)
 
 	// block from node - set bestBlockHeight and clear skipped block count
-	expectFeedNotification(t, bridge, g, false, bestBlockHeight+2, bestBlockHeight+2, 0)
-}
-
-func TestGateway_BlockFeedIfSubscribeOnly(t *testing.T) {
-	bridge, g := setup(t, 1)
-	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
-	g.BxConfig.WebsocketEnabled = true
-	g.blockchainPeers = []types.NodeEndpoint{}
-
-	// first block from BDN (no blockchain node)
-	heightFromNode := 0
-	expectNoFeedNotification(t, bridge, g, true, heightFromNode, heightFromNode, 0)
-
-	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	heightFromNode = 10
-	expectFeedNotification(t, bridge, g, true, heightFromNode, heightFromNode, 0)
+	expectFeedNotification(t, bridge, feedManagerChan, g, false, bestBlockHeight+2, bestBlockHeight+2, 0)
 }
 
 func TestGateway_ValidateHeightBDNBlocksWithoutNode(t *testing.T) {
 	bridge, g := setup(t, 1)
-	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	s1, _ := g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	s2, _ := g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	s3, _ := g.feedManager.Subscribe(types.OnBlockFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+
+	feedManagerChan := subscribeAll(s1.FeedChan, s2.FeedChan, s3.FeedChan)
+
 	g.BxConfig.WebsocketEnabled = true
 	g.blockchainPeers = []types.NodeEndpoint{}
 
 	// first block from BDN (no blockchain node)
 	heightFromNode := 10
-	expectFeedNotification(t, bridge, g, true, heightFromNode, heightFromNode, 0)
+	expectFeedNotification(t, bridge, feedManagerChan, g, true, heightFromNode, heightFromNode, 0)
 
 	// skip 1st too far block from BDN
 	tooFarHeight := heightFromNode + bxgateway.BDNBlocksMaxBlocksAway + 1
-	expectNoFeedNotification(t, bridge, g, true, tooFarHeight, heightFromNode, 1)
+	expectNoFeedNotification(t, bridge, feedManagerChan, g, true, tooFarHeight, heightFromNode, 1)
 
 	// skip 2nd too far block from BDN
-	expectNoFeedNotification(t, bridge, g, true, tooFarHeight+5, heightFromNode, 2)
+	expectNoFeedNotification(t, bridge, feedManagerChan, g, true, tooFarHeight+5, heightFromNode, 2)
 
 	// skip 3rd too far block from BDN
-	expectNoFeedNotification(t, bridge, g, true, tooFarHeight+6, heightFromNode, 3)
+	expectNoFeedNotification(t, bridge, feedManagerChan, g, true, tooFarHeight+6, heightFromNode, 3)
 
 	// should publish block from BDN after 3 skipped, reset best height, clear skip count
-	expectFeedNotification(t, bridge, g, true, tooFarHeight+7, tooFarHeight+7, 0)
+	expectFeedNotification(t, bridge, feedManagerChan, g, true, tooFarHeight+7, tooFarHeight+7, 0)
 }
 
 func TestGateway_TestNoTxReceiptsWithoutSubscription(t *testing.T) {
 	// The test checks that there is no TxReceipts feed notification when there is no corresponding subscription
 	bridge, g := setup(t, 1)
-	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
+	s1, _ := g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	s2, _ := g.feedManager.Subscribe(types.OnBlockFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+
+	feedManagerChan := subscribeAll(s1.FeedChan, s2.FeedChan)
+
 	g.BxConfig.WebsocketEnabled = true
 	g.blockchainPeers = []types.NodeEndpoint{}
 
@@ -1195,7 +1163,7 @@ func TestGateway_TestNoTxReceiptsWithoutSubscription(t *testing.T) {
 	// It is neccessary to have FailNow to not wait until timeout when something goes wrong
 	for len(expectedNotifications) > 0 {
 		select {
-		case notification := <-g.feedManagerChan:
+		case notification := <-feedManagerChan:
 			if _, ok := expectedNotifications[notification.NotificationType()]; ok {
 				delete(expectedNotifications, notification.NotificationType())
 				continue
@@ -1205,79 +1173,23 @@ func TestGateway_TestNoTxReceiptsWithoutSubscription(t *testing.T) {
 			assert.FailNowf(t, "did not receive expected feed notifications", fmt.Sprintf("%v", expectedNotifications))
 		}
 	}
-}
-
-func expectNoFeedNotification(t *testing.T, bridge blockchain.Bridge, g *gateway, isBDNBlock bool, blockHeight int, expectedBestBlockHeight int, expectedSkipBlockCount int) {
-	ethBlock := bxmock.NewEthBlock(uint64(blockHeight), common.Hash{})
-	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
-	err := g.publishBlock(bxBlock, nil, nil, !isBDNBlock)
-	assert.NoError(t, err)
-
-	select {
-	case <-g.feedManagerChan:
-		assert.Fail(t, "received unexpected feed notification")
-	default:
-	}
-	assert.Equal(t, expectedBestBlockHeight, g.bestBlockHeight)
-	assert.Equal(t, expectedSkipBlockCount, g.bdnBlocksSkipCount)
-}
-
-func expectFeedNotification(t *testing.T, bridge blockchain.Bridge, g *gateway, isBDNBlock bool, blockHeight int, expectedBestBlockHeight int, expectedSkipBlockCount int) {
-	ethBlock := bxmock.NewEthBlock(uint64(blockHeight), common.Hash{})
-	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
-	err := g.publishBlock(bxBlock, nil, nil, !isBDNBlock)
-	assert.NoError(t, err)
-
-	expectedNotifications := map[types.FeedType]struct{}{
-		types.BDNBlocksFeed:  {},
-		types.TxReceiptsFeed: {},
-		types.OnBlockFeed:    {},
-	}
-
-	if !isBDNBlock {
-		expectedNotifications[types.NewBlocksFeed] = struct{}{}
-	}
-
-	// TxReceipts and OnBlock runs in goroutine
-	ticker := time.NewTicker(3 * time.Second)
-
-	// It is neccessary to have FailNow to not wait until timeout when something goes wrong
-	for len(expectedNotifications) > 0 {
-		select {
-		case notification := <-g.feedManagerChan:
-			if _, ok := expectedNotifications[notification.NotificationType()]; ok {
-				delete(expectedNotifications, notification.NotificationType())
-				continue
-			}
-			assert.FailNowf(t, "not expected feed notification", string(notification.NotificationType()))
-		case <-ticker.C:
-			assert.FailNowf(t, "did not receive expected feed notifications", fmt.Sprintf("%v", expectedNotifications))
-		}
-	}
-
-	assert.Equal(t, expectedBestBlockHeight, g.bestBlockHeight)
-	assert.Equal(t, expectedSkipBlockCount, g.bdnBlocksSkipCount)
-}
-
-func expectFeedNotificationCount(t *testing.T, feedChan chan types.Notification, expCount int) {
-	count := 0
-	func() {
-		for {
-			select {
-			case <-feedChan:
-				count++
-			default:
-				return
-			}
-		}
-	}()
-	assert.Equal(t, expCount, count, "did not receive expected feed notifications, got: %d expected %d", count, expCount)
 }
 
 func TestGateway_Status(t *testing.T) {
 	port := test.NextTestPort()
-	g, bridge, s, _ := spawnGRPCServer(t, port, "", "")
-	defer s.Shutdown()
+	bridge, g := setup(t, 1)
+	g.BxConfig.GRPC.Port = port
+	accService := account.NewService(g.sdn, g.log)
+	g.clientHandler = servers.NewClientHandler(&g.Bx, g.BxConfig, g, g.sdn, accService, g.bridge,
+		g.blockchainPeers, services.NewNoOpSubscriptionServices(), g.wsManager, g.bdnStats,
+		g.timeStarted, g.txsQueue, g.txsOrderQueue, g.gatewayPublicKey, g.feedManager, g.validatorsManager,
+		g.intentsManager, g.stats, g.blockProposer, g.TxStore,
+		false, "", "",
+	)
+
+	go g.clientHandler.ManageServers(context.Background(), g.BxConfig.ManageWSServer)
+	defer g.clientHandler.Stop()
+
 	mockTLS, relayConn := addRelayConn(g)
 
 	go func() {
@@ -1441,59 +1353,6 @@ func createPeerData(timeNodeConnected string) ([]*types.NodeEndpoint, map[string
 	return endpoints, stats
 }
 
-// Mocking the context metadata for testing.
-func createMockContextWithMetadata(accountIDHeaderVal string) context.Context {
-	md := metadata.Pairs(types.OriginalSenderAccountIDHeaderKey, accountIDHeaderVal)
-	return metadata.NewIncomingContext(context.Background(), md)
-}
-
-func TestRetrieveOriginalSenderAccountID_BloxrouteAccountID(t *testing.T) {
-	accountModel := &sdnmessage.Account{
-		AccountInfo: sdnmessage.AccountInfo{
-			AccountID: types.AccountID(types.BloxrouteAccountID),
-		},
-	}
-	ctx := createMockContextWithMetadata(testGatewayAccountID)
-
-	accountID, err := retrieveOriginalSenderAccountID(ctx, accountModel)
-
-	require.Nil(t, err)
-
-	expectedAccountID := types.AccountID(testGatewayAccountID)
-
-	require.Equal(t, expectedAccountID, *accountID)
-}
-
-func TestRetrieveOriginalSenderAccountID_NonBloxrouteAccountID(t *testing.T) {
-	accountModel := &sdnmessage.Account{
-		AccountInfo: sdnmessage.AccountInfo{
-			AccountID: types.AccountID(testGatewayAccountID),
-		},
-	}
-	ctx := createMockContextWithMetadata(testDifferentAccountID)
-
-	accountID, err := retrieveOriginalSenderAccountID(ctx, accountModel)
-
-	require.Nil(t, err)
-
-	expectedAccountID := types.AccountID(testGatewayAccountID)
-
-	require.Equal(t, expectedAccountID, *accountID)
-}
-
-func TestRetrieveOriginalSenderAccountID_NoMetadata(t *testing.T) {
-	accountModel := &sdnmessage.Account{
-		AccountInfo: sdnmessage.AccountInfo{
-			AccountID: types.BloxrouteAccountID,
-		},
-	}
-	ctx := context.Background()
-
-	_, err := retrieveOriginalSenderAccountID(ctx, accountModel)
-
-	require.NotNil(t, err)
-}
-
 func TestGateway_SendStatsOnInterval(t *testing.T) {
 	_, g := setup(t, 1)
 	done := make(chan bool)
@@ -1510,179 +1369,113 @@ func TestGateway_SendStatsOnInterval(t *testing.T) {
 	}
 }
 
-func TestGateway_Authorize(t *testing.T) {
-	type fields struct {
-		accountFetcher  func(accountID types.AccountID) (*accountResult, error)
-		sdnAccountModel sdnmessage.Account
+func expectNoFeedNotification(t *testing.T, bridge blockchain.Bridge, feedsChan <-chan types.Notification, g *gateway, isBDNBlock bool, blockHeight int, expectedBestBlockHeight int, expectedSkipBlockCount int) {
+	ethBlock := bxmock.NewEthBlock(uint64(blockHeight), common.Hash{})
+	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
+	err := g.publishBlock(bxBlock, nil, nil, !isBDNBlock)
+	assert.NoError(t, err)
+
+	select {
+	case <-feedsChan:
+		assert.Fail(t, "received unexpected feed notification")
+	default:
 	}
-	type args struct {
-		accountID                    types.AccountID
-		secretHash                   string
-		allowAccessToInternalGateway bool
-		allowIntroductoryTierAccess  bool
-	}
-	sdnAccountModelEnterprise := sdnmessage.Account{
-		AccountInfo: sdnmessage.AccountInfo{
-			AccountID: testGatewayAccountID,
-			TierName:  sdnmessage.ATierEnterprise,
-		},
-		SecretHash: testGatewaySecretHash,
-	}
-	sdnAccountModelProfessional := sdnmessage.Account{
-		AccountInfo: sdnmessage.AccountInfo{
-			AccountID: testGatewayAccountID,
-			TierName:  sdnmessage.ATierProfessional,
-		},
-		SecretHash: testGatewaySecretHash,
+	assert.Equal(t, expectedBestBlockHeight, g.bestBlockHeight)
+	assert.Equal(t, expectedSkipBlockCount, g.bdnBlocksSkipCount)
+}
+
+func expectFeedNotification(t *testing.T, bridge blockchain.Bridge, feedsChan <-chan types.Notification, g *gateway, isBDNBlock bool, blockHeight int, expectedBestBlockHeight int, expectedSkipBlockCount int) {
+	ethBlock := bxmock.NewEthBlock(uint64(blockHeight), common.Hash{})
+	bxBlock, _ := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
+	err := g.publishBlock(bxBlock, nil, nil, !isBDNBlock)
+	assert.NoError(t, err)
+
+	expectedNotifications := map[types.FeedType]struct{}{
+		types.BDNBlocksFeed:  {},
+		types.TxReceiptsFeed: {},
+		types.OnBlockFeed:    {},
 	}
 
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		wantErr error
-	}{
-		{
-			name: "success with same accountID and secret hash",
-			fields: fields{
-				sdnAccountModel: sdnAccountModelEnterprise,
-			},
-			args: args{
-				accountID:                    testGatewayAccountID,
-				secretHash:                   testGatewaySecretHash,
-				allowAccessToInternalGateway: false,
-				allowIntroductoryTierAccess:  false,
-			},
-			wantErr: nil,
-		},
-		{
-			name: "invalid secret hash error",
-			fields: fields{
-				sdnAccountModel: sdnAccountModelEnterprise,
-			},
-			args: args{
-				accountID:                    testGatewayAccountID,
-				secretHash:                   testGatewaySecretHash + "1",
-				allowAccessToInternalGateway: false,
-				allowIntroductoryTierAccess:  false,
-			},
-			wantErr: errInvalidHeader,
-		},
-		{
-			name: "success with same accountID and empty secret hash",
-			fields: fields{
-				accountFetcher:  nil,
-				sdnAccountModel: sdnAccountModelEnterprise,
-			},
-			args: args{
-				accountID:                    testGatewayAccountID,
-				secretHash:                   "",
-				allowAccessToInternalGateway: false,
-				allowIntroductoryTierAccess:  false,
-			},
-			wantErr: nil,
-		},
-		{
-			name: "deny access to internal gateway",
-			fields: fields{
-				accountFetcher:  nil,
-				sdnAccountModel: sdnAccountModelEnterprise,
-			},
-			args: args{
-				accountID:                    testDifferentAccountID,
-				secretHash:                   "",
-				allowAccessToInternalGateway: false,
-				allowIntroductoryTierAccess:  false,
-			},
-			wantErr: errMethodNotAllowed,
-		},
-		{
-			name: "account manager not authorized error",
-			fields: fields{
-				sdnAccountModel: sdnAccountModelEnterprise,
-				accountFetcher: func(accountID types.AccountID) (*accountResult, error) {
-					return &accountResult{
-						notAuthorizedErr: fmt.Errorf("not authorized"),
-					}, nil
-				},
-			},
-			args: args{
-				accountID:                    testDifferentAccountID,
-				secretHash:                   "",
-				allowAccessToInternalGateway: true,
-				allowIntroductoryTierAccess:  false,
-			},
-			wantErr: fmt.Errorf("not authorized"),
-		},
-		{
-			name: "success with enterprise account",
-			fields: fields{
-				sdnAccountModel: sdnAccountModelEnterprise,
-				accountFetcher: func(accountID types.AccountID) (*accountResult, error) {
-					return &accountResult{account: sdnAccountModelEnterprise}, nil
-				},
-			},
-			args: args{
-				accountID:                    testDifferentAccountID,
-				secretHash:                   "",
-				allowAccessToInternalGateway: true,
-				allowIntroductoryTierAccess:  false,
-			},
-			wantErr: nil,
-		},
-		{
-			name: "tier to low error",
-			fields: fields{
-				sdnAccountModel: sdnAccountModelEnterprise,
-				accountFetcher: func(accountID types.AccountID) (*accountResult, error) {
-					return &accountResult{account: sdnAccountModelProfessional}, nil
-				},
-			},
-			args: args{
-				accountID:                    testDifferentAccountID,
-				secretHash:                   "",
-				allowAccessToInternalGateway: true,
-				allowIntroductoryTierAccess:  false,
-			},
-			wantErr: errTierTooLow,
-		},
-		{
-			name: "success with introductory tier access enabled",
-			fields: fields{
-				sdnAccountModel: sdnAccountModelEnterprise,
-				accountFetcher: func(accountID types.AccountID) (*accountResult, error) {
-					return &accountResult{account: sdnAccountModelProfessional}, nil
-				},
-			},
-			args: args{
-				accountID:                    testDifferentAccountID,
-				secretHash:                   "",
-				allowAccessToInternalGateway: true,
-				allowIntroductoryTierAccess:  true,
-			},
-			wantErr: nil,
-		},
+	if !isBDNBlock {
+		expectedNotifications[types.NewBlocksFeed] = struct{}{}
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctl := gomock.NewController(t)
-			mockedSdn := mock.NewMockSDNHTTP(ctl)
+	// TxReceipts and OnBlock runs in goroutine
+	ticker := time.NewTicker(3 * time.Second)
 
-			g := &gateway{
-				accountsCacheManager: utils.NewCache[types.AccountID, accountResult](syncmap.AccountIDHasher, tt.fields.accountFetcher, accountsCacheManagerExpDur, accountsCacheManagerCleanDur),
-				log:                  log.Discard(),
-				sdn:                  mockedSdn,
+	// it is necessary to have FailNow to not wait until timeout when something goes wrong
+	for len(expectedNotifications) > 0 {
+		select {
+		case notification := <-feedsChan:
+			if _, ok := expectedNotifications[notification.NotificationType()]; ok {
+				delete(expectedNotifications, notification.NotificationType())
+				continue
 			}
+			assert.FailNowf(t, "not expected feed notification", string(notification.NotificationType()))
+		case <-ticker.C:
+			assert.FailNowf(t, "did not receive expected feed notifications", fmt.Sprintf("%v", expectedNotifications))
+		}
+	}
 
-			mockedSdn.EXPECT().AccountModel().Return(tt.fields.sdnAccountModel).AnyTimes()
+	assert.Equal(t, expectedBestBlockHeight, g.bestBlockHeight)
+	assert.Equal(t, expectedSkipBlockCount, g.bdnBlocksSkipCount)
+}
 
-			_, err := g.authorize(tt.args.accountID, tt.args.secretHash, tt.args.allowAccessToInternalGateway, tt.args.allowIntroductoryTierAccess, "")
-			if tt.wantErr != nil {
-				assert.Equal(t, tt.wantErr, err)
+func expectFeedNotificationCount(t *testing.T, feedChan <-chan types.Notification, expCount int) {
+	count := 0
+	func() {
+		for {
+			select {
+			case <-feedChan:
+				count++
+			default:
 				return
 			}
-			assert.NoError(t, err)
-		})
+		}
+	}()
+	assert.Equal(t, expCount, count, "did not receive expected feed notifications, got: %d expected %d", count, expCount)
+}
+
+func mockAccountBurstRateLimit(g *gateway, limit sdnmessage.BDNServiceLimit) *sdnmessage.Account {
+	return &sdnmessage.Account{
+		AccountInfo: sdnmessage.AccountInfo{
+			AccountID: g.accountID,
+		},
+		UnpaidTransactionBurstLimit: sdnmessage.BDNQuotaService{
+			ExpireDateTime: time.Now().Add(12 * time.Hour),
+			MsgQuota: sdnmessage.BDNService{
+				Limit:             limit,
+				BehaviorLimitFail: sdnmessage.BehaviorBlock,
+			},
+		},
+		PaidTransactionBurstLimit: sdnmessage.BDNQuotaService{
+			ExpireDateTime: time.Now().Add(12 * time.Hour),
+			MsgQuota: sdnmessage.BDNService{
+				Limit:             limit,
+				BehaviorLimitFail: sdnmessage.BehaviorBlock,
+			},
+		},
 	}
 }
+
+func subscribeAll(cs ...<-chan types.Notification) <-chan types.Notification {
+	out := make(chan types.Notification)
+	var wg sync.WaitGroup
+	wg.Add(len(cs))
+	for _, c := range cs {
+		go func(c <-chan types.Notification) {
+			for v := range c {
+				out <- v
+			}
+			wg.Done()
+		}(c)
+	}
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	return out
+}
+
+func ipport(ip string, port int) string { return fmt.Sprintf("%s:%d", ip, port) }

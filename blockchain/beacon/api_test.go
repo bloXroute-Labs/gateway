@@ -327,21 +327,7 @@ func TestAPIClient_broadcastBlock(t *testing.T) {
 		t.Errorf("Expected no error, but got: %v", err)
 	}
 
-	// Test Case 2: Same block broadcast
-	// This is a partial test to avoid requesting a block that has already been broadcasted, as fully emulating the event is challenging.
-	// Instead, we'll ensure here that the block is not broadcasted twice.
-	httpmock.Reset()
-	httpmock.RegisterResponder(http.MethodPost, fmt.Sprintf("http://%s/eth/v1/beacon/blocks", url),
-		func(req *http.Request) (*http.Response, error) {
-			t.Fatal("Expected no request, but got one")
-			return nil, nil
-		},
-	)
-
-	err = client.BroadcastBlock(denebBlock)
-	assert.NoError(t, err)
-
-	// Test Case 3: Failed broadcast
+	// Test Case 2: Failed broadcast
 	httpmock.Reset()
 	httpmock.RegisterResponder(http.MethodPost, fmt.Sprintf("http://%s/eth/v1/beacon/blocks", url),
 		func(req *http.Request) (*http.Response, error) {

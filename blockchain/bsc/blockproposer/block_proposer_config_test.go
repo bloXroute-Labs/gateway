@@ -66,7 +66,7 @@ func validConfig() *Config {
 	sendingConfig.Enabled = true
 	return &Config{
 		Clock:          new(mockClock),
-		TxStore:        func() *services.TxStore { var s services.TxStore = new(mockTxStore); return &s }(),
+		TxStore:        func() services.TxStore { var s services.TxStore = new(mockTxStore); return s }(),
 		Log:            logger.Discard(),
 		CallerManager:  new(mockCallerManager),
 		SendingInfo:    sendingConfig,

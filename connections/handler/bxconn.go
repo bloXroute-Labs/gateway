@@ -361,6 +361,14 @@ func (b *BxConn) ProcessMessage(msgBytes bxmessage.MessageBytes) {
 		}
 
 		_ = b.Node.HandleMsg(solution, b, connections.RunBackground) //nolint:errcheck
+	case bxmessage.IntentSolutionsType:
+		solutions, err := bxmessage.UnpackIntentSolutions(msg, b.Protocol())
+		if err != nil {
+			b.Log().Warnf("failed to unpack intent solutions message: %v", err)
+			return
+		}
+
+		_ = b.Node.HandleMsg(solutions, b, connections.RunForeground) //nolint:errcheck
 	case bxmessage.BeaconMessageType:
 		beaconMessage := &bxmessage.BeaconMessage{}
 		if err := beaconMessage.Unpack(msg, b.Protocol()); err != nil {
@@ -519,12 +527,12 @@ func (b *BxConn) read(ctx context.Context, isInitiator bool) bool {
 }
 
 // IsBloxroute detect if the peer belongs to bloxroute
-func (b BxConn) IsBloxroute() bool {
+func (b *BxConn) IsBloxroute() bool {
 	return b.accountID == types.BloxrouteAccountID
 }
 
 // String represents a string conversion of this connection
-func (b BxConn) String() string {
+func (b *BxConn) String() string {
 	return b.stringRepresentation
 }
 
@@ -536,6 +544,6 @@ func (b *BxConn) closeWithRetry(reason string) error {
 }
 
 // GetMinLatencies exposes the best latencies in ms form and to peer
-func (b BxConn) GetMinLatencies() (int64, int64, int64, int64) {
+func (b *BxConn) GetMinLatencies() (int64, int64, int64, int64) {
 	return b.minFromRelay, b.minToRelay, b.slowCount, b.minRoundTrip
 }

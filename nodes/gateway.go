@@ -13,24 +13,11 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/cenkalti/backoff/v4"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/sourcegraph/jsonrpc2"
-	"go.uber.org/atomic"
-	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc/metadata"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
@@ -49,18 +36,31 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/connections/handler"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	bxrpc "github.com/bloXroute-Labs/gateway/v2/rpc"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/servers"
+	handler2 "github.com/bloXroute-Labs/gateway/v2/servers/handler"
 	"github.com/bloXroute-Labs/gateway/v2/services"
+	"github.com/bloXroute-Labs/gateway/v2/services/account"
+	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/services/loggers"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
+	"github.com/bloXroute-Labs/gateway/v2/services/validator"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/bundle"
 	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
 	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 	"github.com/bloXroute-Labs/gateway/v2/version"
+	"github.com/cenkalti/backoff/v4"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/pkg/errors"
+	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
+	"github.com/sourcegraph/jsonrpc2"
+	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -72,51 +72,39 @@ const (
 
 	bloomStoreInterval = time.Hour
 
-	accountsCacheManagerExpDur   = 5 * time.Minute
-	accountsCacheManagerCleanDur = 30 * time.Minute
-
 	bscBlocksPerEpoch = 200
 )
 
 var (
 	errUnsupportedBlockType = errors.New("block type is not supported")
-	errMethodNotAllowed     = errors.New("not authorized to call this method")
-	errTierTooLow           = errors.New("account must be enterprise / enterprise elite / ultra")
-	errInvalidHeader        = errors.New("wrong value in the authorization header")
 )
-
-type accountResult struct {
-	account          sdnmessage.Account
-	notAuthorizedErr error
-}
 
 type gateway struct {
 	Bx
 	context context.Context
 
-	sslCerts             *utils.SSLCerts
-	sdn                  connections.SDNHTTP
-	accountID            types.AccountID
-	bridge               blockchain.Bridge
-	feedManager          *servers.FeedManager
-	feedManagerChan      chan types.Notification
-	feedManagerErrorChan chan servers.ErrorNotification
-	asyncMsgChannel      chan services.MsgInfo
-	bdnStats             *bxmessage.BdnPerformanceStats
-	blockProcessor       services.BlockProcessor
-	blobProcessor        services.BlobProcessor
-	pendingTxs           services.HashHistory
-	possiblePendingTxs   services.HashHistory
-	txTrace              loggers.TxTrace
-	blockchainPeers      []types.NodeEndpoint
-	stats                statistics.Stats
-	bdnBlocks            services.HashHistory
-	newBlocks            services.HashHistory
-	wsManager            blockchain.WSManager
-	syncedWithRelay      atomic.Bool
-	clock                utils.Clock
-	timeStarted          time.Time
-	burstLimiter         services.AccountBurstLimiter
+	sslCerts           *utils.SSLCerts
+	sdn                connections.SDNHTTP
+	accountID          types.AccountID
+	bridge             blockchain.Bridge
+	feedManager        *feed.Manager
+	validatorsManager  *validator.Manager
+	asyncMsgChannel    chan services.MsgInfo
+	bdnStats           *bxmessage.BdnPerformanceStats
+	blockProcessor     services.BlockProcessor
+	blobProcessor      services.BlobProcessor
+	pendingTxs         services.HashHistory
+	possiblePendingTxs services.HashHistory
+	txTrace            loggers.TxTrace
+	blockchainPeers    []types.NodeEndpoint
+	stats              statistics.Stats
+	bdnBlocks          services.HashHistory
+	newBlocks          services.HashHistory
+	wsManager          blockchain.WSManager
+	syncedWithRelay    atomic.Bool
+	clock              utils.Clock
+	timeStarted        time.Time
+	burstLimiter       services.AccountBurstLimiter
 
 	bestBlockHeight       int
 	bdnBlocksSkipCount    int
@@ -159,9 +147,8 @@ type gateway struct {
 	log           *log.Entry
 	chainID       int64
 
-	accountsCacheManager *utils.Cache[types.AccountID, accountResult]
-	intentsManager       services.IntentsManager
-	blobsManager         *beacon.BlobSidecarCacheManager
+	intentsManager services.IntentsManager
+	blobsManager   *beacon.BlobSidecarCacheManager
 }
 
 // GeneratePeers generate string peers separated by comma
@@ -240,7 +227,7 @@ func NewGateway(parent context.Context,
 	}
 	g.chainID = int64(bxgateway.NetworkNumToChainID[sdn.NetworkNum()])
 
-	g.blockProposer = bsc.NewNoopBlockProposer(&g.TxStore, log.WithField("service", "noop-block-proposer"))
+	g.blockProposer = bsc.NewNoopBlockProposer(g.TxStore, log.WithField("service", "noop-block-proposer"))
 
 	if polygonHeimdallEndpoints != "" {
 		g.polygonValidatorInfoManager = bor.NewSprintManager(parent, &g.wsManager, bor.NewHeimdallSpanner(parent, polygonHeimdallEndpoints))
@@ -255,7 +242,6 @@ func NewGateway(parent context.Context,
 
 	if bxConfig.BlockchainNetwork == bxgateway.BSCMainnet || bxConfig.BlockchainNetwork == bxgateway.BSCTestnet {
 		g.validatorListMap = syncmap.NewIntegerMapOf[uint64, []string]()
-		g.validatorListReady = false
 		g.bscTxClient = &http.Client{
 			Transport: &http.Transport{
 				MaxConnsPerHost:     100,
@@ -302,7 +288,7 @@ func NewGateway(parent context.Context,
 
 			g.blockProposer = blockproposer.New(&blockproposer.Config{
 				Clock:          g.clock,
-				TxStore:        &g.TxStore,
+				TxStore:        g.TxStore,
 				Log:            blockProposerLog,
 				CallerManager:  rpc.NewManager(), /* TODO: (mk) ensure that caller manager has keep-alive */
 				SendingInfo:    blockProposerSendingConfig,
@@ -315,6 +301,10 @@ func NewGateway(parent context.Context,
 		}(); err != nil {
 			return nil, err
 		}
+	}
+
+	if g.validatorStatusMap != nil {
+		g.validatorsManager = validator.NewManager(g.nextValidatorMap, g.validatorStatusMap, g.validatorListMap)
 	}
 
 	g.asyncMsgChannel = services.NewAsyncMsgChannel(g)
@@ -356,39 +346,7 @@ func NewGateway(parent context.Context,
 		g.bloomFilter = services.NoOpBloomFilter{}
 	}
 
-	g.accountsCacheManager = utils.NewCache[types.AccountID, accountResult](syncmap.AccountIDHasher, g.accountFetcher, accountsCacheManagerExpDur, accountsCacheManagerCleanDur)
-
 	return g, nil
-}
-
-func (g *gateway) accountFetcher(accountID types.AccountID) (*accountResult, error) {
-	account, err := g.sdn.FetchCustomerAccountModel(accountID)
-	if err != nil {
-		if strings.Contains(err.Error(), strconv.FormatInt(http.StatusUnauthorized, 10)) {
-			return &accountResult{
-				notAuthorizedErr: fmt.Errorf("account %v is not authorized to get other account %v information", g.sdn.AccountModel().AccountID, accountID),
-			}, nil
-		}
-
-		if strings.Contains(err.Error(), strconv.FormatInt(http.StatusNotFound, 10)) {
-			return &accountResult{
-				notAuthorizedErr: fmt.Errorf("account %v is not found", accountID),
-			}, nil
-		}
-
-		if strings.Contains(err.Error(), strconv.FormatInt(http.StatusBadRequest, 10)) {
-			return &accountResult{
-				notAuthorizedErr: fmt.Errorf("bad request for %v", accountID),
-			}, nil
-		}
-
-		// other errors
-		return nil, err
-	}
-
-	return &accountResult{
-		account: account,
-	}, nil
 }
 
 func (g *gateway) msgAdapter(msg bxmessage.Message, source connections.Conn, waitingDuration time.Duration, workerChannelPosition int) {
@@ -562,18 +520,18 @@ func (g *gateway) Run() error {
 	go g.TxStore.Start()
 
 	sslCert := g.sslCerts
-	g.feedManagerChan = make(chan types.Notification, bxgateway.BxNotificationChannelSize)
-	g.feedManagerErrorChan = make(chan servers.ErrorNotification, bxgateway.BxErrorNotificationChannelSize)
 
 	blockchainNetwork, err := g.sdn.FindNetwork(networkNum)
 	if err != nil {
 		return fmt.Errorf("failed to find the blockchainNetwork with networkNum %v, %v", networkNum, err)
 	}
 
-	g.feedManager = servers.NewFeedManager(g.context, g, g.feedManagerChan, g.feedManagerErrorChan, services.NewNoOpSubscriptionServices(), networkNum,
-		blockchainNetwork.DefaultAttributes.NetworkID, g.sdn.NodeModel().NodeID,
-		g.wsManager, accountModel, g.sdn.FetchCustomerAccountModel,
-		sslCert.PrivateCertFile(), sslCert.PrivateKeyFile(), *g.BxConfig, g.stats, g.nextValidatorMap, g.validatorStatusMap,
+	g.feedManager = feed.NewManager(g.sdn,
+		services.NewNoOpSubscriptionServices(),
+		accountModel,
+		g.stats,
+		g.sdn.NetworkNum(),
+		g.BxConfig.WebsocketEnabled || g.BxConfig.WebsocketTLSEnabled || g.BxConfig.GRPC.Enabled,
 	)
 
 	txFromFieldIncludable := blockchainNetwork.EnableCheckSenderNonce || g.txIncludeSenderInFeed
@@ -584,27 +542,23 @@ func (g *gateway) Run() error {
 			return g.feedManager.Start(ctx)
 		})
 	}
-	var grpcServer *servers.GRPCServer
-	var websocketServer *http.Server
 
-	if g.BxConfig.GRPC.Enabled {
-		gatewayGrpc := NewGatewayGrpc(&g.Bx, GatewayGrpcParams{
-			sdn: g.sdn, authorize: g.authorize, bridge: g.bridge, blockchainPeers: g.blockchainPeers, wsManager: g.wsManager, bdnStats: g.bdnStats,
-			timeStarted: g.timeStarted, txsQueue: g.txsQueue, txsOrderQueue: g.txsOrderQueue, gatewayPublicKey: g.gatewayPublicKey, feedManager: g.feedManager, txFromFieldIncludable: txFromFieldIncludable,
-			blockProposer:   g.blockProposer,
-			feedManagerChan: g.feedManagerChan, intentsManager: g.intentsManager, grpcFeedManager: g.feedManager,
-			allowIntroductoryTierAccess: g.Bx.BxConfig.AllowIntroductoryTierAccess,
-		})
-		grpcServer = servers.NewGRPCServer(g.BxConfig.Host, g.BxConfig.Port, g.BxConfig.User, g.BxConfig.Password, g.stats, g.accountID, gatewayGrpc)
-	}
-	if g.BxConfig.WebsocketEnabled || g.BxConfig.WebsocketTLSEnabled {
-		websocketServer = servers.NewWSServer(g.feedManager, g.intentsManager, g.sdn.GetQuotaUsage, g.BxConfig.EnableBlockchainRPC, &g.BxConfig.PendingTxsSourceFromNode, g.authorize, txFromFieldIncludable, g.Bx.BxConfig.AllowIntroductoryTierAccess)
-	}
-	g.clientHandler = servers.NewClientHandler(g.feedManager, g.intentsManager, websocketServer, servers.NewHTTPServer(g.feedManager, g.BxConfig.HTTPPort), grpcServer, g.BxConfig.EnableBlockchainRPC, g.sdn.GetQuotaUsage,
-		&g.BxConfig.PendingTxsSourceFromNode, g.authorize, txFromFieldIncludable, g.Bx.BxConfig.AllowIntroductoryTierAccess)
+	accService := account.NewService(g.sdn, g.log)
+
+	g.clientHandler = servers.NewClientHandler(&g.Bx, g.BxConfig, g, g.sdn, accService, g.bridge,
+		g.blockchainPeers, services.NewNoOpSubscriptionServices(), g.wsManager, g.bdnStats,
+		g.timeStarted, g.txsQueue, g.txsOrderQueue, g.gatewayPublicKey, g.feedManager, g.validatorsManager,
+		g.intentsManager, g.stats, g.blockProposer, g.TxStore,
+		txFromFieldIncludable, sslCert.PrivateCertFile(), sslCert.PrivateKeyFile(),
+	)
 
 	group.Go(func() error {
 		return g.clientHandler.ManageServers(ctx, g.BxConfig.ManageWSServer)
+	})
+
+	group.Go(func() error {
+		g.intentsManager.CleanupExpiredSolutions(ctx)
+		return nil
 	})
 
 	go g.PingLoop()
@@ -679,39 +633,7 @@ func (g *gateway) connectRelay(instruction connections.RelayInstruction, sslCert
 }
 
 func (g *gateway) broadcast(msg bxmessage.Message, source connections.Conn, to utils.NodeType) types.BroadcastResults {
-	results := types.BroadcastResults{}
-
-	g.ConnectionsLock.RLock()
-	for _, conn := range g.Connections {
-		connectionType := conn.GetConnectionType()
-
-		// if connection type is not in target - skip
-		if connectionType&to == 0 {
-			continue
-		}
-
-		results.RelevantPeers++
-		if !conn.IsOpen() || source != nil && conn.ID() == source.ID() {
-			results.NotOpenPeers++
-			continue
-		}
-
-		err := conn.Send(msg)
-		if err != nil {
-			conn.Log().Errorf("error writing to connection, closing")
-			results.ErrorPeers++
-			continue
-		}
-
-		if connections.IsGateway(connectionType) {
-			results.SentGatewayPeers++
-		}
-
-		results.SentPeers++
-	}
-	g.ConnectionsLock.RUnlock()
-
-	return results
+	return g.Broadcast(msg, source, to)
 }
 
 func (g *gateway) pushBlockchainConfig() error {
@@ -806,7 +728,7 @@ func (g *gateway) cleanUpNextValidatorMap(currentHeight uint64) {
 func (g *gateway) generateBSCValidator(blockHeight uint64) []*types.FutureValidatorInfo {
 	vi := blockchain.DefaultValidatorInfo(blockHeight)
 
-	if g.validatorListMap == nil || g.validatorStatusMap == nil || g.nextValidatorMap == nil {
+	if g.validatorsManager == nil {
 		return vi
 	}
 
@@ -871,10 +793,10 @@ func (g *gateway) generateBSCValidator(blockHeight uint64) []*types.FutureValida
 
 func (g *gateway) reevaluatePendingBSCNextValidatorTx() {
 	now := time.Now()
-	g.feedManager.LockPendingNextValidatorTxs()
-	defer g.feedManager.UnlockPendingNextValidatorTxs()
+	g.validatorsManager.Lock()
+	defer g.validatorsManager.Unlock()
 
-	pendingNextValidatorTxsMap := g.feedManager.GetPendingNextValidatorTxs()
+	pendingNextValidatorTxsMap := g.validatorsManager.GetPendingNextValidatorTxs()
 	for txHash, txInfo := range pendingNextValidatorTxsMap {
 		fallback := time.Duration(uint64(txInfo.Fallback) * bxgateway.MillisecondsToNanosecondsMultiplier)
 		// if fallback time is not reached or if fallback is 0 meaning we don't have fallback deadline
@@ -882,7 +804,7 @@ func (g *gateway) reevaluatePendingBSCNextValidatorTx() {
 			timeSinceRequest := now.Sub(txInfo.TimeOfRequest)
 			adjustedFallback := fallback - timeSinceRequest
 
-			firstValidatorInaccessible, err := servers.ProcessNextValidatorTx(txInfo.Tx, uint16(adjustedFallback.Milliseconds()), g.nextValidatorMap, g.validatorStatusMap, txInfo.Tx.GetNetworkNum(), txInfo.Source, pendingNextValidatorTxsMap)
+			firstValidatorInaccessible, err := g.validatorsManager.ProcessNextValidatorTx(txInfo.Tx, uint16(adjustedFallback.Milliseconds()), txInfo.Tx.GetNetworkNum(), txInfo.Source)
 			delete(pendingNextValidatorTxsMap, txHash)
 			l := g.log.WithFields(log.Fields{"txHash": txHash})
 
@@ -1161,8 +1083,8 @@ func (g *gateway) notifyTxReceiptsAndOnBlockFeeds(nodeSource *connections.Blockc
 	wsProvider, err := g.wsManager.ProviderWithBlock(nodeEndpoint, ethNotification.Header.GetNumber())
 	if err != nil {
 		log.Warn(err)
-		g.notifyError(servers.ErrorNotification{ErrorMsg: err.Error(), FeedType: types.TxReceiptsFeed})
-		g.notifyError(servers.ErrorNotification{ErrorMsg: err.Error(), FeedType: types.OnBlockFeed})
+		g.notifyError(feed.ErrorNotification{ErrorMsg: err.Error(), FeedType: types.TxReceiptsFeed})
+		g.notifyError(feed.ErrorNotification{ErrorMsg: err.Error(), FeedType: types.OnBlockFeed})
 		return
 	}
 
@@ -1177,7 +1099,7 @@ func (g *gateway) notifyTxReceiptsAndOnBlockFeeds(nodeSource *connections.Blockc
 	notification.SetSource(&sourceEndpoint)
 
 	if g.feedManager.SubscriptionTypeExists(types.TxReceiptsFeed) {
-		receipts, err := servers.HandleTxReceipts(g.feedManager, notification.(*types.EthBlockNotification))
+		receipts, err := handler2.HandleTxReceipts(g.wsManager, notification.(*types.EthBlockNotification))
 		if err != nil {
 			log.Printf("failed to handle tx receipts: %v", err)
 			return
@@ -1496,23 +1418,38 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 		g.broadcast(typedMsg, source, utils.RelayProxy)
 
 		g.notify(types.NewUserIntentNotification(userIntent))
-	case *bxmessage.IntentSolution:
-		solution := &types.UserIntentSolution{
-			ID:            typedMsg.ID,
-			SolverAddress: typedMsg.SolverAddress,
-			IntentID:      typedMsg.IntentID,
-			Solution:      typedMsg.Solution,
-			Hash:          typedMsg.Hash,
-			Signature:     typedMsg.Signature,
-			Timestamp:     typedMsg.Timestamp,
-			DappAddress:   typedMsg.DappAddress,
+	case *bxmessage.IntentSolutions:
+		// accept intent solutions from relays only
+		if source == nil || source.GetConnectionType() != utils.RelayProxy {
+			return nil
 		}
 
-		g.broadcast(typedMsg, source, utils.RelayProxy)
+		// add list of solutions to the intent
+		g.intentsManager.AppendSolutionsForIntent(typedMsg)
+	case *bxmessage.IntentSolution:
+		// add solution to the intent
+		g.intentsManager.AppendSolutionForIntent(typedMsg)
 
-		g.notify(types.NewUserIntentSolutionNotification(solution))
+		g.broadcast(typedMsg, source, utils.RelayProxy) // broadcast the solution to all other relays
+
+		if source != nil && source.GetConnectionType() == utils.RelayProxy {
+			solution := &types.UserIntentSolution{
+				ID:            typedMsg.ID,
+				SolverAddress: typedMsg.SolverAddress,
+				IntentID:      typedMsg.IntentID,
+				Solution:      typedMsg.Solution,
+				Hash:          typedMsg.Hash,
+				Signature:     typedMsg.Signature,
+				Timestamp:     typedMsg.Timestamp,
+				DappAddress:   typedMsg.DappAddress,
+				SenderAddress: typedMsg.SenderAddress,
+			}
+			g.notify(types.NewUserIntentSolutionNotification(solution))
+		}
 	case *bxmessage.IntentsSubscription, *bxmessage.IntentsUnsubscription, *bxmessage.SolutionsSubscription, *bxmessage.SolutionsUnsubscription:
 		g.broadcast(typedMsg, source, utils.RelayProxy)
+	case *bxmessage.GetIntentSolutions:
+		g.broadcast(typedMsg, source, utils.RelayProxy) // request intent solutions from all the connected relays
 	case *bxmessage.BeaconMessage:
 		go g.processBeaconMessage(typedMsg, source)
 	default:
@@ -2024,23 +1961,11 @@ func (g *gateway) processBlockFromBDN(bxBlock *types.BxBlock) {
 }
 
 func (g *gateway) notify(notification types.Notification) {
-	if g.BxConfig.WebsocketEnabled || g.BxConfig.WebsocketTLSEnabled || g.BxConfig.GRPC.Enabled {
-		select {
-		case g.feedManagerChan <- notification:
-		default:
-			g.log.Warnf("gateway feed channel is full. Can't add %v without blocking. Ignoring hash %v", reflect.TypeOf(notification), notification.GetHash())
-		}
-	}
+	g.feedManager.Notify(notification)
 }
 
-func (g *gateway) notifyError(errorMsg servers.ErrorNotification) {
-	if g.BxConfig.WebsocketEnabled || g.BxConfig.WebsocketTLSEnabled || g.BxConfig.GRPC.Enabled {
-		select {
-		case g.feedManagerErrorChan <- errorMsg:
-		default:
-			g.log.Warnf("gateway feed manager error channel is full, cant send error msg %v to feed manager", errorMsg)
-		}
-	}
+func (g *gateway) notifyError(errorMsg feed.ErrorNotification) {
+	g.feedManager.NotifyError(errorMsg)
 }
 
 func (g *gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source connections.Conn) {
@@ -2086,91 +2011,12 @@ func (g *gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source c
 	g.stats.AddGatewayBundleEvent(event, source, start, mevBundle.BundleHash, mevBundle.GetNetworkNum(), mevBundle.Names(), mevBundle.UUID, uint64(blockNumber), mevBundle.MinTimestamp, mevBundle.MaxTimestamp, mevBundle.BundlePrice, mevBundle.EnforcePayout)
 }
 
-func retrieveAuthHeader(ctx context.Context, authFromRequestBody string) string {
-	authHeader, err := bxrpc.ReadAuthMetadata(ctx)
-	if err == nil {
-		return authHeader
-	}
-
-	// deprecated
-	return authFromRequestBody
-}
-
-func retrieveOriginalSenderAccountID(ctx context.Context, accountModel *sdnmessage.Account) (*types.AccountID, error) {
-	accountID := accountModel.AccountID
-	if accountModel.AccountID == types.BloxrouteAccountID {
-		md, ok := metadata.FromIncomingContext(ctx)
-		if ok && len(md.Get(types.OriginalSenderAccountIDHeaderKey)) > 0 {
-			accountID = types.AccountID(md.Get(types.OriginalSenderAccountIDHeaderKey)[0])
-		} else {
-			return nil, fmt.Errorf("request sent from cloud services and should include %v header", types.OriginalSenderAccountIDHeaderKey)
-		}
-	}
-	return &accountID, nil
-}
-
-const (
-	connectionStatusConnected    = "connected"
-	connectionStatusNotConnected = "not_connected"
-)
-
 func (g *gateway) getHeaderFromGateway() string {
 	accountID := g.sdn.AccountModel().AccountID
 	secretHash := g.sdn.AccountModel().SecretHash
 	accountIDAndHash := fmt.Sprintf("%s:%s", accountID, secretHash)
 	return base64.StdEncoding.EncodeToString([]byte(accountIDAndHash))
 }
-
-func (g *gateway) authorize(accountID types.AccountID, secretHash string, allowAccessByOtherAccounts, allowIntroductoryTierAccess bool, ip string) (sdnmessage.Account, error) {
-	// if gateway received request from a customer with a different account id, it should verify it with the SDN.
-	// if the gateway does not have permission to verify account id (which mostly happen with external gateways),
-	// SDN will return StatusUnauthorized and fail this connection. if SDN return any other error -
-	// assuming the issue is with the SDN and set default enterprise account for the customer. in order to send request to the gateway,
-	// customer must be enterprise / elite account
-	connectionAccountModel := g.sdn.AccountModel()
-	l := g.log.WithFields(log.Fields{
-		"accountID":          connectionAccountModel.AccountID,
-		"requestedAccountID": accountID,
-		"ip":                 ip,
-	})
-
-	if accountID != connectionAccountModel.AccountID {
-		if !allowAccessByOtherAccounts {
-			l.Errorf("account %v is not authorized to call this method directly", g.sdn.AccountModel().AccountID)
-			return connectionAccountModel, errMethodNotAllowed
-		}
-		accountRes, err := g.accountsCacheManager.Get(accountID)
-		switch {
-		case err != nil:
-			l.Errorf("failed to get customer account model, using default elite account: %v", err)
-			connectionAccountModel = sdnmessage.GetDefaultEliteAccount(time.Now().UTC())
-			connectionAccountModel.AccountID = accountID
-			connectionAccountModel.SecretHash = secretHash
-
-			// return early here since elite tier satisfies IsEnterprise()
-			// and there is no need to check the hashes
-			return connectionAccountModel, nil
-		case accountRes.notAuthorizedErr != nil:
-			return accountRes.account, accountRes.notAuthorizedErr
-		default:
-			connectionAccountModel = accountRes.account
-		}
-
-		if !allowIntroductoryTierAccess && !connectionAccountModel.TierName.IsEnterprise() {
-			l.Warnf("customer must be enterprise / enterprise elite / ultra but it is %v", connectionAccountModel)
-			return connectionAccountModel, errTierTooLow
-		}
-	}
-
-	if secretHash != connectionAccountModel.SecretHash && secretHash != "" {
-		l.Error("account sent a different secret hash than set in the account model")
-		return connectionAccountModel, errInvalidHeader
-	}
-
-	return connectionAccountModel, nil
-}
-
-func ipport(ip string, port int) string { return fmt.Sprintf("%s:%d", ip, port) }
 
 func (g *gateway) bxBlockToBlockInfo(bxBlock *types.BxBlock) (*eth.BlockInfo, error) {
 	// We support only types.BxBlockTypeEth. That means BSC or Polygon block

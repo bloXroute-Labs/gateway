@@ -19,10 +19,12 @@ var (
 	ErrInvalidHash = errors.New("invalid hash")
 	// ErrInvalidSignatureLength is returned when the signature length is not equal to ECDSASignatureLen
 	ErrInvalidSignatureLength = errors.New("invalid signature length")
+	// ErrHashMismatch is returned when the provided hash does not match the calculated hash
+	ErrHashMismatch = errors.New("hash mismatch")
 )
 
-// ValidateSignature validates the signature
-func ValidateSignature(address string, hash, signature []byte) error {
+// ValidateHashAndSignature validates the hash and signature
+func ValidateHashAndSignature(address string, hash, signature, data []byte) error {
 	if !common.IsHexAddress(address) {
 		return ErrInvalidAddress
 	}
@@ -42,6 +44,10 @@ func ValidateSignature(address string, hash, signature []byte) error {
 
 	if !bytes.Equal(crypto.PubkeyToAddress(*pubKey).Bytes(), common.HexToAddress(address).Bytes()) {
 		return ErrInvalidSignature
+	}
+
+	if !bytes.Equal(crypto.Keccak256Hash(data).Bytes(), hash) {
+		return ErrHashMismatch
 	}
 
 	return nil

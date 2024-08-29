@@ -48,12 +48,12 @@ type BlockProposer interface {
 
 // NoopBlockProposer is a block proposer that does nothing.
 type NoopBlockProposer struct {
-	txStore *services.TxStore
+	txStore services.TxStore
 	log     *logger.Entry
 }
 
 // NewNoopBlockProposer creates a new NoopBlockProposer.
-func NewNoopBlockProposer(txStore *services.TxStore, log *logger.Entry) *NoopBlockProposer {
+func NewNoopBlockProposer(txStore services.TxStore, log *logger.Entry) *NoopBlockProposer {
 	return &NoopBlockProposer{txStore: txStore, log: log}
 }
 
@@ -66,12 +66,10 @@ func (n *NoopBlockProposer) ShortIDs(ctx context.Context, req *pb.ShortIDsReques
 }
 
 // ShortIDs returns empty short IDs.
-func ShortIDs(ctx context.Context, req *pb.ShortIDsRequest, txStorePtr *services.TxStore, log *logger.Entry) (*pb.ShortIDsReply, error) {
-	if txStorePtr == nil || *txStorePtr == nil {
+func ShortIDs(ctx context.Context, req *pb.ShortIDsRequest, txStore services.TxStore, log *logger.Entry) (*pb.ShortIDsReply, error) {
+	if txStore == nil {
 		return nil, errors.New("tx store is not initialized")
 	}
-
-	txStore := *txStorePtr
 
 	result := pb.ShortIDsReply{ShortIds: make([]uint32, len(req.GetTxHashes()))}
 

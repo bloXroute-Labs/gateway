@@ -35,6 +35,7 @@ const (
 	RPCEthUnsubscribe             RPCRequestType = "eth_unsubscribe"
 	RPCSubmitIntent               RPCRequestType = "blxr_submit_intent"
 	RPCSubmitIntentSolution       RPCRequestType = "blxr_submit_intent_solution"
+	RPCGetIntentSolutions         RPCRequestType = "blxr_get_intent_solutions"
 )
 
 // External RPCRequestType enumeration
@@ -194,6 +195,7 @@ type RPCSendBundle struct {
 	BundlePrice       int64    `json:"bundlePrice,omitempty"` // in wei
 	EnforcePayout     bool     `json:"enforcePayout,omitempty"`
 	AvoidMixedBundles bool     `json:"avoidMixedBundles,omitempty"`
+	RefundRecipient   string   `json:"refundRecipient,omitempty"`
 }
 
 // RPCCancelBundlePayload custom json-rpc required to cancel flashbots bundle
@@ -217,4 +219,12 @@ type RPCSubmitIntentPayloadSolution struct {
 	IntentSolution []byte `json:"intent_solution"`
 	Hash           []byte `json:"hash"`
 	Signature      []byte `json:"signature"`
+}
+
+// RPCGetIntentSolutionsPayload is the payload of blxr_get_intent_solutions request
+type RPCGetIntentSolutionsPayload struct {
+	IntentID            string `json:"intent_id"`
+	DappOrSenderAddress string `json:"dapp_or_sender_address"`
+	Hash                []byte `json:"hash"`
+	Signature           []byte `json:"signature"`
 }
