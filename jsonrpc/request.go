@@ -131,7 +131,7 @@ type RPCBundleSubmissionPayload struct {
 	UUID                    string            `json:"uuid"`
 	BundlePrice             int64             `json:"bundlePrice,omitempty"` // in wei
 	EnforcePayout           bool              `json:"enforcePayout,omitempty"`
-	AvoidMixedBundles       bool              `json:"avoidMixedBundles,omitempty"`
+	AvoidMixedBundles       bool              `json:"avoid_mixed_bundles,omitempty"`
 	OriginalSenderAccountID string            `json:"original_sender_account_id"`
 	PriorityFeeRefund       bool              `json:"priority_fee_refund"`
 	IncomingRefundRecipient string            `json:"refund_recipient,omitempty"`

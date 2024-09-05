@@ -93,7 +93,8 @@ type APIClient struct {
 
 // NewAPIClient creates a new APIClient with the specified URL.
 func NewAPIClient(ctx context.Context, httpClient *http.Client, config *network.EthConfig, bridge blockchain.Bridge, url string, endpoint types.NodeEndpoint,
-	sharedSync *APISharedSync) *APIClient {
+	sharedSync *APISharedSync,
+) *APIClient {
 	return &APIClient{
 		ctx: ctx,
 		URL: url,
@@ -541,7 +542,7 @@ func (c *APIClient) BroadcastBlock(block *ethpb.SignedBeaconBlockContentsDeneb) 
 
 	req.Header.Set("Eth-Consensus-Version", version.String(version.Deneb))
 	req.Header.Set("Content-Type", "application/octet-stream")
-	req.Header.Set("Accept", "application/octet-stream")
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
