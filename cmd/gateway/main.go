@@ -342,6 +342,14 @@ func runGateway(c *cli.Context) error {
 	}
 
 	<-gCtx.Done()
+	if pprofServer != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err = pprofServer.Shutdown(shutdownCtx); err != nil {
+			log.Errorf("error shutting down pprof server: %v", err)
+		}
+	}
 
 	log.Infof("shutting down...")
 
@@ -353,15 +361,6 @@ func runGateway(c *cli.Context) error {
 	err = gateway.Close()
 	if err != nil {
 		log.Errorf("error shutting down gateway: %v", err)
-	}
-
-	if pprofServer != nil {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		if err = pprofServer.Shutdown(shutdownCtx); err != nil {
-			log.Errorf("error shutting down pprof server: %v", err)
-		}
 	}
 
 	if blockchainServer != nil {
