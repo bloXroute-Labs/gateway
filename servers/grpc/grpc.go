@@ -256,6 +256,10 @@ func (g *server) Status(ctx context.Context, req *pb.StatusRequest) (*pb.StatusR
 			TxsQueueCount:      g.params.txsQueue.TxsCount(),
 			TxsOrderQueueCount: g.params.txsOrderQueue.TxsCount(),
 		},
+		IntentStats: &pb.IntentStats{
+			SubmittedIntentsCount:   g.params.intentsManager.TotalIntentSubmissions(),
+			SubmittedSolutionsCount: g.params.intentsManager.TotalSolutionSubmissions(),
+		},
 	}
 
 	return rsp, nil

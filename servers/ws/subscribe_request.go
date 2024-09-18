@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/sourcegraph/jsonrpc2"
 	"github.com/zhouzhuojie/conditions"
 
@@ -24,7 +25,7 @@ import (
 var (
 	availableFeeds = []types.FeedType{types.NewTxsFeed, types.NewBlocksFeed, types.BDNBlocksFeed, types.PendingTxsFeed,
 		types.OnBlockFeed, types.TxReceiptsFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed, types.UserIntentsFeed,
-		types.UserIntentSolutionsFeed}
+		types.UserIntentSolutionsFeed, types.QuotesFeed}
 
 	availableFeedsMap = make(map[types.FeedType]struct{})
 )
@@ -114,6 +115,43 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request, feed types.FeedType,
 	}, nil
 }
 
+func (h *handlerObj) createQuoteClientReq(rpcParams json.RawMessage) (*ClientReq, func(), error) {
+	var params subscribeQuotesParams
+	var expr conditions.Expr
+	err := json.Unmarshal(rpcParams, &params)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal subscription intent options: %w", err)
+	}
+	if !common.IsHexAddress(params.DappAddress) {
+		return nil, nil, intent.ErrInvalidAddress
+	}
+
+	subscriptions := h.intentsManager.AddQuotesSubscription(params.DappAddress)
+	sub := bxmessage.NewQuotesSubscription(params.DappAddress)
+
+	includes := []string{params.DappAddress}
+
+	if subscriptions == 1 {
+		err = h.node.HandleMsg(sub, nil, connections.RunBackground)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to send subscription message for feed quotes: %w", err)
+		}
+	}
+	postRun := func() {
+		subscriptions, err = h.intentsManager.RmQuotesSubscription(params.DappAddress)
+		// send quotesUnsubscription to Relay if there are no more subscriptions to a specific address
+		if err == nil && subscriptions == 0 {
+			unsub := bxmessage.NewQuotesUnsubscription(params.DappAddress)
+			err = h.node.HandleMsg(unsub, nil, connections.RunBackground)
+			if err != nil {
+				h.log.Errorf("failed to handle unsubscription message for dapp address %v and feed quotes: %v", params.DappAddress, err)
+			}
+		}
+	}
+
+	return &ClientReq{Feed: types.QuotesFeed, Includes: includes, Expr: expr}, postRun, nil
+}
+
 func (h *handlerObj) createIntentClientReq(req *jsonrpc2.Request, feed types.FeedType, rpcParams json.RawMessage) (*ClientReq, func(), error) {
 	var params subscriptionIntentParams
 	err := json.Unmarshal(rpcParams, &params)
@@ -128,7 +166,6 @@ func (h *handlerObj) createIntentClientReq(req *jsonrpc2.Request, feed types.Fee
 		err = intent.ValidateHashAndSignature(params.DappAddress, params.Hash, params.Signature, []byte(params.DappAddress))
 	default:
 		return nil, nil, fmt.Errorf("invalid intentoin feed type %v", feed)
-
 	}
 	if err != nil {
 		h.log.Debugf("error when validating signature. request id: %v. method: %v. params: %s. remote address: %v account id: %v error - %v",

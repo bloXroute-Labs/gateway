@@ -71,6 +71,10 @@ type subscriptionIntentParams struct {
 	Filters       string `json:"filters"`
 }
 
+type subscribeQuotesParams struct {
+	DappAddress string `json:"dapp_address"`
+}
+
 // subscriptionOptions Includes subscription options
 type subscriptionOptions struct {
 	Include    []string            `json:"Include"`
@@ -105,6 +109,19 @@ type userIntentSolutionNotification struct {
 	IntentID       string `json:"intent_id"`
 	SolutionID     string `json:"solution_id"`
 	IntentSolution []byte `json:"intent_solution"`
+}
+
+type quoteResponse struct {
+	Subscription string            `json:"subscription"`
+	Result       quoteNotification `json:"result"`
+}
+
+type quoteNotification struct {
+	DappAddress   string `json:"dapp_address"`
+	ID            string `json:"quote_id"`
+	SolverAddress string `json:"solver_address"`
+	Quote         []byte `json:"quote"`
+	Timestamp     string `json:"timestamp"`
 }
 
 type rpcBatchTxResponse struct {

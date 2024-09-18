@@ -10,6 +10,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"path"
+	"runtime/debug"
 	"time"
 
 	"github.com/urfave/cli/v2"
@@ -26,7 +27,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/nodes"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	httputils "github.com/bloXroute-Labs/gateway/v2/utils/http"
-	"github.com/bloXroute-Labs/gateway/v2/version"
 )
 
 func main() {
@@ -110,37 +110,24 @@ func main() {
 			utils.BeaconTrustedPeersFileFlag,
 			utils.BeaconPort,
 		},
-		Action: runGateway,
+		Action:         runGateway,
+		Before:         config.BeforeFunc,
+		After:          config.AfterFunc,
+		ExitErrHandler: config.ExitErrHandler,
 	}
 
-	err := app.Run(os.Args)
-	if err != nil {
-		log.Fatal(err)
-	}
+	_ = app.Run(os.Args) //nolint:errcheck
 }
 
 func runGateway(c *cli.Context) error {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorf("Panic: %v", r)
+			log.Errorf(string(debug.Stack()))
+		}
+	}()
 	ctx := utils.ContextWithSignal(c.Context)
 	group, gCtx := errgroup.WithContext(ctx)
-
-	bxConfig, err := config.NewBxFromCLI(c)
-	if err != nil {
-		return err
-	}
-
-	var fluentdCfg *log.FluentDConfig
-	if bxConfig.FluentDEnabled {
-		fluentdCfg = &log.FluentDConfig{
-			FluentDHost: bxConfig.FluentDHost,
-			Level:       bxConfig.ConsoleLevel,
-		}
-	}
-
-	closeLogger, err := log.Init(bxConfig.Config, fluentdCfg, version.BuildVersion)
-	if err != nil {
-		return err
-	}
-	defer closeLogger()
 
 	var pprofServer *http.Server
 	if !c.Bool(utils.DisableProfilingFlag.Name) {
@@ -166,6 +153,10 @@ func runGateway(c *cli.Context) error {
 	blockchainNetwork := c.String(utils.BlockchainNetworkFlag.Name)
 	blockchainPeers := ethConfig.StaticPeers.Endpoints()
 
+	bxConfig := c.Context.Value(bxgateway.BxConfigKey).(*config.Bx)
+	if bxConfig == nil {
+		return fmt.Errorf("bxConfig is not available in context")
+	}
 	sslCerts, sdn, err := nodes.InitSDN(bxConfig, blockchainPeers, nodes.GeneratePeers(ethConfig.StaticPeers), len(ethConfig.StaticPeers.Enodes()))
 	if err != nil {
 		return err

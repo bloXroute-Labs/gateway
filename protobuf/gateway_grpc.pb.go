@@ -45,6 +45,8 @@ type GatewayClient interface {
 	SubmitIntentSolution(ctx context.Context, in *SubmitIntentSolutionRequest, opts ...grpc.CallOption) (*SubmitIntentSolutionReply, error)
 	Intents(ctx context.Context, in *IntentsRequest, opts ...grpc.CallOption) (Gateway_IntentsClient, error)
 	IntentSolutions(ctx context.Context, in *IntentSolutionsRequest, opts ...grpc.CallOption) (Gateway_IntentSolutionsClient, error)
+	SubmitQuote(ctx context.Context, in *SubmitQuoteRequest, opts ...grpc.CallOption) (*SubmitQuoteReply, error)
+	Quotes(ctx context.Context, in *QuotesRequest, opts ...grpc.CallOption) (Gateway_QuotesClient, error)
 }
 
 type gatewayClient struct {
@@ -464,6 +466,47 @@ func (x *gatewayIntentSolutionsClient) Recv() (*IntentSolutionsReply, error) {
 	return m, nil
 }
 
+func (c *gatewayClient) SubmitQuote(ctx context.Context, in *SubmitQuoteRequest, opts ...grpc.CallOption) (*SubmitQuoteReply, error) {
+	out := new(SubmitQuoteReply)
+	err := c.cc.Invoke(ctx, "/gateway.Gateway/SubmitQuote", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayClient) Quotes(ctx context.Context, in *QuotesRequest, opts ...grpc.CallOption) (Gateway_QuotesClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Gateway_ServiceDesc.Streams[8], "/gateway.Gateway/Quotes", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &gatewayQuotesClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Gateway_QuotesClient interface {
+	Recv() (*QuotesReply, error)
+	grpc.ClientStream
+}
+
+type gatewayQuotesClient struct {
+	grpc.ClientStream
+}
+
+func (x *gatewayQuotesClient) Recv() (*QuotesReply, error) {
+	m := new(QuotesReply)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // GatewayServer is the server API for Gateway service.
 // All implementations must embed UnimplementedGatewayServer
 // for forward compatibility
@@ -495,6 +538,8 @@ type GatewayServer interface {
 	SubmitIntentSolution(context.Context, *SubmitIntentSolutionRequest) (*SubmitIntentSolutionReply, error)
 	Intents(*IntentsRequest, Gateway_IntentsServer) error
 	IntentSolutions(*IntentSolutionsRequest, Gateway_IntentSolutionsServer) error
+	SubmitQuote(context.Context, *SubmitQuoteRequest) (*SubmitQuoteReply, error)
+	Quotes(*QuotesRequest, Gateway_QuotesServer) error
 	mustEmbedUnimplementedGatewayServer()
 }
 
@@ -576,6 +621,12 @@ func (UnimplementedGatewayServer) Intents(*IntentsRequest, Gateway_IntentsServer
 }
 func (UnimplementedGatewayServer) IntentSolutions(*IntentSolutionsRequest, Gateway_IntentSolutionsServer) error {
 	return status.Errorf(codes.Unimplemented, "method IntentSolutions not implemented")
+}
+func (UnimplementedGatewayServer) SubmitQuote(context.Context, *SubmitQuoteRequest) (*SubmitQuoteReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SubmitQuote not implemented")
+}
+func (UnimplementedGatewayServer) Quotes(*QuotesRequest, Gateway_QuotesServer) error {
+	return status.Errorf(codes.Unimplemented, "method Quotes not implemented")
 }
 func (UnimplementedGatewayServer) mustEmbedUnimplementedGatewayServer() {}
 
@@ -1064,6 +1115,45 @@ func (x *gatewayIntentSolutionsServer) Send(m *IntentSolutionsReply) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _Gateway_SubmitQuote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitQuoteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServer).SubmitQuote(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/gateway.Gateway/SubmitQuote",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServer).SubmitQuote(ctx, req.(*SubmitQuoteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Gateway_Quotes_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(QuotesRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(GatewayServer).Quotes(m, &gatewayQuotesServer{stream})
+}
+
+type Gateway_QuotesServer interface {
+	Send(*QuotesReply) error
+	grpc.ServerStream
+}
+
+type gatewayQuotesServer struct {
+	grpc.ServerStream
+}
+
+func (x *gatewayQuotesServer) Send(m *QuotesReply) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 // Gateway_ServiceDesc is the grpc.ServiceDesc for Gateway service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1139,6 +1229,10 @@ var Gateway_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "SubmitIntentSolution",
 			Handler:    _Gateway_SubmitIntentSolution_Handler,
 		},
+		{
+			MethodName: "SubmitQuote",
+			Handler:    _Gateway_SubmitQuote_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -1179,6 +1273,11 @@ var Gateway_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "IntentSolutions",
 			Handler:       _Gateway_IntentSolutions_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "Quotes",
+			Handler:       _Gateway_Quotes_Handler,
 			ServerStreams: true,
 		},
 	},

@@ -19,6 +19,7 @@ var (
 	ErrMissingShortIDs          = errors.New("missing short IDs")
 	ErrUnknownBlockType         = errors.New("unknown block type")
 	ErrNotCompatibleBeaconBlock = errors.New("not compatible beacon block")
+	ErrQuoteNotExist            = errors.New("quote does not exist")
 )
 
 func (e *ErrAlreadyProcessed) Error() string {

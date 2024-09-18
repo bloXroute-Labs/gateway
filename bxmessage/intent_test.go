@@ -5,25 +5,28 @@ import (
 	"time"
 
 	gateway "github.com/bloXroute-Labs/gateway/v2/protobuf"
+	id "github.com/bloXroute-Labs/gateway/v2/utils/intent"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
 func TestIntent_Unpack(t *testing.T) {
 	r := genIntentsRequest()
 
+	intentByte := []byte("testing intent")
+	intentID, err := id.GenerateIntentID(r.SolverAddress, intentByte)
+	require.NoError(t, err)
 	intent := Intent{
 		Header: Header{
 			msgType: "intent",
 		},
-		ID:            uuid.New().String(),
+		ID:            intentID,
 		DAppAddress:   r.SolverAddress,
 		SenderAddress: "0xb794F5eA0ba39494cE839613fffBA74279579268",
 		Hash:          r.Hash,
 		Signature:     r.Signature,
 		Timestamp:     time.Now(),
-		Intent:        []byte("testing intent"),
+		Intent:        intentByte,
 	}
 
 	bytes, err := intent.Pack(CurrentProtocol)

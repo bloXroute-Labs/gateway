@@ -327,17 +327,6 @@ func (bs *BdnPerformanceStats) getOrCreateNodeStats(node types.NodeEndpoint) *Bd
 	return stats
 }
 
-// SetNodeToConnected setting the node to connected, if not found in the map, we add it
-func (bs *BdnPerformanceStats) SetNodeToConnected(node types.NodeEndpoint) {
-	stats, found := bs.nodeStats[node.IPPort()]
-	if !found {
-		stats = &BdnPerformanceStatsData{IsBeacon: node.IsBeacon, IsConnected: true}
-		bs.nodeStats[node.IPPort()] = stats
-	} else {
-		stats.IsConnected = true
-	}
-}
-
 // Pack serializes a BdnPerformanceStats into a buffer for sending
 func (bs *BdnPerformanceStats) Pack(protocol Protocol) ([]byte, error) {
 	bs.lock.Lock()

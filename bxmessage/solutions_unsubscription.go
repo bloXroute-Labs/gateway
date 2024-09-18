@@ -1,6 +1,10 @@
 package bxmessage
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
+)
 
 // UnpackSolutionsUnsubscription unpacks SolutionsUnsubscription bxmessage from bytes
 func UnpackSolutionsUnsubscription(b []byte, protocol Protocol) (*SolutionsUnsubscription, error) {
@@ -35,7 +39,7 @@ func (i *SolutionsUnsubscription) Pack(protocol Protocol) ([]byte, error) {
 
 	bufLen, err := calcPackSize(
 		HeaderLen,
-		ETHAddressLen,
+		types.ETHAddressLen,
 		ControlByteLen,
 	)
 	if err != nil {

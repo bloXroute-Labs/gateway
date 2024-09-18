@@ -139,9 +139,6 @@ type Bridge interface {
 
 	SendDisconnectEvent(endpoint types.NodeEndpoint) error
 	ReceiveDisconnectEvent() <-chan types.NodeEndpoint
-
-	SendConnectedEvent(endpoint types.NodeEndpoint) error
-	ReceiveConnectEvent() <-chan types.NodeEndpoint
 }
 
 // Errors
@@ -179,7 +176,6 @@ type BxBridge struct {
 	nodeConnectionCheckResponse chan types.NodeEndpoint
 	blockchainConnectionStatus  chan ConnectionStatus
 	disconnectEvent             chan types.NodeEndpoint
-	connectEvent                chan types.NodeEndpoint
 }
 
 // NewBxBridge returns a BxBridge instance
@@ -206,7 +202,6 @@ func NewBxBridge(converter Converter, withBeacon bool) Bridge {
 		nodeConnectionCheckResponse:      make(chan types.NodeEndpoint, statusBacklog),
 		blockchainConnectionStatus:       make(chan ConnectionStatus, transactionBacklog),
 		disconnectEvent:                  make(chan types.NodeEndpoint, statusBacklog),
-		connectEvent:                     make(chan types.NodeEndpoint, statusBacklog),
 		Converter:                        converter,
 	}
 }
@@ -517,19 +512,4 @@ func (b BxBridge) SendDisconnectEvent(endpoint types.NodeEndpoint) error {
 // ReceiveDisconnectEvent handles disconnect event
 func (b BxBridge) ReceiveDisconnectEvent() <-chan types.NodeEndpoint {
 	return b.disconnectEvent
-}
-
-// SendConnectedEvent send connected event
-func (b BxBridge) SendConnectedEvent(endpoint types.NodeEndpoint) error {
-	select {
-	case b.connectEvent <- endpoint:
-		return nil
-	default:
-		return ErrChannelFull
-	}
-}
-
-// ReceiveConnectEvent receive connected event
-func (b BxBridge) ReceiveConnectEvent() <-chan types.NodeEndpoint {
-	return b.connectEvent
 }

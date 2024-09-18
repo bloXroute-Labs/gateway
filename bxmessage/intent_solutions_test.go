@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/bloXroute-Labs/gateway/v2/utils/intent"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -13,7 +13,7 @@ func TestIntentSolutions_Unpack(t *testing.T) {
 	solutions := make([]IntentSolution, 5)
 
 	for i := 0; i < 5; i++ {
-		solutions[i] = createTestIntentSolution()
+		solutions[i] = createTestIntentSolution(t)
 	}
 
 	intentSolutions := NewIntentSolutions(solutions)
@@ -33,17 +33,22 @@ func TestIntentSolutions_Unpack(t *testing.T) {
 	}
 }
 
-func createTestIntentSolution() IntentSolution {
+func createTestIntentSolution(t *testing.T) IntentSolution {
 	r := genIntentsRequest()
+	solution := []byte("this is test :(")
+	intentID, err := intent.GenerateSolutionID("test", []byte("test"))
+	require.NoError(t, err)
+	id, err := intent.GenerateSolutionID(intentID, solution)
+	require.NoError(t, err)
 
 	return IntentSolution{
 		Header: Header{
 			msgType: IntentSolutionType,
 		},
-		ID:            uuid.New().String(),
+		ID:            id,
 		SolverAddress: r.SolverAddress,
-		IntentID:      uuid.New().String(),
-		Solution:      []byte("this is test :("),
+		IntentID:      intentID,
+		Solution:      solution,
 		Hash:          r.Hash,
 		Signature:     r.Signature,
 		Timestamp:     time.Now(),

@@ -353,6 +353,14 @@ func (b *BxConn) ProcessMessage(msgBytes bxmessage.MessageBytes) {
 		}
 
 		_ = b.Node.HandleMsg(intent, b, connections.RunBackground) //nolint:errcheck
+	case bxmessage.QuotesType:
+		quote, err := bxmessage.UnpackQuote(msg, b.Protocol())
+		if err != nil {
+			b.log.Warnf("failed to unpack quote message: %v", err)
+			return
+		}
+
+		_ = b.Node.HandleMsg(quote, b, connections.RunBackground) //nolint:errcheck
 	case bxmessage.IntentSolutionType:
 		solution, err := bxmessage.UnpackIntentSolution(msg, b.Protocol())
 		if err != nil {
@@ -486,6 +494,8 @@ func (b *BxConn) read(ctx context.Context, isInitiator bool) bool {
 
 		return true
 	}
+
+	b.Log().Info("connection established")
 
 	if isInitiator {
 		hello := bxmessage.Hello{NodeID: b.nodeID, Protocol: bxmessage.CurrentProtocol}

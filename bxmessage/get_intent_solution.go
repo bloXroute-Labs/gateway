@@ -43,10 +43,10 @@ func NewGetIntentSolutions(intentID, dAppOrSenderAddress string, hash, signature
 func (s *GetIntentSolutions) Pack(_ Protocol) ([]byte, error) {
 	bufLen, err := calcPackSize(
 		HeaderLen,
-		UUIDv4Len,
-		ETHAddressLen,
-		Keccak256HashLen,
-		ECDSASignatureLen,
+		types.UUIDv4Len,
+		types.ETHAddressLen,
+		types.Keccak256HashLen,
+		types.ECDSASignatureLen,
 		ControlByteLen,
 	)
 	if err != nil {
