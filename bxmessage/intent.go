@@ -55,11 +55,11 @@ func (i *Intent) Pack(protocol Protocol) ([]byte, error) {
 
 	bufLen, err := calcPackSize(
 		HeaderLen,
-		UUIDv4Len,
-		ETHAddressLen,
-		ETHAddressLen,
-		Keccak256HashLen,
-		ECDSASignatureLen,
+		types.UUIDv4Len,
+		types.ETHAddressLen,
+		types.ETHAddressLen,
+		types.Keccak256HashLen,
+		types.ECDSASignatureLen,
 		ShortTimestampLen,
 		i.Intent,
 		ControlByteLen,

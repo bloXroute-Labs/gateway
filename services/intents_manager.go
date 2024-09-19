@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
@@ -13,8 +14,15 @@ const (
 	expiredSolutionsCheck    = time.Second
 )
 
-// IntentsManager interface for mocking
+// IntentsManager interface responsible for managing intents and solutions
 type IntentsManager interface {
+	IntentSubscriptionsManager
+	IntentSolutionsManager
+	IntentsStatsManager
+}
+
+// IntentSubscriptionsManager responsible for managing client subscriptions
+type IntentSubscriptionsManager interface {
 	SubscriptionMessages() []bxmessage.Message
 	AddIntentsSubscription(solverAddr string, hash, signature []byte)
 	RmIntentsSubscription(solverAddr string)
@@ -22,9 +30,12 @@ type IntentsManager interface {
 	AddSolutionsSubscription(dAppAddr string, hash, signature []byte)
 	RmSolutionsSubscription(dAppAddr string)
 	SolutionsSubscriptionExists(dAppAddr string) bool
+	AddQuotesSubscription(dAppAddr string) uint64
+	RmQuotesSubscription(dAppAddr string) (uint64, error)
+}
 
-	/* this part is used for the short-lived gw <-> relay(s) subscription */
-
+// IntentSolutionsManager responsible for managing internal short-lived  gw <-> relay(s) subscription
+type IntentSolutionsManager interface {
 	AddIntentOfInterest(intentID string)
 	AppendSolutionsForIntent(solutions *bxmessage.IntentSolutions) // receive from relays
 	AppendSolutionForIntent(solution *bxmessage.IntentSolution)    // receive from relays
@@ -32,14 +43,30 @@ type IntentsManager interface {
 	CleanupExpiredSolutions(ctx context.Context)
 }
 
+// IntentsStatsManager keeps track of intent and solution submissions
+type IntentsStatsManager interface {
+	IncIntentSubmissions()
+	IncSolutionSubmissions()
+	TotalIntentSubmissions() uint64
+	TotalSolutionSubmissions() uint64
+}
+
 // IntentsManagerImpl is the implementation of IntentsManager
 type IntentsManagerImpl struct {
-	intentsSubscriptions   map[string]*subscription
-	isMx                   *sync.RWMutex
-	solutionsSubscriptions map[string]*subscription
-	ssMx                   *sync.RWMutex
-	solutionsForIntent     map[string]solutionsForIntentWExp // intentID -> solutions
-	sfiMx                  *sync.RWMutex
+	intentsSubscriptions             map[string]*subscription
+	isMx                             *sync.RWMutex
+	solutionsSubscriptions           map[string]*subscription
+	ssMx                             *sync.RWMutex
+	solutionsForIntent               map[string]solutionsForIntentWExp // intentID -> solutions
+	sfiMx                            *sync.RWMutex
+	quotesSubscriptions              map[string]*quoteSubscription
+	quotesMx                         *sync.RWMutex
+	intentsCounter, solutionsCounter *atomic.Uint64
+}
+
+type quoteSubscription struct {
+	addr    string
+	counter uint64
 }
 
 type subscription struct {
@@ -62,6 +89,10 @@ func NewIntentsManager() *IntentsManagerImpl {
 		ssMx:                   new(sync.RWMutex),
 		solutionsForIntent:     make(map[string]solutionsForIntentWExp),
 		sfiMx:                  new(sync.RWMutex),
+		quotesSubscriptions:    make(map[string]*quoteSubscription),
+		quotesMx:               new(sync.RWMutex),
+		intentsCounter:         &atomic.Uint64{},
+		solutionsCounter:       &atomic.Uint64{},
 	}
 }
 
@@ -80,6 +111,12 @@ func (i *IntentsManagerImpl) SubscriptionMessages() []bxmessage.Message {
 		m = append(m, bxmessage.NewSolutionsSubscription(v.addr, v.hash, v.signature))
 	}
 	i.ssMx.RUnlock()
+
+	i.quotesMx.RLock()
+	for _, v := range i.quotesSubscriptions {
+		m = append(m, bxmessage.NewQuotesSubscription(v.addr))
+	}
+	i.quotesMx.RUnlock()
 
 	return m
 }
@@ -110,6 +147,21 @@ func (i *IntentsManagerImpl) IntentsSubscriptionExists(solverAddr string) bool {
 	return ok
 }
 
+// AddQuotesSubscription adds a quote subscription, return how many subscriptions there are
+func (i *IntentsManagerImpl) AddQuotesSubscription(dAppAddr string) uint64 {
+	i.quotesMx.Lock()
+	defer i.quotesMx.Unlock()
+	if sub, exist := i.quotesSubscriptions[dAppAddr]; exist {
+		sub.counter++
+		return sub.counter
+	}
+	i.quotesSubscriptions[dAppAddr] = &quoteSubscription{
+		addr:    dAppAddr,
+		counter: 1,
+	}
+	return 1
+}
+
 // AddSolutionsSubscription adds a solutions subscription
 func (i *IntentsManagerImpl) AddSolutionsSubscription(dappAddr string, hash, signature []byte) {
 	i.ssMx.Lock()
@@ -119,6 +171,20 @@ func (i *IntentsManagerImpl) AddSolutionsSubscription(dappAddr string, hash, sig
 		hash:      hash,
 		signature: signature,
 	}
+}
+
+// RmQuotesSubscription removes a quote subscription
+func (i *IntentsManagerImpl) RmQuotesSubscription(dAppAddr string) (uint64, error) {
+	i.quotesMx.Lock()
+	defer i.quotesMx.Unlock()
+	if sub, exist := i.quotesSubscriptions[dAppAddr]; exist {
+		sub.counter--
+		if sub.counter == 0 {
+			delete(i.quotesSubscriptions, dAppAddr)
+		}
+		return sub.counter, nil
+	}
+	return 0, ErrQuoteNotExist
 }
 
 // RmSolutionsSubscription removes a solutions subscription
@@ -223,4 +289,24 @@ func (i *IntentsManagerImpl) CleanupExpiredSolutions(ctx context.Context) {
 			i.sfiMx.Unlock()
 		}
 	}
+}
+
+// IncIntentSubmissions increments the intent submissions counter by 1
+func (i *IntentsManagerImpl) IncIntentSubmissions() {
+	i.intentsCounter.Add(1)
+}
+
+// IncSolutionSubmissions increments the solution submissions counter by 1
+func (i *IntentsManagerImpl) IncSolutionSubmissions() {
+	i.solutionsCounter.Add(1)
+}
+
+// TotalIntentSubmissions returns the total number of intent submissions
+func (i *IntentsManagerImpl) TotalIntentSubmissions() uint64 {
+	return i.intentsCounter.Load()
+}
+
+// TotalSolutionSubmissions returns the total number of solution submissions
+func (i *IntentsManagerImpl) TotalSolutionSubmissions() uint64 {
+	return i.solutionsCounter.Load()
 }

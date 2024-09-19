@@ -36,6 +36,7 @@ const (
 	RPCSubmitIntent               RPCRequestType = "blxr_submit_intent"
 	RPCSubmitIntentSolution       RPCRequestType = "blxr_submit_intent_solution"
 	RPCGetIntentSolutions         RPCRequestType = "blxr_get_intent_solutions"
+	RPCSubmitQuote                RPCRequestType = "blxr_submit_quote"
 )
 
 // External RPCRequestType enumeration
@@ -212,8 +213,17 @@ type RPCSubmitIntentPayload struct {
 	Signature     []byte `json:"signature"`
 }
 
-// RPCSubmitIntentPayloadSolution is the payload of blxr_submit_intent_solution request
-type RPCSubmitIntentPayloadSolution struct {
+// RPCSubmitQuotePayload is the payload of blxr_submit_quote request
+type RPCSubmitQuotePayload struct {
+	DappAddress   string `json:"dapp_address"`
+	SolverAddress string `json:"solver_address"`
+	Quote         []byte `json:"quote"`
+	Hash          []byte `json:"hash"`
+	Signature     []byte `json:"signature"`
+}
+
+// RPCSubmitIntentSolutionPayload is the payload of blxr_submit_intent_solution request
+type RPCSubmitIntentSolutionPayload struct {
 	SolverAddress  string `json:"solver_address"`
 	IntentID       string `json:"intent_id"`
 	IntentSolution []byte `json:"intent_solution"`

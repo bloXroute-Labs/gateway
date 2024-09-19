@@ -129,3 +129,15 @@ const AllNetworkNum NetworkNum = 0
 
 // ErrorNotificationCodeLen represents len of code
 const ErrorNotificationCodeLen = 4
+
+// UUIDv4Len is the byte length of UUID V4
+const UUIDv4Len = 16
+
+// ETHAddressLen is the byte length of ETH Address
+const ETHAddressLen = 20
+
+// Keccak256HashLen is the byte length of Keccak256Hash
+const Keccak256HashLen = 32
+
+// ECDSASignatureLen is the byte length of ECDSASignature in Ethereum ecosystem
+const ECDSASignatureLen = 65

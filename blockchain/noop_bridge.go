@@ -197,11 +197,3 @@ func (n NoOpBxBridge) SendDisconnectEvent(endpoint types.NodeEndpoint) error { r
 func (n NoOpBxBridge) ReceiveDisconnectEvent() <-chan types.NodeEndpoint {
 	return make(chan types.NodeEndpoint)
 }
-
-// SendConnectedEvent is a no-op
-func (n NoOpBxBridge) SendConnectedEvent(endpoint types.NodeEndpoint) error { return nil }
-
-// ReceiveConnectEvent is a no-op
-func (n NoOpBxBridge) ReceiveConnectEvent() <-chan types.NodeEndpoint {
-	return make(<-chan types.NodeEndpoint)
-}

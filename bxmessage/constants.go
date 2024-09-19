@@ -77,6 +77,9 @@ const (
 	SolutionsUnsubscriptionType  = "solsunsub"
 	BeaconMessageType            = "beaconmsg"
 	GetIntentSolutionsType       = "getintsol"
+	QuotesType                   = "quotes"
+	QuotesSubscriptionType       = "quotessub"
+	QuotesUnsubscriptionType     = "quotesunsub"
 )
 
 // SenderLen is the byte length of sender
@@ -101,7 +104,10 @@ const EmptyProtocol = 0
 const MinProtocol = NextValidatorMultipleProtocol
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
-const CurrentProtocol = SolutionSenderAddressProtocol
+const CurrentProtocol = QuotesProtocol
+
+// QuotesProtocol is the minimum protocol version that supports intent quotes
+const QuotesProtocol = 50
 
 // SolutionSenderAddressProtocol is the minimum protocol version that supports solution sender address
 // in the intent solution broadcast message
@@ -165,18 +171,6 @@ const ClientVersionLen = 100
 var NullByteAccountID = bytes.Repeat([]byte("\x00"), AccountIDLen)
 
 var clock utils.Clock = utils.RealClock{}
-
-// UUIDv4Len is the byte length of UUID V4
-const UUIDv4Len = 16
-
-// ETHAddressLen is the byte length of ETH Address
-const ETHAddressLen = 20
-
-// Keccak256HashLen is the byte length of Keccak256Hash
-const Keccak256HashLen = 32
-
-// ECDSASignatureLen is the byte length of ECDSASignature in Ethereum ecosystem
-const ECDSASignatureLen = 65
 
 // IsConnectedLen is the byte of IsConnectedLen byte
 const IsConnectedLen = 1

@@ -2,6 +2,8 @@ package bxmessage
 
 import (
 	"fmt"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // UnpackIntentsSubscription unpacks IntentsSubscription bxmessage from bytes
@@ -41,9 +43,9 @@ func (i *IntentsSubscription) Pack(protocol Protocol) ([]byte, error) {
 
 	bufLen, err := calcPackSize(
 		HeaderLen,
-		ETHAddressLen,
-		Keccak256HashLen,
-		ECDSASignatureLen,
+		types.ETHAddressLen,
+		types.Keccak256HashLen,
+		types.ECDSASignatureLen,
 		ControlByteLen,
 	)
 	if err != nil {

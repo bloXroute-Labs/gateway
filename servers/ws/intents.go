@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/sourcegraph/jsonrpc2"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/intent"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/sourcegraph/jsonrpc2"
 )
 
 const (
@@ -69,7 +69,11 @@ func (h *handlerObj) handleSubmitIntent(ctx context.Context, conn *jsonrpc2.Conn
 		return
 	}
 
-	id := utils.GenerateUUID()
+	id, err := intent.GenerateIntentID(params.DappAddress, params.Intent)
+	if err != nil {
+		sendErrorMsg(ctx, jsonrpc.InternalError, err.Error(), conn, req.ID)
+		return
+	}
 	t := time.Now()
 	intentMsg := bxmessage.NewIntent(id, params.DappAddress, params.SenderAddress, params.Hash, params.Signature, t, params.Intent)
 
@@ -78,6 +82,8 @@ func (h *handlerObj) handleSubmitIntent(ctx context.Context, conn *jsonrpc2.Conn
 		sendErrorMsg(ctx, jsonrpc.InternalError, err.Error(), conn, req.ID)
 		return
 	}
+
+	h.intentsManager.IncIntentSubmissions()
 
 	response := rpcIntentResponse{IntentID: id}
 
@@ -93,7 +99,7 @@ func (h *handlerObj) handleSubmitIntentSolution(ctx context.Context, conn *jsonr
 		return
 	}
 
-	var params jsonrpc.RPCSubmitIntentPayloadSolution
+	var params jsonrpc.RPCSubmitIntentSolutionPayload
 	err := json.Unmarshal(*req.Params, &params)
 	if err != nil {
 		sendErrorMsg(ctx, jsonrpc.InvalidParams, fmt.Sprintf("failed to unmarshal params for %v request: %v",
@@ -106,7 +112,11 @@ func (h *handlerObj) handleSubmitIntentSolution(ctx context.Context, conn *jsonr
 		return
 	}
 
-	id := utils.GenerateUUID()
+	id, err := intent.GenerateSolutionID(params.IntentID, params.IntentSolution)
+	if err != nil {
+		sendErrorMsg(ctx, jsonrpc.InternalError, err.Error(), conn, req.ID)
+		return
+	}
 	firstSeen := time.Now()
 	intentMsg := bxmessage.NewIntentSolution(id, params.SolverAddress, params.IntentID, params.Hash, params.Signature, firstSeen, params.IntentSolution)
 
@@ -115,6 +125,8 @@ func (h *handlerObj) handleSubmitIntentSolution(ctx context.Context, conn *jsonr
 		sendErrorMsg(ctx, jsonrpc.InternalError, err.Error(), conn, req.ID)
 		return
 	}
+
+	h.intentsManager.IncSolutionSubmissions()
 
 	response := rpcIntentSolutionResponse{SolutionID: id, FirstSeen: firstSeen}
 
@@ -215,9 +227,13 @@ func validateSubmitIntentPayload(payload *jsonrpc.RPCSubmitIntentPayload) error 
 	return intent.ValidateHashAndSignature(payload.SenderAddress, payload.Hash, payload.Signature, payload.Intent)
 }
 
-func validateSubmitIntentSolutionPayload(payload *jsonrpc.RPCSubmitIntentPayloadSolution) error {
+func validateSubmitIntentSolutionPayload(payload *jsonrpc.RPCSubmitIntentSolutionPayload) error {
 	if len(payload.IntentSolution) == 0 {
 		return ErrInvalidIntent
+	}
+
+	if len(payload.IntentID) == 0 {
+		return ErrRequiredIntentID
 	}
 
 	return intent.ValidateHashAndSignature(payload.SolverAddress, payload.Hash, payload.Signature, payload.IntentSolution)

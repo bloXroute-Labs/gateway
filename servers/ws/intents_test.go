@@ -46,9 +46,8 @@ func (s *wsSuite) TestSubmitIntent() {
 		var res rpcIntentResponse
 		err = json.Unmarshal(b, &res)
 		s.Require().NoError(err)
-
-		_, err = uuid.Parse(res.IntentID)
-		s.Require().NoError(err)
+		crypto.Keccak256Hash()
+		s.Assert().NotEmpty(res.IntentID)
 	})
 	s.T().Run("different dapp and sender", func(_ *testing.T) {
 		ir := s.createIntentRequest()
@@ -65,9 +64,7 @@ func (s *wsSuite) TestSubmitIntent() {
 		var res rpcIntentResponse
 		err = json.Unmarshal(b, &res)
 		s.Require().NoError(err)
-
-		_, err = uuid.Parse(res.IntentID)
-		s.Require().NoError(err)
+		s.Assert().NotEmpty(res.IntentID)
 	})
 	s.T().Run("wrong hash", func(_ *testing.T) {
 		req := s.createIntentRequest()

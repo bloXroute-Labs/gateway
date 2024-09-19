@@ -163,7 +163,7 @@ func (m MEVBundle) size(protocol Protocol, txs [][]byte) uint32 {
 	size += BroadcastHeaderLen    // Broadcast header + Control Byte
 	size += types.UInt16Len       // Method size-prefix
 	size += uint32(len(m.Method)) // Method content
-	size += UUIDv4Len             // UUID
+	size += types.UUIDv4Len       // UUID
 	size += types.UInt64Len       // BlockNumber
 	size += types.UInt32Len       // MinTimestamp
 	size += types.UInt32Len       // MaxTimestamp
@@ -274,7 +274,7 @@ func (m MEVBundle) Pack(protocol Protocol) ([]byte, error) {
 
 		copy(buf[offset:], uuidBytes[:])
 	}
-	offset += UUIDv4Len
+	offset += types.UUIDv4Len
 
 	// Transactions
 	binary.LittleEndian.PutUint16(buf[offset:], uint16(len(decodedTxs)))
@@ -453,17 +453,17 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 	offset += int(methodLen)
 
 	// UUID
-	if err := checkBufSize(&data, offset, UUIDv4Len); err != nil {
+	if err := checkBufSize(&data, offset, types.UUIDv4Len); err != nil {
 		return err
 	}
-	if uuidBytes := data[offset : offset+UUIDv4Len]; !bytes.Equal(uuidBytes, emptyUUID) {
+	if uuidBytes := data[offset : offset+types.UUIDv4Len]; !bytes.Equal(uuidBytes, emptyUUID) {
 		uuidRaw, err := uuid.FromBytes(uuidBytes)
 		if err != nil {
 			return fmt.Errorf("failed to parse uuid from bytes, %v", err)
 		}
 		m.UUID = uuidRaw.String()
 	}
-	offset += UUIDv4Len
+	offset += types.UUIDv4Len
 
 	// Transactions
 	if err := checkBufSize(&data, offset, types.UInt16Len); err != nil {

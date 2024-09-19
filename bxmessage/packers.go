@@ -59,7 +59,7 @@ func unpackHeader(src []byte, protocol Protocol) (h Header, n int, err error) {
 }
 
 func packKeccak256Hash(dst, hash []byte) (n int, err error) {
-	n = Keccak256HashLen
+	n = types.Keccak256HashLen
 	if x := len(hash); x != n {
 		return n, fmt.Errorf("invalid input data size, expected: %d bytes, actual: %d bytes", n, x)
 	}
@@ -73,7 +73,7 @@ func packKeccak256Hash(dst, hash []byte) (n int, err error) {
 }
 
 func unpackKeccak256Hash(buf []byte) (hash []byte, n int, err error) {
-	n = Keccak256HashLen
+	n = types.Keccak256HashLen
 	if err = validateBufSize(buf, n); err != nil {
 		return nil, n, err
 	}
@@ -108,7 +108,7 @@ func unpackRawBytes(src []byte) (b []byte, n int, err error) {
 }
 
 func packETHAddressHex(dst []byte, addrHex string) (n int, err error) {
-	n = ETHAddressLen
+	n = types.ETHAddressLen
 	if err := validateBufSize(dst, n); err != nil {
 		return 0, err
 	}
@@ -119,16 +119,16 @@ func packETHAddressHex(dst []byte, addrHex string) (n int, err error) {
 }
 
 func unpackETHAddressHex(src []byte) (s string, n int, err error) {
-	n = ETHAddressLen
-	if err := validateBufSize(src, ETHAddressLen); err != nil {
+	n = types.ETHAddressLen
+	if err := validateBufSize(src, types.ETHAddressLen); err != nil {
 		return s, n, err
 	}
 
-	return common.BytesToAddress(src[:ETHAddressLen]).Hex(), n, nil
+	return common.BytesToAddress(src[:types.ETHAddressLen]).Hex(), n, nil
 }
 
 func packECDSASignature(dst []byte, sig []byte) (n int, err error) {
-	n = ECDSASignatureLen
+	n = types.ECDSASignatureLen
 	if x := len(sig); x != n {
 		return n, fmt.Errorf("invalid input data size, expected: %d bytes, actual: %d bytes", n, x)
 	}
@@ -142,7 +142,7 @@ func packECDSASignature(dst []byte, sig []byte) (n int, err error) {
 }
 
 func unpackECDSASignature(src []byte) (sig []byte, n int, err error) {
-	n = ECDSASignatureLen
+	n = types.ECDSASignatureLen
 	if err := validateBufSize(src, n); err != nil {
 		return nil, n, err
 	}
@@ -172,7 +172,7 @@ func unpackTimestamp(src []byte) (t time.Time, n int, err error) {
 }
 
 func packUUIDv4String(dst []byte, uid string) (n int, err error) {
-	n = UUIDv4Len
+	n = types.UUIDv4Len
 	if err = validateBufSize(dst, n); err != nil {
 		return n, err
 	}
@@ -187,7 +187,7 @@ func packUUIDv4String(dst []byte, uid string) (n int, err error) {
 }
 
 func unpackUUIDv4String(src []byte) (uid string, n int, err error) {
-	n = UUIDv4Len
+	n = types.UUIDv4Len
 	if err = validateBufSize(src, n); err != nil {
 		return uid, n, err
 	}

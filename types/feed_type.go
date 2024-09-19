@@ -14,6 +14,7 @@ const (
 	TransactionStatusFeed   FeedType = "transactionStatus"
 	UserIntentsFeed         FeedType = "userIntentFeed"
 	UserIntentSolutionsFeed FeedType = "userIntentSolutionsFeed"
+	QuotesFeed              FeedType = "quotesFeed"
 )
 
 // FeedConnectionType types of feeds

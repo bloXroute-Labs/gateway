@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
@@ -29,11 +29,11 @@ func ValidateHashAndSignature(address string, hash, signature, data []byte) erro
 		return ErrInvalidAddress
 	}
 
-	if len(hash) != bxmessage.Keccak256HashLen {
+	if len(hash) != types.Keccak256HashLen {
 		return ErrInvalidHash
 	}
 
-	if len(signature) != bxmessage.ECDSASignatureLen {
+	if len(signature) != types.ECDSASignatureLen {
 		return ErrInvalidSignatureLength
 	}
 

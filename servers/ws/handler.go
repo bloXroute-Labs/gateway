@@ -78,6 +78,8 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 		h.handleSubmitIntentSolution(ctx, conn, req)
 	case jsonrpc.RPCGetIntentSolutions:
 		h.handleGetIntentSolutions(ctx, conn, req)
+	case jsonrpc.RPCSubmitQuote:
+		h.handleSubmitQuote(ctx, conn, req)
 	case jsonrpc.RPCPing:
 		response := rpcPingResponse{
 			Pong: time.Now().UTC().Format(bxgateway.MicroSecTimeFormat),
@@ -153,6 +155,8 @@ func (h *handlerObj) allowTier(method jsonrpc.RPCRequestType) bool {
 		method != jsonrpc.RPCUnsubscribe &&
 		method != jsonrpc.RPCSubmitIntent &&
 		method != jsonrpc.RPCSubmitIntentSolution &&
+		method != jsonrpc.RPCSubmitQuote &&
+		method != jsonrpc.RPCGetIntentSolutions &&
 		method != jsonrpc.RPCPing &&
 		!h.connectionAccount.TierName.IsEnterprise() {
 		return false

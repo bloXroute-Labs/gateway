@@ -37,7 +37,7 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *jsonrpc2.Conn
 
 	// check if the account has the right tier to access
 	// if "allowIntroductoryTierAccess" == false, then this check was already done before creating the connection
-	if h.allowIntroductoryTierAccess && feed != types.UserIntentsFeed && feed != types.UserIntentSolutionsFeed && !h.connectionAccount.TierName.IsEnterprise() {
+	if h.allowIntroductoryTierAccess && feed != types.UserIntentsFeed && feed != types.UserIntentSolutionsFeed && feed != types.QuotesFeed && !h.connectionAccount.TierName.IsEnterprise() {
 		sendErrorMsg(ctx, jsonrpc.Blocked, "account must be enterprise / enterprise elite / ultra", conn, req.ID)
 		conn.Close()
 		return
@@ -52,9 +52,12 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *jsonrpc2.Conn
 
 	var request *ClientReq
 	var postRun func()
-	if feed == types.UserIntentsFeed || feed == types.UserIntentSolutionsFeed {
+	switch feed {
+	case types.UserIntentsFeed, types.UserIntentSolutionsFeed:
 		request, postRun, err = h.createIntentClientReq(req, feed, rpcParams)
-	} else {
+	case types.QuotesFeed:
+		request, postRun, err = h.createQuoteClientReq(rpcParams)
+	default:
 		request, err = h.createClientReq(req, feed, rpcParams)
 	}
 	if err != nil {
@@ -167,7 +170,7 @@ func (h *handlerObj) handleRPCSubscribeNotify(ctx context.Context, conn *jsonrpc
 			case types.UserIntentsFeed:
 				in := notification.(*types.UserIntentNotification)
 				if !shouldSendIntent(request, in.DappAddress) {
-					return
+					continue
 				}
 				if h.sendIntentNotification(ctx, subscriptionID, conn, in) != nil {
 					return
@@ -176,6 +179,13 @@ func (h *handlerObj) handleRPCSubscribeNotify(ctx context.Context, conn *jsonrpc
 				intentSolution := notification.(*types.UserIntentSolutionNotification)
 				if intentSolution.DappAddress == request.Includes[0] || intentSolution.SenderAddress == request.Includes[0] {
 					if h.sendIntentSolutionNotification(ctx, subscriptionID, conn, intentSolution) != nil {
+						return
+					}
+				}
+			case types.QuotesFeed:
+				quote := notification.(*types.QuoteNotification)
+				if strings.ToLower(quote.DappAddress) == request.Includes[0] {
+					if h.sendQuoteNotification(ctx, subscriptionID, conn, quote) != nil {
 						return
 					}
 				}
@@ -327,6 +337,27 @@ func (h *handlerObj) sendIntentNotification(ctx context.Context, subscriptionID 
 			IntentID:      in.ID,
 			Intent:        in.Intent,
 			Timestamp:     in.Timestamp.Format(time.RFC3339),
+		},
+	}
+
+	err := conn.Notify(ctx, "subscribe", response)
+	if err != nil {
+		h.log.Errorf("error reply to subscriptionID %v: %v", subscriptionID, err.Error())
+		return err
+	}
+
+	return nil
+}
+
+func (h *handlerObj) sendQuoteNotification(ctx context.Context, subscriptionID string, conn *jsonrpc2.Conn, quote *types.QuoteNotification) error {
+	response := quoteResponse{
+		Subscription: subscriptionID,
+		Result: quoteNotification{
+			DappAddress:   quote.DappAddress,
+			SolverAddress: quote.SolverAddress,
+			ID:            quote.ID,
+			Quote:         quote.Quote,
+			Timestamp:     quote.Timestamp.Format(time.RFC3339),
 		},
 	}
 

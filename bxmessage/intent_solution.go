@@ -215,12 +215,12 @@ func (i *IntentSolution) Unpack(buf []byte, protocol Protocol) error {
 func (i *IntentSolution) size(protocol Protocol) (uint32, error) {
 	size, err := calcPackSize(
 		HeaderLen,
-		UUIDv4Len,
-		ETHAddressLen,
-		UUIDv4Len,
+		types.UUIDv4Len,
+		types.ETHAddressLen,
+		types.UUIDv4Len,
 		i.Solution,
-		Keccak256HashLen,
-		ECDSASignatureLen,
+		types.Keccak256HashLen,
+		types.ECDSASignatureLen,
 		ShortTimestampLen,
 		ControlByteLen,
 	)
@@ -229,11 +229,11 @@ func (i *IntentSolution) size(protocol Protocol) (uint32, error) {
 	}
 
 	if protocol >= IntentSolutionProtocol {
-		size += ETHAddressLen // DappAddress
+		size += types.ETHAddressLen // DappAddress
 	}
 
 	if protocol >= SolutionSenderAddressProtocol {
-		size += ETHAddressLen // SenderAddress
+		size += types.ETHAddressLen // SenderAddress
 	}
 
 	return size, nil

@@ -19,6 +19,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/pkg/errors"
+	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
+	"github.com/sourcegraph/jsonrpc2"
+	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
@@ -51,16 +62,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
 	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 	"github.com/bloXroute-Labs/gateway/v2/version"
-	"github.com/cenkalti/backoff/v4"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/sourcegraph/jsonrpc2"
-	"go.uber.org/atomic"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -1267,8 +1268,6 @@ func (g *gateway) handleBridgeMessages(ctx context.Context) error {
 				g.handleBeaconMessageFromBlockchain(&beaconMessage)
 			},
 				fmt.Sprintf("handleBeaconMessageFromBlockchain hash=[%s]", beaconMessage.Message.Hash), beaconMessage.PeerEndpoint.String(), 1)
-		case endpoint := <-g.bridge.ReceiveConnectEvent():
-			g.bdnStats.SetNodeToConnected(endpoint)
 		}
 	}
 }
@@ -1446,7 +1445,21 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 			}
 			g.notify(types.NewUserIntentSolutionNotification(solution))
 		}
-	case *bxmessage.IntentsSubscription, *bxmessage.IntentsUnsubscription, *bxmessage.SolutionsSubscription, *bxmessage.SolutionsUnsubscription:
+	case *bxmessage.Quote:
+		g.broadcast(typedMsg, source, utils.RelayProxy)
+		if source != nil && source.GetConnectionType() == utils.RelayProxy {
+			quote := &types.QuoteNotification{
+				ID:            typedMsg.ID,
+				DappAddress:   typedMsg.DappAddress,
+				SolverAddress: typedMsg.SolverAddress,
+				Quote:         typedMsg.Quote,
+				Hash:          typedMsg.Hash,
+				Signature:     typedMsg.Signature,
+				Timestamp:     typedMsg.Timestamp,
+			}
+			g.notify(quote)
+		}
+	case *bxmessage.IntentsSubscription, *bxmessage.IntentsUnsubscription, *bxmessage.SolutionsSubscription, *bxmessage.SolutionsUnsubscription, *bxmessage.QuotesSubscription, *bxmessage.QuotesUnsubscription:
 		g.broadcast(typedMsg, source, utils.RelayProxy)
 	case *bxmessage.GetIntentSolutions:
 		g.broadcast(typedMsg, source, utils.RelayProxy) // request intent solutions from all the connected relays
@@ -1802,6 +1815,10 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 		}
 	}
 
+	txResult.Transaction.Lock()
+	txSender := txResult.Transaction.Sender()
+	txResult.Transaction.Unlock()
+
 	statsStart := time.Now()
 	g.stats.AddTxsByShortIDsEvent(eventName, source, txResult.Transaction, tx.ShortID(), nodeID, broadcastRes.RelevantPeers, broadcastRes.SentGatewayPeers, startTime, tx.GetPriority(), txResult.DebugData)
 	statsDuration := time.Since(statsStart)
@@ -1819,7 +1836,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 		"sentPeersNum":            broadcastRes.SentPeers,
 		"sentToBlockchainNode":    sentToBlockchainNode,
 		"handlingDuration":        handlingTime,
-		"sender":                  txResult.Transaction.Sender(),
+		"sender":                  txSender,
 		"networkDuration":         tx.ReceiveTime().Sub(tx.Timestamp()).Microseconds(),
 		"statsDuration":           statsDuration,
 		"nextValidatorEnabled":    tx.Flags().IsNextValidator(),
@@ -2084,9 +2101,7 @@ func (g *gateway) sendStatsOnInterval(interval time.Duration) {
 
 func (g *gateway) handleBlockchainConnectionStatusUpdate() {
 	for blockchainConnectionStatus := range g.bridge.ReceiveBlockchainConnectionStatus() {
-		if _, ok := g.bdnStats.NodeStats()[blockchainConnectionStatus.PeerEndpoint.IPPort()]; ok {
-			g.bdnStats.NodeStats()[blockchainConnectionStatus.PeerEndpoint.IPPort()].IsConnected = blockchainConnectionStatus.IsConnected
-		}
+		g.bdnStats.SetBlockchainConnectionStatus(blockchainConnectionStatus)
 
 		if blockchainConnectionStatus.IsDynamic {
 			continue

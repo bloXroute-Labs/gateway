@@ -142,7 +142,7 @@ func (f *Manager) Subscribe(feedName types.FeedType, feedConnectionType types.Fe
 	f.idToClientSubscription[id] = clientSubscription
 	f.lock.Unlock()
 
-	f.log.Infof("%v subscribed to feed '%v', id %v with includes [%v] and filter [%v]", ci.RemoteAddress, feedName, id, ro.Includes, ro.Filters)
+	f.log.Infof("%v subscribed to feed '%v', id '%v' with includes [%v] and filter [%v]", ci.RemoteAddress, feedName, id, ro.Includes, ro.Filters)
 
 	handlingInfo := ClientSubscriptionHandlingInfo{
 		SubscriptionID:     id,
@@ -165,7 +165,7 @@ func (f *Manager) Unsubscribe(subscriptionID string, closeClientConnection bool,
 		return fmt.Errorf("subscription %v was not found", subscriptionID)
 	}
 
-	f.log.Infof("unsubscribing %v from %v, closing the connection: %v", subscriptionID, clientSub.RemoteAddress, closeClientConnection)
+	f.log.Infof("unsubscribing '%v' from feed '%v', closing the connection: %v", clientSub.RemoteAddress, clientSub.feedType, closeClientConnection)
 
 	if errMsg != "" {
 		clientSub.errMsgChan <- errMsg

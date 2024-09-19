@@ -38,6 +38,8 @@ service Gateway {
   rpc SubmitIntentSolution(SubmitIntentSolutionRequest) returns (SubmitIntentSolutionReply){}
   rpc Intents(IntentsRequest) returns (stream IntentsReply){}
   rpc IntentSolutions(IntentSolutionsRequest) returns (stream IntentSolutionsReply){}
+  rpc SubmitQuote(SubmitQuoteRequest) returns (SubmitQuoteReply){}
+  rpc Quotes(QuotesRequest) returns (stream QuotesReply){}
 }
 
 message TxLogs {
@@ -383,6 +385,11 @@ message QueuesStats {
   uint64 txs_order_queue_count = 2;
 }
 
+message IntentStats {
+  uint64 submitted_intents_count = 1;
+  uint64 submitted_solutions_count = 2;
+}
+
 message NodePerformance {
   string since = 1;
   uint32 new_blocks_received_from_blockchain_node = 2;
@@ -446,6 +453,7 @@ message StatusResponse {
   map<string, BDNConnStatus> relays = 4;
   AccountInfo account_info = 1;
   QueuesStats queue_stats = 5;
+  IntentStats intent_stats = 6;
 }
 
 message TxResult {
@@ -544,6 +552,31 @@ message SubmitIntentSolutionRequest {
 message SubmitIntentSolutionReply {
   string solutionId = 1;
   google.protobuf.Timestamp first_seen = 2;
+}
+
+message SubmitQuoteRequest {
+  string dappAddress = 1; // ETH address
+  string solverAddress = 2; // ETH address
+  bytes quote = 3; // The quote payload
+  bytes hash = 4; // Keccak256Hash of the quote bytes
+  bytes signature = 5; // ECDSA signature of hash
+}
+
+message SubmitQuoteReply {
+  string quoteId = 1;
+  google.protobuf.Timestamp first_seen = 2;
+}
+
+message QuotesRequest {
+  string dappAddress = 1; // dApp address
+}
+
+message QuotesReply {
+  string dappAddress = 1; // GUID expected
+  string solverAddress = 2; // GUID expected
+  string quoteId = 3;
+  bytes quote = 4; //The intent payload
+  google.protobuf.Timestamp timestamp = 5;
 }
 
 message IntentsRequest {

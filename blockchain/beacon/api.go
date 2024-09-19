@@ -277,6 +277,12 @@ func (c *APIClient) subscribeToEvents(eventsURL string, handler func(msg *sse.Ev
 			if errors.Is(err, context.Canceled) {
 				return
 			}
+			disconnectEventErr := c.bridge.SendBlockchainConnectionStatus(blockchain.ConnectionStatus{PeerEndpoint: c.nodeEndpoint, IsConnected: false})
+			if disconnectEventErr != nil {
+				log.Errorf("was not able to set node status to not connected, err: %v", err)
+			} else {
+				c.isConnected = false
+			}
 
 			if err != nil {
 				c.log.Errorf("failed to subscribe to head events: %v", err)
@@ -456,7 +462,7 @@ func (c *APIClient) blockHeadEventHandler() func(msg *sse.Event) {
 
 		if !c.isConnected {
 			// if we were not able to set the node to connected, we will try again next block
-			if err := c.bridge.SendConnectedEvent(c.nodeEndpoint); err != nil {
+			if err := c.bridge.SendBlockchainConnectionStatus(blockchain.ConnectionStatus{PeerEndpoint: c.nodeEndpoint, IsConnected: true}); err != nil {
 				log.Errorf("was not able to set node status to connected, err: %v", err)
 			} else {
 				c.isConnected = true

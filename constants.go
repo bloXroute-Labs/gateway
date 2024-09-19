@@ -202,6 +202,16 @@ const BSCTestnetNum types.NetworkNum = 42
 // HoleskyNum - for Holesky Testnet network number
 const HoleskyNum types.NetworkNum = 49
 
+type contextKey string
+
+const (
+	// BxConfigKey - config key for config from context
+	BxConfigKey = contextKey("bxConfig")
+
+	// CloseLoggerKey - close logger key for close logger from context
+	CloseLoggerKey = contextKey("closeLogger")
+)
+
 // BlockchainNetworkToNetworkNum converts blockchain network to number
 var BlockchainNetworkToNetworkNum = map[string]types.NetworkNum{
 	Mainnet:        MainnetNum,
