@@ -44,26 +44,26 @@ type server struct {
 
 // grpcParams server params
 type grpcParams struct {
-	node                           connections.BxListener
-	sdn                            connections.SDNHTTP
-	accService                     account.Accounter
-	bridge                         blockchain.Bridge
-	blockchainPeers                []types.NodeEndpoint
-	wsManager                      blockchain.WSManager
-	bdnStats                       *bxmessage.BdnPerformanceStats
-	timeStarted                    time.Time
-	txsQueue                       services.MessageQueue
-	txsOrderQueue                  services.MessageQueue
-	gatewayPublicKey               string
-	connector                      Connector
-	validatorsManager              *validator.Manager
-	txFromFieldIncludable          bool
-	blockProposer                  bsc.BlockProposer
-	allowIntroductoryTierAccess    bool
-	intentsManager                 services.IntentsManager
-	feedManager                    feedManager
-	txStore                        services.TxStore
-	chainID                        types.NetworkID
+	node                        connections.BxListener
+	sdn                         connections.SDNHTTP
+	accService                  account.Accounter
+	bridge                      blockchain.Bridge
+	blockchainPeers             []types.NodeEndpoint
+	wsManager                   blockchain.WSManager
+	bdnStats                    *bxmessage.BdnPerformanceStats
+	timeStarted                 time.Time
+	txsQueue                    services.MessageQueue
+	txsOrderQueue               services.MessageQueue
+	gatewayPublicKey            string
+	connector                   Connector
+	validatorsManager           *validator.Manager
+	txFromFieldIncludable       bool
+	blockProposer               bsc.BlockProposer
+	allowIntroductoryTierAccess bool
+	intentsManager              services.IntentsManager
+	feedManager                 feedManager
+	txStore                     services.TxStore
+	chainID                     types.NetworkID
 }
 
 // newServer return new server object
