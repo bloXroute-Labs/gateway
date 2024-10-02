@@ -6,9 +6,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common/math"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/ethereum/go-ethereum/common/math"
 )
 
 // AccountRequest represents a request to bxapi for account details
@@ -223,18 +224,6 @@ type BDNFeedService struct {
 	AllowedNetworks []string       `json:"allowed_networks"`
 }
 
-// BundleProperties represent bundle properties for a specific network
-type BundleProperties struct {
-	TxsLenPrices map[string]float64 `json:"txs_len_prices"`
-	TxsLenLimit  int                `json:"txs_len_limit"`
-}
-
-// BDNBundlesService is a placeholder for service model configs
-type BDNBundlesService struct {
-	ExpireDate string                      `json:"expire_date"`
-	Networks   map[string]BundleProperties `json:"networks"`
-}
-
 // BDNPrivateRelayService is a placeholder for service model configs
 type BDNPrivateRelayService interface{}
 
@@ -275,8 +264,6 @@ type Account struct {
 	PrivateOrdersStreaming        BDNFeedService `json:"private_orders_streaming"`
 	PendingPrivateTxsStreaming    BDNFeedService `json:"pending_private_txs_streaming"`
 	MEVProposerGetHeaderStreaming BDNFeedService `json:"mev_get_header_streaming"`
-
-	Bundles BDNBundlesService `json:"bundles"`
 
 	EthValidatorGateway BDNQuotaService `json:"eth_validator_gateway"`
 }
@@ -489,27 +476,6 @@ func GetDefaultEliteAccount(now time.Time) Account {
 			ExpireDateTime: now.Add(time.Hour),
 		},
 		SecretHash: "",
-		Bundles: BDNBundlesService{
-			ExpireDate: now.AddDate(0, 0, 1).Format("2006-01-02"),
-			Networks: map[string]BundleProperties{
-				bxgateway.BSCTestnet: {
-					TxsLenPrices: map[string]float64{
-						"1":      0.0,
-						"2":      0.0,
-						"higher": 0.002,
-					},
-					TxsLenLimit: 30,
-				},
-				bxgateway.BSCMainnet: {
-					TxsLenPrices: map[string]float64{
-						"1":      0.0,
-						"2":      0.0,
-						"higher": 0.002,
-					},
-					TxsLenLimit: 30,
-				},
-			},
-		},
 		EthValidatorGateway: BDNQuotaService{
 			MsgQuota: BDNService{
 				TimeInterval: TimeIntervalWithout,

@@ -259,6 +259,7 @@ func (g *server) Status(ctx context.Context, req *pb.StatusRequest) (*pb.StatusR
 		IntentStats: &pb.IntentStats{
 			SubmittedIntentsCount:   g.params.intentsManager.TotalIntentSubmissions(),
 			SubmittedSolutionsCount: g.params.intentsManager.TotalSolutionSubmissions(),
+			SubmittedQuotesCount:    g.params.intentsManager.TotalQuoteSubmissions(),
 		},
 	}
 

@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 )
 
 func TestMEVBundle(t *testing.T) {
@@ -30,8 +31,6 @@ func TestMEVBundle(t *testing.T) {
 			"builder2": "0x456",
 		},
 		PerformanceTimestamp:      time.Now().UTC(),
-		BundlePrice:               100,
-		EnforcePayout:             true,
 		OriginalSenderAccountID:   "bloXroute LABS",
 		OriginalSenderAccountTier: sdnmessage.ATierUltra,
 		SentFromCloudAPI:          true,
@@ -68,8 +67,6 @@ func TestMEVBundle_EmptyBuilders(t *testing.T) {
 		},
 		MEVBuilders:               map[string]string{},
 		PerformanceTimestamp:      time.Now().UTC(),
-		BundlePrice:               100,
-		EnforcePayout:             true,
 		OriginalSenderAccountID:   "bloXroute LABS",
 		OriginalSenderAccountTier: sdnmessage.ATierUltra,
 		SentFromCloudAPI:          true,
@@ -107,8 +104,6 @@ func TestMEVBundle_NoOriginalSenderAccountTier(t *testing.T) {
 			"builder2": "0x456",
 		},
 		PerformanceTimestamp:    time.Now().UTC(),
-		BundlePrice:             100,
-		EnforcePayout:           true,
 		OriginalSenderAccountID: "bloXroute LABS",
 		SentFromCloudAPI:        true,
 	}
@@ -146,8 +141,6 @@ func TestMEVBundlePayoutBackCompatibility(t *testing.T) {
 			"builder2": "0x456",
 		},
 		PerformanceTimestamp: time.Now(),
-		BundlePrice:          100,
-		EnforcePayout:        true,
 	}
 
 	b, err := m.Pack(BundlesOverBDNPayoutProtocol - 1)
@@ -162,10 +155,6 @@ func TestMEVBundlePayoutBackCompatibility(t *testing.T) {
 	// There is precision loss due to using float64 for timestamp
 	assert.Less(t, m.PerformanceTimestamp.Sub(m2.PerformanceTimestamp), time.Millisecond)
 	m2.PerformanceTimestamp = m.PerformanceTimestamp
-
-	// New fields
-	m.BundlePrice = 0
-	m.EnforcePayout = false
 
 	assert.Equal(t, m, m2)
 }
@@ -191,8 +180,6 @@ func TestMEVBundleOriginalSenderAccountBackCompatibility(t *testing.T) {
 			"builder2": "0x456",
 		},
 		PerformanceTimestamp:    time.Now().UTC(),
-		BundlePrice:             100,
-		EnforcePayout:           true,
 		OriginalSenderAccountID: "bloXroute LABS",
 	}
 
@@ -232,8 +219,6 @@ func TestMEVBundleAvoidMixedBundleBackCompatibility(t *testing.T) {
 			"builder2": "0x456",
 		},
 		PerformanceTimestamp:    time.Now().UTC(),
-		BundlePrice:             100,
-		EnforcePayout:           true,
 		OriginalSenderAccountID: "bloXroute LABS",
 		AvoidMixedBundles:       true,
 	}
@@ -274,23 +259,36 @@ func TestMevBundlePriorityFeeRefundBackCompatibility(t *testing.T) {
 			"builder2": "0x456",
 		},
 		PerformanceTimestamp:    time.Now().UTC(),
-		BundlePrice:             100,
-		EnforcePayout:           true,
 		OriginalSenderAccountID: "bloXroute LABS",
 		PriorityFeeRefund:       true,
 	}
 
-	b, err := m.Pack(BundlePriorityFeeRefundProtocol - 1)
-	assert.NoError(t, err)
+	t.Run("BundlePriorityFeeRefundProtocol - 1 protocol", func(t *testing.T) {
+		b, err := m.Pack(BundlePriorityFeeRefundProtocol - 1)
+		assert.NoError(t, err)
 
-	var m2 MEVBundle
-	err = m2.Unpack(b, BundlePriorityFeeRefundProtocol-1)
-	assert.NoError(t, err)
+		var m2 MEVBundle
+		err = m2.Unpack(b, BundlePriorityFeeRefundProtocol-1)
+		assert.NoError(t, err)
 
-	m.msgType = MEVBundleType
+		m.msgType = MEVBundleType
 
-	// new field
-	m.PriorityFeeRefund = false
+		// new field
+		m.PriorityFeeRefund = false
 
-	assert.Equal(t, m, m2)
+		assert.Equal(t, m, m2)
+	})
+
+	t.Run("current protocol", func(t *testing.T) {
+		b, err := m.Pack(CurrentProtocol)
+		assert.NoError(t, err)
+
+		var m2 MEVBundle
+		err = m2.Unpack(b, CurrentProtocol)
+		assert.NoError(t, err)
+
+		m.msgType = MEVBundleType
+
+		assert.Equal(t, m, m2)
+	})
 }

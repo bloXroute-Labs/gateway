@@ -112,8 +112,6 @@ func (s *Server) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 			MaxTimestamp:      bundlePayload[0].MaxTimestamp,
 			RevertingHashes:   bundlePayload[0].RevertingTxHashes,
 			UUID:              bundlePayload[0].UUID,
-			BundlePrice:       bundlePayload[0].BundlePrice,
-			EnforcePayout:     bundlePayload[0].EnforcePayout,
 			AvoidMixedBundles: bundlePayload[0].AvoidMixedBundles,
 		}
 

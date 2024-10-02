@@ -54,12 +54,10 @@ type bundleRecord struct {
 	NetworkNum       types.NetworkNum `json:"network_num"`
 	MEVBuilderNames  []string         `json:"mev_builder_names"`
 	UUID             string           `json:"uuid"`
-	BlockNumber      uint64           `json:"block_number"`
+	BlockNumber      int64            `json:"block_number"`
 	MinTimestamp     int              `json:"min_timestamp"`
 	MaxTimestamp     int              `json:"max_timestamp"`
 	ExtraData        bundleExtraData  `json:"extra_data,omitempty"`
-	BundlePrice      int64            `json:"bundlePrice,omitempty"` // in wei
-	EnforcePayout    bool             `json:"enforcePayout,omitempty"`
 	SentPeers        int              `json:"sent_peers,omitempty"`
 	SentGatewayPeers int              `json:"gateway_peers,omitempty"`
 }

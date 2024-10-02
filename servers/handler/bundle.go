@@ -88,12 +88,6 @@ func HandleMEVBundle(node connections.BxListener, conn connections.Conn, connect
 		return nil, jsonrpc2.CodeInvalidRequest, ErrBundleAccountTierTooLow
 	}
 
-	maxTxsLen := connectionAccount.Bundles.Networks[bxgateway.NetworkNumToBlockchainNetwork[networkNum]].TxsLenLimit
-	if maxTxsLen > 0 && len(mevBundle.Transactions) > maxTxsLen {
-		log.Tracef("%s rejected for exceeding txs limit %v", mevBundle, maxTxsLen)
-		return nil, jsonrpc2.CodeInvalidRequest, fmt.Errorf("txs limit exceeded, max txs allowed: %v", maxTxsLen)
-	}
-
 	if err := node.HandleMsg(mevBundle, conn, connections.RunForeground); err != nil {
 		// err here is not possible right now, but anyway we don't want expose reason of internal error to the client
 		log.Errorf("failed to process %s: %v", mevBundle, err)
@@ -228,8 +222,6 @@ func mevBundleFromRequest(payload *jsonrpc.RPCBundleSubmissionPayload, networkNu
 		payload.RevertingHashes,
 		payload.MEVBuilders,
 		parsedBundle.bundleHash,
-		payload.BundlePrice,
-		payload.EnforcePayout,
 		avoidMixedBundles,
 		payload.PriorityFeeRefund,
 		payload.IncomingRefundRecipient,

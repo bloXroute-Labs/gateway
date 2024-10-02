@@ -47,7 +47,7 @@ func (m *MockIntentsManager) AddIntentOfInterest(intentID string) {
 }
 
 // AddIntentOfInterest indicates an expected call of AddIntentOfInterest.
-func (mr *MockIntentsManagerMockRecorder) AddIntentOfInterest(intentID any) *gomock.Call {
+func (mr *MockIntentsManagerMockRecorder) AddIntentOfInterest(intentID interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddIntentOfInterest", reflect.TypeOf((*MockIntentsManager)(nil).AddIntentOfInterest), intentID)
 }
@@ -59,15 +59,23 @@ func (m *MockIntentsManager) AddIntentsSubscription(solverAddr string, hash, sig
 }
 
 // AddIntentsSubscription indicates an expected call of AddIntentsSubscription.
-func (mr *MockIntentsManagerMockRecorder) AddIntentsSubscription(solverAddr, hash, signature any) *gomock.Call {
+func (mr *MockIntentsManagerMockRecorder) AddIntentsSubscription(solverAddr, hash, signature interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddIntentsSubscription", reflect.TypeOf((*MockIntentsManager)(nil).AddIntentsSubscription), solverAddr, hash, signature)
 }
 
+// AddQuotesSubscription mocks base method.
 func (m *MockIntentsManager) AddQuotesSubscription(dAppAddr string) uint64 {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "AddQuotesSubscription", dAppAddr)
-	return 0
+	ret := m.ctrl.Call(m, "AddQuotesSubscription", dAppAddr)
+	ret0, _ := ret[0].(uint64)
+	return ret0
+}
+
+// AddQuotesSubscription indicates an expected call of AddQuotesSubscription.
+func (mr *MockIntentsManagerMockRecorder) AddQuotesSubscription(dAppAddr interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddQuotesSubscription", reflect.TypeOf((*MockIntentsManager)(nil).AddQuotesSubscription), dAppAddr)
 }
 
 // AddSolutionsSubscription mocks base method.
@@ -77,7 +85,7 @@ func (m *MockIntentsManager) AddSolutionsSubscription(dAppAddr string, hash, sig
 }
 
 // AddSolutionsSubscription indicates an expected call of AddSolutionsSubscription.
-func (mr *MockIntentsManagerMockRecorder) AddSolutionsSubscription(dAppAddr, hash, signature any) *gomock.Call {
+func (mr *MockIntentsManagerMockRecorder) AddSolutionsSubscription(dAppAddr, hash, signature interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddSolutionsSubscription", reflect.TypeOf((*MockIntentsManager)(nil).AddSolutionsSubscription), dAppAddr, hash, signature)
 }
@@ -89,7 +97,7 @@ func (m *MockIntentsManager) AppendSolutionForIntent(solution *bxmessage.IntentS
 }
 
 // AppendSolutionForIntent indicates an expected call of AppendSolutionForIntent.
-func (mr *MockIntentsManagerMockRecorder) AppendSolutionForIntent(solution any) *gomock.Call {
+func (mr *MockIntentsManagerMockRecorder) AppendSolutionForIntent(solution interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AppendSolutionForIntent", reflect.TypeOf((*MockIntentsManager)(nil).AppendSolutionForIntent), solution)
 }
@@ -101,7 +109,7 @@ func (m *MockIntentsManager) AppendSolutionsForIntent(solutions *bxmessage.Inten
 }
 
 // AppendSolutionsForIntent indicates an expected call of AppendSolutionsForIntent.
-func (mr *MockIntentsManagerMockRecorder) AppendSolutionsForIntent(solutions any) *gomock.Call {
+func (mr *MockIntentsManagerMockRecorder) AppendSolutionsForIntent(solutions interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AppendSolutionsForIntent", reflect.TypeOf((*MockIntentsManager)(nil).AppendSolutionsForIntent), solutions)
 }
@@ -113,7 +121,7 @@ func (m *MockIntentsManager) CleanupExpiredSolutions(ctx context.Context) {
 }
 
 // CleanupExpiredSolutions indicates an expected call of CleanupExpiredSolutions.
-func (mr *MockIntentsManagerMockRecorder) CleanupExpiredSolutions(ctx any) *gomock.Call {
+func (mr *MockIntentsManagerMockRecorder) CleanupExpiredSolutions(ctx interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupExpiredSolutions", reflect.TypeOf((*MockIntentsManager)(nil).CleanupExpiredSolutions), ctx)
 }
@@ -128,6 +136,18 @@ func (m *MockIntentsManager) IncIntentSubmissions() {
 func (mr *MockIntentsManagerMockRecorder) IncIntentSubmissions() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncIntentSubmissions", reflect.TypeOf((*MockIntentsManager)(nil).IncIntentSubmissions))
+}
+
+// IncQuoteSubmissions mocks base method.
+func (m *MockIntentsManager) IncQuoteSubmissions() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "IncQuoteSubmissions")
+}
+
+// IncQuoteSubmissions indicates an expected call of IncQuoteSubmissions.
+func (mr *MockIntentsManagerMockRecorder) IncQuoteSubmissions() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncQuoteSubmissions", reflect.TypeOf((*MockIntentsManager)(nil).IncQuoteSubmissions))
 }
 
 // IncSolutionSubmissions mocks base method.
@@ -151,7 +171,7 @@ func (m *MockIntentsManager) IntentsSubscriptionExists(solverAddr string) bool {
 }
 
 // IntentsSubscriptionExists indicates an expected call of IntentsSubscriptionExists.
-func (mr *MockIntentsManagerMockRecorder) IntentsSubscriptionExists(solverAddr any) *gomock.Call {
+func (mr *MockIntentsManagerMockRecorder) IntentsSubscriptionExists(solverAddr interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IntentsSubscriptionExists", reflect.TypeOf((*MockIntentsManager)(nil).IntentsSubscriptionExists), solverAddr)
 }
@@ -163,15 +183,24 @@ func (m *MockIntentsManager) RmIntentsSubscription(solverAddr string) {
 }
 
 // RmIntentsSubscription indicates an expected call of RmIntentsSubscription.
-func (mr *MockIntentsManagerMockRecorder) RmIntentsSubscription(solverAddr any) *gomock.Call {
+func (mr *MockIntentsManagerMockRecorder) RmIntentsSubscription(solverAddr interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RmIntentsSubscription", reflect.TypeOf((*MockIntentsManager)(nil).RmIntentsSubscription), solverAddr)
 }
 
+// RmQuotesSubscription mocks base method.
 func (m *MockIntentsManager) RmQuotesSubscription(dAppAddr string) (uint64, error) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "RmQuotesSubscription", dAppAddr)
-	return 0, nil
+	ret := m.ctrl.Call(m, "RmQuotesSubscription", dAppAddr)
+	ret0, _ := ret[0].(uint64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RmQuotesSubscription indicates an expected call of RmQuotesSubscription.
+func (mr *MockIntentsManagerMockRecorder) RmQuotesSubscription(dAppAddr interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RmQuotesSubscription", reflect.TypeOf((*MockIntentsManager)(nil).RmQuotesSubscription), dAppAddr)
 }
 
 // RmSolutionsSubscription mocks base method.
@@ -181,7 +210,7 @@ func (m *MockIntentsManager) RmSolutionsSubscription(dAppAddr string) {
 }
 
 // RmSolutionsSubscription indicates an expected call of RmSolutionsSubscription.
-func (mr *MockIntentsManagerMockRecorder) RmSolutionsSubscription(dAppAddr any) *gomock.Call {
+func (mr *MockIntentsManagerMockRecorder) RmSolutionsSubscription(dAppAddr interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RmSolutionsSubscription", reflect.TypeOf((*MockIntentsManager)(nil).RmSolutionsSubscription), dAppAddr)
 }
@@ -195,7 +224,7 @@ func (m *MockIntentsManager) SolutionsForIntent(intentID string) []bxmessage.Int
 }
 
 // SolutionsForIntent indicates an expected call of SolutionsForIntent.
-func (mr *MockIntentsManagerMockRecorder) SolutionsForIntent(intentID any) *gomock.Call {
+func (mr *MockIntentsManagerMockRecorder) SolutionsForIntent(intentID interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SolutionsForIntent", reflect.TypeOf((*MockIntentsManager)(nil).SolutionsForIntent), intentID)
 }
@@ -209,7 +238,7 @@ func (m *MockIntentsManager) SolutionsSubscriptionExists(dAppAddr string) bool {
 }
 
 // SolutionsSubscriptionExists indicates an expected call of SolutionsSubscriptionExists.
-func (mr *MockIntentsManagerMockRecorder) SolutionsSubscriptionExists(dAppAddr any) *gomock.Call {
+func (mr *MockIntentsManagerMockRecorder) SolutionsSubscriptionExists(dAppAddr interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SolutionsSubscriptionExists", reflect.TypeOf((*MockIntentsManager)(nil).SolutionsSubscriptionExists), dAppAddr)
 }
@@ -240,6 +269,20 @@ func (m *MockIntentsManager) TotalIntentSubmissions() uint64 {
 func (mr *MockIntentsManagerMockRecorder) TotalIntentSubmissions() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TotalIntentSubmissions", reflect.TypeOf((*MockIntentsManager)(nil).TotalIntentSubmissions))
+}
+
+// TotalQuoteSubmissions mocks base method.
+func (m *MockIntentsManager) TotalQuoteSubmissions() uint64 {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TotalQuoteSubmissions")
+	ret0, _ := ret[0].(uint64)
+	return ret0
+}
+
+// TotalQuoteSubmissions indicates an expected call of TotalQuoteSubmissions.
+func (mr *MockIntentsManagerMockRecorder) TotalQuoteSubmissions() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TotalQuoteSubmissions", reflect.TypeOf((*MockIntentsManager)(nil).TotalQuoteSubmissions))
 }
 
 // TotalSolutionSubmissions mocks base method.
@@ -286,9 +329,23 @@ func (m *MockIntentSubscriptionsManager) AddIntentsSubscription(solverAddr strin
 }
 
 // AddIntentsSubscription indicates an expected call of AddIntentsSubscription.
-func (mr *MockIntentSubscriptionsManagerMockRecorder) AddIntentsSubscription(solverAddr, hash, signature any) *gomock.Call {
+func (mr *MockIntentSubscriptionsManagerMockRecorder) AddIntentsSubscription(solverAddr, hash, signature interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddIntentsSubscription", reflect.TypeOf((*MockIntentSubscriptionsManager)(nil).AddIntentsSubscription), solverAddr, hash, signature)
+}
+
+// AddQuotesSubscription mocks base method.
+func (m *MockIntentSubscriptionsManager) AddQuotesSubscription(dAppAddr string) uint64 {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddQuotesSubscription", dAppAddr)
+	ret0, _ := ret[0].(uint64)
+	return ret0
+}
+
+// AddQuotesSubscription indicates an expected call of AddQuotesSubscription.
+func (mr *MockIntentSubscriptionsManagerMockRecorder) AddQuotesSubscription(dAppAddr interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddQuotesSubscription", reflect.TypeOf((*MockIntentSubscriptionsManager)(nil).AddQuotesSubscription), dAppAddr)
 }
 
 // AddSolutionsSubscription mocks base method.
@@ -298,7 +355,7 @@ func (m *MockIntentSubscriptionsManager) AddSolutionsSubscription(dAppAddr strin
 }
 
 // AddSolutionsSubscription indicates an expected call of AddSolutionsSubscription.
-func (mr *MockIntentSubscriptionsManagerMockRecorder) AddSolutionsSubscription(dAppAddr, hash, signature any) *gomock.Call {
+func (mr *MockIntentSubscriptionsManagerMockRecorder) AddSolutionsSubscription(dAppAddr, hash, signature interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddSolutionsSubscription", reflect.TypeOf((*MockIntentSubscriptionsManager)(nil).AddSolutionsSubscription), dAppAddr, hash, signature)
 }
@@ -312,7 +369,7 @@ func (m *MockIntentSubscriptionsManager) IntentsSubscriptionExists(solverAddr st
 }
 
 // IntentsSubscriptionExists indicates an expected call of IntentsSubscriptionExists.
-func (mr *MockIntentSubscriptionsManagerMockRecorder) IntentsSubscriptionExists(solverAddr any) *gomock.Call {
+func (mr *MockIntentSubscriptionsManagerMockRecorder) IntentsSubscriptionExists(solverAddr interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IntentsSubscriptionExists", reflect.TypeOf((*MockIntentSubscriptionsManager)(nil).IntentsSubscriptionExists), solverAddr)
 }
@@ -324,9 +381,24 @@ func (m *MockIntentSubscriptionsManager) RmIntentsSubscription(solverAddr string
 }
 
 // RmIntentsSubscription indicates an expected call of RmIntentsSubscription.
-func (mr *MockIntentSubscriptionsManagerMockRecorder) RmIntentsSubscription(solverAddr any) *gomock.Call {
+func (mr *MockIntentSubscriptionsManagerMockRecorder) RmIntentsSubscription(solverAddr interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RmIntentsSubscription", reflect.TypeOf((*MockIntentSubscriptionsManager)(nil).RmIntentsSubscription), solverAddr)
+}
+
+// RmQuotesSubscription mocks base method.
+func (m *MockIntentSubscriptionsManager) RmQuotesSubscription(dAppAddr string) (uint64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RmQuotesSubscription", dAppAddr)
+	ret0, _ := ret[0].(uint64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RmQuotesSubscription indicates an expected call of RmQuotesSubscription.
+func (mr *MockIntentSubscriptionsManagerMockRecorder) RmQuotesSubscription(dAppAddr interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RmQuotesSubscription", reflect.TypeOf((*MockIntentSubscriptionsManager)(nil).RmQuotesSubscription), dAppAddr)
 }
 
 // RmSolutionsSubscription mocks base method.
@@ -336,7 +408,7 @@ func (m *MockIntentSubscriptionsManager) RmSolutionsSubscription(dAppAddr string
 }
 
 // RmSolutionsSubscription indicates an expected call of RmSolutionsSubscription.
-func (mr *MockIntentSubscriptionsManagerMockRecorder) RmSolutionsSubscription(dAppAddr any) *gomock.Call {
+func (mr *MockIntentSubscriptionsManagerMockRecorder) RmSolutionsSubscription(dAppAddr interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RmSolutionsSubscription", reflect.TypeOf((*MockIntentSubscriptionsManager)(nil).RmSolutionsSubscription), dAppAddr)
 }
@@ -350,7 +422,7 @@ func (m *MockIntentSubscriptionsManager) SolutionsSubscriptionExists(dAppAddr st
 }
 
 // SolutionsSubscriptionExists indicates an expected call of SolutionsSubscriptionExists.
-func (mr *MockIntentSubscriptionsManagerMockRecorder) SolutionsSubscriptionExists(dAppAddr any) *gomock.Call {
+func (mr *MockIntentSubscriptionsManagerMockRecorder) SolutionsSubscriptionExists(dAppAddr interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SolutionsSubscriptionExists", reflect.TypeOf((*MockIntentSubscriptionsManager)(nil).SolutionsSubscriptionExists), dAppAddr)
 }
@@ -399,7 +471,7 @@ func (m *MockIntentSolutionsManager) AddIntentOfInterest(intentID string) {
 }
 
 // AddIntentOfInterest indicates an expected call of AddIntentOfInterest.
-func (mr *MockIntentSolutionsManagerMockRecorder) AddIntentOfInterest(intentID any) *gomock.Call {
+func (mr *MockIntentSolutionsManagerMockRecorder) AddIntentOfInterest(intentID interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddIntentOfInterest", reflect.TypeOf((*MockIntentSolutionsManager)(nil).AddIntentOfInterest), intentID)
 }
@@ -411,7 +483,7 @@ func (m *MockIntentSolutionsManager) AppendSolutionForIntent(solution *bxmessage
 }
 
 // AppendSolutionForIntent indicates an expected call of AppendSolutionForIntent.
-func (mr *MockIntentSolutionsManagerMockRecorder) AppendSolutionForIntent(solution any) *gomock.Call {
+func (mr *MockIntentSolutionsManagerMockRecorder) AppendSolutionForIntent(solution interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AppendSolutionForIntent", reflect.TypeOf((*MockIntentSolutionsManager)(nil).AppendSolutionForIntent), solution)
 }
@@ -423,7 +495,7 @@ func (m *MockIntentSolutionsManager) AppendSolutionsForIntent(solutions *bxmessa
 }
 
 // AppendSolutionsForIntent indicates an expected call of AppendSolutionsForIntent.
-func (mr *MockIntentSolutionsManagerMockRecorder) AppendSolutionsForIntent(solutions any) *gomock.Call {
+func (mr *MockIntentSolutionsManagerMockRecorder) AppendSolutionsForIntent(solutions interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AppendSolutionsForIntent", reflect.TypeOf((*MockIntentSolutionsManager)(nil).AppendSolutionsForIntent), solutions)
 }
@@ -435,7 +507,7 @@ func (m *MockIntentSolutionsManager) CleanupExpiredSolutions(ctx context.Context
 }
 
 // CleanupExpiredSolutions indicates an expected call of CleanupExpiredSolutions.
-func (mr *MockIntentSolutionsManagerMockRecorder) CleanupExpiredSolutions(ctx any) *gomock.Call {
+func (mr *MockIntentSolutionsManagerMockRecorder) CleanupExpiredSolutions(ctx interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupExpiredSolutions", reflect.TypeOf((*MockIntentSolutionsManager)(nil).CleanupExpiredSolutions), ctx)
 }
@@ -449,7 +521,7 @@ func (m *MockIntentSolutionsManager) SolutionsForIntent(intentID string) []bxmes
 }
 
 // SolutionsForIntent indicates an expected call of SolutionsForIntent.
-func (mr *MockIntentSolutionsManagerMockRecorder) SolutionsForIntent(intentID any) *gomock.Call {
+func (mr *MockIntentSolutionsManagerMockRecorder) SolutionsForIntent(intentID interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SolutionsForIntent", reflect.TypeOf((*MockIntentSolutionsManager)(nil).SolutionsForIntent), intentID)
 }
@@ -489,6 +561,18 @@ func (mr *MockIntentsStatsManagerMockRecorder) IncIntentSubmissions() *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncIntentSubmissions", reflect.TypeOf((*MockIntentsStatsManager)(nil).IncIntentSubmissions))
 }
 
+// IncQuoteSubmissions mocks base method.
+func (m *MockIntentsStatsManager) IncQuoteSubmissions() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "IncQuoteSubmissions")
+}
+
+// IncQuoteSubmissions indicates an expected call of IncQuoteSubmissions.
+func (mr *MockIntentsStatsManagerMockRecorder) IncQuoteSubmissions() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncQuoteSubmissions", reflect.TypeOf((*MockIntentsStatsManager)(nil).IncQuoteSubmissions))
+}
+
 // IncSolutionSubmissions mocks base method.
 func (m *MockIntentsStatsManager) IncSolutionSubmissions() {
 	m.ctrl.T.Helper()
@@ -513,6 +597,20 @@ func (m *MockIntentsStatsManager) TotalIntentSubmissions() uint64 {
 func (mr *MockIntentsStatsManagerMockRecorder) TotalIntentSubmissions() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TotalIntentSubmissions", reflect.TypeOf((*MockIntentsStatsManager)(nil).TotalIntentSubmissions))
+}
+
+// TotalQuoteSubmissions mocks base method.
+func (m *MockIntentsStatsManager) TotalQuoteSubmissions() uint64 {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TotalQuoteSubmissions")
+	ret0, _ := ret[0].(uint64)
+	return ret0
+}
+
+// TotalQuoteSubmissions indicates an expected call of TotalQuoteSubmissions.
+func (mr *MockIntentsStatsManagerMockRecorder) TotalQuoteSubmissions() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TotalQuoteSubmissions", reflect.TypeOf((*MockIntentsStatsManager)(nil).TotalQuoteSubmissions))
 }
 
 // TotalSolutionSubmissions mocks base method.

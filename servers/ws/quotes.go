@@ -55,6 +55,8 @@ func (h *handlerObj) handleSubmitQuote(ctx context.Context, conn *jsonrpc2.Conn,
 		return
 	}
 
+	h.intentsManager.IncQuoteSubmissions()
+
 	response := rpcQuoteResponse{QuoteID: id}
 
 	if err = conn.Reply(ctx, req.ID, response); err != nil {

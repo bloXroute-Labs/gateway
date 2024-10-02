@@ -104,8 +104,8 @@ message BlxrSubmitBundleRequest {
   int64 max_timestamp = 5;
   repeated string reverting_hashes = 6;
   string uuid = 7;
-  int64 bundle_price = 8;
-  bool enforce_payout = 9;
+  int64 bundle_price = 8 [deprecated = true];
+  bool enforce_payout = 9 [deprecated = true];
   bool avoid_mixed_bundles = 10;
   bool priority_fee_refund = 11;
   string refund_recipient = 12;
@@ -388,6 +388,7 @@ message QueuesStats {
 message IntentStats {
   uint64 submitted_intents_count = 1;
   uint64 submitted_solutions_count = 2;
+  uint64 submitted_quotes_count = 3;
 }
 
 message NodePerformance {

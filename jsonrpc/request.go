@@ -130,8 +130,6 @@ type RPCBundleSubmissionPayload struct {
 	MaxTimestamp            int               `json:"max_timestamp"`
 	RevertingHashes         []string          `json:"reverting_hashes"`
 	UUID                    string            `json:"uuid"`
-	BundlePrice             int64             `json:"bundlePrice,omitempty"` // in wei
-	EnforcePayout           bool              `json:"enforcePayout,omitempty"`
 	AvoidMixedBundles       bool              `json:"avoid_mixed_bundles,omitempty"`
 	OriginalSenderAccountID string            `json:"original_sender_account_id"`
 	PriorityFeeRefund       bool              `json:"priority_fee_refund"`
@@ -176,15 +174,6 @@ func (p RPCBundleSubmissionPayload) Validate() error {
 	return nil
 }
 
-// RPCMEVSearcherPayload is the payload of blxr_searcher request
-// Depreceted: use RPCBundleSubmissionPayload instead. Will be removed in the future.
-type RPCMEVSearcherPayload struct {
-	MEVMethod         string            `json:"mev_method"`
-	BlockchainNetwork string            `json:"blockchain_network"`
-	MEVBuilders       map[string]string `json:"mev_builders"`
-	Payload           []RPCSendBundle   `json:"payload"`
-}
-
 // RPCSendBundle MEVBundle payload to be used
 type RPCSendBundle struct {
 	Txs               []string `json:"txs"`
@@ -193,10 +182,9 @@ type RPCSendBundle struct {
 	MinTimestamp      int      `json:"minTimestamp,omitempty"`
 	MaxTimestamp      int      `json:"maxTimestamp,omitempty"`
 	RevertingTxHashes []string `json:"revertingTxHashes,omitempty"`
-	BundlePrice       int64    `json:"bundlePrice,omitempty"` // in wei
-	EnforcePayout     bool     `json:"enforcePayout,omitempty"`
 	AvoidMixedBundles bool     `json:"avoidMixedBundles,omitempty"`
 	RefundRecipient   string   `json:"refundRecipient,omitempty"`
+	Boost             bool     `json:"boost"` // 'beaverbuild' builder specific
 }
 
 // RPCCancelBundlePayload custom json-rpc required to cancel flashbots bundle
