@@ -12,10 +12,11 @@ import (
 	"strings"
 	"time"
 
+	uuid "github.com/satori/go.uuid"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	uuid "github.com/satori/go.uuid"
 
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -53,10 +54,6 @@ type MEVBundle struct {
 
 	MEVBuilders MEVBundleBuilders `json:"mev_builders,omitempty"`
 
-	// From protocol version 38
-	BundlePrice   int64 `json:"bundlePrice,omitempty"` // in wei
-	EnforcePayout bool  `json:"enforcePayout,omitempty"`
-
 	// From protocol version 40
 	OriginalSenderAccountID string `json:"originalSenderAccountId,omitempty"`
 
@@ -84,8 +81,6 @@ func NewMEVBundle(
 	revertingHashes []string,
 	mevBuilders MEVBundleBuilders,
 	bundleHash string,
-	bundlePrice int64,
-	enforcePayout,
 	avoidMixedBundles bool,
 	priorityFeeRefund bool,
 	incomingRefundRecipient string,
@@ -102,8 +97,6 @@ func NewMEVBundle(
 		RevertingHashes:         revertingHashes,
 		MEVBuilders:             mevBuilders,
 		BundleHash:              bundleHash,
-		BundlePrice:             bundlePrice,
-		EnforcePayout:           enforcePayout,
 		AvoidMixedBundles:       avoidMixedBundles,
 		PriorityFeeRefund:       priorityFeeRefund,
 		IncomingRefundRecipient: incomingRefundRecipient,
@@ -112,8 +105,8 @@ func NewMEVBundle(
 
 // String returns a string representation of the MEVBundle
 func (m MEVBundle) String() string {
-	return fmt.Sprintf("mev bundle(sender account ID: %s, hash: %s, blockNumber: %s, builders: %v, txs: %d, sent from cloud api: %v, tier: %v, allowMixedBundles: %v, priorityFeeRefund: %v, incomingRefundRecipient: %v, UUID: %s, EnforcePayout %v, BundlePrice %v, MinTimestamp %v , MaxTimestamp %v, RevertingHashes %v)",
-		m.OriginalSenderAccountID, m.BundleHash, m.BlockNumber, m.MEVBuilders, len(m.Transactions), m.SentFromCloudAPI, m.OriginalSenderAccountTier, m.AvoidMixedBundles, m.PriorityFeeRefund, m.IncomingRefundRecipient, m.UUID, m.EnforcePayout, m.BundlePrice, m.MinTimestamp, m.MaxTimestamp, len(m.RevertingHashes))
+	return fmt.Sprintf("mev bundle(sender account ID: %s, hash: %s, blockNumber: %s, builders: %v, txs: %d, sent from cloud api: %v, tier: %v, allowMixedBundles: %v, priorityFeeRefund: %v, incomingRefundRecipient: %v, UUID: %s, MinTimestamp %v , MaxTimestamp %v, RevertingHashes %v)",
+		m.OriginalSenderAccountID, m.BundleHash, m.BlockNumber, m.MEVBuilders, len(m.Transactions), m.SentFromCloudAPI, m.OriginalSenderAccountTier, m.AvoidMixedBundles, m.PriorityFeeRefund, m.IncomingRefundRecipient, m.UUID, m.MinTimestamp, m.MaxTimestamp, len(m.RevertingHashes))
 }
 
 // SetHash sets the hash based on the fields in BundleSubmission
@@ -167,9 +160,12 @@ func (m MEVBundle) size(protocol Protocol, txs [][]byte) uint32 {
 	size += types.UInt64Len       // BlockNumber
 	size += types.UInt32Len       // MinTimestamp
 	size += types.UInt32Len       // MaxTimestamp
-	size += types.UInt8Len        // Frontrunning
 	size += TimestampLen          // PerformanceTimestamp
 	size += types.SHA256HashLen   // BundleHash
+
+	if protocol < BundlesUpdatedProtocol {
+		size += types.UInt8Len // frontrunning legacy support
+	}
 
 	// Transactions
 	size += types.UInt16Len // Transactions count
@@ -191,7 +187,7 @@ func (m MEVBundle) size(protocol Protocol, txs [][]byte) uint32 {
 	}
 
 	// From protocol version 38: Bundle Price and Enforce Payout
-	if protocol >= BundlesOverBDNPayoutProtocol {
+	if protocol >= BundlesOverBDNPayoutProtocol && protocol < BundlesUpdatedProtocol {
 		size += types.UInt64Len // BundlePrice (8 bytes)
 		size += types.UInt8Len  // EnforcePayout (1 byte)
 	}
@@ -316,9 +312,11 @@ func (m MEVBundle) Pack(protocol Protocol) ([]byte, error) {
 	copy(buf[offset:], decodedBundleHash)
 	offset += types.SHA256HashLen
 
-	// frontrunning legacy support
-	buf[offset] = 0
-	offset += types.UInt8Len
+	if protocol < BundlesUpdatedProtocol {
+		// frontrunning legacy support
+		buf[offset] = 0
+		offset += types.UInt8Len
+	}
 
 	// MEVBuilders
 	if err := checkBuilderSize(len(m.MEVBuilders)); err != nil {
@@ -354,15 +352,10 @@ func (m MEVBundle) Pack(protocol Protocol) ([]byte, error) {
 	}
 	offset += TimestampLen
 
-	if protocol >= BundlesOverBDNPayoutProtocol {
-		binary.LittleEndian.PutUint64(buf[offset:], uint64(m.BundlePrice))
+	if protocol >= BundlesOverBDNPayoutProtocol && protocol < BundlesUpdatedProtocol {
+		binary.LittleEndian.PutUint64(buf[offset:], uint64(0))
 		offset += types.UInt64Len
-
-		if m.EnforcePayout {
-			buf[offset] = 1
-		} else {
-			buf[offset] = 0
-		}
+		buf[offset] = 0
 		offset += types.UInt8Len
 	}
 
@@ -440,20 +433,20 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 	}
 	offset := BroadcastHeaderOffset
 
-	if err := checkBufSize(&data, offset, types.UInt16Len); err != nil {
+	if err = checkBufSize(&data, offset, types.UInt16Len); err != nil {
 		return err
 	}
 	methodLen := binary.LittleEndian.Uint16(data[offset:])
 	offset += types.UInt16Len
 
-	if err := checkBufSize(&data, offset, types.UInt16Len); err != nil {
+	if err = checkBufSize(&data, offset, types.UInt16Len); err != nil {
 		return err
 	}
 	m.Method = string(data[offset : offset+int(methodLen)])
 	offset += int(methodLen)
 
 	// UUID
-	if err := checkBufSize(&data, offset, types.UUIDv4Len); err != nil {
+	if err = checkBufSize(&data, offset, types.UUIDv4Len); err != nil {
 		return err
 	}
 	if uuidBytes := data[offset : offset+types.UUIDv4Len]; !bytes.Equal(uuidBytes, emptyUUID) {
@@ -466,7 +459,7 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 	offset += types.UUIDv4Len
 
 	// Transactions
-	if err := checkBufSize(&data, offset, types.UInt16Len); err != nil {
+	if err = checkBufSize(&data, offset, types.UInt16Len); err != nil {
 		return err
 	}
 	transactionCount := binary.LittleEndian.Uint16(data[offset:])
@@ -474,13 +467,13 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 
 	m.Transactions = make([]string, transactionCount)
 	for i := 0; i < int(transactionCount); i++ {
-		if err := checkBufSize(&data, offset, types.UInt16Len); err != nil {
+		if err = checkBufSize(&data, offset, types.UInt16Len); err != nil {
 			return err
 		}
 		txLen := binary.LittleEndian.Uint16(data[offset:])
 		offset += types.UInt16Len
 
-		if err := checkBufSize(&data, offset, int(txLen)); err != nil {
+		if err = checkBufSize(&data, offset, int(txLen)); err != nil {
 			return err
 		}
 		txBytes := data[offset : offset+int(txLen)]
@@ -488,7 +481,7 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 		m.Transactions[i] = "0x" + hex.EncodeToString(txBytes) // Assuming m.Transaction elements should be hex strings
 	}
 
-	if err := checkBufSize(&data, offset, types.UInt16Len); err != nil {
+	if err = checkBufSize(&data, offset, types.UInt16Len); err != nil {
 		return err
 	}
 
@@ -497,21 +490,21 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 	offset += types.UInt64Len
 	m.BlockNumber = "0x" + strconv.FormatInt(blockNumberInt, 16)
 
-	if err := checkBufSize(&data, offset, types.UInt16Len); err != nil {
+	if err = checkBufSize(&data, offset, types.UInt16Len); err != nil {
 		return err
 	}
 
 	// MinTimestamp and MaxTimestamp
 	m.MinTimestamp = int(binary.LittleEndian.Uint32(data[offset : offset+4]))
 	offset += types.UInt32Len
-	if err := checkBufSize(&data, offset, types.UInt16Len); err != nil {
+	if err = checkBufSize(&data, offset, types.UInt16Len); err != nil {
 		return err
 	}
 
 	m.MaxTimestamp = int(binary.LittleEndian.Uint32(data[offset : offset+4]))
 	offset += types.UInt32Len
 
-	if err := checkBufSize(&data, offset, types.UInt16Len); err != nil {
+	if err = checkBufSize(&data, offset, types.UInt16Len); err != nil {
 		return err
 	}
 
@@ -521,7 +514,7 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 	m.RevertingHashes = make([]string, numHashes)
 	for i := 0; i < numHashes; i++ {
 		// Read the decoded hash
-		if err := checkBufSize(&data, offset, types.SHA256HashLen); err != nil {
+		if err = checkBufSize(&data, offset, types.SHA256HashLen); err != nil {
 			return err
 		}
 		decodedHash := data[offset : offset+types.SHA256HashLen]
@@ -531,7 +524,7 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 		m.RevertingHashes[i] = "0x" + hex.EncodeToString(decodedHash)
 	}
 
-	if err := checkBufSize(&data, offset, types.SHA256HashLen); err != nil {
+	if err = checkBufSize(&data, offset, types.SHA256HashLen); err != nil {
 		return err
 	}
 
@@ -541,14 +534,16 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 	offset += types.SHA256HashLen
 	m.BundleHash = "0x" + hex.EncodeToString(decodedBundleHash)
 
-	if err := checkBufSize(&data, offset, types.UInt8Len); err != nil {
+	if err = checkBufSize(&data, offset, types.UInt8Len); err != nil {
 		return err
 	}
 
-	// frontrunning legacy support
-	offset += types.UInt8Len
+	if protocol < BundlesUpdatedProtocol {
+		// frontrunning legacy support
+		offset += types.UInt8Len
+	}
 
-	if err := checkBufSize(&data, offset, types.UInt16Len); err != nil {
+	if err = checkBufSize(&data, offset, types.UInt16Len); err != nil {
 		return err
 	}
 
@@ -558,25 +553,25 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 
 	m.MEVBuilders = make(map[string]string, mevBuildersCount)
 	for i := 0; i < mevBuildersCount; i++ {
-		if err := checkBufSize(&data, offset, types.UInt16Len); err != nil {
+		if err = checkBufSize(&data, offset, types.UInt16Len); err != nil {
 			return err
 		}
 		nameLength := binary.LittleEndian.Uint16(data[offset:])
 		offset += types.UInt16Len
 
-		if err := checkBufSize(&data, offset, int(nameLength)); err != nil {
+		if err = checkBufSize(&data, offset, int(nameLength)); err != nil {
 			return err
 		}
 		name := string(data[offset : offset+int(nameLength)])
 		offset += int(nameLength)
 
-		if err := checkBufSize(&data, offset, types.UInt16Len); err != nil {
+		if err = checkBufSize(&data, offset, types.UInt16Len); err != nil {
 			return err
 		}
 		authLength := binary.LittleEndian.Uint16(data[offset:])
 		offset += types.UInt16Len
 
-		if err := checkBufSize(&data, offset, int(authLength)); err != nil {
+		if err = checkBufSize(&data, offset, int(authLength)); err != nil {
 			return err
 		}
 		auth := string(data[offset : offset+int(authLength)])
@@ -586,7 +581,7 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 	}
 
 	// PerformanceTimestamp
-	if err := checkBufSize(&data, offset, TimestampLen); err != nil {
+	if err = checkBufSize(&data, offset, TimestampLen); err != nil {
 		return err
 	}
 
@@ -602,29 +597,27 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 	}
 	offset += TimestampLen
 
-	if protocol >= BundlesOverBDNPayoutProtocol {
-		if err := checkBufSize(&data, offset, types.UInt64Len); err != nil {
+	if protocol >= BundlesOverBDNPayoutProtocol && protocol < BundlesUpdatedProtocol {
+		if err = checkBufSize(&data, offset, types.UInt64Len); err != nil {
 			return err
 		}
-		m.BundlePrice = int64(binary.LittleEndian.Uint64(data[offset:]))
 		offset += types.UInt64Len
 
-		if err := checkBufSize(&data, offset, types.UInt8Len); err != nil {
+		if err = checkBufSize(&data, offset, types.UInt8Len); err != nil {
 			return err
 		}
 
-		m.EnforcePayout = data[offset] == 1
 		offset += types.UInt8Len
 	}
 
 	if protocol >= BundlesOverBDNOriginalSenderAccountProtocol {
-		if err := checkBufSize(&data, offset, types.UInt16Len); err != nil {
+		if err = checkBufSize(&data, offset, types.UInt16Len); err != nil {
 			return err
 		}
 		originalSenderAccountIDLength := binary.LittleEndian.Uint16(data[offset:])
 		offset += types.UInt16Len
 
-		if err := checkBufSize(&data, offset, int(originalSenderAccountIDLength)); err != nil {
+		if err = checkBufSize(&data, offset, int(originalSenderAccountIDLength)); err != nil {
 			return err
 		}
 
@@ -658,7 +651,7 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 	}
 
 	if protocol >= AvoidMixedBundleProtocol {
-		if err := checkBufSize(&data, offset, types.UInt8Len); err != nil {
+		if err = checkBufSize(&data, offset, types.UInt8Len); err != nil {
 			return err
 		}
 
@@ -667,7 +660,7 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 	}
 
 	if protocol >= BundlePriorityFeeRefundProtocol {
-		if err := checkBufSize(&data, offset, types.UInt8Len); err != nil {
+		if err = checkBufSize(&data, offset, types.UInt8Len); err != nil {
 			return err
 		}
 
@@ -676,7 +669,7 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 	}
 
 	if protocol >= BundleRefundProtocol {
-		if err := checkBufSize(&data, offset, common.AddressLength); err != nil {
+		if err = checkBufSize(&data, offset, common.AddressLength); err != nil {
 			return err
 		}
 		if addressBytes := data[offset : offset+common.AddressLength]; !bytes.Equal(addressBytes, emptyAddress) {
@@ -752,8 +745,6 @@ func (m *MEVBundle) Clone() *MEVBundle {
 		PerformanceTimestamp:      m.PerformanceTimestamp,
 		BundleHash:                m.BundleHash,
 		MEVBuilders:               copyBuilders,
-		BundlePrice:               m.BundlePrice,
-		EnforcePayout:             m.EnforcePayout,
 		OriginalSenderAccountID:   m.OriginalSenderAccountID,
 		OriginalSenderAccountTier: m.OriginalSenderAccountTier,
 		SentFromCloudAPI:          m.SentFromCloudAPI,

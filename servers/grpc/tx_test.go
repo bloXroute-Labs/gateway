@@ -570,37 +570,6 @@ func TestGatewaySubmitBundle(t *testing.T) {
 			generateTxAndHash: generateDynamicFeeTxAndHash,
 		},
 		{
-			description: "Txs limit exceeded",
-			setupSdnFunc: func(s *server) {
-				ctl := gomock.NewController(t)
-				sdn := mock.NewMockSDNHTTP(ctl)
-				sdn.EXPECT().AccountModel().Return(sdnmessage.Account{
-					AccountInfo: sdnmessage.AccountInfo{
-						AccountID: testGatewayAccountID,
-						TierName:  testTierName,
-					},
-					SecretHash: testGatewaySecretHash,
-					Bundles: sdnmessage.BDNBundlesService{
-						Networks: map[string]sdnmessage.BundleProperties{
-							"Mainnet": {
-								TxsLenLimit: 1,
-							},
-						},
-					},
-				}).AnyTimes()
-				sdn.EXPECT().NetworkNum().Return(networkNum).AnyTimes()
-				s.params.sdn = sdn
-			},
-			setupAccServiceFunc: func(s *server) {
-				s.params.accService = account.NewService(s.params.sdn, s.log)
-			},
-			request: &pb.BlxrSubmitBundleRequest{
-				BlockNumber: "0x1f71710",
-			},
-			generateTxAndHash: generateDynamicFeeTxAndHash,
-			expectedErrSubStr: "txs limit exceeded",
-		},
-		{
 			description: "Account wrong tier",
 			setupSdnFunc: func(s *server) {
 				ctl := gomock.NewController(t)
@@ -744,7 +713,6 @@ func TestGatewaySubmitBundle(t *testing.T) {
 
 			txs, _ := tc.generateTxAndHash(privKey, chain)
 			tc.request.Transactions = txs
-
 			clientConfig := &config.GRPC{
 				Enabled:        true,
 				Host:           "127.0.0.1",

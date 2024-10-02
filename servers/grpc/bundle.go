@@ -35,8 +35,6 @@ func (g *server) BlxrSubmitBundle(ctx context.Context, req *pb.BlxrSubmitBundleR
 		MaxTimestamp:            int(req.MaxTimestamp),
 		RevertingHashes:         req.RevertingHashes,
 		UUID:                    req.Uuid,
-		BundlePrice:             req.BundlePrice,
-		EnforcePayout:           req.EnforcePayout,
 		AvoidMixedBundles:       req.AvoidMixedBundles,
 		PriorityFeeRefund:       req.PriorityFeeRefund,
 		IncomingRefundRecipient: req.RefundRecipient,

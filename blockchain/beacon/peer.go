@@ -93,3 +93,10 @@ func (p *peer) setStatus(status *ethpb.Status) {
 
 	p.status = status
 }
+
+func (p *peer) getStatus() *ethpb.Status {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return p.status
+}

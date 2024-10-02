@@ -39,23 +39,15 @@ func (n *Node) statusRPCHandler(stream libp2pNetwork.Stream) {
 	}
 	peer.setStatus(msg)
 
-	status, err := n.getStatus()
-	if err != nil {
-		n.log.Errorf("could not get status for peer %v: %v", stream.Conn().RemotePeer(), err)
-		return
-	}
-
 	if _, err := stream.Write([]byte{responseCodeSuccess}); err != nil {
 		n.log.Errorf("could not write to peer %v stream: %v", stream.Conn().RemotePeer(), err)
 		return
 	}
 
-	if _, err := n.encoding.EncodeWithMaxLength(stream, status); err != nil {
+	if _, err := n.encoding.EncodeWithMaxLength(stream, n.chain.Status(peer)); err != nil {
 		n.log.Errorf("could not encode status RPC message for peer %v: %v", stream.Conn().RemotePeer(), err)
 		return
 	}
-
-	n.updateStatus(status)
 }
 
 func (n *Node) goodbyeRPCHandler(stream libp2pNetwork.Stream) {

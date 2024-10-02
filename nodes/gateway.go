@@ -150,6 +150,7 @@ type gateway struct {
 
 	intentsManager services.IntentsManager
 	blobsManager   *beacon.BlobSidecarCacheManager
+
 }
 
 // GeneratePeers generate string peers separated by comma
@@ -227,6 +228,7 @@ func NewGateway(parent context.Context,
 		blobsManager:   blobsManager,
 	}
 	g.chainID = int64(bxgateway.NetworkNumToChainID[sdn.NetworkNum()])
+
 
 	g.blockProposer = bsc.NewNoopBlockProposer(g.TxStore, log.WithField("service", "noop-block-proposer"))
 
@@ -1446,19 +1448,19 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 			g.notify(types.NewUserIntentSolutionNotification(solution))
 		}
 	case *bxmessage.Quote:
-		g.broadcast(typedMsg, source, utils.RelayProxy)
-		if source != nil && source.GetConnectionType() == utils.RelayProxy {
-			quote := &types.QuoteNotification{
-				ID:            typedMsg.ID,
-				DappAddress:   typedMsg.DappAddress,
-				SolverAddress: typedMsg.SolverAddress,
-				Quote:         typedMsg.Quote,
-				Hash:          typedMsg.Hash,
-				Signature:     typedMsg.Signature,
-				Timestamp:     typedMsg.Timestamp,
-			}
-			g.notify(quote)
+		quote := &types.QuoteNotification{
+			ID:            typedMsg.ID,
+			DappAddress:   typedMsg.DappAddress,
+			SolverAddress: typedMsg.SolverAddress,
+			Quote:         typedMsg.Quote,
+			Hash:          typedMsg.Hash,
+			Signature:     typedMsg.Signature,
+			Timestamp:     typedMsg.Timestamp,
 		}
+
+		g.broadcast(typedMsg, source, utils.RelayProxy)
+
+		g.notify(quote)
 	case *bxmessage.IntentsSubscription, *bxmessage.IntentsUnsubscription, *bxmessage.SolutionsSubscription, *bxmessage.SolutionsUnsubscription, *bxmessage.QuotesSubscription, *bxmessage.QuotesUnsubscription:
 		g.broadcast(typedMsg, source, utils.RelayProxy)
 	case *bxmessage.GetIntentSolutions:
@@ -2000,7 +2002,7 @@ func (g *gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source c
 		}
 
 		source.Log().Tracef("ignoring %s duration: %v ms, time in network: %v ms", mevBundle, time.Since(start).Milliseconds(), start.Sub(mevBundle.PerformanceTimestamp).Milliseconds())
-		g.stats.AddGatewayBundleEvent(eventName, source, start, mevBundle.BundleHash, mevBundle.GetNetworkNum(), mevBundle.Names(), mevBundle.UUID, uint64(blockNumber), mevBundle.MinTimestamp, mevBundle.MaxTimestamp, mevBundle.BundlePrice, mevBundle.EnforcePayout)
+		g.stats.AddGatewayBundleEvent(eventName, source, start, mevBundle.BundleHash, mevBundle.GetNetworkNum(), mevBundle.Names(), mevBundle.UUID, blockNumber, mevBundle.MinTimestamp, mevBundle.MaxTimestamp)
 		return
 	}
 
@@ -2025,8 +2027,9 @@ func (g *gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source c
 		source.Log().Tracef("broadcasting %s %s duration: %v ms, time in network: %v ms", mevBundle, broadcastRes, time.Since(start).Milliseconds(), start.Sub(mevBundle.PerformanceTimestamp).Milliseconds())
 	}
 
-	g.stats.AddGatewayBundleEvent(event, source, start, mevBundle.BundleHash, mevBundle.GetNetworkNum(), mevBundle.Names(), mevBundle.UUID, uint64(blockNumber), mevBundle.MinTimestamp, mevBundle.MaxTimestamp, mevBundle.BundlePrice, mevBundle.EnforcePayout)
+	g.stats.AddGatewayBundleEvent(event, source, start, mevBundle.BundleHash, mevBundle.GetNetworkNum(), mevBundle.Names(), mevBundle.UUID, blockNumber, mevBundle.MinTimestamp, mevBundle.MaxTimestamp)
 }
+
 
 func (g *gateway) getHeaderFromGateway() string {
 	accountID := g.sdn.AccountModel().AccountID

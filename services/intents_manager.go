@@ -43,25 +43,27 @@ type IntentSolutionsManager interface {
 	CleanupExpiredSolutions(ctx context.Context)
 }
 
-// IntentsStatsManager keeps track of intent and solution submissions
+// IntentsStatsManager keeps track of intent, solution and quote submissions
 type IntentsStatsManager interface {
 	IncIntentSubmissions()
 	IncSolutionSubmissions()
+	IncQuoteSubmissions()
 	TotalIntentSubmissions() uint64
 	TotalSolutionSubmissions() uint64
+	TotalQuoteSubmissions() uint64
 }
 
 // IntentsManagerImpl is the implementation of IntentsManager
 type IntentsManagerImpl struct {
-	intentsSubscriptions             map[string]*subscription
-	isMx                             *sync.RWMutex
-	solutionsSubscriptions           map[string]*subscription
-	ssMx                             *sync.RWMutex
-	solutionsForIntent               map[string]solutionsForIntentWExp // intentID -> solutions
-	sfiMx                            *sync.RWMutex
-	quotesSubscriptions              map[string]*quoteSubscription
-	quotesMx                         *sync.RWMutex
-	intentsCounter, solutionsCounter *atomic.Uint64
+	intentsSubscriptions                            map[string]*subscription
+	isMx                                            *sync.RWMutex
+	solutionsSubscriptions                          map[string]*subscription
+	ssMx                                            *sync.RWMutex
+	solutionsForIntent                              map[string]solutionsForIntentWExp // intentID -> solutions
+	sfiMx                                           *sync.RWMutex
+	quotesSubscriptions                             map[string]*quoteSubscription
+	quotesMx                                        *sync.RWMutex
+	intentsCounter, solutionsCounter, quotesCounter *atomic.Uint64
 }
 
 type quoteSubscription struct {
@@ -93,6 +95,7 @@ func NewIntentsManager() *IntentsManagerImpl {
 		quotesMx:               new(sync.RWMutex),
 		intentsCounter:         &atomic.Uint64{},
 		solutionsCounter:       &atomic.Uint64{},
+		quotesCounter:          &atomic.Uint64{},
 	}
 }
 
@@ -301,6 +304,11 @@ func (i *IntentsManagerImpl) IncSolutionSubmissions() {
 	i.solutionsCounter.Add(1)
 }
 
+// IncQuoteSubmissions increments the quote submissions counter by 1
+func (i *IntentsManagerImpl) IncQuoteSubmissions() {
+	i.quotesCounter.Add(1)
+}
+
 // TotalIntentSubmissions returns the total number of intent submissions
 func (i *IntentsManagerImpl) TotalIntentSubmissions() uint64 {
 	return i.intentsCounter.Load()
@@ -309,4 +317,9 @@ func (i *IntentsManagerImpl) TotalIntentSubmissions() uint64 {
 // TotalSolutionSubmissions returns the total number of solution submissions
 func (i *IntentsManagerImpl) TotalSolutionSubmissions() uint64 {
 	return i.solutionsCounter.Load()
+}
+
+// TotalQuoteSubmissions returns the total number of quote submissions
+func (i *IntentsManagerImpl) TotalQuoteSubmissions() uint64 {
+	return i.quotesCounter.Load()
 }

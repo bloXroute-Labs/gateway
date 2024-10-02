@@ -54,6 +54,9 @@ func (g *server) SubmitQuote(ctx context.Context, req *pb.SubmitQuoteRequest) (*
 	quoteMsg := bxmessage.NewQuote(quoteNotification.ID, quoteNotification.DappAddress, quoteNotification.SolverAddress, quoteNotification.Hash, quoteNotification.Signature, quoteNotification.Quote, quoteNotification.Timestamp)
 	g.params.connector.Broadcast(quoteMsg, nil, utils.RelayProxy)
 	g.notify(quoteNotification)
+
+	g.params.intentsManager.IncQuoteSubmissions()
+
 	return &pb.SubmitQuoteReply{QuoteId: quoteNotification.ID}, nil
 }
 

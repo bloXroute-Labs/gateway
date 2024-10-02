@@ -9,16 +9,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/sourcegraph/jsonrpc2"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/ethereum/go-ethereum/accounts"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/sourcegraph/jsonrpc2"
 )
 
 const (
@@ -96,8 +97,7 @@ func (d *Dispatcher) bundleForBuildersJSON(bundle *bxmessage.MEVBundle) ([]byte,
 			MinTimestamp:      bundle.MinTimestamp,
 			MaxTimestamp:      bundle.MaxTimestamp,
 			RevertingTxHashes: bundle.RevertingHashes,
-			BundlePrice:       bundle.BundlePrice,
-			EnforcePayout:     bundle.EnforcePayout,
+			Boost:             false, // set to `false` specifically for the 'beaverbuild' builder
 		},
 	}
 

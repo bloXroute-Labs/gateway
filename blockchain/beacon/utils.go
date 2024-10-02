@@ -9,10 +9,12 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
 	p2ptypes "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/types"
+	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
 	"github.com/prysmaticlabs/prysm/v5/config/params"
 	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
 	prysmTypes "github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
 	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
+	"github.com/prysmaticlabs/prysm/v5/network/forks"
 	"github.com/prysmaticlabs/prysm/v5/time/slots"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
@@ -107,4 +109,11 @@ func extractBlockDataType(digest []byte, vRoot []byte) (interfaces.ReadOnlySigne
 		}
 	}
 	return nil, errors.New("no valid digest matched")
+}
+
+func currentForkDigest(genesisState state.BeaconState) ([4]byte, error) {
+	genesisTime := time.Unix(int64(genesisState.GenesisTime()), 0)
+	genesisValidatorsRoot := genesisState.GenesisValidatorsRoot()
+
+	return forks.CreateForkDigest(genesisTime, genesisValidatorsRoot)
 }
