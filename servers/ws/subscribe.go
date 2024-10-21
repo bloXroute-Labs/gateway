@@ -82,7 +82,8 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *jsonrpc2.Conn
 
 	defer func() {
 		err = h.feedManager.Unsubscribe(subscriptionID, false, "")
-		if err != nil {
+		// unsubscription can be done by client if he sends unsubscribe request so no need to log if subscription not found
+		if err != nil && !errors.Is(err, bxgateway.ErrSubscriptionNotFound) {
 			h.log.Errorf("failed to unsubscribe from %v, subscriptionID %v: %v", feed, subscriptionID, err)
 		}
 
@@ -177,14 +178,16 @@ func (h *handlerObj) handleRPCSubscribeNotify(ctx context.Context, conn *jsonrpc
 				}
 			case types.UserIntentSolutionsFeed:
 				intentSolution := notification.(*types.UserIntentSolutionNotification)
-				if intentSolution.DappAddress == request.Includes[0] || intentSolution.SenderAddress == request.Includes[0] {
-					if h.sendIntentSolutionNotification(ctx, subscriptionID, conn, intentSolution) != nil {
-						return
-					}
+				if !strings.EqualFold(intentSolution.DappAddress, request.Includes[0]) && !strings.EqualFold(intentSolution.SenderAddress, request.Includes[0]) {
+					continue
+				}
+
+				if h.sendIntentSolutionNotification(ctx, subscriptionID, conn, intentSolution) != nil {
+					return
 				}
 			case types.QuotesFeed:
 				quote := notification.(*types.QuoteNotification)
-				if strings.ToLower(quote.DappAddress) == request.Includes[0] {
+				if strings.EqualFold(quote.DappAddress, request.Includes[0]) {
 					if h.sendQuoteNotification(ctx, subscriptionID, conn, quote) != nil {
 						return
 					}

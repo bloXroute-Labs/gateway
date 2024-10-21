@@ -185,6 +185,7 @@ type RPCSendBundle struct {
 	AvoidMixedBundles bool     `json:"avoidMixedBundles,omitempty"`
 	RefundRecipient   string   `json:"refundRecipient,omitempty"`
 	Boost             bool     `json:"boost"` // 'beaverbuild' builder specific
+	AccountID         string   `json:"accountId,omitempty"`
 }
 
 // RPCCancelBundlePayload custom json-rpc required to cancel flashbots bundle

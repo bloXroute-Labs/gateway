@@ -15,7 +15,7 @@ V = 0
 Q = $(if $(filter 1,$V),,@)
 M = $(shell printf "\033[34;1m▶\033[0m")
 
-GOLANGCI_LINT_VERSION=v1.59.0
+GOLANGCI_LINT_VERSION=v1.61.0
 
 .PHONY: all
 all: check-go-mod gateway 

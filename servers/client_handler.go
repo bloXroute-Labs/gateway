@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
@@ -20,7 +22,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
 	"github.com/bloXroute-Labs/gateway/v2/services/validator"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"golang.org/x/sync/errgroup"
 )
 
 // ClientHandler is a struct for gateway client handler object
@@ -50,8 +51,8 @@ func NewClientHandler(
 	nodeWSManager blockchain.WSManager,
 	bdnStats *bxmessage.BdnPerformanceStats,
 	timeStarted time.Time,
-	txsQueue services.MessageQueue,
-	txsOrderQueue services.MessageQueue,
+	txsQueue *services.MessageQueue,
+	txsOrderQueue *services.MessageQueue,
 	gatewayPublicKey string,
 	feedManager *feed.Manager,
 	validatorsManager *validator.Manager,

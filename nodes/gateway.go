@@ -141,8 +141,8 @@ type gateway struct {
 	polygonValidatorInfoManager polygon.ValidatorInfoManager
 	blockTime                   time.Duration
 
-	txsQueue      services.MessageQueue
-	txsOrderQueue services.MessageQueue
+	txsQueue      *services.MessageQueue
+	txsOrderQueue *services.MessageQueue
 
 	clientHandler *servers.ClientHandler
 	log           *log.Entry
@@ -1115,9 +1115,7 @@ func (g *gateway) publishPendingTx(txHash types.SHA256Hash, bxTx *types.BxTransa
 	// check if this transaction was seen before and has validators_only / next_validator flag, don't publish it to pending txs
 	tx, ok := g.TxStore.Get(txHash)
 	if ok {
-		tx.Lock()
 		flags := tx.Flags()
-		tx.Unlock()
 
 		if flags.IsNextValidator() || flags.IsValidatorsOnly() {
 			return
@@ -1815,9 +1813,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 		}
 	}
 
-	txResult.Transaction.Lock()
 	txSender := txResult.Transaction.Sender()
-	txResult.Transaction.Unlock()
 
 	statsStart := time.Now()
 	g.stats.AddTxsByShortIDsEvent(eventName, source, txResult.Transaction, tx.ShortID(), nodeID, broadcastRes.RelevantPeers, broadcastRes.SentGatewayPeers, startTime, tx.GetPriority(), txResult.DebugData)

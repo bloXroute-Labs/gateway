@@ -29,9 +29,9 @@ type msgWithSource struct {
 type MessageQueueCallback func(msg bxmessage.Message, source connections.Conn, waitingDuration time.Duration, workerChannelPosition int)
 
 // NewMsgQueue - create MessageQueue object, running workers and return MessageQueue
-func NewMsgQueue(numOfWorkers int, queueSize int, callBack MessageQueueCallback) MessageQueue {
+func NewMsgQueue(numOfWorkers int, queueSize int, callBack MessageQueueCallback) *MessageQueue {
 	ctx, cancel := context.WithCancel(context.Background())
-	msgQueue := MessageQueue{
+	msgQueue := &MessageQueue{
 		queue:  make(chan msgWithSource, queueSize),
 		ctx:    ctx,
 		cancel: cancel,
@@ -39,6 +39,7 @@ func NewMsgQueue(numOfWorkers int, queueSize int, callBack MessageQueueCallback)
 	for i := 0; i < numOfWorkers; i++ {
 		go msgQueue.work(callBack)
 	}
+
 	return msgQueue
 }
 

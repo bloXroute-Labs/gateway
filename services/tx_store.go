@@ -26,7 +26,7 @@ type TxStore interface {
 	Stop()
 
 	Add(hash types.SHA256Hash, content types.TxContent, shortID types.ShortID, network types.NetworkNum,
-		validate bool, flags types.TxFlags, timestamp time.Time, networkChainID int64, sender types.Sender) TransactionResult
+		validate bool, flags types.TxFlags, timestamp time.Time, networkChainID int64, sender types.Sender) types.TransactionResult
 	Get(hash types.SHA256Hash) (*types.BxTransaction, bool)
 	Known(hash types.SHA256Hash) bool
 	HasContent(hash types.SHA256Hash) bool
@@ -43,18 +43,4 @@ type TxStore interface {
 	Count() int
 	Summarize() *pbbase.TxStoreReply
 	CleanNow()
-}
-
-// TransactionResult is returned after the transaction service processes a new tx message, deciding whether to process it
-type TransactionResult struct {
-	NewTx            bool
-	NewContent       bool
-	NewSID           bool
-	Reprocess        bool
-	FailedValidation bool
-	Transaction      *types.BxTransaction
-	AssignedShortID  types.ShortID
-	DebugData        interface{}
-	AlreadySeen      bool
-	Nonce            uint64
 }

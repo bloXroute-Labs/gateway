@@ -11,12 +11,12 @@ import (
 
 // SerialPeerQueue - queue of messages to process
 type SerialPeerQueue struct {
-	queues *syncmap.SyncMap[types.NodeID, MessageQueue]
+	queues *syncmap.SyncMap[types.NodeID, *MessageQueue]
 }
 
 // NewSerialPeerQueue - create SerialPeerQueue object
 func NewSerialPeerQueue() SerialPeerQueue {
-	return SerialPeerQueue{queues: syncmap.NewTypedMapOf[types.NodeID, MessageQueue](syncmap.NodeIDHasher)}
+	return SerialPeerQueue{queues: syncmap.NewTypedMapOf[types.NodeID, *MessageQueue](syncmap.NodeIDHasher)}
 }
 
 // AddPeer - add peer to queue
