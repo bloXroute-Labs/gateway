@@ -142,7 +142,13 @@ func (f *Manager) Subscribe(feedName types.FeedType, feedConnectionType types.Fe
 	f.idToClientSubscription[id] = clientSubscription
 	f.lock.Unlock()
 
-	f.log.Infof("%v subscribed to feed '%v', id '%v' with includes [%v] and filter [%v]", ci.RemoteAddress, feedName, id, ro.Includes, ro.Filters)
+	f.log.WithFields(log.Fields{
+		"account_id":     ci.AccountID,
+		"feed_name":      feedName,
+		"remote_address": ci.RemoteAddress,
+		"includes":       ro.Includes,
+		"filters":        ro.Filters,
+	}).Info("subscribing to feed")
 
 	handlingInfo := ClientSubscriptionHandlingInfo{
 		SubscriptionID:     id,
@@ -161,11 +167,14 @@ func (f *Manager) Unsubscribe(subscriptionID string, closeClientConnection bool,
 
 	clientSub, exists := f.idToClientSubscription[subscriptionID]
 	if !exists {
-		f.log.Warnf("attempting to unsubscribe from %v failed: subscription not found", subscriptionID)
-		return fmt.Errorf("subscription %v was not found", subscriptionID)
+		return fmt.Errorf("%w: %v", bxgateway.ErrSubscriptionNotFound, subscriptionID)
 	}
 
-	f.log.Infof("unsubscribing '%v' from feed '%v', closing the connection: %v", clientSub.RemoteAddress, clientSub.feedType, closeClientConnection)
+	f.log.WithFields(log.Fields{
+		"account_id":     clientSub.AccountID,
+		"feed_name":      clientSub.feedType,
+		"remote_address": clientSub.RemoteAddress,
+	}).Infof("unsubscribing from feed, closing the connection: %v", closeClientConnection)
 
 	if errMsg != "" {
 		clientSub.errMsgChan <- errMsg

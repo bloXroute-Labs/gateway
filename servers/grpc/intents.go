@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -270,7 +271,7 @@ func (g *server) handleSolutions(req *pb.IntentSolutionsRequest, stream pb.Gatew
 		case notification := <-sub.FeedChan:
 			intentSolution := notification.(*types.UserIntentSolutionNotification)
 
-			if intentSolution.DappAddress != req.DappAddress && intentSolution.SenderAddress != req.DappAddress {
+			if !strings.EqualFold(intentSolution.DappAddress, req.DappAddress) && !strings.EqualFold(intentSolution.SenderAddress, req.DappAddress) {
 				continue
 			}
 
@@ -363,7 +364,7 @@ func (g *server) handleIntents(expr conditions.Expr, stream pb.Gateway_IntentsSe
 
 			if expr != nil {
 				var shouldSend bool
-				shouldSend, err = conditions.Evaluate(expr, map[string]interface{}{"dapp_address": intent.DappAddress})
+				shouldSend, err = conditions.Evaluate(expr, map[string]interface{}{"dapp_address": strings.ToLower(intent.DappAddress)})
 				if err != nil {
 					return status.Error(codes.Internal, err.Error())
 				}

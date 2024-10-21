@@ -27,7 +27,7 @@ type mockTxStore struct{}
 
 func (m mockTxStore) Start() (r error) { return }
 func (m mockTxStore) Stop()            {}
-func (m mockTxStore) Add(types.SHA256Hash, types.TxContent, types.ShortID, types.NetworkNum, bool, types.TxFlags, time.Time, int64, types.Sender) (r services.TransactionResult) {
+func (m mockTxStore) Add(types.SHA256Hash, types.TxContent, types.ShortID, types.NetworkNum, bool, types.TxFlags, time.Time, int64, types.Sender) (r types.TransactionResult) {
 	return
 }
 func (m mockTxStore) Get(types.SHA256Hash) (r *types.BxTransaction, e bool) { return }

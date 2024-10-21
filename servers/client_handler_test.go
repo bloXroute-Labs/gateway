@@ -5,6 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
@@ -16,9 +20,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/test/mock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
-	"golang.org/x/sync/errgroup"
 )
 
 func TestManageServers(t *testing.T) {
@@ -47,7 +48,7 @@ func TestManageServers(t *testing.T) {
 
 	clientHandler := NewClientHandler(nil, bxConfig, nil, sdn, nil, nil,
 		nil, services.NewNoOpSubscriptionServices(), wsManager, nil,
-		time.Now(), services.MessageQueue{}, services.MessageQueue{}, "", fm, nil,
+		time.Now(), &services.MessageQueue{}, &services.MessageQueue{}, "", fm, nil,
 		nil, statistics.NoStats{}, nil, nil,
 		false, "", "",
 	)

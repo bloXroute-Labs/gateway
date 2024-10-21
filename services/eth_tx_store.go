@@ -7,13 +7,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
-	"github.com/ethereum/go-ethereum/common"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
 // TODO : move ethtxstore and related tests outside of bxgateway package
@@ -46,7 +47,7 @@ func NewEthTxStore(clock utils.Clock, cleanupInterval time.Duration,
 func (t *EthTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID types.ShortID,
 	network types.NetworkNum, validate bool, flags types.TxFlags, timestamp time.Time, networkChainID int64,
 	sender types.Sender,
-) TransactionResult {
+) types.TransactionResult {
 	result := t.add(hash, content, shortID, network, validate, flags, timestamp, networkChainID, sender)
 
 	if result.Transaction.Flags().IsReuseSenderNonce() {
@@ -63,7 +64,7 @@ func (t *EthTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID
 // Add validates an Ethereum transaction and checks that its nonce has not been seen before
 func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID types.ShortID,
 	network types.NetworkNum, validate bool, flags types.TxFlags, timestamp time.Time, networkChainID int64, sender types.Sender,
-) TransactionResult {
+) types.TransactionResult {
 	transaction := types.NewBxTransaction(hash, network, flags, timestamp)
 	var blockchainTx types.BlockchainTransaction
 	var err error
@@ -75,7 +76,7 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 		transaction.SetContent(content)
 		blockchainTx, err = transaction.BlockchainTransaction(types.EmptySender)
 		if err != nil {
-			return TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: err}
+			return types.TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: err}
 		}
 
 		ethTx := blockchainTx.(*types.EthTransaction)
@@ -84,7 +85,7 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 		if networkChainID != 0 && txChainID != 0 && networkChainID != txChainID {
 			errChainIDMismatch := fmt.Errorf("chainID mismatch for hash %v - content chainID %v networkNum %v networkChainID %v", hash, txChainID, network, networkChainID)
 			log.Error(errChainIDMismatch)
-			return TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: errChainIDMismatch}
+			return types.TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: errChainIDMismatch}
 		}
 
 		sender = types.EmptySender
@@ -95,7 +96,7 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 			if err != nil {
 				errExtractionFailed := fmt.Errorf("failed to extract sender from transaction %v", hash)
 				log.Error(errExtractionFailed)
-				return TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: errExtractionFailed}
+				return types.TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: errExtractionFailed}
 			}
 		}
 
@@ -103,7 +104,7 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 			if ethTx.Tx().BlobTxSidecar() == nil {
 				errEmptySidecar := fmt.Errorf("missing sidecar for hash %v", hash)
 				log.Error(errEmptySidecar)
-				return TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: errEmptySidecar}
+				return types.TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: errEmptySidecar}
 			}
 			log.Tracef("adding flag TFWithSidecar for transaction %v", hash)
 

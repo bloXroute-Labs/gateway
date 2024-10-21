@@ -52,8 +52,8 @@ type grpcParams struct {
 	wsManager                   blockchain.WSManager
 	bdnStats                    *bxmessage.BdnPerformanceStats
 	timeStarted                 time.Time
-	txsQueue                    services.MessageQueue
-	txsOrderQueue               services.MessageQueue
+	txsQueue                    *services.MessageQueue
+	txsOrderQueue               *services.MessageQueue
 	gatewayPublicKey            string
 	connector                   Connector
 	validatorsManager           *validator.Manager

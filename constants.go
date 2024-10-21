@@ -1,6 +1,7 @@
 package bxgateway
 
 import (
+	"errors"
 	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/types"
@@ -250,3 +251,6 @@ var NetworkNumToBlockchainNetwork = map[types.NetworkNum]string{
 	BSCTestnetNum:     BSCTestnet,
 	HoleskyNum:        Holesky,
 }
+
+// ErrSubscriptionNotFound - error for subscription not found
+var ErrSubscriptionNotFound = errors.New("subscription not found")

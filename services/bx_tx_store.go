@@ -6,6 +6,9 @@ import (
 	"sort"
 	"time"
 
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	pbbase "github.com/bloXroute-Labs/gateway/v2/protobuf"
@@ -13,8 +16,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rlp"
 )
 
 const (
@@ -235,12 +236,12 @@ func (t *BxTxStore) Iter() (iter <-chan *types.BxTransaction) {
 // Add adds a new transaction to BxTxStore
 func (t *BxTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID types.ShortID, networkNum types.NetworkNum,
 	_ bool, flags types.TxFlags, timestamp time.Time, _ int64, sender types.Sender,
-) TransactionResult {
+) types.TransactionResult {
 	if shortID == types.ShortIDEmpty && len(content) == 0 {
 		debug.PrintStack()
 		panic("Bad usage of Add function - content and shortID can't be both missing")
 	}
-	result := TransactionResult{}
+	result := types.TransactionResult{}
 	if t.clock.Now().Sub(timestamp) > t.maxTxAge(networkNum) {
 		result.Transaction = types.NewBxTransaction(hash, networkNum, flags, timestamp)
 		result.DebugData = fmt.Sprintf("Transaction is too old - %v", timestamp)
@@ -275,41 +276,13 @@ func (t *BxTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID 
 		}
 	}
 
-	// make sure we are the only process that makes changes to the transaction
-	bxTransaction.Lock()
-
-	if !bxTransaction.Flags().IsPaid() && flags.IsPaid() {
-		result.Reprocess = true
-		bxTransaction.AddFlags(types.TFPaidTx)
-	}
-	if !bxTransaction.Flags().ShouldDeliverToNode() && flags.ShouldDeliverToNode() {
-		result.Reprocess = true
-		bxTransaction.AddFlags(types.TFDeliverToNode)
-	}
-
 	// check hash in the bloom filter only after it is not seen in txStore
 	if t.bloom != nil && shortID == types.ShortIDEmpty && !result.Reprocess && result.NewTx && t.bloom.Check(hash.Bytes()) {
 		result.DebugData = "Transaction ignored due to already seen in bloom filter"
 		result.AlreadySeen = true
 	}
 
-	// if shortID was not provided, assign shortID (if we are running as assigner)
-	// note that assigner.Next() provides ShortIDEmpty if we are not assigning
-	// also, shortID is not assigned if transaction is validators_only
-	// if we assigned shortID, result.AssignedShortID hold non ShortIDEmpty value
-	if result.NewTx && shortID == types.ShortIDEmpty && !bxTransaction.Flags().IsValidatorsOnly() && !bxTransaction.Flags().IsNextValidator() && !bxTransaction.Flags().IsValidatorsOnly() {
-		shortID = t.assigner.Next()
-		result.AssignedShortID = shortID
-	}
-
-	result.NewSID = bxTransaction.AddShortID(shortID)
-	result.NewContent = bxTransaction.SetContent(content)
-	// set sender only if it has new content in order to avoid false sender when the shortID is not new
-	if result.NewContent {
-		bxTransaction.SetSender(sender)
-	}
-	result.Transaction = bxTransaction
-	bxTransaction.Unlock()
+	shortID = bxTransaction.Update(&result, flags, shortID, content, sender, t.assigner.Next)
 
 	if result.NewSID {
 		t.shortIDToHash.Store(shortID, bxTransaction.Hash())
