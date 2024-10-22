@@ -30,7 +30,8 @@ COPY go.sum .
 RUN go mod download
 COPY --chown=bloxroute:bloxroute . .
 
-RUN make gateway
+ARG PORTABLE
+RUN if [ "$PORTABLE" = "true" ] ; then make gateway-portable ; else make gateway ; fi
 RUN chown bloxroute:bloxroute ./bin/gateway
 RUN chown bloxroute:bloxroute ./bin/bxcli
 
