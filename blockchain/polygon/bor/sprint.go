@@ -2,19 +2,18 @@ package bor
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
 
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-
 	"github.com/cenkalti/backoff/v4"
-	"github.com/pkg/errors"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"go.uber.org/atomic"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils/ptr"
 )
@@ -33,7 +32,13 @@ const (
 	heimdallUpdateSprintInterval = time.Hour
 )
 
-var errQuerySnapshot = errors.New("failed to query blockchain node for snapshot")
+var (
+	// ErrWSManagerNotInitialized is the error for ws manager is not initialized
+	ErrWSManagerNotInitialized = errors.New("ws manager is not initialized")
+
+	// ErrNoOpenProviders is the error for no open providers
+	ErrNoOpenProviders = errors.New("no open providers")
+)
 
 // SprintManager basic client for processing bor sprints.
 type SprintManager struct {
@@ -89,7 +94,7 @@ func (m *SprintManager) bootstrap() error {
 func (m *SprintManager) updateSprintMapFromLatest() error {
 	snapshot, err := m.getLatestSnapshot()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to query blockchain node for snapshot: %w", err)
 	}
 
 	currentSpan, err := m.spanner.GetSpanForHeight(snapshot.Number)
@@ -104,7 +109,7 @@ func (m *SprintManager) updateSprintMapFromLatest() error {
 
 	sprintMap, err := getSprintValidatorsMap(currentSpan, nextSpan, snapshot)
 	if err != nil {
-		return errors.WithMessage(err, "failed to generate sprint validators map")
+		return fmt.Errorf("failed to generate sprint validators map: %w", err)
 	}
 
 	m.mx.Lock()
@@ -135,7 +140,7 @@ func getSprintValidatorsMap(currentSpan *SpanInfo, nextSpan *SpanInfo, snapshot 
 
 func (m *SprintManager) getLatestSnapshot() (*Snapshot, error) {
 	if m.wsManager == nil {
-		return nil, errors.WithMessage(errQuerySnapshot, "no ws manager")
+		return nil, ErrWSManagerNotInitialized
 	}
 
 	for _, wsProvider := range (*m.wsManager).Providers() {
@@ -153,7 +158,7 @@ func (m *SprintManager) getLatestSnapshot() (*Snapshot, error) {
 		return snapshot, nil
 	}
 
-	return nil, errors.WithMessage(errQuerySnapshot, "no open providers")
+	return nil, ErrNoOpenProviders
 }
 
 // Run bootstrap initial state and start goroutine for processing of changes.
@@ -167,7 +172,7 @@ func (m *SprintManager) Run() error {
 	if err := m.bootstrap(); err != nil {
 		m.state.Store(ptr.New(stateIdle))
 
-		return errors.WithMessage(err, "failed to bootstrap sprint manager")
+		return fmt.Errorf("failed to bootstrap sprint manager: %w", err)
 	}
 
 	// cleanup span notification channel after bootstrap

@@ -1,7 +1,7 @@
 package blockproposer
 
 import (
-	"github.com/pkg/errors"
+	"errors"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc/caller"
@@ -11,12 +11,13 @@ import (
 )
 
 var (
-	errClockNotInitialized   = errors.New("clock is not initialized")
-	errTxStoreNotInitialized = errors.New("tx store is not initialized")
-	errLogNotInitialized     = errors.New("log is not initialized")
-	errCallerManager         = errors.New("caller manager is not initialized")
-	errTickerNotInitialized  = errors.New("ticker is not initialized")
-	errSendingDisabled       = errors.New("sending is not enabled")
+	errClockNotInitialized          = errors.New("clock is not initialized")
+	errTxStoreNotInitialized        = errors.New("tx store is not initialized")
+	errLogNotInitialized            = errors.New("log is not initialized")
+	errCallerManager                = errors.New("caller manager is not initialized")
+	errRegularTickerNotInitialized  = errors.New("regular ticker is not initialized")
+	errHighLoadTickerNotInitialized = errors.New("high load ticker is not initialized")
+	errSendingDisabled              = errors.New("sending must be enabled to use block proposer")
 )
 
 // Config is the configuration for BlockProposer.
@@ -69,17 +70,17 @@ func (b *Config) Validate() error {
 	}
 
 	if !b.SendingInfo.Enabled {
-		return errors.WithMessage(errSendingDisabled, "sending must be enabled to use block proposer")
+		return errSendingDisabled
 	}
 
 	b.SendingInfo.Validate(b.Log)
 
 	if b.RegularTicker == nil {
-		return errors.WithMessage(errTickerNotInitialized, "regular ticker is not initialized")
+		return errRegularTickerNotInitialized
 	}
 
 	if b.HighLoadTicker == nil {
-		return errors.WithMessage(errTickerNotInitialized, "regular ticker is not initialized")
+		return errHighLoadTickerNotInitialized
 	}
 
 	return nil

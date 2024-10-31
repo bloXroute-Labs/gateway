@@ -1,17 +1,19 @@
 package ticker
 
 import (
+	"errors"
 	"time"
-
-	"github.com/pkg/errors"
 
 	"github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 var (
-	// ErrInvalidInterval is the error for invalid interval
-	ErrInvalidInterval = errors.New("invalid interval")
+	// ErrInvalidDelaysAndInterval is the error for unset delays and interval
+	ErrInvalidDelaysAndInterval = errors.New("invalid delays and interval")
+
+	// ErrInvalidDelays is the error for invalid delays
+	ErrInvalidDelays = errors.New("delays must be in ascending order")
 
 	// ErrClockIsNotInit is the error for clock is not initialized
 	ErrClockIsNotInit = errors.New("clock is not initialized")
@@ -35,32 +37,29 @@ type Args struct {
 // - if no delays are set, the Ticker must be set
 // - if Delays are set, the Ticker can be set or not
 // - if Delays are set, they must be in ascending order
-func (a *Args) Validate() (err error) {
+func (a *Args) Validate() error {
 	if a.Log == nil {
-		err = errors.WithMessage(ErrLogIsNotInit, "log must be initialized")
-		return
+		return ErrLogIsNotInit
 	}
 
 	if a.Clock == nil {
-		err = errors.WithMessage(ErrClockIsNotInit, "clock must be initialized")
-		return
+		return ErrClockIsNotInit
 	}
 
 	if len(a.Delays) == 0 && a.Interval == time.Duration(0) {
-		return errors.WithMessage(ErrInvalidInterval, "delays not set and interval not set")
+		return ErrInvalidDelaysAndInterval
 	}
 
 	var prev time.Duration
 	for _, delay := range a.Delays {
 		if !(prev < delay) {
-			err = errors.WithMessage(ErrInvalidInterval, "delays must be in ascending order")
-			return
+			return ErrInvalidDelays
 		}
 
 		prev = delay
 	}
 
-	return
+	return nil
 }
 
 // getDelays iterate over the delays starting from the last one and calculate the exact time to wait

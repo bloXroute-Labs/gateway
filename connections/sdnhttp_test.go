@@ -2,7 +2,6 @@ package connections
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -176,12 +175,10 @@ func TestDirectRelayConnections_IfPingOver40MSLogsWarning(t *testing.T) {
 				return testCase.latencies
 			}
 			sdn.getPingLatencies = getPingLatenciesFunction
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
 
 			autoRelayInstructions := make(chan RelayInstruction)
 			go func() { <-autoRelayInstructions }()
-			err := sdn.DirectRelayConnections(ctx, "auto", 1, autoRelayInstructions, time.Second)
+			err := sdn.DirectRelayConnections("auto", 1, autoRelayInstructions)
 			assert.NoError(t, err)
 			time.Sleep(time.Millisecond)
 
@@ -240,10 +237,7 @@ func TestDirectRelayConnections_IncorrectArgs(t *testing.T) {
 
 	for _, testCase := range testTable {
 		t.Run(fmt.Sprint(testCase.name), func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			err := s.DirectRelayConnections(ctx, testCase.relaysString, 2, make(chan RelayInstruction), time.Second)
+			err := s.DirectRelayConnections(testCase.relaysString, 2, make(chan RelayInstruction))
 			assert.Equal(t, testCase.expectedError, err)
 		})
 	}
@@ -366,10 +360,7 @@ func TestDirectRelayConnections_RelayLimit2(t *testing.T) {
 			expectedRelayCount := len(testCase.expectedRelays)
 			relayInstructions := make(chan RelayInstruction, expectedRelayCount)
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			err := sdn.DirectRelayConnections(ctx, testCase.relaysString, 2, relayInstructions, AutoRelayTimeout)
+			err := sdn.DirectRelayConnections(testCase.relaysString, 2, relayInstructions)
 			assert.Equal(t, testCase.expectedError, err)
 
 			timer := time.NewTimer(1 * time.Second)
@@ -495,10 +486,7 @@ func TestDirectRelayConnections_RelayLimit1(t *testing.T) {
 			expectedRelayCount := len(testCase.expectedRelays)
 			relayInstructions := make(chan RelayInstruction, expectedRelayCount)
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			err := sdn.DirectRelayConnections(ctx, testCase.relaysString, 1, relayInstructions, time.Second)
+			err := sdn.DirectRelayConnections(testCase.relaysString, 1, relayInstructions)
 			assert.Equal(t, testCase.expectedError, err)
 
 			for i := 0; i < expectedRelayCount; i++ {
@@ -640,10 +628,8 @@ func TestDirectRelayConnections_UpdateAutoRelays(t *testing.T) {
 					<-relayInstructions
 				}
 			}()
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
 
-			err := s.DirectRelayConnections(ctx, testCase.relaysArgument, 2, relayInstructions, time.Millisecond)
+			err := s.DirectRelayConnections(testCase.relaysArgument, 2, relayInstructions)
 			require.Nil(t, err)
 			time.Sleep(time.Millisecond * 2)
 
@@ -707,10 +693,8 @@ func TestDirectRelayConnections_UpdateAutoRelaysTwice(t *testing.T) {
 					<-relayInstructions
 				}
 			}()
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
 
-			err := s.DirectRelayConnections(ctx, testCase.relaysArgument, 2, relayInstructions, time.Millisecond)
+			err := s.DirectRelayConnections(testCase.relaysArgument, 2, relayInstructions)
 			require.Nil(t, err)
 			time.Sleep(time.Millisecond * 2)
 

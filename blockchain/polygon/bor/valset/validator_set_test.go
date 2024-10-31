@@ -3,11 +3,10 @@ package valset
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
-	"gotest.tools/assert"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func NewValidatorFromKey(key string, votingPower int64) *Validator {
@@ -24,10 +23,10 @@ func GetValidators() [4]*Validator {
 		// addr1 = 0x98925BE497f6dFF6A5a33dDA8B5933cA35262d69
 		signer1 = "c8deb0bea5c41afe8e37b4d1bd84e31adff11b09c8c96ff4b605003cce067cd8"
 
-		//addr2 = 0x648Cf2A5b119E2c04061021834F8f75735B1D36b
+		// addr2 = 0x648Cf2A5b119E2c04061021834F8f75735B1D36b
 		signer2 = "c8deb0bea5c41afe8e37b4d1bd84e31adff11b09c8c96ff4b605003cce067cd7"
 
-		//addr3 = 0x168f220B3b313D456eD4797520eFdFA9c57E6C45
+		// addr3 = 0x168f220B3b313D456eD4797520eFdFA9c57E6C45
 		signer3 = "c8deb0bea5c41afe8e37b4d1bd84e31adff11b09c8c96ff4b605003cce067cd6"
 	)
 
@@ -148,9 +147,9 @@ func TestGetValidatorByAddressAndIndex(t *testing.T) {
 		idx, valByAddress := valSet.GetByAddress(val.Address)
 		addr, valByIndex := valSet.GetByIndex(idx)
 
-		assert.DeepEqual(t, val, valByIndex)
-		assert.DeepEqual(t, val, valByAddress)
-		assert.DeepEqual(t, val.Address, addr)
+		assert.Equal(t, val, valByIndex)
+		assert.Equal(t, val, valByAddress)
+		assert.Equal(t, val.Address, addr)
 	}
 
 	tempAddress := common.HexToAddress("0x12345")

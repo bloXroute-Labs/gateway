@@ -40,7 +40,7 @@ func TestArgs(t *testing.T) {
 
 			t.Run("InvalidInterval", func(t *testing.T) {
 				invalidArgs.Clock = clock
-				require.ErrorIs(t, invalidArgs.Validate(), ErrInvalidInterval)
+				require.ErrorIs(t, invalidArgs.Validate(), ErrInvalidDelaysAndInterval)
 			})
 
 			t.Run("DelaysNotSetButIntervalIsSet", func(t *testing.T) {
@@ -50,7 +50,7 @@ func TestArgs(t *testing.T) {
 
 			t.Run("DelaysSetIncorrectlyAndIntervalNotSet", func(t *testing.T) {
 				invalidArgs.Delays = []time.Duration{time.Second, time.Second}
-				require.ErrorIs(t, invalidArgs.Validate(), ErrInvalidInterval)
+				require.ErrorIs(t, invalidArgs.Validate(), ErrInvalidDelays)
 			})
 		})
 

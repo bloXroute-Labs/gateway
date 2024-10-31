@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"time"
 )
 
 // UInt32Len is the byte length of unsigned 32bit integers
@@ -141,3 +142,6 @@ const Keccak256HashLen = 32
 
 // ECDSASignatureLen is the byte length of ECDSASignature in Ethereum ecosystem
 const ECDSASignatureLen = 65
+
+// RelayMonitorInterval is interval for relay monitor
+const RelayMonitorInterval = time.Minute

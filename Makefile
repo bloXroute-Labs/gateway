@@ -30,12 +30,6 @@ gateway: fmt | $(BIN); $(info $(M) building gateway executable) @ ## Build progr
 		-ldflags '-X $(MODULE)/version.BuildVersion=$(VERSION) -X $(MODULE)/version.BuildDate=$(DATE)' \
 		-o $(BIN) ./cmd/...
 
-gateway-portable: fmt | $(BIN); $(info $(M) building gateway portable executable) @ ## Build program binary
-	$Q CGO_CFLAGS="-O -D__BLST_PORTABLE__" $(GO) build \
-		-tags release \
-		-ldflags '-X $(MODULE)/version.BuildVersion=$(VERSION) -X $(MODULE)/version.BuildDate=$(DATE)' \
-		-o $(BIN) ./cmd/...
-
 $(BIN):
 	@mkdir -p $@
 $(BIN)/%: | $(BIN) ; $(info $(M) building $(PACKAGE))

@@ -20,6 +20,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
@@ -30,19 +32,23 @@ import (
 
 //go:generate mockgen -destination ../../bxgateway/test/mock/mock_sdnhttp.go -package mock . SDNHTTP
 
-// ErrSDNUnavailable - represents SDN service unavailable
-var ErrSDNUnavailable = errors.New("SDN service unavailable")
+var (
+	// ErrSDNUnavailable - represents SDN service unavailable
+	ErrSDNUnavailable = errors.New("SDN service unavailable")
+	// ErrNoRelays - sdn did not find any relays error
+	ErrNoRelays = errors.New("no relays were acquired from SDN")
+)
 
 // SDN Http type constants
 const (
 	PingTimeout                     = 2000.0
 	TimeRegEx                       = "= ([^/]*)"
-	AutoRelayTimeout                = time.Hour
 	blockchainNetworksCacheFileName = "blockchainNetworks.json"
 	blockchainNetworkCacheFileName  = "blockchainNetwork.json"
 	nodeModelCacheFileName          = "nodemodel.json"
 	potentialRelaysFileName         = "potentialrelays.json"
 	accountModelsFileName           = "accountmodel.json"
+	relayMapInterval                = 2 * time.Minute
 )
 
 // SDNHTTP is the interface for realSDNHTTP type
@@ -61,12 +67,13 @@ type SDNHTTP interface {
 	Register() error
 	NeedsRegistration() bool
 	FetchCustomerAccountModel(accountID types.AccountID) (sdnmessage.Account, error)
-	DirectRelayConnections(ctx context.Context, relayHosts string, relayLimit uint64, relayInstructions chan<- RelayInstruction, autoRelayTimeout time.Duration) error
+	DirectRelayConnections(relayHosts string, relayLimit uint64, relayInstructions chan<- RelayInstruction) error
 	FindNetwork(networkNum types.NetworkNum) (*sdnmessage.BlockchainNetwork, error)
 	MinTxAge() time.Duration
 	SendNodeEvent(event sdnmessage.NodeEvent, id types.NodeID)
 	Get(endpoint string, requestBody []byte) ([]byte, error)
 	GetQuotaUsage(accountID string) (*QuotaResponseBody, error)
+	FindNewRelay(gwContext context.Context, oldRelayIP string, relayInstructions chan RelayInstruction)
 }
 
 // realSDNHTTP is a connection to the bloxroute API
@@ -81,10 +88,18 @@ type realSDNHTTP struct {
 	dataDir          string
 	nodeModel        *sdnmessage.NodeModel
 	relays           sdnmessage.Peers
+	ignoredRelays    *syncmap.SyncMap[string, RelyInfo]
 }
 
 // relayMap maps a relay's IP to its port
 type relayMap map[string]int64
+
+// IgnoredRelaysMap sync map for ignored relays
+type IgnoredRelaysMap interface {
+	Load(key string) (value RelyInfo, ok bool)
+	Store(key string, value RelyInfo)
+	Delete(key string)
+}
 
 // nodeLatencyInfo contains ping results with host and latency info
 type nodeLatencyInfo struct {
@@ -95,9 +110,10 @@ type nodeLatencyInfo struct {
 
 // RelayInstruction specifies whether to connect or disconnect to the relay at an IP:Port
 type RelayInstruction struct {
-	IP   string
-	Type ConnInstructionType
-	Port int64
+	IP       string
+	Type     ConnInstructionType
+	Port     int64
+	IsStatic bool
 }
 
 // ConnInstructionType specifies connection or disconnection
@@ -112,6 +128,12 @@ type QuotaResponseBody struct {
 	AccountID   string `json:"account_id"`
 	QuotaFilled int    `json:"quota_filled"`
 	QuotaLimit  int    `json:"quota_limit"`
+}
+
+// RelyInfo - represent connected relays info
+type RelyInfo struct {
+	TimeAdded   time.Time
+	IsConnected bool
 }
 
 const (
@@ -144,7 +166,9 @@ func NewSDNHTTP(sslCerts *utils.SSLCerts, sdnURL string, nodeModel sdnmessage.No
 		nodeModel:        &nodeModel,
 		getPingLatencies: getPingLatencies,
 		dataDir:          dataDir,
+		ignoredRelays:    syncmap.NewStringMapOf[RelyInfo](),
 	}
+	go sdn.cleanupRelayMap()
 	return sdn
 }
 
@@ -234,7 +258,7 @@ func logLowestLatency(lowestLatencyRelay nodeLatencyInfo) {
 }
 
 // DirectRelayConnections directs the gateway on relays to connect/disconnect
-func (s realSDNHTTP) DirectRelayConnections(ctx context.Context, relayHosts string, relayLimit uint64, relayInstructions chan<- RelayInstruction, autoRelayTimeout time.Duration) error {
+func (s realSDNHTTP) DirectRelayConnections(relayHosts string, relayLimit uint64, relayInstructions chan<- RelayInstruction) error {
 	overrideRelays, autoCount, err := parsedCmdlineRelays(relayHosts, relayLimit)
 	if err != nil {
 		return err
@@ -242,7 +266,8 @@ func (s realSDNHTTP) DirectRelayConnections(ctx context.Context, relayHosts stri
 
 	// connect relays specified in `relays` argument
 	for ip, port := range overrideRelays {
-		relayInstructions <- RelayInstruction{IP: ip, Port: port, Type: Connect}
+		s.ignoredRelays.Store(ip, RelyInfo{TimeAdded: time.Now(), IsConnected: true})
+		relayInstructions <- RelayInstruction{IP: ip, Port: port, Type: Connect, IsStatic: true}
 	}
 
 	if autoCount == 0 {
@@ -256,9 +281,21 @@ func (s realSDNHTTP) DirectRelayConnections(ctx context.Context, relayHosts stri
 		return fmt.Errorf("failed to extract relay list: %v", err)
 	}
 	if len(relays) == 0 {
-		return errors.New("no relays were acquired from SDN")
+		return ErrNoRelays
 	}
-	go s.manageAutoRelays(ctx, autoCount, relayInstructions, autoRelayTimeout, relays, overrideRelays)
+	go s.manageAutoRelays(autoCount, relayInstructions, relays)
+	return nil
+}
+
+func (s realSDNHTTP) connectToNewRelay(relayInstructions chan<- RelayInstruction) error {
+	relays, err := s.getRelays(s.nodeModel.NodeID, s.nodeModel.BlockchainNetworkNum)
+	if err != nil {
+		return fmt.Errorf("failed to extract relay list: %v", err)
+	}
+	if len(relays) == 0 {
+		return ErrNoRelays
+	}
+	s.manageAutoRelays(1, relayInstructions, relays)
 	return nil
 }
 
@@ -311,7 +348,7 @@ func parsedCmdlineRelays(relayHosts string, relayLimit uint64) (relayMap, int, e
 	return overrideRelays, autoCount, nil
 }
 
-func (s realSDNHTTP) manageAutoRelays(ctx context.Context, autoRelayCount int, relayInstructions chan<- RelayInstruction, autoRelayRefreshInterval time.Duration, relays sdnmessage.Peers, overrideRelays relayMap) {
+func (s realSDNHTTP) manageAutoRelays(autoRelayCount int, relayInstructions chan<- RelayInstruction, relays sdnmessage.Peers) {
 	pingLatencies := s.getPingLatencies(relays) // list of SDN relays sorted by ascending order of latency
 	if len(pingLatencies) == 0 {
 		log.Errorf("ping latencies not found for relays from SDN")
@@ -326,8 +363,8 @@ func (s realSDNHTTP) manageAutoRelays(ctx context.Context, autoRelayCount int, r
 			log.Errorf("relay %s from the SDN does not have a valid IP address: %v", pingLatency.IP, err)
 			continue
 		}
-		// only connect to the relay if not already connected to
-		if _, ok := overrideRelays[newRelayIP]; ok {
+		// only connect to the relay if not already connected to or still connected
+		if _, ok := s.ignoredRelays.LoadOrStore(newRelayIP, RelyInfo{TimeAdded: time.Now(), IsConnected: true}); ok {
 			continue
 		}
 		logLowestLatency(pingLatencies[idx])
@@ -341,6 +378,41 @@ func (s realSDNHTTP) manageAutoRelays(ctx context.Context, autoRelayCount int, r
 	}
 	// if we are here we failed to find all needed auto relays
 	log.Errorf("available SDN relays %v; requested auto count %v", autoRelayCounter, autoRelayCount)
+}
+
+func (s realSDNHTTP) FindNewRelay(gwContext context.Context, oldRelayIP string, relayInstructions chan RelayInstruction) {
+	log.Errorf("relay %v is not reachable, switching relay", oldRelayIP)
+	s.ignoredRelays.Store(oldRelayIP, RelyInfo{TimeAdded: time.Now(), IsConnected: false})
+	for {
+		err := s.connectToNewRelay(relayInstructions)
+		if err == nil {
+			return // Exit the function if successful
+		}
+		log.Errorf("error while trying to reconnect to other relay %v", err)
+
+		// Wait before trying again
+		ticker := time.NewTicker(types.RelayMonitorInterval)
+		defer ticker.Stop()
+
+		select {
+		case <-gwContext.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s realSDNHTTP) cleanupRelayMap() {
+	ticker := time.NewTicker(relayMapInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.ignoredRelays.Range(func(ip string, info RelyInfo) bool {
+			if !info.IsConnected && time.Since(info.TimeAdded) > relayMapInterval {
+				s.ignoredRelays.Delete(ip)
+			}
+			return true
+		})
+	}
 }
 
 // NodeModel returns the node model returned by the SDN

@@ -92,36 +92,36 @@ func TestConfigValidate(t *testing.T) {
 	t.Run("Clock is not initialized", func(t *testing.T) {
 		config := validConfig()
 		config.Clock = nil
-		require.EqualError(t, config.Validate(), errClockNotInitialized.Error())
+		require.ErrorIs(t, config.Validate(), errClockNotInitialized)
 	})
 
 	t.Run("TxStore is not initialized", func(t *testing.T) {
 		config := validConfig()
 		config.TxStore = nil
-		require.EqualError(t, config.Validate(), errTxStoreNotInitialized.Error())
+		require.ErrorIs(t, config.Validate(), errTxStoreNotInitialized)
 	})
 
 	t.Run("Log is not initialized", func(t *testing.T) {
 		config := validConfig()
 		config.Log = nil
-		require.EqualError(t, config.Validate(), errLogNotInitialized.Error())
+		require.ErrorIs(t, config.Validate(), errLogNotInitialized)
 	})
 
 	t.Run("CallerManager is not initialized", func(t *testing.T) {
 		config := validConfig()
 		config.CallerManager = nil
-		require.EqualError(t, config.Validate(), errCallerManager.Error())
+		require.ErrorIs(t, config.Validate(), errCallerManager)
 	})
 
 	t.Run("RegularTicker is not initialized", func(t *testing.T) {
 		config := validConfig()
 		config.RegularTicker = nil
-		require.ErrorIs(t, config.Validate(), errTickerNotInitialized)
+		require.ErrorIs(t, config.Validate(), errRegularTickerNotInitialized)
 	})
 
 	t.Run("HighLoadTicker is not initialized", func(t *testing.T) {
 		config := validConfig()
 		config.HighLoadTicker = nil
-		require.ErrorIs(t, config.Validate(), errTickerNotInitialized)
+		require.ErrorIs(t, config.Validate(), errHighLoadTickerNotInitialized)
 	})
 }

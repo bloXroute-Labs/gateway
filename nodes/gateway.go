@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -24,7 +25,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/pkg/errors"
 	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
 	"github.com/sourcegraph/jsonrpc2"
 	"go.uber.org/atomic"
@@ -65,8 +65,6 @@ import (
 )
 
 const (
-	ignoreSeenEvent = "ignore seen"
-
 	bscMainnetBloomCap     = 35e6
 	mainnetBloomCap        = 85e5
 	polygonMainnetBloomCap = 225e5
@@ -125,9 +123,9 @@ type gateway struct {
 
 	staticEnodesCount            int
 	startupArgs                  string
-	validatorStatusMap           *syncmap.SyncMap[string, bool]     // validator addr -> online/offline
-	validatorListMap             *syncmap.SyncMap[uint64, []string] // block height -> list of validators
-	nextValidatorMap             *orderedmap.OrderedMap             // next accessible validator
+	validatorStatusMap           *syncmap.SyncMap[string, bool]         // validator addr -> online/offline
+	validatorListMap             *syncmap.SyncMap[uint64, []string]     // block height -> list of validators
+	nextValidatorMap             *orderedmap.OrderedMap[uint64, string] // next accessible validator
 	validatorListReady           bool
 	validatorInfoUpdateLock      sync.Mutex
 	latestValidatorInfo          []*types.FutureValidatorInfo
@@ -150,6 +148,7 @@ type gateway struct {
 
 	intentsManager services.IntentsManager
 	blobsManager   *beacon.BlobSidecarCacheManager
+
 }
 
 // GeneratePeers generate string peers separated by comma
@@ -228,6 +227,7 @@ func NewGateway(parent context.Context,
 	}
 	g.chainID = int64(bxgateway.NetworkNumToChainID[sdn.NetworkNum()])
 
+
 	g.blockProposer = bsc.NewNoopBlockProposer(g.TxStore, log.WithField("service", "noop-block-proposer"))
 
 	if polygonHeimdallEndpoints != "" {
@@ -238,7 +238,7 @@ func NewGateway(parent context.Context,
 
 	if bxConfig.BlockchainNetwork == bxgateway.BSCMainnet || bxConfig.BlockchainNetwork == bxgateway.PolygonMainnet || bxConfig.BlockchainNetwork == bxgateway.PolygonMumbai {
 		g.validatorStatusMap = syncmap.NewStringMapOf[bool]()
-		g.nextValidatorMap = orderedmap.New()
+		g.nextValidatorMap = orderedmap.New[uint64, string]()
 	}
 
 	if bxConfig.BlockchainNetwork == bxgateway.BSCMainnet || bxConfig.BlockchainNetwork == bxgateway.BSCTestnet {
@@ -566,7 +566,7 @@ func (g *gateway) Run() error {
 
 	relayInstructions := make(chan connections.RelayInstruction)
 	go g.updateRelayConnections(relayInstructions, *sslCert, networkNum)
-	err = g.sdn.DirectRelayConnections(context.Background(), g.BxConfig.Relays, uint64(accountModel.RelayLimit.MsgQuota.Limit), relayInstructions, connections.AutoRelayTimeout)
+	err = g.sdn.DirectRelayConnections(g.BxConfig.Relays, uint64(accountModel.RelayLimit.MsgQuota.Limit), relayInstructions)
 	if err != nil {
 		return err
 	}
@@ -612,25 +612,60 @@ func (g *gateway) updateRelayConnections(relayInstructions chan connections.Rela
 
 		switch instruction.Type {
 		case connections.Connect:
-			g.connectRelay(instruction, sslCerts, networkNum)
+			g.connectRelay(instruction, sslCerts, networkNum, relayInstructions)
 		case connections.Disconnect:
 			// disconnectRelay
 		}
 	}
 }
 
-func (g *gateway) connectRelay(instruction connections.RelayInstruction, sslCerts utils.SSLCerts, networkNum types.NetworkNum) {
+func (g *gateway) connectRelay(instruction connections.RelayInstruction, sslCerts utils.SSLCerts, networkNum types.NetworkNum, relayInstructions chan connections.RelayInstruction) {
 	relay := handler.NewOutboundRelay(g, &sslCerts, instruction.IP, instruction.Port, g.sdn.NodeID(), utils.RelayProxy,
 		g.BxConfig.PrioritySending, g.sdn.Networks(), true, false, utils.RealClock{}, false)
 	relay.SetNetworkNum(networkNum)
 
-	go relay.Start(g.context)
+	ctx := g.context
+	// monitor and switch only auto relays
+	if !instruction.IsStatic {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(context.Background())
+		go g.monitorConnection(cancel, relay, relayInstructions)
+	}
+
+	go relay.Start(ctx)
 
 	g.log.WithFields(log.Fields{
 		"gateway":   g.sdn.NodeID(),
 		"relayIP":   instruction.IP,
 		"relayPort": instruction.Port,
 	}).Info("connecting to relay")
+}
+
+func (g *gateway) monitorConnection(cancel context.CancelFunc, relay *handler.Relay, relayInstructions chan connections.RelayInstruction) {
+	ticker := time.NewTicker(types.RelayMonitorInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-g.context.Done():
+			log.Tracef("Context canceled, stopping connection monitoring")
+			cancel()
+			return
+		case <-ticker.C:
+			if !relay.BxConn.IsOpen() {
+				log.Infof("Relay %v connection down, waiting an additional %v to confirm.", relay.GetPeerIP(), types.RelayMonitorInterval)
+
+				// Reset the timer to wait an additional interval for reconnection attempt
+				<-time.After(types.RelayMonitorInterval)
+
+				if !relay.BxConn.IsOpen() {
+					cancel()
+					g.sdn.FindNewRelay(g.context, relay.GetPeerIP(), relayInstructions)
+					return
+				}
+			}
+		}
+	}
 }
 
 func (g *gateway) broadcast(msg bxmessage.Message, source connections.Conn, to utils.NodeType) types.BroadcastResults {
@@ -716,8 +751,8 @@ func (g *gateway) cleanUpNextValidatorMap(currentHeight uint64) {
 	// remove all wallet address of existing blocks
 	toRemove := make([]uint64, 0)
 	for pair := g.nextValidatorMap.Oldest(); pair != nil; pair = pair.Next() {
-		if int(currentHeight) >= int(pair.Key.(uint64)) {
-			toRemove = append(toRemove, pair.Key.(uint64))
+		if currentHeight >= pair.Key {
+			toRemove = append(toRemove, pair.Key)
 		}
 	}
 
@@ -1158,7 +1193,7 @@ func (g *gateway) handleBridgeMessages(ctx context.Context) error {
 			}
 
 			err = g.bridge.SendRequestedTransactionsToNode(request.RequestID, txs)
-			if err == blockchain.ErrChannelFull {
+			if errors.Is(err, blockchain.ErrChannelFull) {
 				g.log.Warnf("requested transactions channel is full, skipping request")
 			} else if err != nil {
 				panic(fmt.Errorf("could not send requested transactions over bridge: %v", err))
@@ -1223,7 +1258,7 @@ func (g *gateway) handleBridgeMessages(ctx context.Context) error {
 				}
 				if len(requests) > 0 && txAnnouncement.PeerID != bxgateway.WSConnectionID {
 					err = g.bridge.RequestTransactionsFromNode(txAnnouncement.PeerID, requests)
-					if err == blockchain.ErrChannelFull {
+					if errors.Is(err, blockchain.ErrChannelFull) {
 						g.log.Warnf("transaction requests channel is full, skipping request")
 					} else if err != nil {
 						panic(fmt.Errorf("could not request transactions over bridge: %v", err))
@@ -1521,12 +1556,13 @@ func (g *gateway) processBroadcast(broadcastMsg *bxmessage.Broadcast, source con
 	startTime := time.Now()
 	bxBlock, missingShortIDs, err := g.blockProcessor.BxBlockFromBroadcast(broadcastMsg)
 	if err != nil {
-		if _, ok := err.(*services.ErrAlreadyProcessed); ok {
+		var errAlreadyProcessed *services.ErrAlreadyProcessed
+		if errors.As(err, &errAlreadyProcessed) {
 			source.Log().Debugf("received duplicate %v skipping", broadcastMsg)
 			return
 		}
-		switch err {
-		case services.ErrMissingShortIDs:
+		switch {
+		case errors.Is(err, services.ErrMissingShortIDs):
 			source.Log().Debugf("%v from BDN is missing %v short IDs", broadcastMsg, len(missingShortIDs))
 
 			if !g.isSyncWithRelay() {
@@ -1543,7 +1579,7 @@ func (g *gateway) processBroadcast(broadcastMsg *bxmessage.Broadcast, source con
 			}
 
 			g.stats.AddGatewayBlockEvent(eventName, source, broadcastMsg.Hash(), broadcastMsg.BeaconHash(), broadcastMsg.GetNetworkNum(), 1, startTime, 0, 0, len(broadcastMsg.Block()), len(broadcastMsg.ShortIDs()), 0, len(missingShortIDs), bxBlock)
-		case services.ErrNotCompatibleBeaconBlock:
+		case errors.Is(err, services.ErrNotCompatibleBeaconBlock):
 			// Old relay version
 			source.Log().Debugf("received incompitable beacon block %v skipping", broadcastMsg)
 		default:
@@ -1888,7 +1924,7 @@ func (g *gateway) handleBlockFromBlockchain(blockchainBlock blockchain.BlockFrom
 	bxBlock := blockchainBlock.Block
 
 	blockInfo, err := g.bxBlockToBlockInfo(bxBlock)
-	if err != nil && err != errUnsupportedBlockType {
+	if err != nil && !errors.Is(err, errUnsupportedBlockType) {
 		log.Errorf("failed to convert bx block %v to block info: %v", bxBlock, err)
 	}
 
@@ -1907,7 +1943,8 @@ func (g *gateway) handleBlockFromBlockchain(blockchainBlock blockchain.BlockFrom
 
 	broadcastMessage, usedShortIDs, err := g.blockProcessor.BxBlockToBroadcast(bxBlock, g.sdn.NetworkNum(), g.sdn.MinTxAge())
 	if err != nil {
-		if processedErr, ok := err.(*services.ErrAlreadyProcessed); ok {
+		var processedErr *services.ErrAlreadyProcessed
+		if errors.As(err, &processedErr) {
 			switch processedErr.Status() {
 			case services.SeenFromRelay:
 				source.Log().Infof("received duplicate block %v from blockchain, block already seen from relay", bxBlock.Hash())
@@ -1955,7 +1992,7 @@ func gatewayBlockEventName(nodeName string, isBeaconBlock bool) string {
 
 func (g *gateway) processBlockFromBDN(bxBlock *types.BxBlock) {
 	blockInfo, err := g.bxBlockToBlockInfo(bxBlock)
-	if err != nil && err != errUnsupportedBlockType {
+	if err != nil && !errors.Is(err, errUnsupportedBlockType) {
 		g.log.Errorf("failed to convert bx block %v to block info: %v", bxBlock, err)
 	}
 
@@ -1969,7 +2006,7 @@ func (g *gateway) processBlockFromBDN(bxBlock *types.BxBlock) {
 	validatorInfo := g.generateFutureValidatorInfo(bxBlock, blockInfo)
 	err = g.publishBlock(bxBlock, nil, validatorInfo, false)
 	if err != nil {
-		g.log.Errorf("Failed to publish BDN block with %v, %v", err, bxBlock)
+		g.log.Errorf("failed to publish BDN block with %v, %v", err, bxBlock)
 	}
 }
 
@@ -2024,6 +2061,7 @@ func (g *gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source c
 	g.stats.AddGatewayBundleEvent(event, source, start, mevBundle.BundleHash, mevBundle.GetNetworkNum(), mevBundle.Names(), mevBundle.UUID, blockNumber, mevBundle.MinTimestamp, mevBundle.MaxTimestamp)
 }
 
+
 func (g *gateway) getHeaderFromGateway() string {
 	accountID := g.sdn.AccountModel().AccountID
 	secretHash := g.sdn.AccountModel().SecretHash
@@ -2039,7 +2077,7 @@ func (g *gateway) bxBlockToBlockInfo(bxBlock *types.BxBlock) (*eth.BlockInfo, er
 
 	blockSrc, err := g.bridge.BlockBDNtoBlockchain(bxBlock)
 	if err != nil {
-		return nil, errors.WithMessagef(err, "failed to convert BDN block (%s) to blockchain block", bxBlock)
+		return nil, fmt.Errorf("failed to convert BDN block (%s) to blockchain block: %w", bxBlock, err)
 	}
 
 	block, ok := blockSrc.(*eth.BlockInfo)

@@ -44,26 +44,26 @@ type server struct {
 
 // grpcParams server params
 type grpcParams struct {
-	node                        connections.BxListener
-	sdn                         connections.SDNHTTP
-	accService                  account.Accounter
-	bridge                      blockchain.Bridge
-	blockchainPeers             []types.NodeEndpoint
-	wsManager                   blockchain.WSManager
-	bdnStats                    *bxmessage.BdnPerformanceStats
-	timeStarted                 time.Time
-	txsQueue                    *services.MessageQueue
-	txsOrderQueue               *services.MessageQueue
-	gatewayPublicKey            string
-	connector                   Connector
-	validatorsManager           *validator.Manager
-	txFromFieldIncludable       bool
-	blockProposer               bsc.BlockProposer
-	allowIntroductoryTierAccess bool
-	intentsManager              services.IntentsManager
-	feedManager                 feedManager
-	txStore                     services.TxStore
-	chainID                     types.NetworkID
+	node                           connections.BxListener
+	sdn                            connections.SDNHTTP
+	accService                     account.Accounter
+	bridge                         blockchain.Bridge
+	blockchainPeers                []types.NodeEndpoint
+	wsManager                      blockchain.WSManager
+	bdnStats                       *bxmessage.BdnPerformanceStats
+	timeStarted                    time.Time
+	txsQueue                       *services.MessageQueue
+	txsOrderQueue                  *services.MessageQueue
+	gatewayPublicKey               string
+	connector                      Connector
+	validatorsManager              *validator.Manager
+	txFromFieldIncludable          bool
+	blockProposer                  bsc.BlockProposer
+	allowIntroductoryTierAccess    bool
+	intentsManager                 services.IntentsManager
+	feedManager                    feedManager
+	txStore                        services.TxStore
+	chainID                        types.NetworkID
 }
 
 // newServer return new server object
@@ -109,7 +109,7 @@ func (g *server) Status(ctx context.Context, req *pb.StatusRequest) (*pb.StatusR
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
 
-	var bdnConn = func() map[string]*pb.BDNConnStatus {
+	bdnConn := func() map[string]*pb.BDNConnStatus {
 		mp := g.params.connector.Relays()
 
 		if len(mp) == 0 {
@@ -137,96 +137,91 @@ func (g *server) Status(ctx context.Context, req *pb.StatusRequest) (*pb.StatusR
 		return relays
 	}
 
-	var nodeConn = func() map[string]*pb.NodeConnStatus {
-		if len(g.params.blockchainPeers) == 0 {
-			return nil // Gateway is not connected to nodes
-		}
-
-		err := g.params.bridge.SendBlockchainStatusRequest()
-		if err != nil {
+	nodeConn := func() map[string]*pb.NodeConnStatus {
+		if err := g.params.bridge.SendBlockchainStatusRequest(); err != nil {
 			g.log.Errorf("failed to send blockchain status request: %v", err)
 			return nil
 		}
 
-		var wsProviders = g.params.wsManager.Providers()
+		wsProviders := g.params.wsManager.Providers()
 
-		select {
-		case status := <-g.params.bridge.ReceiveBlockchainStatusResponse():
-			var mp = make(map[string]*pb.NodeConnStatus)
-			var nodeStats = g.params.bdnStats.NodeStats()
-			for _, peer := range status {
-				connStatus := &pb.NodeConnStatus{
-					Dynamic: peer.IsDynamic(),
-					Version: int64(peer.Version),
-					Name:    peer.Name,
-				}
-
-				nstat, ok := nodeStats[peer.IPPort()]
-				if ok {
-					connStatus.IsConnected = nstat.IsConnected
-					connStatus.ConnectedAt = peer.ConnectedAt
-					connStatus.NodePerformance = &pb.NodePerformance{
-						Since:                                   g.params.bdnStats.StartTime().Format(time.RFC3339),
-						NewBlocksReceivedFromBlockchainNode:     uint32(nstat.NewBlocksReceivedFromBlockchainNode),
-						NewBlocksReceivedFromBdn:                uint32(nstat.NewBlocksReceivedFromBdn),
-						NewBlocksSeen:                           nstat.NewBlocksSeen,
-						NewBlockMessagesFromBlockchainNode:      nstat.NewBlockMessagesFromBlockchainNode,
-						NewBlockAnnouncementsFromBlockchainNode: nstat.NewBlockAnnouncementsFromBlockchainNode,
-						NewTxReceivedFromBlockchainNode:         nstat.NewTxReceivedFromBlockchainNode,
-						NewTxReceivedFromBdn:                    nstat.NewTxReceivedFromBdn,
-						TxSentToNode:                            nstat.TxSentToNode,
-						DuplicateTxFromNode:                     nstat.DuplicateTxFromNode,
-					}
-				}
-
-				mp[ipport(peer.IP, peer.Port)] = connStatus
-
-				wsPeer, ok := wsProviders[peer.IPPort()]
-				if !ok {
-					continue
-				}
-
-				connStatus.WsConnection = &pb.WsConnStatus{
-					Addr: wsPeer.Addr(),
-					ConnStatus: func() string {
-						if wsPeer.IsOpen() {
-							return connectionStatusConnected
-						}
-						return connectionStatusNotConnected
-					}(),
-					SyncStatus: strings.ToLower(string(wsPeer.SyncStatus())),
-				}
-			}
-
-			// If a node was disconnected through the interval then they are not connected.
-			// Let state this explicitly.
-			for key, peer := range nodeStats {
-				ipPort := strings.ReplaceAll(key, " ", ":")
-				if _, ok := mp[ipPort]; !ok {
-					mp[ipPort] = &pb.NodeConnStatus{
-						IsConnected: peer.IsConnected,
-						Dynamic:     peer.Dynamic,
-						NodePerformance: &pb.NodePerformance{
-							Since:                                   g.params.bdnStats.StartTime().Format(time.RFC3339),
-							NewBlocksReceivedFromBlockchainNode:     uint32(peer.NewBlocksReceivedFromBlockchainNode),
-							NewBlocksReceivedFromBdn:                uint32(peer.NewBlocksReceivedFromBdn),
-							NewBlocksSeen:                           peer.NewBlocksSeen,
-							NewBlockMessagesFromBlockchainNode:      peer.NewBlockMessagesFromBlockchainNode,
-							NewBlockAnnouncementsFromBlockchainNode: peer.NewBlockAnnouncementsFromBlockchainNode,
-							NewTxReceivedFromBlockchainNode:         peer.NewTxReceivedFromBlockchainNode,
-							NewTxReceivedFromBdn:                    peer.NewTxReceivedFromBdn,
-							TxSentToNode:                            peer.TxSentToNode,
-							DuplicateTxFromNode:                     peer.DuplicateTxFromNode,
-						},
-					}
-				}
-			}
-
-			return mp
-		case <-time.After(time.Second):
-			g.log.Errorf("no blockchain status response from backend within 1sec timeout")
+		status, err := g.params.bridge.ReceiveBlockchainStatusResponse()
+		if err != nil {
+			g.log.Errorf("failed to receive blockchain status response: %v", err)
 			return nil
 		}
+
+		mp := make(map[string]*pb.NodeConnStatus)
+		nodeStats := g.params.bdnStats.NodeStats()
+		for _, peer := range status {
+			connStatus := &pb.NodeConnStatus{
+				Dynamic: peer.IsDynamic(),
+				Version: int64(peer.Version),
+				Name:    peer.Name,
+			}
+
+			nstat, ok := nodeStats[peer.IPPort()]
+			if ok {
+				connStatus.IsConnected = nstat.IsConnected
+				connStatus.ConnectedAt = peer.ConnectedAt
+				connStatus.NodePerformance = &pb.NodePerformance{
+					Since:                                   g.params.bdnStats.StartTime().Format(time.RFC3339),
+					NewBlocksReceivedFromBlockchainNode:     uint32(nstat.NewBlocksReceivedFromBlockchainNode),
+					NewBlocksReceivedFromBdn:                uint32(nstat.NewBlocksReceivedFromBdn),
+					NewBlocksSeen:                           nstat.NewBlocksSeen,
+					NewBlockMessagesFromBlockchainNode:      nstat.NewBlockMessagesFromBlockchainNode,
+					NewBlockAnnouncementsFromBlockchainNode: nstat.NewBlockAnnouncementsFromBlockchainNode,
+					NewTxReceivedFromBlockchainNode:         nstat.NewTxReceivedFromBlockchainNode,
+					NewTxReceivedFromBdn:                    nstat.NewTxReceivedFromBdn,
+					TxSentToNode:                            nstat.TxSentToNode,
+					DuplicateTxFromNode:                     nstat.DuplicateTxFromNode,
+				}
+			}
+
+			mp[ipport(peer.IP, peer.Port)] = connStatus
+
+			wsPeer, ok := wsProviders[peer.IPPort()]
+			if !ok {
+				continue
+			}
+
+			connStatus.WsConnection = &pb.WsConnStatus{
+				Addr: wsPeer.Addr(),
+				ConnStatus: func() string {
+					if wsPeer.IsOpen() {
+						return connectionStatusConnected
+					}
+					return connectionStatusNotConnected
+				}(),
+				SyncStatus: strings.ToLower(string(wsPeer.SyncStatus())),
+			}
+		}
+
+		// If a node was disconnected through the interval then they are not connected.
+		// Let state this explicitly.
+		for key, peer := range nodeStats {
+			ipPort := strings.ReplaceAll(key, " ", ":")
+			if _, ok := mp[ipPort]; !ok {
+				mp[ipPort] = &pb.NodeConnStatus{
+					IsConnected: peer.IsConnected,
+					Dynamic:     peer.Dynamic,
+					NodePerformance: &pb.NodePerformance{
+						Since:                                   g.params.bdnStats.StartTime().Format(time.RFC3339),
+						NewBlocksReceivedFromBlockchainNode:     uint32(peer.NewBlocksReceivedFromBlockchainNode),
+						NewBlocksReceivedFromBdn:                uint32(peer.NewBlocksReceivedFromBdn),
+						NewBlocksSeen:                           peer.NewBlocksSeen,
+						NewBlockMessagesFromBlockchainNode:      peer.NewBlockMessagesFromBlockchainNode,
+						NewBlockAnnouncementsFromBlockchainNode: peer.NewBlockAnnouncementsFromBlockchainNode,
+						NewTxReceivedFromBlockchainNode:         peer.NewTxReceivedFromBlockchainNode,
+						NewTxReceivedFromBdn:                    peer.NewTxReceivedFromBdn,
+						TxSentToNode:                            peer.TxSentToNode,
+						DuplicateTxFromNode:                     peer.DuplicateTxFromNode,
+					},
+				}
+			}
+		}
+
+		return mp
 	}
 
 	var (

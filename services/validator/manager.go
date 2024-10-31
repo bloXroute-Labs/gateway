@@ -16,7 +16,7 @@ import (
 
 // Manager manages the next validators and their status
 type Manager struct {
-	nextValidatorMap                    *orderedmap.OrderedMap
+	nextValidatorMap                    *orderedmap.OrderedMap[uint64, string]
 	validatorStatusMap                  *syncmap.SyncMap[string, bool]
 	validatorListMap                    *syncmap.SyncMap[uint64, []string]
 	pendingBSCNextValidatorTxHashToInfo map[string]PendingNextValidatorTxInfo
@@ -32,7 +32,7 @@ type PendingNextValidatorTxInfo struct {
 }
 
 // NewManager creates a new Manager
-func NewManager(nextValidatorMap *orderedmap.OrderedMap, validatorStatusMap *syncmap.SyncMap[string, bool], validatorListMap *syncmap.SyncMap[uint64, []string]) *Manager {
+func NewManager(nextValidatorMap *orderedmap.OrderedMap[uint64, string], validatorStatusMap *syncmap.SyncMap[string, bool], validatorListMap *syncmap.SyncMap[uint64, []string]) *Manager {
 	return &Manager{
 		nextValidatorMap:                    nextValidatorMap,
 		validatorStatusMap:                  validatorStatusMap,
@@ -65,7 +65,7 @@ func (m *Manager) ProcessNextValidatorTx(tx *bxmessage.Tx, fallback uint16, netw
 		n1ValidatorAccessible := false
 		n1Wallet := ""
 		if n1Validator != nil {
-			n1Wallet = n1Validator.Value.(string)
+			n1Wallet = n1Validator.Value
 			accessible, exist := m.validatorStatusMap.Load(n1Wallet)
 			if exist {
 				n1ValidatorAccessible = accessible
@@ -92,10 +92,10 @@ func (m *Manager) ProcessNextValidatorTx(tx *bxmessage.Tx, fallback uint16, netw
 	if networkNum == bxgateway.PolygonMainnetNum || networkNum == bxgateway.PolygonMumbaiNum {
 		n1Validator := n2Validator.Prev()
 		if n1Validator != nil {
-			tx.SetWalletID(0, n1Validator.Value.(string))
-			tx.SetWalletID(1, n2Validator.Value.(string))
+			tx.SetWalletID(0, n1Validator.Value)
+			tx.SetWalletID(1, n2Validator.Value)
 		} else {
-			tx.SetWalletID(0, n2Validator.Value.(string))
+			tx.SetWalletID(0, n2Validator.Value)
 		}
 	}
 
@@ -108,7 +108,7 @@ func (m *Manager) GetPendingNextValidatorTxs() map[string]PendingNextValidatorTx
 }
 
 // GetNextValidatorMap returns an ordered map of next validators
-func (m *Manager) GetNextValidatorMap() *orderedmap.OrderedMap {
+func (m *Manager) GetNextValidatorMap() *orderedmap.OrderedMap[uint64, string] {
 	return m.nextValidatorMap
 }
 

@@ -64,7 +64,6 @@ func (bn *Bx) OnConnEstablished(conn connections.Conn) error {
 	bn.Connections = append(bn.Connections, conn)
 	bn.ConnectionsLock.Unlock()
 	return nil
-
 }
 
 // ValidateConnection - validates connection
@@ -283,6 +282,16 @@ func (bn *Bx) Relays() map[string]bxmessage.RelayConnectionInfo {
 			continue
 		}
 
+		peerIP := conn.GetPeerIP()
+
+		if !conn.IsOpen() {
+			mp[peerIP] = bxmessage.RelayConnectionInfo{
+				Status: connectionStatusNotConnected,
+			}
+
+			continue
+		}
+
 		var connectionLatency *bxmessage.ConnectionLatency
 		if bxConn, ok := conn.(*handler.BxConn); ok {
 			minMsFromPeer, minMsToPeer, slowTrafficCount, minMsRoundTrip := bxConn.GetMinLatencies()
@@ -292,16 +301,6 @@ func (bn *Bx) Relays() map[string]bxmessage.RelayConnectionInfo {
 				SlowTrafficCount: slowTrafficCount,
 				MinMsRoundTrip:   minMsRoundTrip,
 			}
-		}
-
-		peerIP := conn.GetPeerIP()
-
-		if !conn.IsOpen() {
-			mp[peerIP] = bxmessage.RelayConnectionInfo{
-				Status: connectionStatusNotConnected,
-			}
-
-			continue
 		}
 
 		mp[peerIP] = bxmessage.RelayConnectionInfo{

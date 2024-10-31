@@ -4,10 +4,10 @@
 package bor
 
 import (
+	"fmt"
 	"io"
 	"math/big"
 
-	"github.com/pkg/errors"
 	"golang.org/x/crypto/sha3"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -16,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
-const extraSeal = 65 // Fixed number of extra-data suffix bytes reserved for signer seal
+const extraSeal = 65 // fixed number of extra-data suffix bytes reserved for signer seal
 
 type runState uint8
 
@@ -26,28 +26,25 @@ const (
 	stateRunning
 )
 
-// errMissingSignature is returned if a block's extra-data section doesn't seem
-// to contain a 65 byte secp256k1 signature.
-var errMissingSignature = errors.New("extra-data 65 byte signature suffix missing")
-
 // Ecrecover extracts the Ethereum account address from a signed header.
 func Ecrecover(header *types.Header) (common.Address, error) {
 	// Retrieve the signature from the header extra-data
 	if len(header.Extra) < extraSeal {
-		return common.Address{}, errors.WithMessage(errMissingSignature, "invalid block header")
+		// block's extra-data section doesn't seem to contain a 65 byte secp256k1 signature.
+		return common.Address{}, fmt.Errorf("extra-data too short: %d < %d", len(header.Extra), extraSeal)
 	}
 
 	signature := header.Extra[len(header.Extra)-extraSeal:]
 
 	sealed, err := SealHash(header)
 	if err != nil {
-		return common.Address{}, errors.WithMessage(err, "failed to seal header hash")
+		return common.Address{}, fmt.Errorf("failed to seal header hash: %w", err)
 	}
 
 	// Recover the public key and the Ethereum address
 	pubKey, err := crypto.Ecrecover(sealed.Bytes(), signature)
 	if err != nil {
-		return common.Address{}, errors.WithMessage(err, "failed to recover public key from signature")
+		return common.Address{}, fmt.Errorf("failed to recover public key from signature: %w", err)
 	}
 
 	var signer common.Address

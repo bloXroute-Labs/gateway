@@ -48,6 +48,7 @@ type Backend interface {
 type Handler struct {
 	chain            *Chain
 	bridge           blockchain.Bridge
+	statusBridge     blockchain.StatusSubscription
 	peers            *peerSet
 	cancel           context.CancelFunc
 	config           *network.EthConfig
@@ -63,6 +64,7 @@ func NewHandler(parent context.Context, config *network.EthConfig, chain *Chain,
 		config:           config,
 		chain:            chain,
 		bridge:           bridge,
+		statusBridge:     bridge.SubscribeStatus(),
 		peers:            newPeerSet(),
 		cancel:           cancel,
 		wsManager:        wsManager,
@@ -263,7 +265,7 @@ func (h *Handler) handleBDNBridge(ctx context.Context) {
 			h.processBDNBlock(bdnBlock)
 		case config := <-h.bridge.ReceiveNetworkConfigUpdates():
 			h.config.Update(config)
-		case <-h.bridge.ReceiveBlockchainStatusRequest():
+		case <-h.statusBridge.ReceiveBlockchainStatusRequest():
 			h.processBlockchainStatusRequest()
 		case <-h.bridge.ReceiveNodeConnectionCheckRequest():
 			h.processNodeConnectionCheckRequest()
@@ -411,7 +413,7 @@ func (h *Handler) processBlockchainStatusRequest() {
 		nodes = append(nodes, &endpoint)
 	}
 
-	err := h.bridge.SendBlockchainStatusResponse(nodes)
+	err := h.statusBridge.SendBlockchainStatusResponse(nodes)
 	if err != nil {
 		log.Errorf("send blockchain status response: %v", err)
 	}

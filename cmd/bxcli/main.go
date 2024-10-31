@@ -259,7 +259,8 @@ func main() {
 				Usage: "query gateway status",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
-						Name: "auth-header"},
+						Name: "auth-header",
+					},
 				},
 				Before: beforeBxCli,
 				Action: cmdStatus,
@@ -499,7 +500,6 @@ type txReply struct {
 }
 
 func parseTxResponse(rawTxs []*pb.Tx) ([]txReply, error) {
-
 	transactions := []txReply{}
 	for _, tx := range rawTxs {
 		rawTx := tx.RawTx

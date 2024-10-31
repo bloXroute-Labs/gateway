@@ -3,6 +3,8 @@ package beacon
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	libp2pPeer "github.com/libp2p/go-libp2p/core/peer"
 	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
@@ -25,9 +27,14 @@ func (p *peers) add(addrInfo libp2pPeer.AddrInfo) *peer {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	pr := &peer{
-		addrInfo: addrInfo,
+	if pr, ok := p.peersByID[addrInfo.ID]; ok {
+		pr.addrInfo.Store(&addrInfo)
+		return pr
 	}
+
+	pr := &peer{connected: &atomic.Bool{}}
+	pr.addrInfo.Store(&addrInfo)
+
 	p.peersByID[addrInfo.ID] = pr
 
 	return pr
@@ -56,47 +63,51 @@ func (p *peers) rangeByID(f func(libp2pPeer.ID, *peer) bool) {
 }
 
 type peer struct {
-	addrInfo libp2pPeer.AddrInfo
-	status   *ethpb.Status
+	addrInfo atomic.Pointer[libp2pPeer.AddrInfo]
+	status   atomic.Pointer[ethpb.Status]
 
-	handshaking bool
-
-	mu sync.Mutex
+	handshaking    atomic.Bool
+	connected      *atomic.Bool
+	connectionTime atomic.Pointer[time.Time]
 }
 
 // String implements Stringer interface
 func (p *peer) String() string {
-	return fmt.Sprintf("{%v: %v}", p.addrInfo.ID, p.addrInfo.Addrs)
+	addrInfo := p.addrInfo.Load()
+
+	return fmt.Sprintf("{%v: %v}", addrInfo.ID, addrInfo.Addrs)
 }
 
 func (p *peer) startHandshake() bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	connecting := p.handshaking
-
-	p.handshaking = true
-
-	return connecting
+	return p.handshaking.CompareAndSwap(false, true)
 }
 
 func (p *peer) finishHandshake() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	p.handshaking = false
+	p.handshaking.Store(false)
 }
 
 func (p *peer) setStatus(status *ethpb.Status) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	p.status = status
+	p.status.Store(status)
 }
 
 func (p *peer) getStatus() *ethpb.Status {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	return p.status.Load()
+}
 
-	return p.status
+func (p *peer) connect() bool {
+	if p.connected.CompareAndSwap(false, true) {
+		t := time.Now()
+		p.connectionTime.Store(&t)
+		return true
+	}
+
+	return false
+}
+
+func (p *peer) disconnect() bool {
+	return p.connected.CompareAndSwap(true, false)
+}
+
+func (p *peer) connectedAt() *time.Time {
+	return p.connectionTime.Load()
 }

@@ -2,9 +2,9 @@ package bor
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/pkg/errors"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
@@ -131,18 +131,18 @@ func GetSnapshot(provider blockchain.WSProvider, payload ...any) (*Snapshot, err
 			RetryInterval: bxgateway.EthOnBlockCallRetrySleepInterval,
 		})
 	if err != nil {
-		return nil, errors.WithMessage(err, "failed to call rpc")
+		return nil, fmt.Errorf("failed to call rpc: %w", err)
 	}
 
 	marshal, err := json.Marshal(resp)
 	if err != nil {
-		return nil, errors.WithMessage(err, "failed to marshal response to bytes")
+		return nil, fmt.Errorf("failed to marshal response to bytes: %w", err)
 	}
 
 	snapshot := new(Snapshot)
 
 	if err = json.Unmarshal(marshal, snapshot); err != nil {
-		return nil, errors.WithMessage(err, "failed to unmarshal response to snapshot")
+		return nil, fmt.Errorf("failed to unmarshal response to snapshot: %w", err)
 	}
 
 	return snapshot, nil
