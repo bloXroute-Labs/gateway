@@ -252,7 +252,7 @@ func TestBlxrTx(t *testing.T) {
 				validatorStatusMap := syncmap.NewStringMapOf[bool]()
 				validatorStatusMap.Store(testWalletID, true)
 				validatorStatusMap.Store(testWalletID2, true)
-				nextValidatorMap := orderedmap.New()
+				nextValidatorMap := orderedmap.New[uint64, string]()
 				nextValidatorMap.Set(1, testWalletID)
 				nextValidatorMap.Set(2, testWalletID2)
 
@@ -306,7 +306,7 @@ func TestBlxrTx(t *testing.T) {
 			},
 			setupValidatorFunc: func(g *server) {
 				validatorStatusMap := syncmap.NewStringMapOf[bool]()
-				nextValidatorMap := orderedmap.New()
+				nextValidatorMap := orderedmap.New[uint64, string]()
 
 				g.params.validatorsManager = validator.NewManager(nextValidatorMap, validatorStatusMap, nil)
 			},

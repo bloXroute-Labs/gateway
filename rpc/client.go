@@ -6,9 +6,9 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
-	"github.com/golang/protobuf/jsonpb"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
-	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc"
 )
 
@@ -72,15 +72,15 @@ func GatewayConsoleCall(grpcConfig *config.GRPC, call func(ctx context.Context, 
 		return fmt.Errorf("result is not a protobuf message")
 	}
 
-	jsm := &jsonpb.Marshaler{
-		Indent:   "    ",
-		OrigName: true, // Use the original snake case name of the fields
+	jsm := &protojson.MarshalOptions{
+		Indent:        "    ",
+		UseProtoNames: true, // Use the original snake case name of the fields
 	}
 
-	jstr, err := jsm.MarshalToString(msg)
+	jstr, err := jsm.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("could not marshal JSON: %v", err)
 	}
-	fmt.Println(jstr)
+	fmt.Println(string(jstr))
 	return nil
 }

@@ -2,10 +2,10 @@ package ticker
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
-	"github.com/pkg/errors"
 	"go.uber.org/atomic"
 
 	"github.com/bloXroute-Labs/gateway/v2/logger"
@@ -44,7 +44,7 @@ type Ticker struct {
 // New creates a new Ticker
 func New(args *Args) (*Ticker, error) {
 	if err := args.Validate(); err != nil {
-		return nil, errors.WithMessage(err, "invalid interval args")
+		return nil, fmt.Errorf("invalid interval args: %w", err)
 	}
 
 	return &Ticker{

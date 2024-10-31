@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/bits-and-blooms/bloom/v3"
+
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 )

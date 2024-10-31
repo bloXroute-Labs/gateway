@@ -3,20 +3,19 @@ package blockproposer
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"time"
 
-	"github.com/pkg/errors"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/rpc"
 	"go.uber.org/atomic"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc/caller"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/ptr"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/rpc"
 )
 
 // proposedBlockArgs is the arguments for the proposed block
@@ -65,7 +64,7 @@ func (r *proposedBlockRequest) submit(ctx context.Context, clock utils.Clock, ca
 func (r *proposedBlockRequest) send(ctx context.Context, clock utils.Clock, callerManager caller.Manager) error {
 	client, err := callerManager.GetClient(ctx, r.addr)
 	if err != nil {
-		return errors.WithMessagef(err, "error getting client for %s", r.addr)
+		return fmt.Errorf("failed to get client for %s: %w", r.addr, err)
 	}
 
 	var result any
@@ -75,13 +74,13 @@ func (r *proposedBlockRequest) send(ctx context.Context, clock utils.Clock, call
 	r.sendingDuration = clock.Now().Sub(r.sentTime)
 
 	if err != nil {
-		return errors.WithMessage(err, "error calling validator")
+		return fmt.Errorf("failed to call validator with %s: %w", r.method, err)
 	}
 
 	var body []byte
 
 	if body, err = json.Marshal(result); err != nil {
-		return errors.WithMessagef(err, "failed serializing result, message %+v", result)
+		return fmt.Errorf("failed serializing result, message %+v: %w", result, err)
 	}
 
 	r.validatorReply = string(body)
@@ -93,7 +92,7 @@ func (r *proposedBlockRequest) send(ctx context.Context, clock utils.Clock, call
 // update updates the request with the new one
 func (r *proposedBlockRequest) update(req *proposedBlockRequest) error {
 	if req.cmp(r) != 1 {
-		return errors.WithMessagef(errLowerBlockReward, "blockReward(%s) is lower than the one is in memory(%s)", req.args.BlockReward, r.args.BlockReward)
+		return fmt.Errorf("blockReward(%s) is lower than the one is in memory(%s)", req.args.BlockReward, r.args.BlockReward)
 	}
 
 	r.args = req.args

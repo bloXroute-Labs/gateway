@@ -1223,7 +1223,7 @@ func TestGateway_Status(t *testing.T) {
 	for _, endpoint := range endpoints {
 		g.bdnStats.NodeStats()[endpoint.IPPort()] = stats[endpoint.IPPort()]
 	}
-	err = g.bridge.SendBlockchainStatusResponse(endpoints)
+	err = g.bridge.SubscribeStatus().SendBlockchainStatusResponse(endpoints)
 	assert.NoError(t, err)
 
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
@@ -1285,6 +1285,7 @@ func TestGateway_ConnectionStatus(t *testing.T) {
 	wg.Wait()
 	require.True(t, g.bdnStats.NodeStats()["123.45.6.78 1234"].IsConnected)
 }
+
 
 func createPeerData(timeNodeConnected string) ([]*types.NodeEndpoint, map[string]*bxmessage.BdnPerformanceStatsData) {
 	endpoints := []*types.NodeEndpoint{

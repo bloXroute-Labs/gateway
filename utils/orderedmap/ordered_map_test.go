@@ -1,9 +1,9 @@
 package orderedmap
 
 import (
+	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"math/rand"
 	"sync"
 	"testing"
 
@@ -14,7 +14,7 @@ func TestConcurrency(t *testing.T) {
 	// it's better to run with -race
 
 	n := 10000
-	om := New()
+	om := New[int, int]()
 
 	for i := 0; i < n; i++ {
 		om.Set(i, 2*i)
@@ -42,7 +42,7 @@ func TestConcurrency(t *testing.T) {
 
 func TestBasicFeatures(t *testing.T) {
 	n := 100
-	om := New()
+	om := New[int, any]()
 
 	// set(i, 2 * i)
 	for i := 0; i < n; i++ {
@@ -147,7 +147,7 @@ func TestBasicFeatures(t *testing.T) {
 }
 
 func TestUpdatingDoesntChangePairsOrder(t *testing.T) {
-	om := New()
+	om := New[any, any]()
 	om.Set("foo", "bar")
 	om.Set(12, 28)
 	om.Set(78, 100)
@@ -163,7 +163,7 @@ func TestUpdatingDoesntChangePairsOrder(t *testing.T) {
 }
 
 func TestDeletingAndReinsertingChangesPairsOrder(t *testing.T) {
-	om := New()
+	om := New[any, any]()
 	om.Set("foo", "bar")
 	om.Set(12, 28)
 	om.Set(78, 100)
@@ -185,7 +185,7 @@ func TestDeletingAndReinsertingChangesPairsOrder(t *testing.T) {
 }
 
 func TestEmptyMapOperations(t *testing.T) {
-	om := New()
+	om := New[string, any]()
 
 	oldValue, present := om.Get("foo")
 	assert.Nil(t, oldValue)
@@ -206,7 +206,7 @@ type dummyTestStruct struct {
 }
 
 func TestPackUnpackStructs(t *testing.T) {
-	om := New()
+	om := New[string, any]()
 	om.Set("foo", dummyTestStruct{"foo!"})
 	om.Set("bar", dummyTestStruct{"bar!"})
 
@@ -235,7 +235,7 @@ func TestShuffle(t *testing.T) {
 
 	for _, n := range []int{0, 10, 20, 100, 1000, 10000} {
 		t.Run(fmt.Sprintf("shuffle test with %d items", n), func(t *testing.T) {
-			om := New()
+			om := New[any, any]()
 
 			keys := make([]interface{}, n)
 			values := make([]interface{}, n)
@@ -257,12 +257,12 @@ func TestShuffle(t *testing.T) {
 
 /* Test helpers */
 
-func assertOrderedPairsEqual(t *testing.T, om *OrderedMap, expectedKeys, expectedValues []interface{}) {
-	assertOrderedPairsEqualFromNewest(t, om, expectedKeys, expectedValues)
-	assertOrderedPairsEqualFromOldest(t, om, expectedKeys, expectedValues)
+func assertOrderedPairsEqual[K comparable, V any](t *testing.T, om *OrderedMap[K, V], expectedKeys, expectedValues []interface{}) {
+	assertOrderedPairsEqualFromNewest[K, V](t, om, expectedKeys, expectedValues)
+	assertOrderedPairsEqualFromOldest[K, V](t, om, expectedKeys, expectedValues)
 }
 
-func assertOrderedPairsEqualFromNewest(t *testing.T, om *OrderedMap, expectedKeys, expectedValues []interface{}) {
+func assertOrderedPairsEqualFromNewest[K comparable, V any](t *testing.T, om *OrderedMap[K, V], expectedKeys, expectedValues []interface{}) {
 	if assert.Equal(t, len(expectedKeys), len(expectedValues)) && assert.Equal(t, len(expectedKeys), om.Len()) {
 		i := om.Len() - 1
 		for pair := om.Newest(); pair != nil; pair = pair.Prev() {
@@ -273,7 +273,7 @@ func assertOrderedPairsEqualFromNewest(t *testing.T, om *OrderedMap, expectedKey
 	}
 }
 
-func assertOrderedPairsEqualFromOldest(t *testing.T, om *OrderedMap, expectedKeys, expectedValues []interface{}) {
+func assertOrderedPairsEqualFromOldest[K comparable, V any](t *testing.T, om *OrderedMap[K, V], expectedKeys, expectedValues []interface{}) {
 	if assert.Equal(t, len(expectedKeys), len(expectedValues)) && assert.Equal(t, len(expectedKeys), om.Len()) {
 		i := om.Len() - 1
 		for pair := om.Newest(); pair != nil; pair = pair.Prev() {
@@ -284,7 +284,7 @@ func assertOrderedPairsEqualFromOldest(t *testing.T, om *OrderedMap, expectedKey
 	}
 }
 
-func assertLenEqual(t *testing.T, om *OrderedMap, expectedLen int) {
+func assertLenEqual[K comparable, V any](t *testing.T, om *OrderedMap[K, V], expectedLen int) {
 	assert.Equal(t, expectedLen, om.Len())
 }
 

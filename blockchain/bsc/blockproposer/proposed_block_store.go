@@ -2,12 +2,12 @@ package blockproposer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/pkg/errors"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc/caller"
@@ -129,7 +129,7 @@ func (s *ProposedBlockMap) unsafeUpdate(num rpc.BlockNumber, req *proposedBlockR
 
 	// Check if the new request has a higher block reward than the latest one
 	if req.cmp(latestReq) != 1 {
-		return errors.WithMessagef(errLowerBlockReward, "blockReward(%s) is lower than the one in memory(%s)", req.args.BlockReward, latestReq.args.BlockReward)
+		return fmt.Errorf("blockReward (%s) is lower than the one in memory (%s)", req.args.BlockReward, latestReq.args.BlockReward)
 	}
 
 	// Append the new request to the list

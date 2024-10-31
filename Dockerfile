@@ -1,5 +1,5 @@
 ARG GO_VERSION=alpine
-ARG BASE=golang:1.21.7-alpine3.19
+ARG BASE=golang:1.23.2-alpine3.20
 
 FROM ${BASE} AS builder
 
@@ -30,8 +30,7 @@ COPY go.sum .
 RUN go mod download
 COPY --chown=bloxroute:bloxroute . .
 
-ARG PORTABLE
-RUN if [ "$PORTABLE" = "true" ] ; then make gateway-portable ; else make gateway ; fi
+RUN make gateway
 RUN chown bloxroute:bloxroute ./bin/gateway
 RUN chown bloxroute:bloxroute ./bin/bxcli
 

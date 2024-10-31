@@ -155,16 +155,13 @@ func (n NoOpBxBridge) SendConfirmedBlockToGateway(block *types.BxBlock, peerEndp
 // SendBlockchainStatusRequest is a no-op
 func (n NoOpBxBridge) SendBlockchainStatusRequest() error { return nil }
 
-// ReceiveBlockchainStatusRequest is a no-op
-func (n NoOpBxBridge) ReceiveBlockchainStatusRequest() <-chan struct{} { return make(chan struct{}) }
-
-// SendBlockchainStatusResponse is a no-op
-func (n NoOpBxBridge) SendBlockchainStatusResponse([]*types.NodeEndpoint) error { return nil }
-
 // ReceiveBlockchainStatusResponse is a no-op
-func (n NoOpBxBridge) ReceiveBlockchainStatusResponse() <-chan []*types.NodeEndpoint {
-	return make(chan []*types.NodeEndpoint)
+func (n NoOpBxBridge) ReceiveBlockchainStatusResponse() ([]*types.NodeEndpoint, error) {
+	return nil, nil
 }
+
+// SubscribeStatus is a no-op
+func (n NoOpBxBridge) SubscribeStatus() StatusSubscription { return nil }
 
 // SendNodeConnectionCheckRequest is a no-op
 func (n NoOpBxBridge) SendNodeConnectionCheckRequest() error { return nil }

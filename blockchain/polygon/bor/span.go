@@ -3,6 +3,7 @@ package bor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,16 +11,13 @@ import (
 	"sync"
 	"time"
 
-	ordermap "github.com/wk8/go-ordered-map/v2"
-
 	"github.com/cenkalti/backoff/v4"
-	"github.com/pkg/errors"
 	"go.uber.org/atomic"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/polygon/bor/valset"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	cs "github.com/bloXroute-Labs/gateway/v2/utils/cycledslice"
+	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
 	"github.com/bloXroute-Labs/gateway/v2/utils/ptr"
 )
 
@@ -33,7 +31,6 @@ const (
 
 var (
 	errCorruptedSpanMap    = errors.New("span map corrupted or uninitialized")
-	errBadSpanResp         = errors.New("bad span response")
 	errBadHeimdallEndpoint = errors.New("bad heimdall endpoint")
 )
 
@@ -82,7 +79,7 @@ type HeimdallSpanner struct {
 
 	httpClient *http.Client
 
-	spanMap *ordermap.OrderedMap[uint64, *SpanInfo]
+	spanMap *orderedmap.OrderedMap[uint64, *SpanInfo]
 
 	spanUpdateCh chan *SpanInfo
 	spanNotifyCh chan struct{}
@@ -101,7 +98,7 @@ func NewHeimdallSpanner(ctx context.Context, endpointsArg string) *HeimdallSpann
 
 		httpClient: new(http.Client),
 
-		spanMap: ordermap.New[uint64, *SpanInfo](),
+		spanMap: orderedmap.New[uint64, *SpanInfo](),
 
 		spanUpdateCh: make(chan *SpanInfo, 2),
 		spanNotifyCh: make(chan struct{}, 1),
@@ -155,7 +152,7 @@ func (h *HeimdallSpanner) Run() error {
 	if err := h.bootstrap(); err != nil {
 		h.state.Store(ptr.New(stateIdle))
 
-		return errors.WithMessage(err, "failed to bootstrap spanner")
+		return fmt.Errorf("failed to bootstrap heimdall spanner: %w", err)
 	}
 
 	h.state.Store(ptr.New(stateRunning))
@@ -218,7 +215,7 @@ func (h *HeimdallSpanner) updateSpanMap(spanInfo *SpanInfo) error {
 	}
 
 	if err := h.spanMap.MoveAfter(prevNewest.Key, spanInfo.SpanID); err != nil {
-		return errors.WithMessage(err, "failed to sort spans")
+		return fmt.Errorf("failed to sort spans: %w", err)
 	}
 
 	return nil
@@ -266,7 +263,7 @@ func (h *HeimdallSpanner) GetSpanByID(spanID uint64) (*SpanInfo, error) {
 func (h *HeimdallSpanner) requestSpanFromEndpoint(endpoint string) (*SpanInfo, error) {
 	req, err := http.NewRequestWithContext(h.ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return nil, errors.WithMessage(err, "failed to create request for fetching of span by id")
+		return nil, fmt.Errorf("failed to create request for fetching of span by id: %w", err)
 	}
 
 	span, err := h.doSpanRequest(req)
@@ -293,24 +290,24 @@ func (h *HeimdallSpanner) doSpanRequest(req *http.Request) (*SpanInfo, error) {
 		},
 	)
 	if err != nil {
-		return nil, errors.WithMessage(err, "failed to fetch span")
+		return nil, fmt.Errorf("failed to fetch span: %w", err)
 	}
 
 	defer func() { _ = resp.Body.Close() }()
 
 	bytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, errors.WithMessage(err, "failed to read response body")
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	spanResp := new(spanResponse)
 
 	if err = json.Unmarshal(bytes, spanResp); err != nil {
-		return nil, errors.WithMessage(err, "failed to unmarshal response body")
+		return nil, fmt.Errorf("failed to unmarshal response body: %w", err)
 	}
 
 	if spanResp == nil || spanResp.Result == nil {
-		return nil, errors.WithMessage(errBadSpanResp, string(bytes))
+		return nil, fmt.Errorf("invalid span response: %s", string(bytes))
 	}
 
 	// make difficulty cached

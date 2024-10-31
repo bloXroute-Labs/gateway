@@ -2,8 +2,8 @@ package services
 
 import (
 	"context"
-
-	"github.com/pkg/errors"
+	"errors"
+	"fmt"
 )
 
 // RunState is a state of a service.
@@ -35,11 +35,11 @@ type Runner interface {
 // RequireState returns an error if the state is not the required one.
 func RequireState(state *RunState, required RunState) error {
 	if state == nil {
-		return errors.WithMessagef(ErrWrongState, "required(%s) <> actual(nil)", required)
+		return fmt.Errorf("required(%s) <> actual(nil): %w", required, ErrWrongState)
 	}
 
 	if *state != required {
-		return errors.WithMessagef(ErrWrongState, "required(%s) <> actual(%s)", required, state)
+		return fmt.Errorf("required(%s) <> actual(%s): %w", required, *state, ErrWrongState)
 	}
 
 	return nil

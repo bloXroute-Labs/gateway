@@ -77,7 +77,6 @@ func HandleBDNBlocks(ctx context.Context, b blockchain.Bridge, n *Node, beaconAP
 						log.Tracef("broadcasted block to blockchain: p2p, block_hash: %v", bdnBlock.Hash())
 					}
 				}()
-
 			}
 
 			if broadcastBeaconAPI {

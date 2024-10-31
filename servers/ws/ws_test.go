@@ -8,9 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/services/validator"
-	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 	"github.com/gorilla/websocket"
 	"github.com/sourcegraph/jsonrpc2"
 	"github.com/stretchr/testify/assert"
@@ -29,9 +26,12 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
+	"github.com/bloXroute-Labs/gateway/v2/services/validator"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/test/mock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
+	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 )
 
 var (
@@ -159,7 +159,7 @@ func (s *wsSuite) setupSuit(networkNum types.NetworkNum) {
 
 	var validatorManager *validator.Manager
 	if networkNum == bxgateway.BSCMainnetNum || networkNum == bxgateway.PolygonMainnetNum {
-		nextValidatorMap := orderedmap.New()
+		nextValidatorMap := orderedmap.New[uint64, string]()
 		validatorStatusMap := syncmap.NewStringMapOf[bool]()
 		validatorListMap := syncmap.NewIntegerMapOf[uint64, []string]()
 

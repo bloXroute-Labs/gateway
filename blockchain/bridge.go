@@ -3,6 +3,8 @@ package blockchain
 import (
 	"errors"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/types"
@@ -75,6 +77,19 @@ type Converter interface {
 	BeaconMessageBDNToBlockchain(*types.BxBeaconMessage) (interface{}, error)
 }
 
+// StatusBridge defines an interface for handling blockchain status requests
+type StatusBridge interface {
+	SendBlockchainStatusRequest() error
+	ReceiveBlockchainStatusResponse() ([]*types.NodeEndpoint, error)
+	SubscribeStatus() StatusSubscription
+}
+
+// StatusSubscription defines an interface for handling blockchain status requests
+type StatusSubscription interface {
+	ReceiveBlockchainStatusRequest() <-chan struct{}
+	SendBlockchainStatusResponse([]*types.NodeEndpoint) error
+}
+
 // constants for transaction channel buffer sizes
 const (
 	transactionBacklog       = 2000
@@ -85,6 +100,7 @@ const (
 
 // Bridge represents the application interface over which messages are passed between the blockchain node and the BDN
 type Bridge interface {
+	StatusBridge
 	Converter
 
 	ReceiveNetworkConfigUpdates() <-chan network.EthConfig
@@ -125,10 +141,6 @@ type Bridge interface {
 	ReceiveNoActiveBlockchainPeersAlert() <-chan NoActiveBlockchainPeersAlert
 	SendNoActiveBlockchainPeersAlert() error
 
-	SendBlockchainStatusRequest() error
-	ReceiveBlockchainStatusRequest() <-chan struct{}
-	SendBlockchainStatusResponse([]*types.NodeEndpoint) error
-	ReceiveBlockchainStatusResponse() <-chan []*types.NodeEndpoint
 	SendBlockchainConnectionStatus(ConnectionStatus) error
 	ReceiveBlockchainConnectionStatus() <-chan ConnectionStatus
 
@@ -149,6 +161,7 @@ var (
 // BxBridge is a channel based implementation of the Bridge interface
 type BxBridge struct {
 	Converter
+
 	config                           chan network.EthConfig
 	transactionsFromNode             chan Transactions
 	transactionsFromBDN              chan Transactions
@@ -170,17 +183,18 @@ type BxBridge struct {
 
 	noActiveBlockchainPeers chan NoActiveBlockchainPeersAlert
 
-	blockchainStatusRequest     chan struct{}
-	blockchainStatusResponse    chan []*types.NodeEndpoint
 	nodeConnectionCheckRequest  chan struct{}
 	nodeConnectionCheckResponse chan types.NodeEndpoint
 	blockchainConnectionStatus  chan ConnectionStatus
 	disconnectEvent             chan types.NodeEndpoint
+
+	StatusBridge
 }
 
 // NewBxBridge returns a BxBridge instance
 func NewBxBridge(converter Converter, withBeacon bool) Bridge {
 	return &BxBridge{
+		Converter:                        converter,
 		config:                           make(chan network.EthConfig, 1),
 		transactionsFromNode:             make(chan Transactions, transactionBacklog),
 		transactionsFromBDN:              make(chan Transactions, transactionBacklog),
@@ -196,13 +210,11 @@ func NewBxBridge(converter Converter, withBeacon bool) Bridge {
 		beaconMessageFromBDN:             make(chan *types.BxBeaconMessage, blockBacklog),
 		confirmedBlockFromNode:           make(chan BlockFromNode, blockBacklog),
 		noActiveBlockchainPeers:          make(chan NoActiveBlockchainPeersAlert),
-		blockchainStatusRequest:          make(chan struct{}, statusBacklog),
-		blockchainStatusResponse:         make(chan []*types.NodeEndpoint, statusBacklog),
 		nodeConnectionCheckRequest:       make(chan struct{}, statusBacklog),
 		nodeConnectionCheckResponse:      make(chan types.NodeEndpoint, statusBacklog),
 		blockchainConnectionStatus:       make(chan ConnectionStatus, transactionBacklog),
 		disconnectEvent:                  make(chan types.NodeEndpoint, statusBacklog),
-		Converter:                        converter,
+		StatusBridge:                     &BxStatusBridge{lock: &sync.RWMutex{}, subscriptions: make([]*BxStatusSubscription, 0)},
 	}
 }
 
@@ -424,34 +436,84 @@ func (b BxBridge) ReceiveNoActiveBlockchainPeersAlert() <-chan NoActiveBlockchai
 	return b.noActiveBlockchainPeers
 }
 
+// BxStatusBridge is a channel based implementation of the StatusBridge interface
+type BxStatusBridge struct {
+	lock          *sync.RWMutex
+	subscriptions []*BxStatusSubscription
+}
+
 // SendBlockchainStatusRequest sends a blockchain connection status request signal to a blockchain backend
-func (b BxBridge) SendBlockchainStatusRequest() error {
-	select {
-	case b.blockchainStatusRequest <- struct{}{}:
-		return nil
-	default:
-		return ErrChannelFull
+func (b BxStatusBridge) SendBlockchainStatusRequest() error {
+	b.lock.RLock()
+	subscriptions := b.subscriptions
+	b.lock.RUnlock()
+
+	for _, sub := range subscriptions {
+		select {
+		case sub.blockchainStatusRequest <- struct{}{}:
+		default:
+			return ErrChannelFull
+		}
 	}
+
+	return nil
+}
+
+// ReceiveBlockchainStatusResponse handles blockchain connection status response from backend
+func (b BxStatusBridge) ReceiveBlockchainStatusResponse() ([]*types.NodeEndpoint, error) {
+	t := time.NewTimer(1 * time.Second)
+	result := make([]*types.NodeEndpoint, 0)
+
+	b.lock.RLock()
+	subscriptions := b.subscriptions
+	b.lock.RUnlock()
+
+	for i := 0; i < len(subscriptions); i++ {
+		ch := subscriptions[i].blockchainStatusResponse
+		select {
+		case status := <-ch:
+			result = append(result, status...)
+		case <-t.C:
+			return nil, errors.New("timeout")
+		}
+	}
+
+	return result, nil
+}
+
+// SubscribeStatus subscribes to blockchain connection status updates
+func (b *BxStatusBridge) SubscribeStatus() StatusSubscription {
+	subscription := &BxStatusSubscription{
+		blockchainStatusRequest:  make(chan struct{}, 1),
+		blockchainStatusResponse: make(chan []*types.NodeEndpoint, 1),
+	}
+
+	b.lock.Lock()
+	b.subscriptions = append(b.subscriptions, subscription)
+	b.lock.Unlock()
+
+	return subscription
+}
+
+// BxStatusSubscription is a channel based implementation of the StatusSubscription interface
+type BxStatusSubscription struct {
+	blockchainStatusRequest  chan struct{}
+	blockchainStatusResponse chan []*types.NodeEndpoint
 }
 
 // ReceiveBlockchainStatusRequest handles SendBlockchainStatusRequest signal
-func (b BxBridge) ReceiveBlockchainStatusRequest() <-chan struct{} {
+func (b BxStatusSubscription) ReceiveBlockchainStatusRequest() <-chan struct{} {
 	return b.blockchainStatusRequest
 }
 
 // SendBlockchainStatusResponse sends a response for blockchain connection status request
-func (b BxBridge) SendBlockchainStatusResponse(endpoints []*types.NodeEndpoint) error {
+func (b BxStatusSubscription) SendBlockchainStatusResponse(endpoints []*types.NodeEndpoint) error {
 	select {
 	case b.blockchainStatusResponse <- endpoints:
 		return nil
 	default:
 		return ErrChannelFull
 	}
-}
-
-// ReceiveBlockchainStatusResponse handles blockchain connection status response from backend
-func (b BxBridge) ReceiveBlockchainStatusResponse() <-chan []*types.NodeEndpoint {
-	return b.blockchainStatusResponse
 }
 
 // SendNodeConnectionCheckRequest sends a request for node connection check request

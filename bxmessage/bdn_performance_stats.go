@@ -212,7 +212,7 @@ func (bs *BdnPerformanceStats) SetBlockchainConnectionStatus(status blockchain.C
 
 	// if node is connected and does not exist in the peers, need to add it, else return with an error
 	if status.IsConnected {
-		stats := &BdnPerformanceStatsData{Dynamic: status.PeerEndpoint.Dynamic, IsConnected: true}
+		stats := &BdnPerformanceStatsData{Dynamic: status.PeerEndpoint.Dynamic, IsConnected: true, IsBeacon: status.PeerEndpoint.IsBeacon, BlockchainNetwork: status.PeerEndpoint.BlockchainNetwork}
 		bs.nodeStats[nodeIPPort] = stats
 	}
 }
@@ -317,7 +317,7 @@ func (bs *BdnPerformanceStats) getOrCreateNodeStats(node types.NodeEndpoint) *Bd
 	stats, ok := bs.nodeStats[node.IPPort()]
 	if !ok {
 		// right now we are not supporting beacon inbound connections, so for ETH inbound will be false and for BSC and Polygon it will be true
-		stats = &BdnPerformanceStatsData{IsBeacon: node.IsBeacon, Dynamic: true, IsConnected: true}
+		stats = &BdnPerformanceStatsData{Dynamic: true, IsConnected: true, IsBeacon: node.IsBeacon, BlockchainNetwork: node.BlockchainNetwork}
 		if !node.Dynamic {
 			log.Debugf("override the dynamic to true for node %v", node.IPPort())
 		}
