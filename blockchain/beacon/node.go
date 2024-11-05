@@ -21,6 +21,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/net/swarm"
 	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
+	ma "github.com/multiformats/go-multiaddr"
 	fastssz "github.com/prysmaticlabs/fastssz"
 	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
 	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/encoder"
@@ -251,7 +252,10 @@ func newNode(params NodeParams, clock utils.Clock) (*Node, error) {
 		ConnectedF: func(net libp2pNetwork.Network, conn libp2pNetwork.Conn) {
 			n.log.Tracef("peer %s connected", conn.RemoteMultiaddr())
 
-			peer := n.peers.add(net.Peerstore().PeerInfo(conn.RemotePeer()))
+			peer := n.peers.add(libp2pPeer.AddrInfo{
+				ID:    conn.RemotePeer(),
+				Addrs: []ma.Multiaddr{conn.RemoteMultiaddr()},
+			})
 			peerEndpoint := utils.MultiaddrToNodeEndoint(conn.RemoteMultiaddr(), n.networkName)
 
 			if conn.Stat().Direction == libp2pNetwork.DirInbound {
