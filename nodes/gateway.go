@@ -148,7 +148,6 @@ type gateway struct {
 
 	intentsManager services.IntentsManager
 	blobsManager   *beacon.BlobSidecarCacheManager
-
 }
 
 // GeneratePeers generate string peers separated by comma
@@ -226,7 +225,6 @@ func NewGateway(parent context.Context,
 		blobsManager:   blobsManager,
 	}
 	g.chainID = int64(bxgateway.NetworkNumToChainID[sdn.NetworkNum()])
-
 
 	g.blockProposer = bsc.NewNoopBlockProposer(g.TxStore, log.WithField("service", "noop-block-proposer"))
 
@@ -2060,7 +2058,6 @@ func (g *gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source c
 
 	g.stats.AddGatewayBundleEvent(event, source, start, mevBundle.BundleHash, mevBundle.GetNetworkNum(), mevBundle.Names(), mevBundle.UUID, blockNumber, mevBundle.MinTimestamp, mevBundle.MaxTimestamp)
 }
-
 
 func (g *gateway) getHeaderFromGateway() string {
 	accountID := g.sdn.AccountModel().AccountID
