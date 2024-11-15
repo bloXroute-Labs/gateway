@@ -18,9 +18,15 @@ import (
 type Manager struct {
 	nextValidatorMap                    *orderedmap.OrderedMap[uint64, string]
 	validatorStatusMap                  *syncmap.SyncMap[string, bool]
-	validatorListMap                    *syncmap.SyncMap[uint64, []string]
+	validatorListMap                    *syncmap.SyncMap[uint64, List]
 	pendingBSCNextValidatorTxHashToInfo map[string]PendingNextValidatorTxInfo
 	lock                                sync.Mutex
+}
+
+// List holds a list of validators and turn length
+type List struct {
+	Validators []string
+	TurnLength uint8
 }
 
 // PendingNextValidatorTxInfo holds info needed to reevaluate next validator tx when next block published
@@ -32,7 +38,7 @@ type PendingNextValidatorTxInfo struct {
 }
 
 // NewManager creates a new Manager
-func NewManager(nextValidatorMap *orderedmap.OrderedMap[uint64, string], validatorStatusMap *syncmap.SyncMap[string, bool], validatorListMap *syncmap.SyncMap[uint64, []string]) *Manager {
+func NewManager(nextValidatorMap *orderedmap.OrderedMap[uint64, string], validatorStatusMap *syncmap.SyncMap[string, bool], validatorListMap *syncmap.SyncMap[uint64, List]) *Manager {
 	return &Manager{
 		nextValidatorMap:                    nextValidatorMap,
 		validatorStatusMap:                  validatorStatusMap,

@@ -123,9 +123,9 @@ type gateway struct {
 
 	staticEnodesCount            int
 	startupArgs                  string
-	validatorStatusMap           *syncmap.SyncMap[string, bool]         // validator addr -> online/offline
-	validatorListMap             *syncmap.SyncMap[uint64, []string]     // block height -> list of validators
-	nextValidatorMap             *orderedmap.OrderedMap[uint64, string] // next accessible validator
+	validatorStatusMap           *syncmap.SyncMap[string, bool]           // validator addr -> online/offline
+	validatorListMap             *syncmap.SyncMap[uint64, validator.List] // block height -> list of validators with turn length
+	nextValidatorMap             *orderedmap.OrderedMap[uint64, string]   // next accessible validator
 	validatorListReady           bool
 	validatorInfoUpdateLock      sync.Mutex
 	latestValidatorInfo          []*types.FutureValidatorInfo
@@ -240,7 +240,7 @@ func NewGateway(parent context.Context,
 	}
 
 	if bxConfig.BlockchainNetwork == bxgateway.BSCMainnet || bxConfig.BlockchainNetwork == bxgateway.BSCTestnet {
-		g.validatorListMap = syncmap.NewIntegerMapOf[uint64, []string]()
+		g.validatorListMap = syncmap.NewIntegerMapOf[uint64, validator.List]()
 		g.bscTxClient = &http.Client{
 			Transport: &http.Transport{
 				MaxConnsPerHost:     100,
@@ -739,9 +739,12 @@ func (g *gateway) queryEpochBlock(height uint64) error {
 
 				g.validatorListMap.Delete(height - bscBlocksPerEpoch*2) // remove the validator list that doesn't need anymore
 				g.validatorListMap.Store(height, validatorList)
+
+				return nil
 			}
 		}
 	}
+
 	return errors.New("failed to query blockchain node for previous epoch block")
 }
 
@@ -780,7 +783,7 @@ func (g *gateway) generateBSCValidator(blockHeight uint64) []*types.FutureValida
 	}
 	previousEpochValidatorList := prevEpochValidatorList
 
-	var currentEpochValidatorList []string
+	var currentEpochValidatorList validator.List
 	currEpochValidatorList, exist := g.validatorListMap.Load(currentEpochBlockHeight)
 	if !exist {
 		err := g.queryEpochBlock(currentEpochBlockHeight)
@@ -798,24 +801,23 @@ func (g *gateway) generateBSCValidator(blockHeight uint64) []*types.FutureValida
 
 	for i := 1; i <= 2; i++ {
 		targetingBlockHeight := blockHeight + uint64(i)
-		listIndex := targetingBlockHeight % uint64(len(currentEpochValidatorList)) // listIndex is the index for the validator list
-		activationIndex := uint64((len(previousEpochValidatorList) + 1) / 2)       // activationIndex = ceiling[ N / 2 ] where N = the length of previous validator list, it marks a watershed. To the leftward we use previous validator list, to the rightward(inclusive) we use current validator list. Reference: https://github.com/bnb-chain/docs-site/blob/master/docs/smart-chain/guides/concepts/consensus.md
+
+		// see formula here https://github.com/bnb-chain/BEPs/blob/master/BEPs/BEP-341.md#421-priority-allocation
+		listIndex := targetingBlockHeight / uint64(currentEpochValidatorList.TurnLength) % uint64(len(currentEpochValidatorList.Validators))
+
+		// see formula here https://github.com/bnb-chain/BEPs/blob/master/BEPs/BEP-341.md#422-validator-set-switch
+		activationIndex := uint64(len(previousEpochValidatorList.Validators)/2+1)*uint64(currentEpochValidatorList.TurnLength) - 1
+
 		index := targetingBlockHeight - currentEpochBlockHeight
 		if index >= activationIndex {
-			validatorAddr := currentEpochValidatorList[listIndex]
+			validatorAddr := currentEpochValidatorList.Validators[listIndex]
 			vi[i-1].WalletID = strings.ToLower(validatorAddr)
 		} else { // use list from previous epoch
-			validatorAddr := previousEpochValidatorList[listIndex]
+			validatorAddr := previousEpochValidatorList.Validators[listIndex]
 			vi[i-1].WalletID = strings.ToLower(validatorAddr)
 		}
 
 		g.nextValidatorMap.Set(targetingBlockHeight, strings.ToLower(vi[i-1].WalletID)) // nextValidatorMap is simulating a queue with height as expiration key. Regardless of the accessible status, next walletID will be appended to the queue
-
-		// Deprecated
-		// accessible, exist := g.validatorStatusMap.Load(strings.ToLower(vi[i-1].WalletID))
-		// if exist {
-		// 	vi[i-1].Accessible = accessible
-		// }
 
 		vi[i-1].Accessible = true
 	}
@@ -892,7 +894,7 @@ func (g *gateway) generatePolygonValidator(bxBlock *types.BxBlock, blockInfo *et
 	return validatorInfo[:]
 }
 
-func bscExtractValidatorListFromBlock(b []byte) ([]string, error) {
+func bscExtractValidatorListFromBlock(b []byte) (validator.List, error) {
 	addressLength := 20
 	bLSPublicKeyLength := 48
 
@@ -905,7 +907,7 @@ func bscExtractValidatorListFromBlock(b []byte) ([]string, error) {
 
 	// 32 + 65 + 1
 	if len(b) < 98 {
-		return nil, errors.New("wrong extra data, too small")
+		return validator.List{}, errors.New("wrong extra data, too small")
 	}
 
 	data := b[extraVanityLength : len(b)-extraSealLength]
@@ -918,7 +920,7 @@ func bscExtractValidatorListFromBlock(b []byte) ([]string, error) {
 			validatorNum := int(data[0])
 			validatorBytesTotalLength := validatorNumberSize + validatorNum*validatorBytesLength
 			if dataLength < validatorBytesTotalLength {
-				return nil, fmt.Errorf("parse validators failed, validator list is not aligned")
+				return validator.List{}, fmt.Errorf("parse validators failed, validator list is not aligned")
 			}
 
 			validatorList := make([]string, 0, validatorNum)
@@ -928,11 +930,25 @@ func bscExtractValidatorListFromBlock(b []byte) ([]string, error) {
 				validatorList = append(validatorList, validatorAddr.String())
 			}
 
-			return validatorList, nil
+			data = data[validatorBytesTotalLength-validatorNumberSize:]
+			dataLength = len(data)
+
+			turnLength := uint8(1)
+			// parse TurnLength
+			if dataLength > 0 {
+				if data[0] != '\xf8' {
+					turnLength = data[0]
+				}
+			}
+
+			return validator.List{
+				Validators: validatorList,
+				TurnLength: turnLength,
+			}, nil
 		}
 	}
 
-	return nil, nil
+	return validator.List{}, nil
 }
 
 func (g *gateway) generateFutureValidatorInfo(block *types.BxBlock, blockInfo *eth.BlockInfo) []*types.FutureValidatorInfo {
@@ -940,6 +956,7 @@ func (g *gateway) generateFutureValidatorInfo(block *types.BxBlock, blockInfo *e
 	defer g.validatorInfoUpdateLock.Unlock()
 
 	blockHeight := uint64(block.Number.Int64())
+
 	switch g.sdn.NetworkNum() {
 	case bxgateway.BSCMainnetNum, bxgateway.BSCTestnetNum:
 		if blockHeight%bscBlocksPerEpoch == 0 {

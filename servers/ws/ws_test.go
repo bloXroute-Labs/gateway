@@ -161,7 +161,7 @@ func (s *wsSuite) setupSuit(networkNum types.NetworkNum) {
 	if networkNum == bxgateway.BSCMainnetNum || networkNum == bxgateway.PolygonMainnetNum {
 		nextValidatorMap := orderedmap.New[uint64, string]()
 		validatorStatusMap := syncmap.NewStringMapOf[bool]()
-		validatorListMap := syncmap.NewIntegerMapOf[uint64, []string]()
+		validatorListMap := syncmap.NewIntegerMapOf[uint64, validator.List]()
 
 		nextValidatorMap.Set(uint64(100), "1234")
 

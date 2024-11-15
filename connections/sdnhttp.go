@@ -22,12 +22,13 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 
+	"github.com/jinzhu/copier"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/jinzhu/copier"
 )
 
 //go:generate mockgen -destination ../../bxgateway/test/mock/mock_sdnhttp.go -package mock . SDNHTTP
@@ -49,6 +50,7 @@ const (
 	potentialRelaysFileName         = "potentialrelays.json"
 	accountModelsFileName           = "accountmodel.json"
 	relayMapInterval                = 2 * time.Minute
+	httpTimeout                     = 10 * time.Second
 )
 
 // SDNHTTP is the interface for realSDNHTTP type
@@ -451,7 +453,9 @@ func (s realSDNHTTP) httpClient() (*http.Client, error) {
 		Transport: &http.Transport{
 			TLSClientConfig: tlsConfig,
 		},
+		Timeout: httpTimeout,
 	}
+
 	return client, nil
 }
 
