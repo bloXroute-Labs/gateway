@@ -29,7 +29,7 @@ var (
 	ErrInvalidHeader = errors.New("wrong value in the authorization header")
 )
 
-// Accounter  declares the interface of the account service
+// Accounter declares the interface of the account service
 type Accounter interface {
 	Authorize(accountID types.AccountID, secretHash string, isWebsocket bool, allowIntroductoryTierAccess bool, remoteAddr string) (sdnmessage.Account, error)
 }
@@ -84,6 +84,7 @@ func (g *Service) Authorize(accountID types.AccountID, secretHash string, allowA
 			l.Errorf("account %v is not authorized to call this method directly", g.sdn.AccountModel().AccountID)
 			return connectionAccountModel, ErrMethodNotAllowed
 		}
+
 		accountRes, err := g.cacheMap.Get(accountID)
 		switch {
 		case err != nil:

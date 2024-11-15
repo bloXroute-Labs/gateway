@@ -2,11 +2,14 @@ package utils
 
 import (
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
+
+	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 )
 
 func TestCache_Get(t *testing.T) {
@@ -62,6 +65,53 @@ func TestCache_Get(t *testing.T) {
 
 	// Get value only when value expired
 	require.Equal(t, 2, successCalls)
+}
+
+func TestCache_ConcurrentGet(t *testing.T) {
+	counter := atomic.NewInt32(0)
+
+	clock := &MockClock{}
+
+	// create a new cache
+	cache := newCache[string, int](syncmap.StringHasher, func(key string) (*int, error) {
+		switch key {
+		case "key1":
+			counter.Inc()
+
+			if counter.Load() > 1 {
+				require.FailNow(t, "unexpected call")
+			}
+
+			value := 1
+			return &value, nil
+		default:
+			require.FailNowf(t, "unexpected key", "key: %s", key)
+		}
+
+		return nil, nil
+	}, time.Minute, 5*time.Minute, clock)
+
+	wg := sync.WaitGroup{}
+	wg.Add(100)
+
+	for i := 0; i < 100; i++ {
+		go func() {
+			defer wg.Done()
+			item, err := cache.Get("key1")
+			require.NoError(t, err)
+			require.Equal(t, 1, *item)
+		}()
+	}
+
+	wg.Wait()
+
+	l, ok := cache.lockMap.Load("key1")
+	require.True(t, ok)
+	select {
+	case <-l:
+	default:
+		require.FailNow(t, "lock is not released")
+	}
 }
 
 func TestCache_Clean(t *testing.T) {
