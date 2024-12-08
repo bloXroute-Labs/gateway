@@ -20,15 +20,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
-
-	"github.com/jinzhu/copier"
-
 	"github.com/bloXroute-Labs/gateway/v2"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/jinzhu/copier"
 )
 
 //go:generate mockgen -destination ../../bxgateway/test/mock/mock_sdnhttp.go -package mock . SDNHTTP
@@ -49,8 +46,8 @@ const (
 	nodeModelCacheFileName          = "nodemodel.json"
 	potentialRelaysFileName         = "potentialrelays.json"
 	accountModelsFileName           = "accountmodel.json"
-	relayMapInterval                = 2 * time.Minute
 	httpTimeout                     = 10 * time.Second
+	latencyThreshold                = 10
 )
 
 // SDNHTTP is the interface for realSDNHTTP type
@@ -69,13 +66,14 @@ type SDNHTTP interface {
 	Register() error
 	NeedsRegistration() bool
 	FetchCustomerAccountModel(accountID types.AccountID) (sdnmessage.Account, error)
-	DirectRelayConnections(relayHosts string, relayLimit uint64, relayInstructions chan<- RelayInstruction) error
+	DirectRelayConnections(relayHosts string, relayLimit uint64, relayInstructions chan<- RelayInstruction, ignoredRelays IgnoredRelaysMap) error
 	FindNetwork(networkNum types.NetworkNum) (*sdnmessage.BlockchainNetwork, error)
 	MinTxAge() time.Duration
 	SendNodeEvent(event sdnmessage.NodeEvent, id types.NodeID)
 	Get(endpoint string, requestBody []byte) ([]byte, error)
 	GetQuotaUsage(accountID string) (*QuotaResponseBody, error)
-	FindNewRelay(gwContext context.Context, oldRelayIP string, relayInstructions chan RelayInstruction)
+	FindNewRelay(ctx context.Context, oldRelayIP string, oldRelayIPPort int64, relayInstructions chan RelayInstruction, ignoredRelays IgnoredRelaysMap)
+	FindFastestRelays(relayInstructions chan<- RelayInstruction, ignoredRelays IgnoredRelaysMap)
 }
 
 // realSDNHTTP is a connection to the bloxroute API
@@ -90,7 +88,6 @@ type realSDNHTTP struct {
 	dataDir          string
 	nodeModel        *sdnmessage.NodeModel
 	relays           sdnmessage.Peers
-	ignoredRelays    *syncmap.SyncMap[string, RelyInfo]
 }
 
 // relayMap maps a relay's IP to its port
@@ -98,9 +95,11 @@ type relayMap map[string]int64
 
 // IgnoredRelaysMap sync map for ignored relays
 type IgnoredRelaysMap interface {
-	Load(key string) (value RelyInfo, ok bool)
-	Store(key string, value RelyInfo)
+	Load(key string) (value types.RelayInfo, ok bool)
+	Store(key string, value types.RelayInfo)
 	Delete(key string)
+	Range(f func(key string, value types.RelayInfo) bool)
+	LoadOrStore(key string, val types.RelayInfo) (actual types.RelayInfo, loaded bool)
 }
 
 // nodeLatencyInfo contains ping results with host and latency info
@@ -112,10 +111,11 @@ type nodeLatencyInfo struct {
 
 // RelayInstruction specifies whether to connect or disconnect to the relay at an IP:Port
 type RelayInstruction struct {
-	IP       string
-	Type     ConnInstructionType
-	Port     int64
-	IsStatic bool
+	IP             string
+	Type           ConnInstructionType
+	Port           int64
+	IsStatic       bool
+	RelaysToSwitch []nodeLatencyInfo
 }
 
 // ConnInstructionType specifies connection or disconnection
@@ -132,10 +132,9 @@ type QuotaResponseBody struct {
 	QuotaLimit  int    `json:"quota_limit"`
 }
 
-// RelyInfo - represent connected relays info
-type RelyInfo struct {
-	TimeAdded   time.Time
-	IsConnected bool
+type relayToSwitch struct {
+	ip   string
+	port int64
 }
 
 const (
@@ -143,6 +142,8 @@ const (
 	Connect ConnInstructionType = iota
 	// Disconnect is the instruction to disconnect from a relay
 	Disconnect
+	// Switch is the instruction to switch relay
+	Switch
 )
 
 func init() {
@@ -168,9 +169,7 @@ func NewSDNHTTP(sslCerts *utils.SSLCerts, sdnURL string, nodeModel sdnmessage.No
 		nodeModel:        &nodeModel,
 		getPingLatencies: getPingLatencies,
 		dataDir:          dataDir,
-		ignoredRelays:    syncmap.NewStringMapOf[RelyInfo](),
 	}
-	go sdn.cleanupRelayMap()
 	return sdn
 }
 
@@ -260,7 +259,7 @@ func logLowestLatency(lowestLatencyRelay nodeLatencyInfo) {
 }
 
 // DirectRelayConnections directs the gateway on relays to connect/disconnect
-func (s realSDNHTTP) DirectRelayConnections(relayHosts string, relayLimit uint64, relayInstructions chan<- RelayInstruction) error {
+func (s realSDNHTTP) DirectRelayConnections(relayHosts string, relayLimit uint64, relayInstructions chan<- RelayInstruction, ignoredRelays IgnoredRelaysMap) error {
 	overrideRelays, autoCount, err := parsedCmdlineRelays(relayHosts, relayLimit)
 	if err != nil {
 		return err
@@ -268,7 +267,7 @@ func (s realSDNHTTP) DirectRelayConnections(relayHosts string, relayLimit uint64
 
 	// connect relays specified in `relays` argument
 	for ip, port := range overrideRelays {
-		s.ignoredRelays.Store(ip, RelyInfo{TimeAdded: time.Now(), IsConnected: true})
+		ignoredRelays.Store(ip, types.RelayInfo{TimeAdded: time.Now(), IsConnected: true, IsStatic: true, Port: port})
 		relayInstructions <- RelayInstruction{IP: ip, Port: port, Type: Connect, IsStatic: true}
 	}
 
@@ -285,11 +284,11 @@ func (s realSDNHTTP) DirectRelayConnections(relayHosts string, relayLimit uint64
 	if len(relays) == 0 {
 		return ErrNoRelays
 	}
-	go s.manageAutoRelays(autoCount, relayInstructions, relays)
+	go s.manageAutoRelays(autoCount, relayInstructions, relays, ignoredRelays)
 	return nil
 }
 
-func (s realSDNHTTP) connectToNewRelay(relayInstructions chan<- RelayInstruction) error {
+func (s realSDNHTTP) connectToNewRelay(relayInstructions chan<- RelayInstruction, ignoredRelays IgnoredRelaysMap) error {
 	relays, err := s.getRelays(s.nodeModel.NodeID, s.nodeModel.BlockchainNetworkNum)
 	if err != nil {
 		return fmt.Errorf("failed to extract relay list: %v", err)
@@ -297,7 +296,7 @@ func (s realSDNHTTP) connectToNewRelay(relayInstructions chan<- RelayInstruction
 	if len(relays) == 0 {
 		return ErrNoRelays
 	}
-	s.manageAutoRelays(1, relayInstructions, relays)
+	s.manageAutoRelays(1, relayInstructions, relays, ignoredRelays)
 	return nil
 }
 
@@ -350,7 +349,84 @@ func parsedCmdlineRelays(relayHosts string, relayLimit uint64) (relayMap, int, e
 	return overrideRelays, autoCount, nil
 }
 
-func (s realSDNHTTP) manageAutoRelays(autoRelayCount int, relayInstructions chan<- RelayInstruction, relays sdnmessage.Peers) {
+func (s realSDNHTTP) getAutoConnectedRelays(ignoredRelays IgnoredRelaysMap) map[string]types.RelayInfo {
+	connectedAutoRelays := make(map[string]types.RelayInfo)
+	ignoredRelays.Range(func(key string, value types.RelayInfo) bool {
+		if value.IsConnected && !value.IsStatic {
+			connectedAutoRelays[key] = value
+		}
+		return true
+	})
+	return connectedAutoRelays
+}
+
+func (s realSDNHTTP) findFastestAvailableRelays(pingLatencies []nodeLatencyInfo, connectedAutoRelays map[string]types.RelayInfo) []nodeLatencyInfo {
+	var fastestAvailableRelays = make([]nodeLatencyInfo, 0)
+
+	for _, pingLatency := range pingLatencies {
+		info, exists := connectedAutoRelays[pingLatency.IP]
+		if exists {
+			info.Latency = pingLatency.Latency
+			connectedAutoRelays[pingLatency.IP] = info
+			continue
+		}
+		fastestAvailableRelays = append(fastestAvailableRelays, pingLatency)
+	}
+	return fastestAvailableRelays
+}
+
+func (s realSDNHTTP) findRelaysToSwitch(connectedAutoRelays map[string]types.RelayInfo, fastestAvailableRelays []nodeLatencyInfo) map[relayToSwitch][]nodeLatencyInfo {
+	relaysToSwitch := make(map[relayToSwitch][]nodeLatencyInfo) // map[oldIP and Port][]newRelayNodeLatencyInfo
+
+OuterLoop:
+	for _, relay := range convertMapToSortedSlice(connectedAutoRelays) {
+		for _, pingLatency := range fastestAvailableRelays {
+			if relay.relayInfo.Latency < pingLatency.Latency+latencyThreshold {
+				continue OuterLoop
+			}
+			relaysToSwitch[relayToSwitch{ip: relay.ip, port: relay.relayInfo.Port}] = append(relaysToSwitch[relayToSwitch{ip: relay.ip, port: relay.relayInfo.Port}], pingLatency)
+		}
+	}
+	return relaysToSwitch
+}
+
+type autoRelay struct {
+	ip        string
+	relayInfo types.RelayInfo
+}
+
+func convertMapToSortedSlice(connectedAutoRelays map[string]types.RelayInfo) []autoRelay {
+	relaySlice := make([]autoRelay, 0, len(connectedAutoRelays))
+	for k, v := range connectedAutoRelays {
+		relaySlice = append(relaySlice, autoRelay{k, v})
+	}
+	sort.Slice(relaySlice, func(i, j int) bool {
+		return relaySlice[i].relayInfo.Latency > relaySlice[j].relayInfo.Latency
+	})
+	return relaySlice
+}
+
+func (s realSDNHTTP) FindFastestRelays(relayInstructions chan<- RelayInstruction, ignoredRelays IgnoredRelaysMap) {
+	relays, err := s.getRelays(s.nodeModel.NodeID, s.nodeModel.BlockchainNetworkNum)
+	if err != nil {
+		log.Errorf("failed to extract relyInfo list: %v", err)
+		return
+	}
+	pingLatencies := s.getPingLatencies(relays) // list of SDN relays sorted by ascending order of Latency
+	if len(pingLatencies) == 0 {
+		log.Errorf("ping latencies not found for relays from SDN")
+		return
+	}
+	connectedAutoRelays := s.getAutoConnectedRelays(ignoredRelays)
+	fastestAvailableRelays := s.findFastestAvailableRelays(pingLatencies, connectedAutoRelays)
+	relaysToSwitch := s.findRelaysToSwitch(connectedAutoRelays, fastestAvailableRelays)
+
+	for oldRelay, newRelays := range relaysToSwitch {
+		relayInstructions <- RelayInstruction{IP: oldRelay.ip, Port: oldRelay.port, Type: Switch, RelaysToSwitch: newRelays}
+	}
+}
+
+func (s realSDNHTTP) manageAutoRelays(autoRelayCount int, relayInstructions chan<- RelayInstruction, relays sdnmessage.Peers, ignoredRelays IgnoredRelaysMap) {
 	pingLatencies := s.getPingLatencies(relays) // list of SDN relays sorted by ascending order of latency
 	if len(pingLatencies) == 0 {
 		log.Errorf("ping latencies not found for relays from SDN")
@@ -366,7 +442,7 @@ func (s realSDNHTTP) manageAutoRelays(autoRelayCount int, relayInstructions chan
 			continue
 		}
 		// only connect to the relay if not already connected to or still connected
-		if _, ok := s.ignoredRelays.LoadOrStore(newRelayIP, RelyInfo{TimeAdded: time.Now(), IsConnected: true}); ok {
+		if _, ok := ignoredRelays.LoadOrStore(newRelayIP, types.RelayInfo{TimeAdded: time.Now(), IsConnected: true, Port: pingLatency.Port}); ok {
 			continue
 		}
 		logLowestLatency(pingLatencies[idx])
@@ -382,11 +458,11 @@ func (s realSDNHTTP) manageAutoRelays(autoRelayCount int, relayInstructions chan
 	log.Errorf("available SDN relays %v; requested auto count %v", autoRelayCounter, autoRelayCount)
 }
 
-func (s realSDNHTTP) FindNewRelay(gwContext context.Context, oldRelayIP string, relayInstructions chan RelayInstruction) {
+func (s realSDNHTTP) FindNewRelay(ctx context.Context, oldRelayIP string, oldRelayIPPort int64, relayInstructions chan RelayInstruction, ignoredRelays IgnoredRelaysMap) {
 	log.Errorf("relay %v is not reachable, switching relay", oldRelayIP)
-	s.ignoredRelays.Store(oldRelayIP, RelyInfo{TimeAdded: time.Now(), IsConnected: false})
+	ignoredRelays.Store(oldRelayIP, types.RelayInfo{TimeAdded: time.Now(), Port: oldRelayIPPort, IsConnected: false})
 	for {
-		err := s.connectToNewRelay(relayInstructions)
+		err := s.connectToNewRelay(relayInstructions, ignoredRelays)
 		if err == nil {
 			return // Exit the function if successful
 		}
@@ -397,23 +473,10 @@ func (s realSDNHTTP) FindNewRelay(gwContext context.Context, oldRelayIP string, 
 		defer ticker.Stop()
 
 		select {
-		case <-gwContext.Done():
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
 		}
-	}
-}
-
-func (s realSDNHTTP) cleanupRelayMap() {
-	ticker := time.NewTicker(relayMapInterval)
-	defer ticker.Stop()
-	for range ticker.C {
-		s.ignoredRelays.Range(func(ip string, info RelyInfo) bool {
-			if !info.IsConnected && time.Since(info.TimeAdded) > relayMapInterval {
-				s.ignoredRelays.Delete(ip)
-			}
-			return true
-		})
 	}
 }
 

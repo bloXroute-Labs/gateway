@@ -99,6 +99,8 @@ func (d *Dispatcher) bundleForBuildersJSON(bundle *bxmessage.MEVBundle) ([]byte,
 			RevertingTxHashes: bundle.RevertingHashes,
 			Boost:             false, // set to `false` specifically for the 'beaverbuild' builder
 			AccountID:         bundle.OriginalSenderAccountID,
+			BlocksCount:       bundle.BlocksCount,
+			DroppingTxHashes:  bundle.DroppingTxHashes,
 		},
 	}
 
