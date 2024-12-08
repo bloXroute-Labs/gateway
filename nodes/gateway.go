@@ -71,7 +71,9 @@ const (
 
 	bloomStoreInterval = time.Hour
 
-	bscBlocksPerEpoch = 200
+	bscBlocksPerEpoch    = 200
+	relayMapInterval     = 2 * time.Minute
+	fastestRelayInterval = 12 * time.Hour
 )
 
 var (
@@ -148,6 +150,8 @@ type gateway struct {
 
 	intentsManager services.IntentsManager
 	blobsManager   *beacon.BlobSidecarCacheManager
+	ignoredRelays  *syncmap.SyncMap[string, types.RelayInfo]
+	relaysToSwitch *syncmap.SyncMap[string, bool]
 }
 
 // GeneratePeers generate string peers separated by comma
@@ -218,6 +222,8 @@ func NewGateway(parent context.Context,
 		sslCerts:                     sslCerts,
 		blockTime:                    blockTime,
 		txIncludeSenderInFeed:        txIncludeSenderInFeed,
+		ignoredRelays:                syncmap.NewStringMapOf[types.RelayInfo](),
+		relaysToSwitch:               syncmap.NewStringMapOf[bool](),
 		log: log.WithFields(log.Fields{
 			"component": "gateway",
 		}),
@@ -564,7 +570,9 @@ func (g *gateway) Run() error {
 
 	relayInstructions := make(chan connections.RelayInstruction)
 	go g.updateRelayConnections(relayInstructions, *sslCert, networkNum)
-	err = g.sdn.DirectRelayConnections(g.BxConfig.Relays, uint64(accountModel.RelayLimit.MsgQuota.Limit), relayInstructions)
+	err = g.sdn.DirectRelayConnections(g.BxConfig.Relays, uint64(accountModel.RelayLimit.MsgQuota.Limit), relayInstructions, g.ignoredRelays)
+	go g.checkForFastestRelays(relayInstructions)
+	go g.cleanupRelayMap()
 	if err != nil {
 		return err
 	}
@@ -611,10 +619,65 @@ func (g *gateway) updateRelayConnections(relayInstructions chan connections.Rela
 		switch instruction.Type {
 		case connections.Connect:
 			g.connectRelay(instruction, sslCerts, networkNum, relayInstructions)
+		case connections.Switch:
+			go g.switchRelay(instruction, relayInstructions, sslCerts, networkNum)
 		case connections.Disconnect:
 			// disconnectRelay
 		}
 	}
+}
+
+func (g *gateway) switchRelay(instruction connections.RelayInstruction, relayInstructions chan connections.RelayInstruction, sslCerts utils.SSLCerts, networkNum types.NetworkNum) {
+	for _, newRelay := range instruction.RelaysToSwitch {
+		// add relay to ignore relays so if we have 2 relays connected we will not connect to same relay
+		if _, ok := g.ignoredRelays.LoadOrStore(newRelay.IP, types.RelayInfo{TimeAdded: time.Now(), IsConnected: true, Port: newRelay.Port}); ok {
+			continue
+		}
+		relayInstruction := connections.RelayInstruction{IP: newRelay.IP, Port: newRelay.Port, Type: connections.Connect}
+		isRelayConnected := g.tryToConnectToAutoRelay(relayInstruction, sslCerts, networkNum, relayInstructions)
+		if isRelayConnected {
+			err := g.disconnectRelay(instruction.IP)
+			if err != nil {
+				log.Errorf("error disconnecting relay: %v", err)
+			}
+			return
+		}
+		// if relay wasn't able to connect we will mark it as not connected
+		g.ignoredRelays.Store(newRelay.IP, types.RelayInfo{TimeAdded: time.Now(), IsConnected: false, Port: newRelay.Port})
+	}
+}
+
+func (g *gateway) disconnectRelay(relayIP string) error {
+	for _, conn := range g.Connections {
+		if conn.GetPeerIP() == relayIP {
+			g.relaysToSwitch.Store(relayIP, true)
+			return conn.Close("found faster relay")
+		}
+	}
+	return nil
+}
+
+func (g *gateway) tryToConnectToAutoRelay(instruction connections.RelayInstruction, sslCerts utils.SSLCerts, networkNum types.NetworkNum, relayInstructions chan connections.RelayInstruction) bool {
+	relay := handler.NewOutboundRelay(g, &sslCerts, instruction.IP, instruction.Port, g.sdn.NodeID(), utils.RelayProxy,
+		g.BxConfig.PrioritySending, g.sdn.Networks(), true, false, utils.RealClock{}, false)
+	relay.SetNetworkNum(networkNum)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go relay.Start(ctx)
+	// let the relay connect for few secs
+	time.Sleep(3 * time.Second)
+	g.ConnectionsLock.Lock()
+	defer g.ConnectionsLock.Unlock()
+	for _, conn := range g.Connections {
+		// if new relay was connected we need to disconnect old relay
+		if conn.GetPeerIP() == instruction.IP {
+			go g.monitorConnection(cancel, relay, relayInstructions)
+			return true
+		}
+	}
+	// if after 3 secs relay wasn't able to connect we will stop try and move to next relay
+	cancel()
+	return false
 }
 
 func (g *gateway) connectRelay(instruction connections.RelayInstruction, sslCerts utils.SSLCerts, networkNum types.NetworkNum, relayInstructions chan connections.RelayInstruction) {
@@ -650,18 +713,60 @@ func (g *gateway) monitorConnection(cancel context.CancelFunc, relay *handler.Re
 			cancel()
 			return
 		case <-ticker.C:
+			if g.isRelaySwitched(relay.GetPeerIP()) {
+				return
+			}
 			if !relay.BxConn.IsOpen() {
-				log.Infof("Relay %v connection down, waiting an additional %v to confirm.", relay.GetPeerIP(), types.RelayMonitorInterval)
+				log.Tracef("Relay %v connection down, waiting an additional %v to confirm.", relay.GetPeerIP(), types.RelayMonitorInterval)
 
 				// Reset the timer to wait an additional interval for reconnection attempt
 				<-time.After(types.RelayMonitorInterval)
+				if g.isRelaySwitched(relay.GetPeerIP()) {
+					return
+				}
 
 				if !relay.BxConn.IsOpen() {
 					cancel()
-					g.sdn.FindNewRelay(g.context, relay.GetPeerIP(), relayInstructions)
+					g.sdn.FindNewRelay(g.context, relay.GetPeerIP(), relay.GetPeerPort(), relayInstructions, g.ignoredRelays)
 					return
 				}
 			}
+		}
+	}
+}
+
+func (g *gateway) isRelaySwitched(relayIP string) bool {
+	if _, ok := g.relaysToSwitch.LoadAndDelete(relayIP); ok {
+		log.Tracef("Relay %v is no longer active, stopping monitor", relayIP)
+		g.ignoredRelays.Delete(relayIP)
+		return true
+	}
+	return false
+}
+
+func (g *gateway) cleanupRelayMap() {
+	ticker := time.NewTicker(relayMapInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		g.ignoredRelays.Range(func(ip string, info types.RelayInfo) bool {
+			if !info.IsConnected && time.Since(info.TimeAdded) > relayMapInterval {
+				g.ignoredRelays.Delete(ip)
+			}
+			return true
+		})
+	}
+}
+
+func (g *gateway) checkForFastestRelays(relayInstructions chan<- connections.RelayInstruction) {
+	ticker := time.NewTicker(fastestRelayInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-g.context.Done():
+			log.Tracef("Context canceled, stopping check for fastest relay")
+			return
+		case <-ticker.C:
+			g.sdn.FindFastestRelays(relayInstructions, g.ignoredRelays)
 		}
 	}
 }

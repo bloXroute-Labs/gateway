@@ -145,3 +145,12 @@ const ECDSASignatureLen = 65
 
 // RelayMonitorInterval is interval for relay monitor
 const RelayMonitorInterval = time.Minute
+
+// RelayInfo - represent connected relays info
+type RelayInfo struct {
+	TimeAdded   time.Time
+	IsConnected bool
+	IsStatic    bool
+	Latency     float64
+	Port        int64
+}

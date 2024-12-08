@@ -38,6 +38,8 @@ func (g *server) BlxrSubmitBundle(ctx context.Context, req *pb.BlxrSubmitBundleR
 		AvoidMixedBundles:       req.AvoidMixedBundles,
 		PriorityFeeRefund:       req.PriorityFeeRefund,
 		IncomingRefundRecipient: req.RefundRecipient,
+		BlocksCount:             int(req.BlocksCount),
+		DroppingTxHashes:        req.DroppingTxHashes,
 	}
 
 	grpc := connections.NewRPCConn(*accountID, getPeerAddr(ctx), g.params.sdn.NetworkNum(), utils.GRPC)

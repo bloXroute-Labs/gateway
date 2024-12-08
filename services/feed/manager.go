@@ -163,12 +163,14 @@ func (f *Manager) Subscribe(feedName types.FeedType, feedConnectionType types.Fe
 // Unsubscribe - unsubscribe a client from feed and optionally closes the corresponding client ws connection
 func (f *Manager) Unsubscribe(subscriptionID string, closeClientConnection bool, errMsg string) error {
 	f.lock.Lock()
-	defer f.lock.Unlock()
 
 	clientSub, exists := f.idToClientSubscription[subscriptionID]
 	if !exists {
+		f.lock.Unlock()
 		return fmt.Errorf("%w: %v", bxgateway.ErrSubscriptionNotFound, subscriptionID)
 	}
+	delete(f.idToClientSubscription, subscriptionID)
+	f.lock.Unlock()
 
 	f.log.WithFields(log.Fields{
 		"account_id":     clientSub.AccountID,
@@ -211,7 +213,6 @@ func (f *Manager) Unsubscribe(subscriptionID string, closeClientConnection bool,
 		clientSub.AccountID,
 		sdnmessage.AccountTier(clientSub.Tier))
 	close(clientSub.feed)
-	delete(f.idToClientSubscription, subscriptionID)
 	if closeClientConnection && clientSub.connection != nil {
 		// TODO: need to unsubscribe all other subscriptions on this connection.
 		err := clientSub.connection.Close()

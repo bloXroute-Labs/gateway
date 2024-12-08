@@ -104,7 +104,10 @@ const EmptyProtocol = 0
 const MinProtocol = NextValidatorMultipleProtocol
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
-const CurrentProtocol = BundlesUpdatedProtocol
+const CurrentProtocol = BundleBlocksCountAndDroppingTxs
+
+// BundleBlocksCountAndDroppingTxs is the minimum protocol version that supports bundle blocks count and  dropping txs
+const BundleBlocksCountAndDroppingTxs = 52
 
 // BundlesUpdatedProtocol is the minimum protocol version that stops supporting legacy bundle messages
 const BundlesUpdatedProtocol = 51

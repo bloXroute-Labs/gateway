@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
@@ -178,7 +180,7 @@ func TestDirectRelayConnections_IfPingOver40MSLogsWarning(t *testing.T) {
 
 			autoRelayInstructions := make(chan RelayInstruction)
 			go func() { <-autoRelayInstructions }()
-			err := sdn.DirectRelayConnections("auto", 1, autoRelayInstructions)
+			err := sdn.DirectRelayConnections("auto", 1, autoRelayInstructions, syncmap.NewStringMapOf[types.RelayInfo]())
 			assert.NoError(t, err)
 			time.Sleep(time.Millisecond)
 
@@ -237,10 +239,61 @@ func TestDirectRelayConnections_IncorrectArgs(t *testing.T) {
 
 	for _, testCase := range testTable {
 		t.Run(fmt.Sprint(testCase.name), func(t *testing.T) {
-			err := s.DirectRelayConnections(testCase.relaysString, 2, make(chan RelayInstruction))
+			err := s.DirectRelayConnections(testCase.relaysString, 2, make(chan RelayInstruction), syncmap.NewStringMapOf[types.RelayInfo]())
 			assert.Equal(t, testCase.expectedError, err)
 		})
 	}
+}
+
+func TestSDNHTTP_GetAutoConnectedRelays(t *testing.T) {
+	ignoredRelays := syncmap.NewStringMapOf[types.RelayInfo]()
+	// static and connected should not return as auto relay
+	ignoredRelays.Store("1", types.RelayInfo{IsConnected: true, IsStatic: true})
+	ignoredRelays.Store("2", types.RelayInfo{IsConnected: true})
+	ignoredRelays.Store("3", types.RelayInfo{IsConnected: false})
+	ignoredRelays.Store("4", types.RelayInfo{IsConnected: true})
+	s := testSDNHTTP()
+	autoConnectedRelays := s.getAutoConnectedRelays(ignoredRelays)
+	assert.Len(t, autoConnectedRelays, 2)
+	assert.True(t, autoConnectedRelays["2"].IsConnected)
+	assert.True(t, autoConnectedRelays["4"].IsConnected)
+}
+
+func TestFindFastestAvailableRelays(t *testing.T) {
+	s := testSDNHTTP()
+	// in real sdn code the list come sorted
+	latencies := []nodeLatencyInfo{{Latency: 3, IP: "4", Port: 1809}, {Latency: 8, IP: "3", Port: 1809}, {Latency: 10, IP: "5", Port: 1809}, {Latency: 15, IP: "1", Port: 1809}, {Latency: 26, IP: "2", Port: 1809}}
+	autoRelay := make(map[string]types.RelayInfo)
+	autoRelay["1"] = types.RelayInfo{IsConnected: true}
+	autoRelay["2"] = types.RelayInfo{IsConnected: true}
+	autoRelay["3"] = types.RelayInfo{IsConnected: true}
+	fastestAvailableRelays := s.findFastestAvailableRelays(latencies, autoRelay)
+	assert.Len(t, fastestAvailableRelays, 2)
+	assert.Equal(t, fastestAvailableRelays[0].IP, "4")
+	assert.Equal(t, fastestAvailableRelays[1].IP, "5")
+}
+
+func TestFindRelaysToSwitch(t *testing.T) {
+	s := testSDNHTTP()
+	autoRelay := make(map[string]types.RelayInfo)
+	autoRelay["1"] = types.RelayInfo{IsConnected: true, Latency: 15, Port: 1809}
+	autoRelay["2"] = types.RelayInfo{IsConnected: true, Latency: 26, Port: 1809}
+	autoRelay["3"] = types.RelayInfo{IsConnected: true, Latency: 8, Port: 1809}
+	fastestAvailableRelays := []nodeLatencyInfo{{Latency: 3, IP: "4", Port: 1809}, {Latency: 10, IP: "5", Port: 1809}}
+	relaysToSwitch := s.findRelaysToSwitch(autoRelay, fastestAvailableRelays)
+	// relays 1 and 2 can be switched (relay 4 is fastest and not connected) but 3 is not more with 10 ms
+	assert.Len(t, relaysToSwitch, 2)
+	// relay 1 have only relay 4 that faster more than 10 ms
+	key1 := relayToSwitch{ip: "1", port: 1809}
+	assert.Contains(t, relaysToSwitch, key1)
+	assert.Equal(t, relaysToSwitch[key1][0].IP, "4")
+
+	// relay 2 have both relays that faster more them 10 ms
+	key2 := relayToSwitch{ip: "2", port: 1809}
+	assert.Contains(t, relaysToSwitch, key2)
+	assert.Equal(t, relaysToSwitch[key2][0].IP, "4")
+	assert.Equal(t, relaysToSwitch[key2][1].IP, "5")
+
 }
 
 func TestDirectRelayConnections_RelayLimit2(t *testing.T) {
@@ -360,7 +413,7 @@ func TestDirectRelayConnections_RelayLimit2(t *testing.T) {
 			expectedRelayCount := len(testCase.expectedRelays)
 			relayInstructions := make(chan RelayInstruction, expectedRelayCount)
 
-			err := sdn.DirectRelayConnections(testCase.relaysString, 2, relayInstructions)
+			err := sdn.DirectRelayConnections(testCase.relaysString, 2, relayInstructions, syncmap.NewStringMapOf[types.RelayInfo]())
 			assert.Equal(t, testCase.expectedError, err)
 
 			timer := time.NewTimer(1 * time.Second)
@@ -486,7 +539,7 @@ func TestDirectRelayConnections_RelayLimit1(t *testing.T) {
 			expectedRelayCount := len(testCase.expectedRelays)
 			relayInstructions := make(chan RelayInstruction, expectedRelayCount)
 
-			err := sdn.DirectRelayConnections(testCase.relaysString, 1, relayInstructions)
+			err := sdn.DirectRelayConnections(testCase.relaysString, 1, relayInstructions, syncmap.NewStringMapOf[types.RelayInfo]())
 			assert.Equal(t, testCase.expectedError, err)
 
 			for i := 0; i < expectedRelayCount; i++ {
@@ -629,7 +682,7 @@ func TestDirectRelayConnections_UpdateAutoRelays(t *testing.T) {
 				}
 			}()
 
-			err := s.DirectRelayConnections(testCase.relaysArgument, 2, relayInstructions)
+			err := s.DirectRelayConnections(testCase.relaysArgument, 2, relayInstructions, syncmap.NewStringMapOf[types.RelayInfo]())
 			require.Nil(t, err)
 			time.Sleep(time.Millisecond * 2)
 
@@ -694,7 +747,7 @@ func TestDirectRelayConnections_UpdateAutoRelaysTwice(t *testing.T) {
 				}
 			}()
 
-			err := s.DirectRelayConnections(testCase.relaysArgument, 2, relayInstructions)
+			err := s.DirectRelayConnections(testCase.relaysArgument, 2, relayInstructions, syncmap.NewStringMapOf[types.RelayInfo]())
 			require.Nil(t, err)
 			time.Sleep(time.Millisecond * 2)
 

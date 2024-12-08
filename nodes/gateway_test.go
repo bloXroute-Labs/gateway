@@ -682,6 +682,15 @@ func TestGateway_HandleTransactionFromRelay(t *testing.T) {
 	}
 }
 
+func TestGateway_DisconnectFromRelay(t *testing.T) {
+	_, g := setup(t, 1)
+	_, relayConn1 := addRelayConn(g)
+	assert.Equal(t, g.Connections[0].GetPeerIP(), relayConn1.GetPeerIP())
+	err := g.disconnectRelay(relayConn1.GetPeerIP())
+	assert.NoError(t, err)
+	assert.Equal(t, len(g.Connections), 0)
+}
+
 func TestGateway_ReprocessTransactionFromRelay(t *testing.T) {
 	bridge, g := setup(t, 1)
 	_, relayConn1 := addRelayConn(g)

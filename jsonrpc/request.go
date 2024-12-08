@@ -134,6 +134,8 @@ type RPCBundleSubmissionPayload struct {
 	OriginalSenderAccountID string            `json:"original_sender_account_id"`
 	PriorityFeeRefund       bool              `json:"priority_fee_refund"`
 	IncomingRefundRecipient string            `json:"refund_recipient,omitempty"`
+	BlocksCount             int               `json:"blocks_count,omitempty"`
+	DroppingTxHashes        []string          `json:"dropping_tx_hashes,omitempty"`
 }
 
 // Validate doing validation for blxr_submit_bundle payload
@@ -171,6 +173,10 @@ func (p RPCBundleSubmissionPayload) Validate() error {
 		}
 	}
 
+	if len(p.DroppingTxHashes) > len(p.Transaction) {
+		return fmt.Errorf("dropping txs have too many hashes, %v", p.DroppingTxHashes)
+	}
+
 	return nil
 }
 
@@ -186,6 +192,8 @@ type RPCSendBundle struct {
 	RefundRecipient   string   `json:"refundRecipient,omitempty"`
 	Boost             bool     `json:"boost"` // 'beaverbuild' builder specific
 	AccountID         string   `json:"accountId,omitempty"`
+	BlocksCount       int      `json:"blocksCount,omitempty"`
+	DroppingTxHashes  []string `json:"droppingTxHashes,omitempty"`
 }
 
 // RPCCancelBundlePayload custom json-rpc required to cancel flashbots bundle

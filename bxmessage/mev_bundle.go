@@ -69,6 +69,10 @@ type MEVBundle struct {
 
 	// From protocol version 48
 	IncomingRefundRecipient string `json:"refund_recipient"`
+
+	// From protocol version 52
+	BlocksCount      int      `json:"blocks_count,omitempty"`
+	DroppingTxHashes []string `json:"dropping_tx_hashes,omitempty"`
 }
 
 // NewMEVBundle creates a new MEVBundle
@@ -84,6 +88,8 @@ func NewMEVBundle(
 	avoidMixedBundles bool,
 	priorityFeeRefund bool,
 	incomingRefundRecipient string,
+	blocksCount int,
+	droppingTxHashes []string,
 ) (MEVBundle, error) {
 	if len(uuid) != 0 && len(uuid) != 36 {
 		return MEVBundle{}, errors.New("invalid uuid len")
@@ -100,13 +106,15 @@ func NewMEVBundle(
 		AvoidMixedBundles:       avoidMixedBundles,
 		PriorityFeeRefund:       priorityFeeRefund,
 		IncomingRefundRecipient: incomingRefundRecipient,
+		BlocksCount:             blocksCount,
+		DroppingTxHashes:        droppingTxHashes,
 	}, nil
 }
 
 // String returns a string representation of the MEVBundle
 func (m MEVBundle) String() string {
-	return fmt.Sprintf("mev bundle(sender account ID: %s, hash: %s, blockNumber: %s, builders: %v, txs: %d, sent from cloud api: %v, tier: %v, allowMixedBundles: %v, priorityFeeRefund: %v, incomingRefundRecipient: %v, UUID: %s, MinTimestamp %v , MaxTimestamp %v, RevertingHashes %v)",
-		m.OriginalSenderAccountID, m.BundleHash, m.BlockNumber, m.MEVBuilders, len(m.Transactions), m.SentFromCloudAPI, m.OriginalSenderAccountTier, m.AvoidMixedBundles, m.PriorityFeeRefund, m.IncomingRefundRecipient, m.UUID, m.MinTimestamp, m.MaxTimestamp, len(m.RevertingHashes))
+	return fmt.Sprintf("mev bundle(sender account ID: %s, hash: %s, blockNumber: %s, builders: %v, txs: %d, sent from cloud api: %v, tier: %v, allowMixedBundles: %v, priorityFeeRefund: %v, incomingRefundRecipient: %v, UUID: %s, MinTimestamp %v , MaxTimestamp %v, RevertingHashes %v, blocksCount %v, dropingTxs %v)",
+		m.OriginalSenderAccountID, m.BundleHash, m.BlockNumber, m.MEVBuilders, len(m.Transactions), m.SentFromCloudAPI, m.OriginalSenderAccountTier, m.AvoidMixedBundles, m.PriorityFeeRefund, m.IncomingRefundRecipient, m.UUID, m.MinTimestamp, m.MaxTimestamp, len(m.RevertingHashes), m.BlocksCount, len(m.DroppingTxHashes))
 }
 
 // SetHash sets the hash based on the fields in BundleSubmission
@@ -145,6 +153,14 @@ func (m *MEVBundle) SetHash() {
 	for _, name := range builders {
 		auth := m.MEVBuilders[name]
 		buf = append(buf, []byte(name+auth)...)
+	}
+
+	blocksCount := make([]byte, 4)
+	binary.BigEndian.PutUint32(blocksCount, uint32(m.BlocksCount))
+	buf = append(buf, blocksCount...)
+
+	for _, hash := range m.DroppingTxHashes {
+		buf = append(buf, []byte(hash)...)
 	}
 
 	m.hash = utils.DoubleSHA256(buf[:])
@@ -220,6 +236,12 @@ func (m MEVBundle) size(protocol Protocol, txs [][]byte) uint32 {
 		size += common.AddressLength // IncomingRefundRecipient (address)
 	}
 
+	if protocol >= BundleBlocksCountAndDroppingTxs {
+		size += types.UInt32Len                                       // BlocksCount
+		size += types.UInt16Len                                       // DroppingTxHashes count
+		size += uint32(types.SHA256HashLen * len(m.DroppingTxHashes)) // DroppingTxHashes
+	}
+
 	return size
 }
 
@@ -244,7 +266,7 @@ func (m MEVBundle) Pack(protocol Protocol) ([]byte, error) {
 		return nil, err
 	}
 
-	decodedRevertingHashes, err := m.decodeRevertingHashes()
+	decodedRevertingHashes, err := m.decodeHashes(m.RevertingHashes)
 	if err != nil {
 		return nil, err
 	}
@@ -412,6 +434,22 @@ func (m MEVBundle) Pack(protocol Protocol) ([]byte, error) {
 			copy(buf[offset:], address.Bytes())
 		}
 		offset += common.AddressLength //nolint:ineffassign
+	}
+
+	if protocol >= BundleBlocksCountAndDroppingTxs {
+		binary.LittleEndian.PutUint32(buf[offset:], uint32(m.BlocksCount))
+		offset += types.UInt32Len
+
+		decodedDroppingTxs, err := m.decodeHashes(m.DroppingTxHashes)
+		if err != nil {
+			return nil, err
+		}
+		binary.LittleEndian.PutUint16(buf[offset:], uint16(len(decodedDroppingTxs)))
+		offset += types.UInt16Len
+		for _, tx := range decodedDroppingTxs {
+			copy(buf[offset:], tx)
+			offset += types.SHA256HashLen
+		}
 	}
 
 	if err := checkBuffEnd(&buf, offset); err != nil {
@@ -679,6 +717,31 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 		offset += common.AddressLength //nolint:ineffassign
 	}
 
+	if protocol >= BundleBlocksCountAndDroppingTxs {
+		if err = checkBufSize(&data, offset, types.UInt32Len); err != nil {
+			return err
+		}
+		m.BlocksCount = int(binary.LittleEndian.Uint32(data[offset : offset+4]))
+		offset += types.UInt32Len
+
+		if err = checkBufSize(&data, offset, types.UInt16Len); err != nil {
+			return err
+		}
+		numOfDroppedTxs := int(binary.LittleEndian.Uint16(data[offset:]))
+		offset += types.UInt16Len
+		m.DroppingTxHashes = make([]string, numOfDroppedTxs)
+		for i := 0; i < numOfDroppedTxs; i++ {
+			if err = checkBufSize(&data, offset, types.SHA256HashLen); err != nil {
+				return err
+			}
+			decodedHash := data[offset : offset+types.SHA256HashLen]
+			offset += types.SHA256HashLen
+			m.DroppingTxHashes[i] = "0x" + hex.EncodeToString(decodedHash)
+		}
+	} else {
+		m.DroppingTxHashes = []string{}
+	}
+
 	return nil
 }
 
@@ -705,18 +768,18 @@ func (m *MEVBundle) decodeTransactions() ([][]byte, error) {
 	return decoded, nil
 }
 
-func (m *MEVBundle) decodeRevertingHashes() ([][]byte, error) {
-	decoded := make([][]byte, 0, len(m.RevertingHashes))
+func (m *MEVBundle) decodeHashes(txs []string) ([][]byte, error) {
+	decoded := make([][]byte, 0, len(txs))
 
-	for _, hash := range m.RevertingHashes {
+	for _, hash := range txs {
 		// Remove the "0x" prefix and decode the hex string
 		decodedHash, err := hex.DecodeString(strings.TrimPrefix(hash, "0x"))
 		if err != nil {
-			return nil, fmt.Errorf("decode reverting hash hex %v for bundle %v: %s", hash, m.BundleHash, err)
+			return nil, fmt.Errorf("decode hash hex %v for bundle %v: %s", hash, m.BundleHash, err)
 		}
 
 		if ln := len(decodedHash); ln != types.SHA256HashLen {
-			return nil, fmt.Errorf("illegal reverting hash size %v for bundle %v: expected size: %dbytes, got %dbytes", hash, m.BundleHash, types.SHA256HashLen, ln)
+			return nil, fmt.Errorf("illegal hash size %v for bundle %v: expected size: %dbytes, got %dbytes", hash, m.BundleHash, types.SHA256HashLen, ln)
 		}
 
 		decoded = append(decoded, decodedHash)
