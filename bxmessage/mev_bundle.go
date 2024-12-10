@@ -813,5 +813,8 @@ func (m *MEVBundle) Clone() *MEVBundle {
 		SentFromCloudAPI:          m.SentFromCloudAPI,
 		AvoidMixedBundles:         m.AvoidMixedBundles,
 		PriorityFeeRefund:         m.PriorityFeeRefund,
+		IncomingRefundRecipient:   m.IncomingRefundRecipient,
+		BlocksCount:               m.BlocksCount,
+		DroppingTxHashes:          m.DroppingTxHashes,
 	}
 }

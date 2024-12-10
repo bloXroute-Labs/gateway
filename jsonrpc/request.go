@@ -135,7 +135,7 @@ type RPCBundleSubmissionPayload struct {
 	PriorityFeeRefund       bool              `json:"priority_fee_refund"`
 	IncomingRefundRecipient string            `json:"refund_recipient,omitempty"`
 	BlocksCount             int               `json:"blocks_count,omitempty"`
-	DroppingTxHashes        []string          `json:"dropping_tx_hashes,omitempty"`
+	DroppingHashes          []string          `json:"dropping_hashes,omitempty"`
 }
 
 // Validate doing validation for blxr_submit_bundle payload
@@ -173,8 +173,8 @@ func (p RPCBundleSubmissionPayload) Validate() error {
 		}
 	}
 
-	if len(p.DroppingTxHashes) > len(p.Transaction) {
-		return fmt.Errorf("dropping txs have too many hashes, %v", p.DroppingTxHashes)
+	if len(p.DroppingHashes) > len(p.Transaction) {
+		return fmt.Errorf("dropping txs have too many hashes, %v", p.DroppingHashes)
 	}
 
 	return nil
