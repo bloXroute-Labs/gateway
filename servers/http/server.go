@@ -106,13 +106,16 @@ func (s *Server) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		payload := jsonrpc.RPCBundleSubmissionPayload{
-			Transaction:       bundlePayload[0].Txs,
-			BlockNumber:       bundlePayload[0].BlockNumber,
-			MinTimestamp:      bundlePayload[0].MinTimestamp,
-			MaxTimestamp:      bundlePayload[0].MaxTimestamp,
-			RevertingHashes:   bundlePayload[0].RevertingTxHashes,
-			UUID:              bundlePayload[0].UUID,
-			AvoidMixedBundles: bundlePayload[0].AvoidMixedBundles,
+			Transaction:             bundlePayload[0].Txs,
+			BlockNumber:             bundlePayload[0].BlockNumber,
+			MinTimestamp:            bundlePayload[0].MinTimestamp,
+			MaxTimestamp:            bundlePayload[0].MaxTimestamp,
+			RevertingHashes:         bundlePayload[0].RevertingTxHashes,
+			UUID:                    bundlePayload[0].UUID,
+			AvoidMixedBundles:       bundlePayload[0].AvoidMixedBundles,
+			IncomingRefundRecipient: bundlePayload[0].RefundRecipient,
+			BlocksCount:             bundlePayload[0].BlocksCount,
+			DroppingHashes:          bundlePayload[0].DroppingTxHashes,
 		}
 
 		s.handleRPCBundleSubmission(w, r, rpcRequest, payload)

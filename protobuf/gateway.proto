@@ -110,7 +110,7 @@ message BlxrSubmitBundleRequest {
   bool priority_fee_refund = 11;
   string refund_recipient = 12;
   int64 blocks_count = 13;
-  repeated string dropping_tx_hashes = 14;
+  repeated string dropping_hashes = 14;
 }
 
 message BlxrSubmitBundleReply {
