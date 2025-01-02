@@ -13,7 +13,6 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	ethtest "github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
@@ -127,13 +126,6 @@ func testGRPCServer(t *testing.T, port int, user string, password string) (*Serv
 
 	bx := mock.NewMockConnector(ctl)
 
-	assigner := services.NewEmptyShortIDAssigner()
-	txStore := services.NewEthTxStore(utils.RealClock{}, 30*time.Minute, 10*time.Minute,
-		assigner, services.NewHashHistory("seenTxs", 30*time.Minute), nil,
-		*sdn.Networks(), services.NoOpBloomFilter{}, services.NewBlobCompressorStorage(), false)
-
-	blockProposer := bsc.NewNoopBlockProposer(txStore, log.WithField("service", "noop-block-proposer"))
-
 	feedMngr := feed.NewManager(sdn, services.NewNoOpSubscriptionServices(),
 		accountIDToAccountModel["gw"], stats, types.NetworkNum(5), true)
 
@@ -153,7 +145,6 @@ func testGRPCServer(t *testing.T, port int, user string, password string) (*Serv
 		"",
 		bx,
 		nil,
-		blockProposer,
 		services.NewIntentsManager(),
 		feedMngr,
 		nil,

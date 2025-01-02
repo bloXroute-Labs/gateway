@@ -353,6 +353,7 @@ func (f *Manager) run(ctx context.Context) {
 			f.log.Infof("feedManager stopped for network %v", f.networkNum)
 			return
 		case <-dailyTicker.C:
+			timeNow := time.Now()
 			// checks every 24 hours for all existing user subscription, if account expired close the subscription.
 			if firstDailyCheckTriggered {
 				firstDailyCheckTriggered = false
@@ -361,8 +362,14 @@ func (f *Manager) run(ctx context.Context) {
 
 			subToRemove := make([]string, 0, len(f.idToClientSubscription))
 
-			f.lock.Lock()
-			for subID, sub := range f.idToClientSubscription {
+			f.lock.RLock()
+			copySubscriptionsMap := make(map[string]ClientSubscription, len(f.idToClientSubscription))
+			for key, value := range f.idToClientSubscription {
+				copySubscriptionsMap[key] = value
+			}
+			f.lock.RUnlock()
+
+			for subID, sub := range copySubscriptionsMap {
 				accountModel, err := f.sdn.FetchCustomerAccountModel(sub.AccountID)
 				if err != nil {
 					log.Debugf("can't get account model for %v, while account has active feed subscription (%v), feed type: %v with %v since %s", sub.AccountID, subID, sub.feedType, sub.feedConnectionType, sub.timeOpenedFeed)
@@ -381,7 +388,6 @@ func (f *Manager) run(ctx context.Context) {
 					subToRemove = append(subToRemove, subID)
 				}
 			}
-			f.lock.Unlock()
 
 			for _, sid := range subToRemove {
 				err := f.Unsubscribe(sid, true, accountExpiredError)
@@ -389,6 +395,7 @@ func (f *Manager) run(ctx context.Context) {
 					log.Errorf("failed to remove feed subscription %v, %v", sid, err)
 				}
 			}
+			log.Tracef("midnight subscription cleanup took %v", time.Since(timeNow))
 		case errNotification, ok := <-f.errFeed:
 			if !ok {
 				f.log.Errorf("can't pull from ws error feed channel. Terminating")

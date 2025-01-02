@@ -19,7 +19,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc/blockproposer"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/config"
@@ -96,15 +95,6 @@ func main() {
 			utils.NoBlocks,
 			utils.NoStats,
 			utils.EnableBloomFilter,
-			utils.BlocksToCacheWhileProposing,
-			utils.BSCProposeBlocks,
-			utils.BSCRegularBlockSendDelayInitialMSFlag,
-			utils.BSCRegularBlockSendDelaySecondMSFlag,
-			utils.BSCRegularBlockSendDelayIntervalMSFlag,
-			utils.BSCHighLoadBlockSendDelayInitialMSFlag,
-			utils.BSCHighLoadBlockSendDelaySecondMSFlag,
-			utils.BSCHighLoadBlockSendDelayIntervalMSFlag,
-			utils.BSCHighLoadTxNumThresholdFlag,
 			utils.TxIncludeSenderInFeed,
 			utils.EnableIntroductoryIntentsAccess,
 			utils.BeaconTrustedPeersFileFlag,
@@ -272,18 +262,7 @@ func runGateway(c *cli.Context) error {
 		c.Int(utils.TransactionHoldDuration.Name),
 		c.Int(utils.TransactionPassedDueDuration.Name),
 		c.Bool(utils.EnableBloomFilter.Name),
-		c.Int64(utils.BlocksToCacheWhileProposing.Name),
 		c.Bool(utils.TxIncludeSenderInFeed.Name),
-		&blockproposer.SendingConfig{
-			Enabled:                        c.Bool(utils.BSCProposeBlocks.Name),
-			RegularBlockSendDelayInitial:   time.Duration(c.Int(utils.BSCRegularBlockSendDelayInitialMSFlag.Name)) * time.Millisecond,
-			RegularBlockSendDelaySecond:    time.Duration(c.Int(utils.BSCRegularBlockSendDelaySecondMSFlag.Name)) * time.Millisecond,
-			RegularBlockSendDelayInterval:  time.Duration(c.Int(utils.BSCRegularBlockSendDelayIntervalMSFlag.Name)) * time.Millisecond,
-			HighLoadBlockSendDelayInitial:  time.Duration(c.Int(utils.BSCHighLoadBlockSendDelayInitialMSFlag.Name)) * time.Millisecond,
-			HighLoadBlockSendDelaySecond:   time.Duration(c.Int(utils.BSCHighLoadBlockSendDelaySecondMSFlag.Name)) * time.Millisecond,
-			HighLoadBlockSendDelayInterval: time.Duration(c.Int(utils.BSCHighLoadBlockSendDelayIntervalMSFlag.Name)) * time.Millisecond,
-			HighLoadTxNumThreshold:         c.Int(utils.BSCHighLoadTxNumThresholdFlag.Name),
-		},
 	)
 	if err != nil {
 		return err

@@ -245,6 +245,7 @@ type Account struct {
 	PrivateRelay                        BDNPrivateRelayService `json:"private_relays"`
 	PrivateTransaction                  BDNQuotaService        `json:"private_transaction"`
 	PrivateTransactionFee               BDNQuotaService        `json:"private_transaction_fee"`
+	OnlineGateways                      BDNQuotaService        `json:"online_gateways"`
 	TxTraceRateLimit                    BDNQuotaService        `json:"tx_trace_rate_limitation"`
 	RelayLimit                          BDNQuotaService        `json:"relay_limit"`
 	MinAllowedNodes                     BDNQuotaService        `json:"min_allowed_nodes"`
@@ -396,6 +397,14 @@ func GetDefaultEliteAccount(now time.Time) Account {
 		},
 		PrivateRelay: nil,
 		PrivateTransaction: BDNQuotaService{
+			MsgQuota: BDNService{
+				TimeInterval: TimeIntervalDaily,
+				ServiceType:  BDNServiceMsgQuota,
+				Limit:        1,
+			},
+			ExpireDateTime: now.Add(time.Hour),
+		},
+		OnlineGateways: BDNQuotaService{
 			MsgQuota: BDNService{
 				TimeInterval: TimeIntervalDaily,
 				ServiceType:  BDNServiceMsgQuota,

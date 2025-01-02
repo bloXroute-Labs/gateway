@@ -45,6 +45,7 @@ const (
 	RPCEthCallBundle          RPCRequestType = "eth_callBundle"
 	RPCEthCancelBundle        RPCRequestType = "eth_cancelBundle"
 	RPCEthSendExclusiveBundle RPCRequestType = "eth_sendExclusiveBundle"
+	RPCEthSendSnipeBundle     RPCRequestType = "eth_sendSnipeBundle"
 )
 
 // RPCMethodToRPCRequestType maps gRPC methods to RPCRequestType
