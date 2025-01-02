@@ -416,59 +416,6 @@ var (
 		Value:  false,
 		Hidden: true,
 	}
-	BSCBundleMinAvgGasFee = &cli.IntFlag{
-		Name:  "bsc-bundle-min-avg-gas-fee",
-		Usage: "provide the minimum gwei gas fee needed for a BSC bundle",
-		Value: 3,
-	}
-
-	BSCProposeBlocks = &cli.BoolFlag{
-		Name:  "bsc-propose-blocks",
-		Usage: "enable block proposing for BSC",
-		Value: false,
-	}
-	BSCRegularBlockSendDelayInitialMSFlag = &cli.IntFlag{
-		Name: "bsc-regular-block-send-delay-initial-ms",
-		Usage: "How long the builder waits each block before sending initial ProposedBlocks to validators " +
-			"(in milliseconds) under regular load",
-		Value: DefaultRegularBlockSendDelayInitialMS,
-	}
-	BSCRegularBlockSendDelaySecondMSFlag = &cli.IntFlag{
-		Name: "bsc-regular-block-send-delay-second-ms",
-		Usage: "How long the builder waits each block before sending second block to validators " +
-			"(in milliseconds) under regular load",
-		Value: DefaultRegularBlockSendDelaySecondMS,
-	}
-	BSCRegularBlockSendDelayIntervalMSFlag = &cli.IntFlag{
-		Name: "bsc-regular-block-send-delay-interval-ms",
-		Usage: "How long the builder waits each block before sending block after second one periodically to validators " +
-			"(in milliseconds) under regular load",
-		Value: DefaultRegularBlockSendDelayIntervalMS,
-	}
-	BSCHighLoadBlockSendDelayInitialMSFlag = &cli.IntFlag{
-		Name: "bsc-highload-block-send-delay-initial-ms",
-		Usage: "How long the builder waits each block before sending initial ProposedBlocks to validators " +
-			"(in milliseconds) under high load",
-		Value: DefaultHighLoadBlockSendDelayInitialMS,
-	}
-	BSCHighLoadBlockSendDelaySecondMSFlag = &cli.IntFlag{
-		Name: "bsc-highload-block-send-delay-second-ms",
-		Usage: "How long the builder waits each block before sending second block to validators " +
-			"(in milliseconds) under high load",
-		Value: DefaultHighLoadBlockSendDelaySecondMS,
-	}
-	BSCHighLoadBlockSendDelayIntervalMSFlag = &cli.IntFlag{
-		Name: "bsc-highload-block-send-delay-interval-ms",
-		Usage: "How long the builder waits each block before sending block after second one periodically to validators " +
-			"(in milliseconds) under high load",
-		Value: DefaultHighLoadBlockSendDelayIntervalMS,
-	}
-	BSCHighLoadTxNumThresholdFlag = &cli.IntFlag{
-		Name:  "bsc-highload-txnum-threshold",
-		Usage: "Number of txs included in the block that indicates there is a network high load",
-		Value: DefaultHighLoadTxNumThreshold,
-	}
-
 	DatabaseFlag = &cli.StringFlag{
 		Name:     "dbdsn",
 		Usage:    "Database DSN string <username:password@tcp(dns:port)/schema>",
@@ -477,12 +424,6 @@ var (
 	BloxrouteAccountsFlag = &cli.StringFlag{
 		Name:  "bloxroute-accounts",
 		Usage: "enable detailed bundle trace response for these accounts",
-	}
-	BlocksToCacheWhileProposing = &cli.Int64Flag{
-		Name:   "blocks-to-cache-while-proposing",
-		Usage:  "number of blocks to cache while proposing for statistics",
-		Hidden: true,
-		Value:  3,
 	}
 	TxIncludeSenderInFeed = &cli.BoolFlag{
 		Name:   "tx-include-sender-in-feed",
@@ -497,3 +438,4 @@ var (
 		Value:  false,
 	}
 )
+

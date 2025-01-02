@@ -13,7 +13,6 @@ import (
 
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
-	bxrpc "github.com/bloXroute-Labs/gateway/v2/rpc"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler"
 	"github.com/bloXroute-Labs/gateway/v2/types"
@@ -61,34 +60,6 @@ func (g *server) EthOnBlock(req *pb.EthOnBlockRequest, stream pb.Gateway_EthOnBl
 		return status.Error(codes.PermissionDenied, err.Error())
 	}
 	return g.ethOnBlock(req, stream, *accountModel)
-}
-
-// ProposedBlock proposes a block to the validator
-func (g *server) ProposedBlock(ctx context.Context, req *pb.ProposedBlockRequest) (*pb.ProposedBlockReply, error) {
-	authHeader, err := bxrpc.ReadAuthMetadata(ctx)
-	if err != nil {
-		return nil, status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	if _, err = g.validateAuthHeader(authHeader, false, false, getPeerAddr(ctx)); err != nil {
-		return nil, status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	return g.params.blockProposer.ProposedBlock(ctx, req)
-}
-
-// ProposedBlockStats method for getting block stats
-func (g *server) ProposedBlockStats(ctx context.Context, req *pb.ProposedBlockStatsRequest) (*pb.ProposedBlockStatsReply, error) {
-	authHeader, err := bxrpc.ReadAuthMetadata(ctx)
-	if err != nil {
-		return nil, status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	if _, err = g.validateAuthHeaderWithContext(ctx, authHeader, false, false); err != nil {
-		return nil, status.Error(codes.PermissionDenied, err.Error())
-	}
-
-	return g.params.blockProposer.ProposedBlockStats(ctx, req)
 }
 
 func (g *server) handleBlocks(req *pb.BlocksRequest, stream pb.Gateway_BdnBlocksServer, feedType types.FeedType, account sdnmessage.Account) error {

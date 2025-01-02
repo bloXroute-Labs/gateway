@@ -13,7 +13,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
@@ -44,26 +43,25 @@ type server struct {
 
 // grpcParams server params
 type grpcParams struct {
-	node                        connections.BxListener
-	sdn                         connections.SDNHTTP
-	accService                  account.Accounter
-	bridge                      blockchain.Bridge
-	blockchainPeers             []types.NodeEndpoint
-	wsManager                   blockchain.WSManager
-	bdnStats                    *bxmessage.BdnPerformanceStats
-	timeStarted                 time.Time
-	txsQueue                    *services.MessageQueue
-	txsOrderQueue               *services.MessageQueue
-	gatewayPublicKey            string
-	connector                   Connector
-	validatorsManager           *validator.Manager
-	txFromFieldIncludable       bool
-	blockProposer               bsc.BlockProposer
-	allowIntroductoryTierAccess bool
-	intentsManager              services.IntentsManager
-	feedManager                 feedManager
-	txStore                     services.TxStore
-	chainID                     types.NetworkID
+	node                           connections.BxListener
+	sdn                            connections.SDNHTTP
+	accService                     account.Accounter
+	bridge                         blockchain.Bridge
+	blockchainPeers                []types.NodeEndpoint
+	wsManager                      blockchain.WSManager
+	bdnStats                       *bxmessage.BdnPerformanceStats
+	timeStarted                    time.Time
+	txsQueue                       *services.MessageQueue
+	txsOrderQueue                  *services.MessageQueue
+	gatewayPublicKey               string
+	connector                      Connector
+	validatorsManager              *validator.Manager
+	txFromFieldIncludable          bool
+	allowIntroductoryTierAccess    bool
+	intentsManager                 services.IntentsManager
+	feedManager                    feedManager
+	txStore                        services.TxStore
+	chainID                        types.NetworkID
 }
 
 // newServer return new server object
@@ -302,7 +300,7 @@ func (g *server) ShortIDs(ctx context.Context, req *pb.ShortIDsRequest) (*pb.Sho
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
 
-	return g.params.blockProposer.ShortIDs(ctx, req)
+	return g.shortIDs(req)
 }
 
 func (g *server) validateAuthHeader(authHeader string, isRequiredForExternalGateway, allowAccessByOtherAccounts bool, ip string) (*sdnmessage.Account, error) {

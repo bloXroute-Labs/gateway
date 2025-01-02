@@ -2,8 +2,10 @@ package grpc
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/zhouzhuojie/conditions"
@@ -178,6 +180,24 @@ func (g *server) TxsFromShortIDs(ctx context.Context, req *pb.ShortIDListRequest
 	return &pb.TxListReply{
 		Txs: txList,
 	}, nil
+}
+
+func (g *server) shortIDs(req *pb.ShortIDsRequest) (*pb.ShortIDsReply, error) {
+	result := pb.ShortIDsReply{ShortIds: make([]uint32, len(req.GetTxHashes()))}
+
+	for i, hash := range req.GetTxHashes() {
+		txHash, err := types.NewSHA256Hash(hash)
+		if err != nil {
+			log.Errorf("failed to create SHA256 hash for input %v, position %v, err %v"+hex.EncodeToString(hash), strconv.FormatInt(int64(i), 10)+err.Error())
+			continue
+		}
+
+		tx, exist := g.params.txStore.Get(txHash)
+		if exist && len(tx.ShortIDs()) > 0 {
+			result.ShortIds[i] = uint32(tx.ShortIDs()[0])
+		}
+	}
+	return &result, nil
 }
 
 func (g *server) txReceipts(req *pb.TxReceiptsRequest, stream pb.Gateway_TxReceiptsServer, account sdnmessage.Account) error {

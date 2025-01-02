@@ -117,9 +117,7 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 		0,
 		0,
 		false,
-		0,
 		false,
-		nil,
 	)
 
 	g := node.(*gateway)
@@ -1168,7 +1166,7 @@ func TestGateway_TestNoTxReceiptsWithoutSubscription(t *testing.T) {
 	}
 
 	// TxReceipts and OnBlock runs in goroutine
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(3 * time.Second)
 
 	// It is neccessary to have FailNow to not wait until timeout when something goes wrong
 	for len(expectedNotifications) > 0 {
@@ -1193,7 +1191,7 @@ func TestGateway_Status(t *testing.T) {
 	g.clientHandler = servers.NewClientHandler(&g.Bx, g.BxConfig, g, g.sdn, accService, g.bridge,
 		g.blockchainPeers, services.NewNoOpSubscriptionServices(), g.wsManager, g.bdnStats,
 		g.timeStarted, g.txsQueue, g.txsOrderQueue, g.gatewayPublicKey, g.feedManager, g.validatorsManager,
-		g.intentsManager, g.stats, g.blockProposer, g.TxStore,
+		g.intentsManager, g.stats, g.TxStore,
 		false, "", "",
 	)
 
@@ -1295,6 +1293,7 @@ func TestGateway_ConnectionStatus(t *testing.T) {
 	wg.Wait()
 	require.True(t, g.bdnStats.NodeStats()["123.45.6.78 1234"].IsConnected)
 }
+
 
 func createPeerData(timeNodeConnected string) ([]*types.NodeEndpoint, map[string]*bxmessage.BdnPerformanceStatsData) {
 	endpoints := []*types.NodeEndpoint{

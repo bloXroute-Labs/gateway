@@ -33,10 +33,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc"
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc/blockproposer"
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc/caller/rpc"
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc/ticker"
 	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
@@ -117,8 +113,6 @@ type gateway struct {
 
 	mevBundleDispatcher *bundle.Dispatcher
 
-	blockProposer bsc.BlockProposer
-
 	bscTxClient      *http.Client
 	gatewayPeers     string
 	gatewayPublicKey string
@@ -152,6 +146,7 @@ type gateway struct {
 	blobsManager   *beacon.BlobSidecarCacheManager
 	ignoredRelays  *syncmap.SyncMap[string, types.RelayInfo]
 	relaysToSwitch *syncmap.SyncMap[string, bool]
+
 }
 
 // GeneratePeers generate string peers separated by comma
@@ -189,9 +184,7 @@ func NewGateway(parent context.Context,
 	transactionSlotStartDuration int,
 	transactionSlotEndDuration int,
 	enableBloomFilter bool,
-	blocksToCacheWhileProposing int64,
 	txIncludeSenderInFeed bool,
-	blockProposerSendingConfig *blockproposer.SendingConfig,
 ) (Node, error) {
 	clock := utils.RealClock{}
 	blockTime, _ := bxgateway.NetworkToBlockDuration[bxConfig.BlockchainNetwork]
@@ -232,7 +225,6 @@ func NewGateway(parent context.Context,
 	}
 	g.chainID = int64(bxgateway.NetworkNumToChainID[sdn.NetworkNum()])
 
-	g.blockProposer = bsc.NewNoopBlockProposer(g.TxStore, log.WithField("service", "noop-block-proposer"))
 
 	if polygonHeimdallEndpoints != "" {
 		g.polygonValidatorInfoManager = bor.NewSprintManager(parent, &g.wsManager, bor.NewHeimdallSpanner(parent, polygonHeimdallEndpoints))
@@ -255,56 +247,6 @@ func NewGateway(parent context.Context,
 				IdleConnTimeout:     0 * time.Second,
 			},
 			Timeout: 60 * time.Second,
-		}
-
-		if err := func() error {
-			if !blockProposerSendingConfig.Enabled {
-				return nil
-			}
-
-			blockProposerLog := log.WithField("service", "bsc-block-proposer")
-			blockProposerSendingConfig.Validate(blockProposerLog)
-
-			regularBlockProposerTicker, err := ticker.New(&ticker.Args{
-				Clock: g.clock,
-				Delays: []time.Duration{
-					blockProposerSendingConfig.RegularBlockSendDelayInitial,
-					blockProposerSendingConfig.RegularBlockSendDelaySecond,
-				},
-				Interval: blockProposerSendingConfig.RegularBlockSendDelayInterval,
-				Log:      blockProposerLog.WithField("ticker", "regular"),
-			})
-			if err != nil {
-				return err
-			}
-
-			highLoadBlockProposerTicker, err := ticker.New(&ticker.Args{
-				Clock: g.clock,
-				Delays: []time.Duration{
-					blockProposerSendingConfig.HighLoadBlockSendDelayInitial,
-					blockProposerSendingConfig.HighLoadBlockSendDelaySecond,
-				},
-				Interval: blockProposerSendingConfig.HighLoadBlockSendDelayInterval,
-				Log:      blockProposerLog.WithField("ticker", "high-load"),
-			})
-			if err != nil {
-				return err
-			}
-
-			g.blockProposer = blockproposer.New(&blockproposer.Config{
-				Clock:          g.clock,
-				TxStore:        g.TxStore,
-				Log:            blockProposerLog,
-				CallerManager:  rpc.NewManager(), /* TODO: (mk) ensure that caller manager has keep-alive */
-				SendingInfo:    blockProposerSendingConfig,
-				RegularTicker:  regularBlockProposerTicker,
-				HighLoadTicker: highLoadBlockProposerTicker,
-				BlocksToCache:  blocksToCacheWhileProposing,
-			})
-
-			return nil
-		}(); err != nil {
-			return nil, err
 		}
 	}
 
@@ -553,7 +495,7 @@ func (g *gateway) Run() error {
 	g.clientHandler = servers.NewClientHandler(&g.Bx, g.BxConfig, g, g.sdn, accService, g.bridge,
 		g.blockchainPeers, services.NewNoOpSubscriptionServices(), g.wsManager, g.bdnStats,
 		g.timeStarted, g.txsQueue, g.txsOrderQueue, g.gatewayPublicKey, g.feedManager, g.validatorsManager,
-		g.intentsManager, g.stats, g.blockProposer, g.TxStore,
+		g.intentsManager, g.stats, g.TxStore,
 		txFromFieldIncludable, sslCert.PrivateCertFile(), sslCert.PrivateKeyFile(),
 	)
 
@@ -595,10 +537,6 @@ func (g *gateway) Run() error {
 				g.log.Warnf("failed to start polygonValidatorInfoManager: %v", retryErr)
 			}
 		}()
-	}
-
-	if err = g.blockProposer.Run(ctx); err != nil {
-		g.log.Warnf("failed to start blockProposer: %v", err)
 	}
 
 	return group.Wait()
@@ -2048,7 +1986,6 @@ func (g *gateway) handleBlockFromBlockchain(blockchainBlock blockchain.BlockFrom
 		log.Errorf("failed to convert bx block %v to block info: %v", bxBlock, err)
 	}
 
-	g.onBlock(blockInfo)
 	source := connections.NewBlockchainConn(blockchainBlock.PeerEndpoint)
 
 	if blockInfo != nil {
@@ -2116,8 +2053,6 @@ func (g *gateway) processBlockFromBDN(bxBlock *types.BxBlock) {
 		g.log.Errorf("failed to convert bx block %v to block info: %v", bxBlock, err)
 	}
 
-	g.onBlock(blockInfo)
-
 	if err = g.bridge.SendBlockToNode(bxBlock); err != nil {
 		g.log.Errorf("unable to send block %v from BDN to node: %v", bxBlock, err)
 	}
@@ -2181,6 +2116,7 @@ func (g *gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source c
 	g.stats.AddGatewayBundleEvent(event, source, start, mevBundle.BundleHash, mevBundle.GetNetworkNum(), mevBundle.Names(), mevBundle.UUID, blockNumber, mevBundle.MinTimestamp, mevBundle.MaxTimestamp)
 }
 
+
 func (g *gateway) getHeaderFromGateway() string {
 	accountID := g.sdn.AccountModel().AccountID
 	secretHash := g.sdn.AccountModel().SecretHash
@@ -2205,17 +2141,6 @@ func (g *gateway) bxBlockToBlockInfo(bxBlock *types.BxBlock) (*eth.BlockInfo, er
 	}
 
 	return block, nil
-}
-
-func (g *gateway) onBlock(blockInfo *eth.BlockInfo) {
-	if blockInfo == nil {
-		return
-	}
-
-	if err := g.blockProposer.OnBlock(g.context, blockInfo.Block); err != nil {
-		g.log.Debugf("failed to process block: %v", err)
-		return
-	}
 }
 
 func (g *gateway) sendStats() {

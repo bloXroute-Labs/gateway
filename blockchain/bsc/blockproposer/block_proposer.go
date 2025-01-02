@@ -2,26 +2,27 @@ package blockproposer
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"math/big"
 	"strconv"
 	"sync"
 	"time"
 
+	"github.com/pkg/errors"
 	"go.uber.org/atomic"
+
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
-	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils/ctxutil"
@@ -48,8 +49,12 @@ const (
 )
 
 var (
-	errAlreadySent   = errors.New("block already sent")
-	errBlockNotFound = errors.New("block number not found")
+	errAlreadySent      = errors.New("block already sent")
+	errLowerBlockReward = errors.New("block reward is lower than the one is in memory")
+	errBlockNotFound    = errors.New("block number not found")
+
+	errLowerBlockNumber  = errors.New("proposed block number is too low")
+	errHigherBlockNumber = errors.New("proposed block number is too high")
 
 	errBlockNotSent         = errors.New("no block was sent")
 	errBlockReplacedWithNew = errors.New("block was replaced with higher reward")
@@ -270,9 +275,9 @@ func (b *BlockProposer) prepareProposedBlockReq(ctx context.Context, req *pb.Pro
 
 	switch {
 	case req.BlockNumber < blockNumberToProposeFor:
-		return nil, fmt.Errorf("proposed block number is too low: proposed %d, current %d", req.BlockNumber, blockNumberToProposeFor)
+		return nil, errors.WithMessage(errLowerBlockNumber, "proposed "+strconv.FormatUint(req.BlockNumber, 10)+", current "+strconv.FormatUint(blockNumberToProposeFor, 10))
 	case req.BlockNumber > blockNumberToProposeFor:
-		return nil, fmt.Errorf("proposed block number is too high: proposed %d, current %d", req.BlockNumber, blockNumberToProposeFor)
+		return nil, errors.WithMessage(errHigherBlockNumber, "proposed "+strconv.FormatUint(req.BlockNumber, 10)+", current "+strconv.FormatUint(blockNumberToProposeFor, 10))
 	}
 
 	blockReward, ok := new(big.Int).SetString(req.BlockReward, 10)
@@ -282,16 +287,16 @@ func (b *BlockProposer) prepareProposedBlockReq(ctx context.Context, req *pb.Pro
 
 	blockRewardPtr := b.blockReward.Load()
 	if blockReward.Cmp(blockRewardPtr) != 1 {
-		return nil, fmt.Errorf("blockReward (%s) is lower than the one is in memory (%s)", req.BlockReward, blockRewardPtr.String())
+		return nil, errors.WithMessage(errLowerBlockReward, "blockReward("+req.BlockReward+") is lower than the one is in memory("+blockRewardPtr.String()+")")
 	}
 
 	b.blockReward.Store(blockReward)
 
-	if b.cfg.TxStore == nil {
+	if b.cfg.TxStore == nil || *b.cfg.TxStore == nil {
 		return nil, errors.New("tx store is not initialized")
 	}
 
-	txStore := b.cfg.TxStore
+	txStore := *b.cfg.TxStore
 
 	unReverted := req.GetUnRevertedHashes()
 	unRevertedHashes := make([]common.Hash, len(unReverted))
@@ -336,7 +341,7 @@ func (b *BlockProposer) prepareProposedBlockReq(ctx context.Context, req *pb.Pro
 		}
 
 		if txStoreTx, err = txStore.GetTxByShortID(types.ShortID(proposedBlockTx.GetShortId()), false); err != nil {
-			return nil, fmt.Errorf("failed getting tx by shortID: %w", err)
+			return nil, errors.WithMessage(err, "failed decompressing tx")
 		}
 
 		blockchainTx := new(ethtypes.Transaction)
@@ -348,11 +353,11 @@ func (b *BlockProposer) prepareProposedBlockReq(ctx context.Context, req *pb.Pro
 		}
 
 		if blockchainTx, err = eth.TransactionBDNToBlockchain(txStoreTx); err != nil {
-			return nil, fmt.Errorf("failed to convert tx: %w", err)
+			return nil, errors.WithMessage(err, "failed converting tx")
 		}
 
 		if proposedBlockReq.args.Payload[i], err = blockchainTx.MarshalBinary(); err != nil {
-			return nil, fmt.Errorf("failed to serialize tx: %w", err)
+			return nil, errors.WithMessage(err, "failed serializing tx")
 		}
 	}
 
@@ -528,7 +533,7 @@ func (b *BlockProposer) ProposedBlockStats(ctx context.Context, req *pb.Proposed
 
 	records := b.blockMap.Get(rpc.BlockNumber(req.BlockNumber))
 	if records == nil {
-		err = fmt.Errorf("block number %d not found", req.BlockNumber)
+		err = errors.WithMessage(errBlockNotFound, "block number "+strconv.FormatUint(req.BlockNumber, 10))
 		return
 	}
 
@@ -556,7 +561,7 @@ func (b *BlockProposer) ProposedBlockStats(ctx context.Context, req *pb.Proposed
 	}
 
 	if len(replyRecords) == 0 {
-		err = fmt.Errorf("block number %d not found", req.BlockNumber)
+		err = errors.WithMessage(errBlockNotFound, "block number "+strconv.FormatUint(req.BlockNumber, 10))
 		return
 	}
 

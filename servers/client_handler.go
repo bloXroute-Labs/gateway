@@ -7,7 +7,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
@@ -58,7 +57,6 @@ func NewClientHandler(
 	validatorsManager *validator.Manager,
 	intentsManager services.IntentsManager,
 	stats statistics.Stats,
-	blockProposer bsc.BlockProposer,
 	txStore services.TxStore,
 	txFromFieldIncludable bool,
 	certFile,
@@ -77,8 +75,7 @@ func NewClientHandler(
 	if config.GRPC.Enabled {
 		gRPCServer = grpc.NewGRPCServer(config, stats, node, sdn, accService,
 			bridge, blockchainPeers, nodeWSManager, bdnStats, timeStarted,
-			txsQueue, txsOrderQueue, gatewayPublicKey, bx, validatorsManager,
-			blockProposer, intentsManager, feedManager, txStore,
+			txsQueue, txsOrderQueue, gatewayPublicKey, bx, validatorsManager, intentsManager, feedManager, txStore,
 		)
 	}
 

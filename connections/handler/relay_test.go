@@ -70,7 +70,7 @@ func TestRelay_ClosingFromRemote(t *testing.T) {
 
 	// only readloop go routines should be closed, since connection is expecting retry
 	test.WaitUntilTrueOrFail(t, func() bool {
-		return tls.IsClosed() && r.Conn.IsOpen()
+		return tls.IsClosed() && !r.Conn.IsOpen()
 	})
 
 	test.WaitUntilTrueOrFail(t, func() bool {

@@ -6,7 +6,6 @@ require (
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
 	github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869
 	github.com/cenkalti/backoff/v4 v4.3.0
-	github.com/davecgh/go-spew v1.1.1
 	github.com/ethereum/go-ethereum v1.14.5
 	github.com/fluent/fluent-logger-golang v1.9.0
 	github.com/google/uuid v1.6.0
@@ -26,7 +25,7 @@ require (
 	github.com/r3labs/sse v0.0.0-20210224172625-26fe804710bc
 	github.com/rs/zerolog v1.33.0
 	github.com/satori/go.uuid v1.2.1-0.20181016170032-d91630c85102
-	github.com/sourcegraph/jsonrpc2 v0.2.0
+	github.com/sourcegraph/jsonrpc2 v0.2.1-0.20240223163137-534fd43609f0
 	github.com/stretchr/testify v1.9.0
 	github.com/struCoder/pidusage v0.2.1
 	github.com/urfave/cli/v2 v2.27.5
@@ -71,6 +70,7 @@ require (
 	github.com/crate-crypto/go-ipa v0.0.0-20240223125850-b1e8a79f509c // indirect
 	github.com/crate-crypto/go-kzg-4844 v1.0.0 // indirect
 	github.com/d4l3k/messagediff v1.2.1 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/deckarep/golang-set/v2 v2.6.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 // indirect

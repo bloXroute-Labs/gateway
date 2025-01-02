@@ -25,13 +25,9 @@ service Gateway {
   rpc BdnBlocks (BlocksRequest) returns (stream BlocksReply){}
   rpc EthOnBlock (EthOnBlockRequest) returns (stream EthOnBlockReply){}
   rpc TxReceipts (TxReceiptsRequest) returns (stream TxReceiptsReply){}
+  rpc ShortIDs (ShortIDsRequest) returns (ShortIDsReply);
   rpc TxsFromShortIDs (ShortIDListRequest) returns (TxListReply) {}
   rpc BlxrSubmitBundle (BlxrSubmitBundleRequest) returns (BlxrSubmitBundleReply) {}
-
-  // BSC Validator gateway functions
-  rpc ShortIDs (ShortIDsRequest) returns (ShortIDsReply);
-  rpc ProposedBlock (ProposedBlockRequest) returns (ProposedBlockReply);
-  rpc ProposedBlockStats (ProposedBlockStatsRequest) returns (ProposedBlockStatsReply);
 
   //Intent Gateway functions
   rpc SubmitIntent(SubmitIntentRequest) returns (SubmitIntentReply){}

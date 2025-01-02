@@ -17,7 +17,6 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/bsc"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
@@ -90,31 +89,29 @@ func NewGRPCServer(
 	gatewayPublicKey string,
 	connector Connector,
 	validatorsManager *validator.Manager,
-	blockProposer bsc.BlockProposer,
 	intentsManager services.IntentsManager,
 	feedManager feedManager,
 	txStore services.TxStore,
 ) *Server {
 	params := grpcParams{
-		node:                        node,
-		sdn:                         sdn,
-		accService:                  accService,
-		bridge:                      bridge,
-		blockchainPeers:             blockchainPeers,
-		wsManager:                   wsManager,
-		bdnStats:                    bdnStats,
-		timeStarted:                 timeStarted,
-		txsQueue:                    txsQueue,
-		txsOrderQueue:               txsOrderQueue,
-		gatewayPublicKey:            gatewayPublicKey,
-		connector:                   connector,
-		validatorsManager:           validatorsManager,
-		blockProposer:               blockProposer,
-		allowIntroductoryTierAccess: config.AllowIntroductoryTierAccess,
-		intentsManager:              intentsManager,
-		feedManager:                 feedManager,
-		txStore:                     txStore,
-		chainID:                     bxgateway.NetworkNumToChainID[sdn.NetworkNum()],
+		node:                           node,
+		sdn:                            sdn,
+		accService:                     accService,
+		bridge:                         bridge,
+		blockchainPeers:                blockchainPeers,
+		wsManager:                      wsManager,
+		bdnStats:                       bdnStats,
+		timeStarted:                    timeStarted,
+		txsQueue:                       txsQueue,
+		txsOrderQueue:                  txsOrderQueue,
+		gatewayPublicKey:               gatewayPublicKey,
+		connector:                      connector,
+		validatorsManager:              validatorsManager,
+		allowIntroductoryTierAccess:    config.AllowIntroductoryTierAccess,
+		intentsManager:                 intentsManager,
+		feedManager:                    feedManager,
+		txStore:                        txStore,
+		chainID:                        bxgateway.NetworkNumToChainID[sdn.NetworkNum()],
 	}
 
 	grpcHostPort := fmt.Sprintf("%v:%v", config.Host, config.Port)
