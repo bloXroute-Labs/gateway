@@ -8,6 +8,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/gorilla/websocket"
+	"github.com/sourcegraph/jsonrpc2"
+	websocketjsonrpc2 "github.com/sourcegraph/jsonrpc2/websocket"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/config"
@@ -15,16 +19,12 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/services/account"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
 	"github.com/bloXroute-Labs/gateway/v2/services/validator"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/gorilla/websocket"
-	"github.com/sourcegraph/jsonrpc2"
-	websocketjsonrpc2 "github.com/sourcegraph/jsonrpc2/websocket"
 )
 
 const localhost = "127.0.0.1"
@@ -47,7 +47,6 @@ type Server struct {
 	validatorsManager     *validator.Manager
 	log                   *log.Entry
 	networkNum            types.NetworkNum
-	intentsManager        services.IntentsManager
 	stats                 statistics.Stats
 	wsConnDelayOnErr      time.Duration // wsConnDelayOnErr amount of time to sleep before closing a bad connection. This is configured by tests to a shorted value
 	txFromFieldIncludable bool
@@ -64,7 +63,6 @@ func NewWSServer(
 	feedManager *feed.Manager,
 	nodeWSManager blockchain.WSManager,
 	validatorsManager *validator.Manager,
-	intentsManager services.IntentsManager,
 	stats statistics.Stats,
 	txFromFieldIncludable bool) *Server {
 
@@ -84,7 +82,6 @@ func NewWSServer(
 		validatorsManager:     validatorsManager,
 		log:                   log.WithField("component", "gatewayWs"),
 		networkNum:            networkNum,
-		intentsManager:        intentsManager,
 		stats:                 stats,
 		wsConnDelayOnErr:      10 * time.Second,
 		txFromFieldIncludable: txFromFieldIncludable,
@@ -182,7 +179,7 @@ func (s *Server) wsHandler(w http.ResponseWriter, r *http.Request) {
 			s.errorWithDelay(w, r, fmt.Errorf("missing authorization from method: %v", r.Method).Error())
 			return
 		}
-		connectionAccountModel, err = s.accService.Authorize(accountID, secretHash, true, s.cfg.AllowIntroductoryTierAccess, r.RemoteAddr)
+		connectionAccountModel, err = s.accService.Authorize(accountID, secretHash, true, r.RemoteAddr)
 		if err != nil {
 			s.errorWithDelay(w, r, err.Error())
 			return
@@ -210,25 +207,23 @@ func (s *Server) wsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 
 	handler := &handlerObj{
-		chainID:                     s.chainID,
-		sdn:                         s.sdn,
-		node:                        s.node,
-		feedManager:                 s.feedManager,
-		nodeWSManager:               s.nodeWSManager,
-		validatorsManager:           s.validatorsManager,
-		log:                         logger,
-		networkNum:                  s.networkNum,
-		stats:                       s.stats,
-		intentsManager:              s.intentsManager,
-		remoteAddress:               r.RemoteAddr,
-		connectionAccount:           connectionAccountModel,
-		serverAccountID:             serverAccountID,
-		ethSubscribeIDToChanMap:     make(map[string]chan bool),
-		headers:                     types.SDKMetaFromHeaders(r.Header),
-		enableBlockchainRPC:         s.cfg.EnableBlockchainRPC,
-		txFromFieldIncludable:       s.txFromFieldIncludable,
-		pendingTxsSourceFromNode:    s.cfg.PendingTxsSourceFromNode,
-		allowIntroductoryTierAccess: s.cfg.AllowIntroductoryTierAccess,
+		chainID:                  s.chainID,
+		sdn:                      s.sdn,
+		node:                     s.node,
+		feedManager:              s.feedManager,
+		nodeWSManager:            s.nodeWSManager,
+		validatorsManager:        s.validatorsManager,
+		log:                      logger,
+		networkNum:               s.networkNum,
+		stats:                    s.stats,
+		remoteAddress:            r.RemoteAddr,
+		connectionAccount:        connectionAccountModel,
+		serverAccountID:          serverAccountID,
+		ethSubscribeIDToChanMap:  make(map[string]chan bool),
+		headers:                  types.SDKMetaFromHeaders(r.Header),
+		enableBlockchainRPC:      s.cfg.EnableBlockchainRPC,
+		txFromFieldIncludable:    s.txFromFieldIncludable,
+		pendingTxsSourceFromNode: s.cfg.PendingTxsSourceFromNode,
 	}
 
 	asyncHandler := jsonrpc2.AsyncHandler(handler)

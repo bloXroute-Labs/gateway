@@ -24,7 +24,6 @@ const (
 	RPCBatchTx                    RPCRequestType = "blxr_batch_tx"
 	RPCQuotaUsage                 RPCRequestType = "quota_usage"
 	RPCBundleSubmission           RPCRequestType = "blxr_submit_bundle"
-	RPCEOBBundleSubmission        RPCRequestType = "blxr_submit_eob_bundle"
 	RPCBundleSimulation           RPCRequestType = "blxr_simulate_bundle"
 	RPCStartMonitoringTx          RPCRequestType = "start_monitor_transaction"
 	RPCStopMonitoringTx           RPCRequestType = "stop_monitor_transaction"
@@ -33,10 +32,6 @@ const (
 	RPCEthSubscribe               RPCRequestType = "eth_subscribe"
 	RPCEthSendRawTransaction      RPCRequestType = "eth_sendRawTransaction"
 	RPCEthUnsubscribe             RPCRequestType = "eth_unsubscribe"
-	RPCSubmitIntent               RPCRequestType = "blxr_submit_intent"
-	RPCSubmitIntentSolution       RPCRequestType = "blxr_submit_intent_solution"
-	RPCGetIntentSolutions         RPCRequestType = "blxr_get_intent_solutions"
-	RPCSubmitQuote                RPCRequestType = "blxr_submit_quote"
 )
 
 // External RPCRequestType enumeration
@@ -46,6 +41,7 @@ const (
 	RPCEthCancelBundle        RPCRequestType = "eth_cancelBundle"
 	RPCEthSendExclusiveBundle RPCRequestType = "eth_sendExclusiveBundle"
 	RPCEthSendSnipeBundle     RPCRequestType = "eth_sendSnipeBundle"
+	RPCEthSendArbOnlyBundle   RPCRequestType = "eth_sendArbOnlyBundle"
 )
 
 // RPCMethodToRPCRequestType maps gRPC methods to RPCRequestType
@@ -137,6 +133,7 @@ type RPCBundleSubmissionPayload struct {
 	IncomingRefundRecipient string            `json:"refund_recipient,omitempty"`
 	BlocksCount             int               `json:"blocks_count,omitempty"`
 	DroppingHashes          []string          `json:"dropping_hashes,omitempty"`
+	EndOfBlock              bool              `json:"end_of_block"`
 }
 
 // Validate doing validation for blxr_submit_bundle payload
@@ -195,44 +192,11 @@ type RPCSendBundle struct {
 	AccountID         string   `json:"accountId,omitempty"`
 	BlocksCount       int      `json:"blocksCount,omitempty"`
 	DroppingTxHashes  []string `json:"droppingTxHashes,omitempty"`
+	EndOfBlock        bool     `json:"endOfBlock,omitempty"`
+	AccountTier       string   `json:"accountTier,omitempty"`
 }
 
 // RPCCancelBundlePayload custom json-rpc required to cancel flashbots bundle
 type RPCCancelBundlePayload struct {
 	ReplacementUUID string `json:"replacementUuid"`
-}
-
-// RPCSubmitIntentPayload is the payload of blxr_submit_intent request
-type RPCSubmitIntentPayload struct {
-	DappAddress   string `json:"dapp_address"`
-	SenderAddress string `json:"sender_address"`
-	Intent        []byte `json:"intent"`
-	Hash          []byte `json:"hash"`
-	Signature     []byte `json:"signature"`
-}
-
-// RPCSubmitQuotePayload is the payload of blxr_submit_quote request
-type RPCSubmitQuotePayload struct {
-	DappAddress   string `json:"dapp_address"`
-	SolverAddress string `json:"solver_address"`
-	Quote         []byte `json:"quote"`
-	Hash          []byte `json:"hash"`
-	Signature     []byte `json:"signature"`
-}
-
-// RPCSubmitIntentSolutionPayload is the payload of blxr_submit_intent_solution request
-type RPCSubmitIntentSolutionPayload struct {
-	SolverAddress  string `json:"solver_address"`
-	IntentID       string `json:"intent_id"`
-	IntentSolution []byte `json:"intent_solution"`
-	Hash           []byte `json:"hash"`
-	Signature      []byte `json:"signature"`
-}
-
-// RPCGetIntentSolutionsPayload is the payload of blxr_get_intent_solutions request
-type RPCGetIntentSolutionsPayload struct {
-	IntentID            string `json:"intent_id"`
-	DappOrSenderAddress string `json:"dapp_or_sender_address"`
-	Hash                []byte `json:"hash"`
-	Signature           []byte `json:"signature"`
 }

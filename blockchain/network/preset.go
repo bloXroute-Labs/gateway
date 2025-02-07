@@ -21,22 +21,14 @@ const BSCMainnetChainID = 56
 // BSCTestnetChainID BSC testnet chain ID
 const BSCTestnetChainID = 97
 
-// PolygonMainnetChainID Polygon mainnet chain ID
-const PolygonMainnetChainID = 137
-
-// PolygonMumbaiChainID Polygon testnet chain ID
-const PolygonMumbaiChainID = 80001
-
 // HoleskyChainID Holesky testnet chain ID
 const HoleskyChainID = 17000
 
 var networkMapping = map[string]EthConfig{
-	"Mainnet":         newEthereumMainnetConfig(),
-	"BSC-Mainnet":     newBSCMainnetConfig(),
-	"BSC-Testnet":     newBSCTestnetConfig(),
-	"Polygon-Mainnet": newPolygonMainnetConfig(),
-	"Polygon-Mumbai":  newPolygonMumbaiConfig(),
-	"Holesky":         newHoleskyConfig(),
+	"Mainnet":     newEthereumMainnetConfig(),
+	"BSC-Mainnet": newBSCMainnetConfig(),
+	"BSC-Testnet": newBSCTestnetConfig(),
+	"Holesky":     newHoleskyConfig(),
 }
 
 // NewEthereumPreset returns an Ethereum configuration for the given network name. For most of these presets, the client will present itself as only having the genesis block, but that shouldn't matter too much.
@@ -151,65 +143,6 @@ func newBSCTestnetConfig() EthConfig {
 		IgnoreBlockTimeout:      30 * time.Second,
 		BootstrapNodes:          bootNodes,
 		ProgramName:             "Geth/v1.4.5/linux-amd64/go1.21.7",
-	}
-}
-
-func newPolygonMumbaiConfig() EthConfig {
-	td, ok := new(big.Int).SetString("40000", 16)
-	if !ok {
-		panic("could not load Polygon Mumbai configuration")
-	}
-
-	var err error
-	var bootNodes []*enode.Node
-
-	bootNodes, err = bootstrapNodes(enode.ValidSchemes, []string{
-		"enode://bdcd4786a616a853b8a041f53496d853c68d99d54ff305615cd91c03cd56895e0a7f6e9f35dbf89131044e2114a9a782b792b5661e3aff07faf125a98606a071@43.200.206.40:30303",
-		"enode://209aaf7ed549cf4a5700fd833da25413f80a1248bd3aa7fe2a87203e3f7b236dd729579e5c8df61c97bf508281bae4969d6de76a7393bcbd04a0af70270333b3@54.216.248.9:30303",
-	})
-
-	if err != nil {
-		panic("could not set Polygon Mumbai bootstrapNodes")
-	}
-
-	return EthConfig{
-		Network:                 PolygonMumbaiChainID,
-		TotalDifficulty:         td,
-		TerminalTotalDifficulty: big.NewInt(math.MaxInt),
-		Head:                    common.HexToHash("0x7b66506a9ebdbf30d32b43c5f15a3b1216269a1ec3a75aa3182b86176a2b1ca7"),
-		Genesis:                 common.HexToHash("0x7b66506a9ebdbf30d32b43c5f15a3b1216269a1ec3a75aa3182b86176a2b1ca7"),
-		IgnoreBlockTimeout:      30 * time.Second,
-		BootstrapNodes:          bootNodes,
-		ProgramName:             "bor/v0.2.16-stable-f083705e/linux-amd64/go1.18.4",
-	}
-}
-
-func newPolygonMainnetConfig() EthConfig {
-	td, ok := new(big.Int).SetString("40000", 16)
-	if !ok {
-		panic("could not load Polygon Mainnet configuration")
-	}
-
-	var err error
-	var bootNodes []*enode.Node
-
-	bootNodes, err = bootstrapNodes(enode.ValidSchemes, []string{
-		"enode://0cb82b395094ee4a2915e9714894627de9ed8498fb881cec6db7c65e8b9a5bd7f2f25cc84e71e89d0947e51c76e85d0847de848c7782b13c0255247a6758178c@44.232.55.71:30303",
-		"enode://88116f4295f5a31538ae409e4d44ad40d22e44ee9342869e7d68bdec55b0f83c1530355ce8b41fbec0928a7d75a5745d528450d30aec92066ab6ba1ee351d710@159.203.9.164:30303",
-	})
-	if err != nil {
-		panic("could not set Polygon Mainnet bootstrapNodes")
-	}
-
-	return EthConfig{
-		Network:                 137,
-		TotalDifficulty:         td,
-		TerminalTotalDifficulty: big.NewInt(math.MaxInt),
-		Head:                    common.HexToHash("0xa9c28ce2141b56c474f1dc504bee9b01eb1bd7d1a507580d5519d4437a97de1b"),
-		Genesis:                 common.HexToHash("0xa9c28ce2141b56c474f1dc504bee9b01eb1bd7d1a507580d5519d4437a97de1b"),
-		IgnoreBlockTimeout:      30 * time.Second,
-		BootstrapNodes:          bootNodes,
-		ProgramName:             "bor/v0.2.16-stable-f083705e/linux-amd64/go1.18.4",
 	}
 }
 

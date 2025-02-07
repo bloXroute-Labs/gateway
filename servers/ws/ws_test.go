@@ -130,7 +130,6 @@ func (s *wsSuite) setupSuit(networkNum types.NetworkNum) {
 	s.feedManager = feed.NewManager(s.sdn, services.NewNoOpSubscriptionServices(),
 		accountIDToAccountModel["gw"], stats, networkNum, true)
 
-	im := services.NewIntentsManager()
 	as := &mockAccountService{}
 
 	g := bxmock.MockBxListener{}
@@ -158,7 +157,7 @@ func (s *wsSuite) setupSuit(networkNum types.NetworkNum) {
 	s.Assert().NotNil(p3)
 
 	var validatorManager *validator.Manager
-	if networkNum == bxgateway.BSCMainnetNum || networkNum == bxgateway.PolygonMainnetNum {
+	if networkNum == bxgateway.BSCMainnetNum {
 		nextValidatorMap := orderedmap.New[uint64, string]()
 		validatorStatusMap := syncmap.NewStringMapOf[bool]()
 		validatorListMap := syncmap.NewIntegerMapOf[uint64, validator.List]()
@@ -170,14 +169,10 @@ func (s *wsSuite) setupSuit(networkNum types.NetworkNum) {
 	}
 
 	s.server = NewWSServer(cfg, "", "", s.sdn, g, as, s.feedManager, s.nodeWSManager,
-		validatorManager, im, stats, true)
+		validatorManager, stats, true)
 	// set a shorted delay for tests
 	s.server.wsConnDelayOnErr = 10 * time.Millisecond
 
-	s.eg.Go(func() error {
-		s.server.intentsManager.CleanupExpiredSolutions(ctx)
-		return nil
-	})
 	s.eg.Go(func() error {
 		return s.feedManager.Start(ctx)
 	})
@@ -275,7 +270,7 @@ func (s *wsSuite) markAllPeersWithSyncStatus(status blockchain.NodeSyncStatus) {
 
 type mockAccountService struct{}
 
-func (s *mockAccountService) Authorize(accountID types.AccountID, _ string, _ bool, _ bool, _ string) (sdnmessage.Account, error) {
+func (s *mockAccountService) Authorize(accountID types.AccountID, _ string, _ bool, _ string) (sdnmessage.Account, error) {
 	var err error
 	if accountID == "d" {
 		err = errAuth

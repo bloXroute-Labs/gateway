@@ -62,7 +62,8 @@ type bundleRecord struct {
 	SentGatewayPeers int              `json:"gateway_peers,omitempty"`
 }
 
-type bundleSentToBuilderRecord struct {
+// BundleSentToBuilderRecord represents a record of a bundle sent to a builder
+type BundleSentToBuilderRecord struct {
 	EstimatedBundleReceivedTime string                 `json:"estimated_bundle_received_time"`
 	BundleHash                  string                 `json:"bundle_hash"`
 	BlockNumber                 int64                  `json:"block_number"`
@@ -74,6 +75,7 @@ type bundleSentToBuilderRecord struct {
 	AccountTier                 sdnmessage.AccountTier `json:"account_tier"`
 	BuilderURL                  string                 `json:"builder_url"`
 	StatusCode                  int                    `json:"status_code"`
+	ErrorMessage                string                 `json:"error_message"`
 }
 
 type ethBlockContent struct {

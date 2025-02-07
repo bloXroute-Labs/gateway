@@ -49,8 +49,8 @@ func NewManager(nextValidatorMap *orderedmap.OrderedMap[uint64, string], validat
 
 // ProcessNextValidatorTx - sets next validator wallets if accessible and returns bool indicating if tx is pending reevaluation due to inaccessible first validator for BSC
 func (m *Manager) ProcessNextValidatorTx(tx *bxmessage.Tx, fallback uint16, networkNum types.NetworkNum, source connections.Conn) (bool, error) {
-	if networkNum != bxgateway.BSCMainnetNum && networkNum != bxgateway.PolygonMainnetNum {
-		return false, errors.New("currently next_validator is only supported on BSC and Polygon networks, please contact bloXroute support")
+	if networkNum != bxgateway.BSCMainnetNum {
+		return false, errors.New("currently next_validator is only supported on BSC networks, please contact bloXroute support")
 	}
 
 	if m == nil {
@@ -66,43 +66,31 @@ func (m *Manager) ProcessNextValidatorTx(tx *bxmessage.Tx, fallback uint16, netw
 		return false, errors.New("can't send tx with next_validator because the gateway encountered an issue fetching the epoch block, please try again later or contact bloXroute support")
 	}
 
-	if networkNum == bxgateway.BSCMainnetNum {
-		n1Validator := n2Validator.Prev()
-		n1ValidatorAccessible := false
-		n1Wallet := ""
-		if n1Validator != nil {
-			n1Wallet = n1Validator.Value
-			accessible, exist := m.validatorStatusMap.Load(n1Wallet)
-			if exist {
-				n1ValidatorAccessible = accessible
-			}
-		}
-
-		if n1ValidatorAccessible {
-			tx.SetWalletID(0, n1Wallet)
-		} else {
-			blockIntervalBSC := bxgateway.NetworkToBlockDuration[bxgateway.BSCMainnet]
-			if fallback != 0 && fallback < uint16(blockIntervalBSC.Milliseconds()) {
-				return false, nil
-			}
-			m.pendingBSCNextValidatorTxHashToInfo[tx.Hash().String()] = PendingNextValidatorTxInfo{
-				Tx:            tx,
-				Fallback:      fallback,
-				TimeOfRequest: time.Now(),
-				Source:        source,
-			}
-			return true, nil
+	n1Validator := n2Validator.Prev()
+	n1ValidatorAccessible := false
+	n1Wallet := ""
+	if n1Validator != nil {
+		n1Wallet = n1Validator.Value
+		accessible, exist := m.validatorStatusMap.Load(n1Wallet)
+		if exist {
+			n1ValidatorAccessible = accessible
 		}
 	}
 
-	if networkNum == bxgateway.PolygonMainnetNum || networkNum == bxgateway.PolygonMumbaiNum {
-		n1Validator := n2Validator.Prev()
-		if n1Validator != nil {
-			tx.SetWalletID(0, n1Validator.Value)
-			tx.SetWalletID(1, n2Validator.Value)
-		} else {
-			tx.SetWalletID(0, n2Validator.Value)
+	if n1ValidatorAccessible {
+		tx.SetWalletID(0, n1Wallet)
+	} else {
+		blockIntervalBSC := bxgateway.NetworkToBlockDuration[bxgateway.BSCMainnet]
+		if fallback != 0 && int64(fallback) < blockIntervalBSC.Milliseconds() {
+			return false, nil
 		}
+		m.pendingBSCNextValidatorTxHashToInfo[tx.Hash().String()] = PendingNextValidatorTxInfo{
+			Tx:            tx,
+			Fallback:      fallback,
+			TimeOfRequest: time.Now(),
+			Source:        source,
+		}
+		return true, nil
 	}
 
 	return false, nil

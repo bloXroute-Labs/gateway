@@ -20,7 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -36,8 +35,6 @@ import (
 	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/polygon"
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/polygon/bor"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
@@ -61,9 +58,8 @@ import (
 )
 
 const (
-	bscMainnetBloomCap     = 35e6
-	mainnetBloomCap        = 85e5
-	polygonMainnetBloomCap = 225e5
+	bscMainnetBloomCap = 35e6
+	mainnetBloomCap    = 85e5
 
 	bloomStoreInterval = time.Hour
 
@@ -132,8 +128,7 @@ type gateway struct {
 	bloomFilter                  services.BloomFilter
 	txIncludeSenderInFeed        bool
 
-	polygonValidatorInfoManager polygon.ValidatorInfoManager
-	blockTime                   time.Duration
+	blockTime time.Duration
 
 	txsQueue      *services.MessageQueue
 	txsOrderQueue *services.MessageQueue
@@ -142,7 +137,6 @@ type gateway struct {
 	log           *log.Entry
 	chainID       int64
 
-	intentsManager services.IntentsManager
 	blobsManager   *beacon.BlobSidecarCacheManager
 	ignoredRelays  *syncmap.SyncMap[string, types.RelayInfo]
 	relaysToSwitch *syncmap.SyncMap[string, bool]
@@ -180,7 +174,6 @@ func NewGateway(parent context.Context,
 	sdn connections.SDNHTTP,
 	sslCerts *utils.SSLCerts,
 	staticEnodesCount int,
-	polygonHeimdallEndpoints string,
 	transactionSlotStartDuration int,
 	transactionSlotEndDuration int,
 	enableBloomFilter bool,
@@ -220,19 +213,12 @@ func NewGateway(parent context.Context,
 		log: log.WithFields(log.Fields{
 			"component": "gateway",
 		}),
-		intentsManager: services.NewIntentsManager(),
-		blobsManager:   blobsManager,
+		blobsManager: blobsManager,
 	}
 	g.chainID = int64(bxgateway.NetworkNumToChainID[sdn.NetworkNum()])
 
 
-	if polygonHeimdallEndpoints != "" {
-		g.polygonValidatorInfoManager = bor.NewSprintManager(parent, &g.wsManager, bor.NewHeimdallSpanner(parent, polygonHeimdallEndpoints))
-	} else {
-		g.polygonValidatorInfoManager = nil
-	}
-
-	if bxConfig.BlockchainNetwork == bxgateway.BSCMainnet || bxConfig.BlockchainNetwork == bxgateway.PolygonMainnet || bxConfig.BlockchainNetwork == bxgateway.PolygonMumbai {
+	if bxConfig.BlockchainNetwork == bxgateway.BSCMainnet {
 		g.validatorStatusMap = syncmap.NewStringMapOf[bool]()
 		g.nextValidatorMap = orderedmap.New[uint64, string]()
 	}
@@ -277,8 +263,6 @@ func NewGateway(parent context.Context,
 			bloomCap = mainnetBloomCap
 		case bxgateway.BSCMainnet, bxgateway.BSCTestnet:
 			bloomCap = bscMainnetBloomCap
-		case bxgateway.PolygonMainnet, bxgateway.PolygonMumbai:
-			bloomCap = polygonMainnetBloomCap
 		default:
 			// default to mainnet
 			bloomCap = mainnetBloomCap
@@ -495,17 +479,12 @@ func (g *gateway) Run() error {
 	g.clientHandler = servers.NewClientHandler(&g.Bx, g.BxConfig, g, g.sdn, accService, g.bridge,
 		g.blockchainPeers, services.NewNoOpSubscriptionServices(), g.wsManager, g.bdnStats,
 		g.timeStarted, g.txsQueue, g.txsOrderQueue, g.gatewayPublicKey, g.feedManager, g.validatorsManager,
-		g.intentsManager, g.stats, g.TxStore,
+		g.stats, g.TxStore,
 		txFromFieldIncludable, sslCert.PrivateCertFile(), sslCert.PrivateKeyFile(),
 	)
 
 	group.Go(func() error {
 		return g.clientHandler.ManageServers(ctx, g.BxConfig.ManageWSServer)
-	})
-
-	group.Go(func() error {
-		g.intentsManager.CleanupExpiredSolutions(ctx)
-		return nil
 	})
 
 	go g.PingLoop()
@@ -522,22 +501,6 @@ func (g *gateway) Run() error {
 	go g.sendStatsOnInterval(15 * time.Minute)
 
 	go g.handleBlockchainConnectionStatusUpdate()
-
-	if (networkNum == bxgateway.PolygonMainnetNum || networkNum == bxgateway.PolygonMumbaiNum) && g.polygonValidatorInfoManager != nil {
-		// running as goroutine to not block starting of node
-		log.Debugf("starting polygonValidatorInfoManager, networkNum=%d", networkNum)
-		go func() {
-			if retryErr := backoff.RetryNotify(
-				g.polygonValidatorInfoManager.Run,
-				bor.Retry(),
-				func(err error, duration time.Duration) {
-					g.log.Tracef("failed to start polygonValidatorInfoManager: %v, retry in %s", err, duration.String())
-				},
-			); retryErr != nil {
-				g.log.Warnf("failed to start polygonValidatorInfoManager: %v", retryErr)
-			}
-		}()
-	}
 
 	return group.Wait()
 }
@@ -908,35 +871,6 @@ func (g *gateway) reevaluatePendingBSCNextValidatorTx() {
 	}
 }
 
-func (g *gateway) generatePolygonValidator(bxBlock *types.BxBlock, blockInfo *eth.BlockInfo) []*types.FutureValidatorInfo {
-	blockHeight := bxBlock.Number.Uint64()
-
-	if g.validatorStatusMap == nil || g.wsManager == nil || g.polygonValidatorInfoManager == nil || !g.polygonValidatorInfoManager.IsRunning() || blockInfo == nil {
-		return blockchain.DefaultValidatorInfo(blockHeight)
-	}
-
-	validatorInfo := g.polygonValidatorInfoManager.FutureValidators(blockInfo.Block.Header())
-
-	for _, info := range validatorInfo {
-		if info.WalletID == "nil" {
-			break
-		}
-
-		// nextValidatorMap is simulating a queue with height as expiration key.
-		// Regardless of the accessible status, next walletID will be appended to the queue.
-		g.nextValidatorMap.Set(info.BlockHeight, info.WalletID)
-
-		accessible, exist := g.validatorStatusMap.Load(info.WalletID)
-		if exist {
-			info.Accessible = accessible
-		}
-	}
-
-	g.cleanUpNextValidatorMap(blockHeight)
-
-	return validatorInfo[:]
-}
-
 func bscExtractValidatorListFromBlock(b []byte) (validator.List, error) {
 	addressLength := 20
 	bLSPublicKeyLength := 48
@@ -1020,9 +954,6 @@ func (g *gateway) generateFutureValidatorInfo(block *types.BxBlock, blockInfo *e
 	g.latestValidatorInfoHeight = blockHeight
 
 	switch g.sdn.NetworkNum() {
-	case bxgateway.PolygonMainnetNum, bxgateway.PolygonMumbaiNum:
-		g.latestValidatorInfo = g.generatePolygonValidator(block, blockInfo)
-		return g.latestValidatorInfo
 	case bxgateway.BSCMainnetNum, bxgateway.BSCTestnetNum:
 		g.latestValidatorInfo = g.generateBSCValidator(block.Number.Uint64())
 		return g.latestValidatorInfo
@@ -1482,7 +1413,6 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 				}
 			}()
 		}
-
 	case *bxmessage.BlockConfirmation:
 		hashString := typedMsg.Hash().String()
 		if g.seenBlockConfirmation.SetIfAbsent(hashString, 30*time.Minute) {
@@ -1494,66 +1424,6 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 			}
 			_ = g.Bx.HandleMsg(msg, source)
 		}
-	case *bxmessage.Intent:
-		userIntent := &types.UserIntent{
-			ID:            typedMsg.ID,
-			DappAddress:   typedMsg.DAppAddress,
-			SenderAddress: typedMsg.SenderAddress,
-			Intent:        typedMsg.Intent,
-			Hash:          typedMsg.Hash,
-			Signature:     typedMsg.Signature,
-			Timestamp:     typedMsg.Timestamp,
-		}
-
-		g.broadcast(typedMsg, source, utils.RelayProxy)
-
-		g.notify(types.NewUserIntentNotification(userIntent))
-	case *bxmessage.IntentSolutions:
-		// accept intent solutions from relays only
-		if source == nil || source.GetConnectionType() != utils.RelayProxy {
-			return nil
-		}
-
-		// add list of solutions to the intent
-		g.intentsManager.AppendSolutionsForIntent(typedMsg)
-	case *bxmessage.IntentSolution:
-		// add solution to the intent
-		g.intentsManager.AppendSolutionForIntent(typedMsg)
-
-		g.broadcast(typedMsg, source, utils.RelayProxy) // broadcast the solution to all other relays
-
-		if source != nil && source.GetConnectionType() == utils.RelayProxy {
-			solution := &types.UserIntentSolution{
-				ID:            typedMsg.ID,
-				SolverAddress: typedMsg.SolverAddress,
-				IntentID:      typedMsg.IntentID,
-				Solution:      typedMsg.Solution,
-				Hash:          typedMsg.Hash,
-				Signature:     typedMsg.Signature,
-				Timestamp:     typedMsg.Timestamp,
-				DappAddress:   typedMsg.DappAddress,
-				SenderAddress: typedMsg.SenderAddress,
-			}
-			g.notify(types.NewUserIntentSolutionNotification(solution))
-		}
-	case *bxmessage.Quote:
-		quote := &types.QuoteNotification{
-			ID:            typedMsg.ID,
-			DappAddress:   typedMsg.DappAddress,
-			SolverAddress: typedMsg.SolverAddress,
-			Quote:         typedMsg.Quote,
-			Hash:          typedMsg.Hash,
-			Signature:     typedMsg.Signature,
-			Timestamp:     typedMsg.Timestamp,
-		}
-
-		g.broadcast(typedMsg, source, utils.RelayProxy)
-
-		g.notify(quote)
-	case *bxmessage.IntentsSubscription, *bxmessage.IntentsUnsubscription, *bxmessage.SolutionsSubscription, *bxmessage.SolutionsUnsubscription, *bxmessage.QuotesSubscription, *bxmessage.QuotesUnsubscription:
-		g.broadcast(typedMsg, source, utils.RelayProxy)
-	case *bxmessage.GetIntentSolutions:
-		g.broadcast(typedMsg, source, utils.RelayProxy) // request intent solutions from all the connected relays
 	case *bxmessage.BeaconMessage:
 		go g.processBeaconMessage(typedMsg, source)
 	default:
@@ -2125,7 +1995,7 @@ func (g *gateway) getHeaderFromGateway() string {
 }
 
 func (g *gateway) bxBlockToBlockInfo(bxBlock *types.BxBlock) (*eth.BlockInfo, error) {
-	// We support only types.BxBlockTypeEth. That means BSC or Polygon block
+	// We support only types.BxBlockTypeEth. That means BSC block
 	if bxBlock.Type != types.BxBlockTypeEth {
 		return nil, errUnsupportedBlockType
 	}
@@ -2305,27 +2175,4 @@ func (g *gateway) forwardBSCTx(conn *http.Client, txHash string, tx string, endp
 		"response":   string(body),
 		"statusCode": resp.StatusCode,
 	}).Info("transaction sent")
-}
-
-func (g *gateway) OnConnEstablished(conn connections.Conn) error {
-	err := g.Bx.OnConnEstablished(conn)
-	if err != nil {
-		return err
-	}
-
-	// push intents/solutions subscriptions to the relay
-	if connections.IsRelay(conn.GetConnectionType()) {
-		messages := g.intentsManager.SubscriptionMessages()
-		for _, m := range messages {
-			err = conn.Send(m)
-			if err != nil {
-				conn.Log().Errorf("error writing to connection: %s", err)
-				continue
-			}
-		}
-
-		g.log.Debugf("sent %d intents/solutions subscription message(s) to %s", len(messages), conn.GetPeerIP())
-	}
-
-	return nil
 }

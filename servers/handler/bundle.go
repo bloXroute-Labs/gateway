@@ -187,7 +187,7 @@ func mevBundleFromRequest(payload *jsonrpc.RPCBundleSubmissionPayload, networkNu
 		return nil, "", fmt.Errorf("%w: %v", errInvalidPayload, err)
 	}
 
-	if networkNum == bxgateway.PolygonMainnetNum || networkNum == bxgateway.PolygonMumbaiNum {
+	if networkNum != bxgateway.MainnetNum && networkNum != bxgateway.BSCMainnetNum && networkNum != bxgateway.HoleskyNum {
 		return nil, "", fmt.Errorf("%w: %v", errInvalidNetwork, networkNum)
 	}
 
@@ -208,9 +208,10 @@ func mevBundleFromRequest(payload *jsonrpc.RPCBundleSubmissionPayload, networkNu
 		return nil, parsedBundle.bundleHash, errBlockedTxHashes
 	}
 
-	var avoidMixedBundles bool
+	var avoidMixedBundles, endOfBlock bool
 	if networkNum == bxgateway.BSCMainnetNum {
 		avoidMixedBundles = payload.AvoidMixedBundles
+		endOfBlock = payload.EndOfBlock
 	}
 
 	mevBundle, err := bxmessage.NewMEVBundle(
@@ -227,6 +228,7 @@ func mevBundleFromRequest(payload *jsonrpc.RPCBundleSubmissionPayload, networkNu
 		payload.IncomingRefundRecipient,
 		payload.BlocksCount,
 		payload.DroppingHashes,
+		endOfBlock,
 	)
 	if err != nil {
 		// Validated before, should not happen

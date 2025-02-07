@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/blockchain"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
 	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
 	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
+
+	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // HandleBDNBeaconMessages waits for beacon messages from BDN and broadcast it to the connected nodes
@@ -108,9 +109,14 @@ func HandleBDNBlocks(ctx context.Context, b blockchain.Bridge, n *Node, beaconAP
 }
 
 func fillBlockContents(blobsManager *BlobSidecarCacheManager, castedBlock interfaces.ReadOnlySignedBeaconBlock, blockHash string) (*ethpb.SignedBeaconBlockContentsDeneb, error) {
-	denebBlock, err := castedBlock.PbDenebBlock()
+	bp, err := castedBlock.Proto()
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert block to Deneb block: %v", err)
+		return nil, fmt.Errorf("failed to convert block to proto message: %v", err)
+	}
+
+	denebBlock, ok := bp.(*ethpb.SignedBeaconBlockDeneb)
+	if !ok {
+		return nil, fmt.Errorf("failed to convert block of type %T to Deneb block", bp)
 	}
 
 	kzgCommits := denebBlock.Block.Body.BlobKzgCommitments

@@ -5,9 +5,6 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
-	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -18,6 +15,11 @@ import (
 	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
 	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 	"github.com/prysmaticlabs/prysm/v5/runtime/version"
+
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/bdn"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
+	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 type bxBlockRLP struct {
@@ -113,6 +115,11 @@ func (c Converter) beaconBlockBlockchainToBDN(wrappedBlock beacon.WrappedReadOnl
 		return nil, fmt.Errorf("could not copy block: %v", err)
 	}
 
+	b, err := bdn.PbGenericBlock(block)
+	if err != nil {
+		return nil, fmt.Errorf("could not get generic block: %v", err)
+	}
+
 	header, err := block.Header()
 	if err != nil {
 		return nil, fmt.Errorf("could not get header: %v", err)
@@ -137,33 +144,20 @@ func (c Converter) beaconBlockBlockchainToBDN(wrappedBlock beacon.WrappedReadOnl
 	var bxBlockType types.BxBlockType
 	switch block.Version() {
 	case version.Phase0:
-		block, err := block.PbPhase0Block()
-		if err != nil {
-			return nil, fmt.Errorf("could not get phase 0 block %v: %v", beaconHash, err)
-		}
-
 		hash = beaconHash
-		concreteBlock = block
+		concreteBlock = b.GetPhase0()
 		bxBlockType = types.BxBlockTypeBeaconPhase0
 	case version.Altair:
-		block, err := block.PbAltairBlock()
-		if err != nil {
-			return nil, fmt.Errorf("could not get altair block %v: %v", beaconHash, err)
-		}
-
 		hash = beaconHash
-		concreteBlock = block
+		concreteBlock = b.GetAltair()
 		bxBlockType = types.BxBlockTypeBeaconAltair
 	case version.Bellatrix:
-		block, err := block.PbBellatrixBlock()
-		if err != nil {
-			return nil, fmt.Errorf("could not get bellatrix block %v: %v", beaconHash, err)
-		}
+		blockBellatrix := b.GetBellatrix()
 
-		copy(hash[:], block.GetBlock().GetBody().GetExecutionPayload().GetBlockHash())
-		number = block.GetBlock().GetBody().GetExecutionPayload().GetBlockNumber()
+		copy(hash[:], blockBellatrix.GetBlock().GetBody().GetExecutionPayload().GetBlockHash())
+		number = blockBellatrix.GetBlock().GetBody().GetExecutionPayload().GetBlockNumber()
 
-		for i, tx := range block.GetBlock().GetBody().GetExecutionPayload().GetTransactions() {
+		for i, tx := range blockBellatrix.GetBlock().GetBody().GetExecutionPayload().GetTransactions() {
 			t := new(ethtypes.Transaction)
 			if err := t.UnmarshalBinary(tx); err != nil {
 				return nil, fmt.Errorf("invalid transaction %d: %v", i, err)
@@ -181,20 +175,17 @@ func (c Converter) beaconBlockBlockchainToBDN(wrappedBlock beacon.WrappedReadOnl
 			compressedTx := types.NewBxBlockTransaction(txHash, txBytes)
 			txs = append(txs, compressedTx)
 		}
-		block.Block.Body.ExecutionPayload.Transactions = nil
+		blockBellatrix.Block.Body.ExecutionPayload.Transactions = nil
 
-		concreteBlock = block
+		concreteBlock = blockBellatrix
 		bxBlockType = types.BxBlockTypeBeaconBellatrix
 	case version.Capella:
-		b, err := block.PbCapellaBlock()
-		if err != nil {
-			return nil, fmt.Errorf("could not get capella block %v: %v", beaconHash, err)
-		}
+		blockCapella := b.GetCapella()
 
-		copy(hash[:], b.GetBlock().GetBody().GetExecutionPayload().GetBlockHash())
-		number = b.GetBlock().GetBody().GetExecutionPayload().GetBlockNumber()
+		copy(hash[:], blockCapella.GetBlock().GetBody().GetExecutionPayload().GetBlockHash())
+		number = blockCapella.GetBlock().GetBody().GetExecutionPayload().GetBlockNumber()
 
-		for i, tx := range b.GetBlock().GetBody().GetExecutionPayload().GetTransactions() {
+		for i, tx := range blockCapella.GetBlock().GetBody().GetExecutionPayload().GetTransactions() {
 			t := new(ethtypes.Transaction)
 			if err := t.UnmarshalBinary(tx); err != nil {
 				return nil, fmt.Errorf("invalid transaction %d: %v", i, err)
@@ -212,15 +203,18 @@ func (c Converter) beaconBlockBlockchainToBDN(wrappedBlock beacon.WrappedReadOnl
 			compressedTx := types.NewBxBlockTransaction(txHash, txBytes)
 			txs = append(txs, compressedTx)
 		}
-		b.Block.Body.ExecutionPayload.Transactions = nil
+		blockCapella.Block.Body.ExecutionPayload.Transactions = nil
 
-		concreteBlock = b
+		concreteBlock = blockCapella
 		bxBlockType = types.BxBlockTypeBeaconCapella
 	case version.Deneb:
-		b, err := block.PbDenebBlock()
-		if err != nil {
-			return nil, fmt.Errorf("could not get deneb block %v: %v", beaconHash, err)
+		blockDeneb := b.GetDeneb()
+		if blockDeneb == nil {
+			return nil, bdn.ErrNotDenebBlock
 		}
+
+		b := blockDeneb.GetBlock()
+
 		copy(hash[:], b.GetBlock().GetBody().GetExecutionPayload().GetBlockHash())
 		number = b.GetBlock().GetBody().GetExecutionPayload().GetBlockNumber()
 

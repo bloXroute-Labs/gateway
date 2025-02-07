@@ -352,7 +352,7 @@ func (t *BxTxStore) clean() (cleaned int, cleanedShortIDs types.ShortIDsByNetwor
 		if removeReason != "" {
 			// remove the transaction by hash from both maps
 			// no need to add the hash to the history as it is deleted after long time
-			// dec-5-2021: add to hash history to prevent a lot of reentry (BSC, Polygon)
+			// dec-5-2021: add to hash history to prevent a lot of reentry (BSC)
 			t.remove(key, bxTransaction, FullReEntryProtection, removeReason)
 
 			cleanedShortIDs[networkNum] = append(cleanedShortIDs[networkNum], bxTransaction.ShortIDs()...)

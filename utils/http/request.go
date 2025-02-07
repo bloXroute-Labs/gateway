@@ -25,7 +25,7 @@ func NewPOSTRequest[T any](client *http.Client, endpoint string, params any, aut
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(paramsBytes))
 	if err != nil {
-		err := fmt.Errorf("failed to create http request for %v, with params %v, error %v, ", endpoint, params, err)
+		err := fmt.Errorf("failed to create http request for %v, with params %+v, error %v, ", endpoint, params, err)
 		return *new(T), err
 	}
 	request.Header.Add("Accept", "application/json")
@@ -37,7 +37,7 @@ func NewPOSTRequest[T any](client *http.Client, endpoint string, params any, aut
 
 	response, err := client.Do(request)
 	if err != nil {
-		err := fmt.Errorf("failed to get response from %v, with params %v, error %v, ", endpoint, params, err)
+		err := fmt.Errorf("failed to get response from %v, with params %+v, error %v, ", endpoint, params, err)
 		return *new(T), err
 	}
 	defer response.Body.Close()

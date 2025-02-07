@@ -89,7 +89,6 @@ func NewGRPCServer(
 	gatewayPublicKey string,
 	connector Connector,
 	validatorsManager *validator.Manager,
-	intentsManager services.IntentsManager,
 	feedManager feedManager,
 	txStore services.TxStore,
 ) *Server {
@@ -107,8 +106,6 @@ func NewGRPCServer(
 		gatewayPublicKey:               gatewayPublicKey,
 		connector:                      connector,
 		validatorsManager:              validatorsManager,
-		allowIntroductoryTierAccess:    config.AllowIntroductoryTierAccess,
-		intentsManager:                 intentsManager,
 		feedManager:                    feedManager,
 		txStore:                        txStore,
 		chainID:                        bxgateway.NetworkNumToChainID[sdn.NetworkNum()],

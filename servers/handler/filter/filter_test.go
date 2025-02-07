@@ -87,16 +87,6 @@ func TestFilter(t *testing.T) {
 	}
 }
 
-func TestIntentsFilter(t *testing.T) {
-	pythonFormat := "dapp_address = 0x0df00"
-	expectedGoFormat := "({dapp_address} == '0x0df00')"
-
-	goFormatResult, exp, err := parseFilter(pythonFormat)
-	assert.Equal(t, strings.ToLower(expectedGoFormat), strings.ToLower(goFormatResult))
-	assert.NoError(t, err)
-	assert.Nil(t, evaluateIntentsFilters(exp))
-}
-
 func TestIsCorrectGasPriceFilters(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -140,11 +140,9 @@ func TestBlxrTx(t *testing.T) {
 
 	resetNetworks := func() {
 		bxgateway.NetworkNumToChainID = map[types.NetworkNum]types.NetworkID{
-			bxgateway.MainnetNum:        bxgateway.EthChainID,
-			bxgateway.BSCMainnetNum:     bxgateway.BSCChainID,
-			bxgateway.PolygonMainnetNum: bxgateway.PolygonChainID,
-			bxgateway.PolygonMumbaiNum:  bxgateway.PolygonChainID,
-			bxgateway.HoleskyNum:        bxgateway.HoleskyChainID,
+			bxgateway.MainnetNum:    bxgateway.EthChainID,
+			bxgateway.BSCMainnetNum: bxgateway.BSCChainID,
+			bxgateway.HoleskyNum:    bxgateway.HoleskyChainID,
 		}
 	}
 	// swapChainID swaps the chainID for the mainnet to 10
@@ -273,7 +271,7 @@ func TestBlxrTx(t *testing.T) {
 				NextValidator: true,
 			},
 			generateTxAndHash: generateDynamicFeeTxAndHash,
-			expectedErrSubStr: "currently next_validator is only supported on BSC and Polygon networks",
+			expectedErrSubStr: "currently next_validator is only supported on BSC network",
 		},
 		{
 			description:   "Nil validator map on next validator",
@@ -380,11 +378,9 @@ func TestGatewayGRPCBlxrBatchTx(t *testing.T) {
 
 	resetNetworks := func() {
 		bxgateway.NetworkNumToChainID = map[types.NetworkNum]types.NetworkID{
-			bxgateway.MainnetNum:        bxgateway.EthChainID,
-			bxgateway.BSCMainnetNum:     bxgateway.BSCChainID,
-			bxgateway.PolygonMainnetNum: bxgateway.PolygonChainID,
-			bxgateway.PolygonMumbaiNum:  bxgateway.PolygonChainID,
-			bxgateway.HoleskyNum:        bxgateway.HoleskyChainID,
+			bxgateway.MainnetNum:    bxgateway.EthChainID,
+			bxgateway.BSCMainnetNum: bxgateway.BSCChainID,
+			bxgateway.HoleskyNum:    bxgateway.HoleskyChainID,
 		}
 	}
 	// swapChainID swaps the chainID for the mainnet to 10

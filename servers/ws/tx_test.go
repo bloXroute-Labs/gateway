@@ -83,7 +83,7 @@ func (s *wsSuite) TestBlxrTxRequestWithNextValidator() {
 	s.Require().True(ok)
 	data, ok := err["data"].(string)
 	s.Require().True(ok)
-	s.Assert().Contains(data, "next_validator is only supported on BSC and Polygon networks")
+	s.Assert().Contains(data, "next_validator is only supported on BSC network")
 }
 
 func (s *wsSuite) TestBlxrBSCTxRequestWithNextValidator() {

@@ -35,14 +35,6 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *jsonrpc2.Conn
 		return
 	}
 
-	// check if the account has the right tier to access
-	// if "allowIntroductoryTierAccess" == false, then this check was already done before creating the connection
-	if h.allowIntroductoryTierAccess && feed != types.UserIntentsFeed && feed != types.UserIntentSolutionsFeed && feed != types.QuotesFeed && !h.connectionAccount.TierName.IsEnterprise() {
-		sendErrorMsg(ctx, jsonrpc.Blocked, "account must be enterprise / enterprise elite / ultra", conn, req.ID)
-		conn.Close()
-		return
-	}
-
 	if len(h.nodeWSManager.Providers()) == 0 && feed == types.NewBlocksFeed &&
 		h.networkNum != bxgateway.MainnetNum && h.networkNum != bxgateway.HoleskyNum {
 		errMsg := fmt.Sprintf("%v Feed requires a websockets endpoint to be specifed via either --eth-ws-uri or --multi-node startup parameter", feed)
@@ -51,15 +43,8 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *jsonrpc2.Conn
 	}
 
 	var request *ClientReq
-	var postRun func()
-	switch feed {
-	case types.UserIntentsFeed, types.UserIntentSolutionsFeed:
-		request, postRun, err = h.createIntentClientReq(req, feed, rpcParams)
-	case types.QuotesFeed:
-		request, postRun, err = h.createQuoteClientReq(rpcParams)
-	default:
-		request, err = h.createClientReq(req, feed, rpcParams)
-	}
+
+	request, err = h.createClientReq(req, feed, rpcParams)
 	if err != nil {
 		sendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
 		return
@@ -71,7 +56,7 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *jsonrpc2.Conn
 		return
 	}
 
-	ci, ro := h.createClientInfoAndRequestOpts(feed, request)
+	ci, ro := h.createClientInfoAndRequestOpts(request)
 
 	sub, errSubscribe := h.feedManager.Subscribe(feed, types.WebSocketFeed, conn, ci, ro, false)
 	if errSubscribe != nil {
@@ -85,10 +70,6 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *jsonrpc2.Conn
 		// unsubscription can be done by client if he sends unsubscribe request so no need to log if subscription not found
 		if err != nil && !errors.Is(err, bxgateway.ErrSubscriptionNotFound) {
 			h.log.Errorf("failed to unsubscribe from %v, subscriptionID %v: %v", feed, subscriptionID, err)
-		}
-
-		if postRun != nil {
-			postRun()
 		}
 	}()
 
@@ -168,45 +149,17 @@ func (h *handlerObj) handleRPCSubscribeNotify(ctx context.Context, conn *jsonrpc
 					sendErrorMsg(ctx, jsonrpc.InvalidRequest, err.Error(), conn, reqID)
 					return
 				}
-			case types.UserIntentsFeed:
-				in := notification.(*types.UserIntentNotification)
-				if !shouldSendIntent(request, in.DappAddress) {
-					continue
-				}
-				if h.sendIntentNotification(ctx, subscriptionID, conn, in) != nil {
-					return
-				}
-			case types.UserIntentSolutionsFeed:
-				intentSolution := notification.(*types.UserIntentSolutionNotification)
-				if !strings.EqualFold(intentSolution.DappAddress, request.Includes[0]) && !strings.EqualFold(intentSolution.SenderAddress, request.Includes[0]) {
-					continue
-				}
-
-				if h.sendIntentSolutionNotification(ctx, subscriptionID, conn, intentSolution) != nil {
-					return
-				}
-			case types.QuotesFeed:
-				quote := notification.(*types.QuoteNotification)
-				if strings.EqualFold(quote.DappAddress, request.Includes[0]) {
-					if h.sendQuoteNotification(ctx, subscriptionID, conn, quote) != nil {
-						return
-					}
-				}
 			}
 		}
 	}
 }
 
-func (h *handlerObj) createClientInfoAndRequestOpts(feed types.FeedType, request *ClientReq) (types.ClientInfo, types.ReqOptions) {
+func (h *handlerObj) createClientInfoAndRequestOpts(request *ClientReq) (types.ClientInfo, types.ReqOptions) {
 	ci := types.ClientInfo{
 		RemoteAddress: h.remoteAddress,
 		AccountID:     h.connectionAccount.AccountID,
 		Tier:          string(h.connectionAccount.TierName),
 		MetaInfo:      h.headers,
-	}
-
-	if feed == types.UserIntentsFeed || feed == types.UserIntentSolutionsFeed {
-		return ci, types.ReqOptions{}
 	}
 
 	var filters string
@@ -331,67 +284,6 @@ func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan types.
 	}
 }
 
-func (h *handlerObj) sendIntentNotification(ctx context.Context, subscriptionID string, conn *jsonrpc2.Conn, in *types.UserIntentNotification) error {
-	response := userIntentResponse{
-		Subscription: subscriptionID,
-		Result: userIntentNotification{
-			DappAddress:   in.DappAddress,
-			SenderAddress: in.SenderAddress,
-			IntentID:      in.ID,
-			Intent:        in.Intent,
-			Timestamp:     in.Timestamp.Format(time.RFC3339),
-		},
-	}
-
-	err := conn.Notify(ctx, "subscribe", response)
-	if err != nil {
-		h.log.Errorf("error reply to subscriptionID %v: %v", subscriptionID, err.Error())
-		return err
-	}
-
-	return nil
-}
-
-func (h *handlerObj) sendQuoteNotification(ctx context.Context, subscriptionID string, conn *jsonrpc2.Conn, quote *types.QuoteNotification) error {
-	response := quoteResponse{
-		Subscription: subscriptionID,
-		Result: quoteNotification{
-			DappAddress:   quote.DappAddress,
-			SolverAddress: quote.SolverAddress,
-			ID:            quote.ID,
-			Quote:         quote.Quote,
-			Timestamp:     quote.Timestamp.Format(time.RFC3339),
-		},
-	}
-
-	err := conn.Notify(ctx, "subscribe", response)
-	if err != nil {
-		h.log.Errorf("error reply to subscriptionID %v: %v", subscriptionID, err.Error())
-		return err
-	}
-
-	return nil
-}
-
-func (h *handlerObj) sendIntentSolutionNotification(ctx context.Context, subscriptionID string, conn *jsonrpc2.Conn, in *types.UserIntentSolutionNotification) error {
-	response := userIntentSolutionResponse{
-		Subscription: subscriptionID,
-		Result: userIntentSolutionNotification{
-			IntentID:       in.IntentID,
-			IntentSolution: in.Solution,
-			SolutionID:     in.ID,
-		},
-	}
-
-	err := conn.Notify(ctx, "subscribe", response)
-	if err != nil {
-		h.log.Errorf("error reply to subscriptionID %v: %v", subscriptionID, err.Error())
-		return err
-	}
-
-	return nil
-}
-
 func filterAndIncludeTx(clientReq *ClientReq, tx *types.NewTransactionNotification, remoteAddress string, accountID types.AccountID) *TxResult {
 	if !shouldSendTx(clientReq, tx, remoteAddress, accountID) {
 		return nil
@@ -460,20 +352,4 @@ func includeTx(clientReq *ClientReq, tx *types.NewTransactionNotification) *TxRe
 	}
 
 	return &response
-}
-
-func shouldSendIntent(clientReq *ClientReq, dAppAddress string) bool {
-	if clientReq.Expr == nil {
-		return true
-	}
-
-	shouldSend, err := conditions.Evaluate(clientReq.Expr, map[string]interface{}{"dapp_address": strings.ToLower(dAppAddress)})
-	if err != nil {
-		log.Errorf("error evaluate Filters. Feed: %v. filters: %s. dapp address: %v error - %v",
-			clientReq.Feed, clientReq.Expr, dAppAddress, err.Error())
-
-		return false
-	}
-
-	return shouldSend
 }

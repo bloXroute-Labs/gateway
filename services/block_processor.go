@@ -6,12 +6,13 @@ import (
 	"math/big"
 	"time"
 
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
-	"github.com/bloXroute-Labs/gateway/v2/logger"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	ethTypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rlp"
 )
 
 // error constants for identifying special processing cases
@@ -19,7 +20,6 @@ var (
 	ErrMissingShortIDs          = errors.New("missing short IDs")
 	ErrUnknownBlockType         = errors.New("unknown block type")
 	ErrNotCompatibleBeaconBlock = errors.New("not compatible beacon block")
-	ErrQuoteNotExist            = errors.New("quote does not exist")
 )
 
 func (e *ErrAlreadyProcessed) Error() string {
@@ -75,6 +75,9 @@ type bxBroadcastBSCBlobSidecar struct {
 }
 
 // BxBlockSSZ is a struct for SSZ encoding/decoding of a block
+// To regenerate block_processor_encoding.go file:
+// 1. clone github.com/prysmaticlabs/fastssz
+// 2. $ go run sszgen/*.go --path {SUBSTITUTE_WITH_PATH_TO_REPO}/gateway/services --objs=BxBlockSSZ
 type BxBlockSSZ struct {
 	Block  []byte                     `ssz-max:"367832"`
 	Txs    []*bxCompressedTransaction `ssz-max:"1048576,1073741825" ssz-size:"?,?"`
@@ -215,7 +218,7 @@ func (bp *blockProcessor) processSidecarsFromRLPBroadcast(rlpSidecars []bxBroadc
 				return nil, 0, fmt.Errorf("failed to get blob sidecar by tx hash: %v", hash)
 			}
 
-			var ethTx ethTypes.Transaction
+			var ethTx ethtypes.Transaction
 			err = rlp.DecodeBytes(tx.Content(), &ethTx)
 			if err != nil {
 				return nil, 0, fmt.Errorf("failed to decode Ethereum transaction: %v", err)
@@ -225,12 +228,12 @@ func (bp *blockProcessor) processSidecarsFromRLPBroadcast(rlpSidecars []bxBroadc
 				return nil, 0, fmt.Errorf("failed to get blob sidecar from Ethereum transaction")
 			}
 
-			logger.Tracef("successfully decompressed eth block blob sidecar, index: %d, tx hash: %s", blobSidecar.TxIndex, blobSidecar.TxHash.String())
+			log.Tracef("successfully decompressed eth block blob sidecar, index: %d, tx hash: %s", blobSidecar.TxIndex, blobSidecar.TxHash.String())
 
 			blobSidecar.TxSidecar = ethTx.BlobTxSidecar()
 			blobSidecar.IsCompressed = false
 		} else {
-			logger.Tracef("eth block blob sidecar is not compressed, tx hash: %s", blobSidecar.TxHash.String())
+			log.Tracef("eth block blob sidecar is not compressed, tx hash: %s", blobSidecar.TxHash.String())
 		}
 		blobSidecars[i] = blobSidecar
 	}
@@ -350,11 +353,11 @@ func (bp *blockProcessor) processBlobSidecarToRLPBroadcast(bxBlobSidecars []*typ
 
 		bxTransaction, ok := bp.txStore.Get(hash)
 		if ok && bxTransaction.AddTime().Before(maxTimestampForCompression) {
-			logger.Tracef("Successfully compressed eth block blob sidecar, index: %d, tx hash: %s", sidecar.TxIndex, sidecar.TxHash.String())
+			log.Tracef("Successfully compressed eth block blob sidecar, index: %d, tx hash: %s", sidecar.TxIndex, sidecar.TxHash.String())
 			sidecar.IsCompressed = true
 			sidecar.TxSidecar = nil
 		} else {
-			logger.Tracef("Unable to compress eth block blob sidecar, sending as is: %s", sidecar.TxHash.String())
+			log.Tracef("Unable to compress eth block blob sidecar, sending as is: %s", sidecar.TxHash.String())
 			sidecar.IsCompressed = false
 		}
 
@@ -402,9 +405,9 @@ func (bp *blockProcessor) newRLPBlockBroadcast(block *types.BxBlock, networkNum 
 		if err != nil {
 			return nil, usedShortIDs, err
 		}
-		logger.Tracef("Successfully processed %d blob sidecars in block %s", len(blobSidecars), block.Hash().String())
+		log.Tracef("Successfully processed %d blob sidecars in block %s", len(blobSidecars), block.Hash().String())
 	} else {
-		logger.Tracef("No blob sidecars found in block %s", block.Hash().String())
+		log.Tracef("No blob sidecars found in block %s", block.Hash().String())
 	}
 
 	rlpBlock := bxBlockRLP{

@@ -6,15 +6,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/blockchain"
-	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/enode"
+
+	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
 )
 
 // ETH66, ETH67 are the protocols that dropped by go-ethereum which still should be supported
@@ -99,12 +100,10 @@ func (*NewPooledTransactionHashesPacket66) Kind() byte { return eth.NewPooledTra
 
 // supportedProtocols is the map of networks to devp2p protocols supported by this client
 var supportedProtocols = map[uint64][]uint{
-	network.BSCMainnetChainID:     {eth.ETH68},
-	network.BSCTestnetChainID:     {eth.ETH68},
-	network.PolygonMainnetChainID: {ETH67, eth.ETH68},
-	network.PolygonMumbaiChainID:  {ETH67, eth.ETH68},
-	network.EthMainnetChainID:     {ETH66, ETH67, eth.ETH68},
-	network.HoleskyChainID:        {ETH67, eth.ETH68},
+	network.BSCMainnetChainID: {eth.ETH68},
+	network.BSCTestnetChainID: {eth.ETH68},
+	network.EthMainnetChainID: {ETH66, ETH67, eth.ETH68},
+	network.HoleskyChainID:    {ETH67, eth.ETH68},
 }
 
 // protocolLengths is a mapping of each supported devp2p protocol to its message version length

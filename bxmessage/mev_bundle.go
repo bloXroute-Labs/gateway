@@ -73,6 +73,8 @@ type MEVBundle struct {
 	// From protocol version 52
 	BlocksCount      int      `json:"blocks_count,omitempty"`
 	DroppingTxHashes []string `json:"dropping_tx_hashes,omitempty"`
+	// From protocol version 53
+	EndOfBlock bool `json:"end_of_block"`
 }
 
 // NewMEVBundle creates a new MEVBundle
@@ -90,6 +92,7 @@ func NewMEVBundle(
 	incomingRefundRecipient string,
 	blocksCount int,
 	droppingTxHashes []string,
+	endOfBlock bool,
 ) (MEVBundle, error) {
 	if len(uuid) != 0 && len(uuid) != 36 {
 		return MEVBundle{}, errors.New("invalid uuid len")
@@ -108,13 +111,14 @@ func NewMEVBundle(
 		IncomingRefundRecipient: incomingRefundRecipient,
 		BlocksCount:             blocksCount,
 		DroppingTxHashes:        droppingTxHashes,
+		EndOfBlock:              endOfBlock,
 	}, nil
 }
 
 // String returns a string representation of the MEVBundle
 func (m MEVBundle) String() string {
-	return fmt.Sprintf("mev bundle(sender account ID: %s, hash: %s, blockNumber: %s, builders: %v, txs: %d, sent from cloud api: %v, tier: %v, allowMixedBundles: %v, priorityFeeRefund: %v, incomingRefundRecipient: %v, UUID: %s, MinTimestamp %v , MaxTimestamp %v, RevertingHashes %v, blocksCount %v, dropingTxs %v)",
-		m.OriginalSenderAccountID, m.BundleHash, m.BlockNumber, m.MEVBuilders, len(m.Transactions), m.SentFromCloudAPI, m.OriginalSenderAccountTier, m.AvoidMixedBundles, m.PriorityFeeRefund, m.IncomingRefundRecipient, m.UUID, m.MinTimestamp, m.MaxTimestamp, len(m.RevertingHashes), m.BlocksCount, len(m.DroppingTxHashes))
+	return fmt.Sprintf("mev bundle(sender account ID: %s, hash: %s, blockNumber: %s, builders: %v, txs: %d, sent from cloud api: %v, tier: %v, allowMixedBundles: %v, priorityFeeRefund: %v, incomingRefundRecipient: %v, UUID: %s, MinTimestamp %v , MaxTimestamp %v, RevertingHashes %v, blocksCount %v, dropingTxs %v, endOfBlock %v)",
+		m.OriginalSenderAccountID, m.BundleHash, m.BlockNumber, m.MEVBuilders, len(m.Transactions), m.SentFromCloudAPI, m.OriginalSenderAccountTier, m.AvoidMixedBundles, m.PriorityFeeRefund, m.IncomingRefundRecipient, m.UUID, m.MinTimestamp, m.MaxTimestamp, len(m.RevertingHashes), m.BlocksCount, len(m.DroppingTxHashes), m.EndOfBlock)
 }
 
 // SetHash sets the hash based on the fields in BundleSubmission
@@ -162,6 +166,24 @@ func (m *MEVBundle) SetHash() {
 	for _, hash := range m.DroppingTxHashes {
 		buf = append(buf, []byte(hash)...)
 	}
+
+	endOfBlock := make([]byte, 1)
+	if m.EndOfBlock {
+		endOfBlock[0] = 1
+	}
+	buf = append(buf, endOfBlock...)
+
+	avoidMixedBundles := make([]byte, 1)
+	if m.AvoidMixedBundles {
+		avoidMixedBundles[0] = 1
+	}
+	buf = append(buf, avoidMixedBundles...)
+
+	priorityFeeRefund := make([]byte, 1)
+	if m.PriorityFeeRefund {
+		priorityFeeRefund[0] = 1
+	}
+	buf = append(buf, priorityFeeRefund...)
 
 	m.hash = utils.DoubleSHA256(buf[:])
 }
@@ -240,6 +262,10 @@ func (m MEVBundle) size(protocol Protocol, txs [][]byte) uint32 {
 		size += types.UInt32Len                                       // BlocksCount
 		size += types.UInt16Len                                       // DroppingTxHashes count
 		size += uint32(types.SHA256HashLen * len(m.DroppingTxHashes)) // DroppingTxHashes
+	}
+
+	if protocol >= BundlesEndOfBlocks {
+		size += types.UInt8Len
 	}
 
 	return size
@@ -450,6 +476,15 @@ func (m MEVBundle) Pack(protocol Protocol) ([]byte, error) {
 			copy(buf[offset:], tx)
 			offset += types.SHA256HashLen
 		}
+	}
+
+	if protocol >= BundlesEndOfBlocks {
+		if m.EndOfBlock {
+			buf[offset] = 1
+		} else {
+			buf[offset] = 0
+		}
+		offset += types.UInt8Len
 	}
 
 	if err := checkBuffEnd(&buf, offset); err != nil {
@@ -742,6 +777,15 @@ func (m *MEVBundle) Unpack(data []byte, protocol Protocol) error {
 		m.DroppingTxHashes = []string{}
 	}
 
+	if protocol >= BundlesEndOfBlocks {
+		if err = checkBufSize(&data, offset, types.UInt8Len); err != nil {
+			return err
+		}
+
+		m.EndOfBlock = data[offset] == 1
+		offset += types.UInt8Len //nolint:ineffassign
+	}
+
 	return nil
 }
 
@@ -816,5 +860,6 @@ func (m *MEVBundle) Clone() *MEVBundle {
 		IncomingRefundRecipient:   m.IncomingRefundRecipient,
 		BlocksCount:               m.BlocksCount,
 		DroppingTxHashes:          m.DroppingTxHashes,
+		EndOfBlock:                m.EndOfBlock,
 	}
 }
