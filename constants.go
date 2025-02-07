@@ -153,6 +153,9 @@ const (
 	ExternalTitanBuilderName = "titan"
 )
 
+// BaseMainnet - for Base main net blockchain network name
+const BaseMainnet = "Base-Mainnet"
+
 // Mainnet - for Ethereum main net blockchain network name
 const Mainnet = "Mainnet"
 
@@ -165,17 +168,14 @@ const BSCTestnet = "BSC-Testnet"
 // Holesky - for Holesky testnet blockchain network name
 const Holesky = "Holesky"
 
-// PolygonMainnet - for Polygon main net blockchain network name
-const PolygonMainnet = "Polygon-Mainnet"
-
-// PolygonMumbai - for Polygon Mumbai blockchain network name
-const PolygonMumbai = "Polygon-Mumbai"
-
 // MainnetNum - for Ethereum main net blockchain network number
 const MainnetNum types.NetworkNum = 5
 
 // BSCMainnetNum - for BSC main net blockchain network number
 const BSCMainnetNum types.NetworkNum = 10
+
+// BaseChainID -- Base chain ID
+const BaseChainID = 8453
 
 // BSCChainID - BSC chain ID
 const BSCChainID = 56
@@ -183,20 +183,14 @@ const BSCChainID = 56
 // EthChainID - eth chain ID
 const EthChainID types.NetworkID = 1
 
-// PolygonChainID - polygon chain ID
-const PolygonChainID types.NetworkID = 137
-
 // BSCTestnetChainID - BSC Testnet chain ID
 const BSCTestnetChainID = 97
 
 // HoleskyChainID - Holesky Testnet chain ID
 const HoleskyChainID = 17000
 
-// PolygonMainnetNum - for Polygon main net blockchain network number
-const PolygonMainnetNum types.NetworkNum = 36
-
-// PolygonMumbaiNum - for Polygon Mumbai blockchain network number
-const PolygonMumbaiNum types.NetworkNum = 47
+// BaseMainnetNum - for Base main net blockchain network number
+const BaseMainnetNum types.NetworkNum = 456
 
 // BSCTestnetNum - for BSC-Testnet blockchain network number
 const BSCTestnetNum types.NetworkNum = 42
@@ -216,41 +210,33 @@ const (
 
 // BlockchainNetworkToNetworkNum converts blockchain network to number
 var BlockchainNetworkToNetworkNum = map[string]types.NetworkNum{
-	Mainnet:        MainnetNum,
-	BSCMainnet:     BSCMainnetNum,
-	PolygonMainnet: PolygonMainnetNum,
-	PolygonMumbai:  PolygonMumbaiNum,
-	BSCTestnet:     BSCTestnetNum,
-	Holesky:        HoleskyNum,
+	Mainnet:    MainnetNum,
+	BSCMainnet: BSCMainnetNum,
+	BSCTestnet: BSCTestnetNum,
+	Holesky:    HoleskyNum,
 }
 
 // NetworkToBlockDuration defines block interval for each network
 var NetworkToBlockDuration = map[string]time.Duration{
-	Mainnet:        12 * time.Second,
-	Holesky:        12 * time.Second,
-	BSCMainnet:     3 * time.Second,
-	BSCTestnet:     3 * time.Second,
-	PolygonMainnet: 2 * time.Second,
-	PolygonMumbai:  2 * time.Second,
+	Mainnet:    12 * time.Second,
+	Holesky:    12 * time.Second,
+	BSCMainnet: 3 * time.Second,
+	BSCTestnet: 3 * time.Second,
 }
 
 // NetworkNumToChainID - Mapping from networkNum to chainID
 var NetworkNumToChainID = map[types.NetworkNum]types.NetworkID{
-	MainnetNum:        EthChainID,
-	BSCMainnetNum:     BSCChainID,
-	PolygonMainnetNum: PolygonChainID,
-	PolygonMumbaiNum:  PolygonChainID,
-	HoleskyNum:        HoleskyChainID,
+	MainnetNum:    EthChainID,
+	BSCMainnetNum: BSCChainID,
+	HoleskyNum:    HoleskyChainID,
 }
 
 // NetworkNumToBlockchainNetwork - Mapping from networkNum to blockchain network
 var NetworkNumToBlockchainNetwork = map[types.NetworkNum]string{
-	MainnetNum:        Mainnet,
-	BSCMainnetNum:     BSCMainnet,
-	PolygonMainnetNum: PolygonMainnet,
-	PolygonMumbaiNum:  PolygonMumbai,
-	BSCTestnetNum:     BSCTestnet,
-	HoleskyNum:        Holesky,
+	MainnetNum:    Mainnet,
+	BSCMainnetNum: BSCMainnet,
+	BSCTestnetNum: BSCTestnet,
+	HoleskyNum:    Holesky,
 }
 
 // ErrSubscriptionNotFound - error for subscription not found

@@ -314,15 +314,6 @@ var (
 		Name:  "bsc-source-endpoint",
 		Usage: "websocket endpoint for BSC mainnet go-gateway",
 	}
-	PolygonMainnetGatewayEndpoint = &cli.StringFlag{
-		Name:  "polygon-source-endpoint",
-		Usage: "websocket endpoint for Polygon mainnet go-gateway",
-	}
-	PolygonMainnetHeimdallEndpoints = &cli.StringFlag{
-		Name:    "polygon-heimdall-endpoints",
-		Aliases: []string{"polygon-heimdall-endpoint"},
-		Usage:   "tcp endpoints for Polygon mainnet heimdall server",
-	}
 	CheckMevCredit = &cli.BoolFlag{
 		Name:  "check-mev-credit",
 		Usage: "enable this flag will forward the mev rpc request to cloud api",
@@ -421,6 +412,11 @@ var (
 		Usage:    "Database DSN string <username:password@tcp(dns:port)/schema>",
 		Required: true,
 	}
+	ELKFlag = &cli.StringFlag{
+		Name:     "elk",
+		Usage:    "elk <url,username,password>",
+		Required: true,
+	}
 	BloxrouteAccountsFlag = &cli.StringFlag{
 		Name:  "bloxroute-accounts",
 		Usage: "enable detailed bundle trace response for these accounts",
@@ -428,12 +424,6 @@ var (
 	TxIncludeSenderInFeed = &cli.BoolFlag{
 		Name:   "tx-include-sender-in-feed",
 		Usage:  "(for gateways only) include sender address in transaction feed",
-		Hidden: true,
-		Value:  false,
-	}
-	EnableIntroductoryIntentsAccess = &cli.BoolFlag{
-		Name:   "enable-introductory-intents-access",
-		Usage:  "enable intents access for Introductory tiers",
 		Hidden: true,
 		Value:  false,
 	}

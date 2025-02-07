@@ -316,7 +316,7 @@ func (bs *BdnPerformanceStats) getNodeStats(node types.NodeEndpoint) (*BdnPerfor
 func (bs *BdnPerformanceStats) getOrCreateNodeStats(node types.NodeEndpoint) *BdnPerformanceStatsData {
 	stats, ok := bs.nodeStats[node.IPPort()]
 	if !ok {
-		// right now we are not supporting beacon inbound connections, so for ETH inbound will be false and for BSC and Polygon it will be true
+		// right now we are not supporting beacon inbound connections, so for ETH inbound will be false and for BSC it will be true
 		stats = &BdnPerformanceStatsData{Dynamic: true, IsConnected: true, IsBeacon: node.IsBeacon, BlockchainNetwork: node.BlockchainNetwork}
 		if !node.Dynamic {
 			log.Debugf("override the dynamic to true for node %v", node.IPPort())

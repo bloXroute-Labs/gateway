@@ -5,15 +5,17 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
-	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
-	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
 	"github.com/stretchr/testify/require"
+
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/bdn"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
+	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
+	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 var (
@@ -148,13 +150,18 @@ func TestConverter_DenebBeaconBlock(t *testing.T) {
 	blockchainBlock, err := c.BlockBDNtoBlockchain(bxBlock)
 	require.NoError(t, err)
 
-	denebBlock, err := blockchainBlock.(interfaces.ReadOnlySignedBeaconBlock).PbDenebBlock()
+	genericBlock, err := bdn.PbGenericBlock(blockchainBlock.(interfaces.ReadOnlySignedBeaconBlock))
 	require.NoError(t, err)
+
+	denebBlock := genericBlock.GetDeneb()
+	require.NotNil(t, denebBlock)
+
+	signedBlock := denebBlock.GetBlock()
 
 	// Check beacon BxBlock transactions exactly same as eth block
 	for i, tx := range block.Transactions() {
 		blockTx := new(ethtypes.Transaction)
-		err = blockTx.UnmarshalBinary(denebBlock.GetBlock().GetBody().GetExecutionPayload().GetTransactions()[i])
+		err = blockTx.UnmarshalBinary(signedBlock.GetBlock().GetBody().GetExecutionPayload().GetTransactions()[i])
 		require.NoError(t, err)
 
 		require.Equal(t, blockTx.Hash(), tx.Hash())
@@ -170,7 +177,7 @@ func TestConverter_DenebBeaconBlock(t *testing.T) {
 		require.NoError(t, err)
 
 		tx := new(ethtypes.Transaction)
-		err = tx.UnmarshalBinary(denebBlock.GetBlock().GetBody().GetExecutionPayload().GetTransactions()[i])
+		err = tx.UnmarshalBinary(signedBlock.GetBlock().GetBody().GetExecutionPayload().GetTransactions()[i])
 		require.NoError(t, err)
 
 		require.Equal(t, notificationTx.Hash(), tx.Hash())

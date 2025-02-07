@@ -31,7 +31,7 @@ var (
 
 // Accounter declares the interface of the account service
 type Accounter interface {
-	Authorize(accountID types.AccountID, secretHash string, isWebsocket bool, allowIntroductoryTierAccess bool, remoteAddr string) (sdnmessage.Account, error)
+	Authorize(accountID types.AccountID, secretHash string, isWebsocket bool, remoteAddr string) (sdnmessage.Account, error)
 }
 
 type accountFetcher interface {
@@ -66,7 +66,7 @@ func NewService(sdn accountFetcher, log *log.Entry) *Service {
 }
 
 // Authorize authorizes an account
-func (g *Service) Authorize(accountID types.AccountID, secretHash string, allowAccessByOtherAccounts, allowIntroductoryTierAccess bool, ip string) (sdnmessage.Account, error) {
+func (g *Service) Authorize(accountID types.AccountID, secretHash string, allowAccessByOtherAccounts bool, ip string) (sdnmessage.Account, error) {
 	// if gateway received request from a customer with a different account id, it should verify it with the SDN.
 	// if the gateway does not have permission to verify account id (which mostly happen with external gateways),
 	// SDN will return StatusUnauthorized and fail this connection. if SDN return any other error -
@@ -102,7 +102,7 @@ func (g *Service) Authorize(accountID types.AccountID, secretHash string, allowA
 			connectionAccountModel = accountRes.Account
 		}
 
-		if !allowIntroductoryTierAccess && !connectionAccountModel.TierName.IsEnterprise() {
+		if !connectionAccountModel.TierName.IsEnterprise() {
 			l.Warnf("customer account %s must be enterprise / enterprise elite / ultra but it is %v",
 				connectionAccountModel.AccountID, connectionAccountModel.TierName)
 			return connectionAccountModel, ErrTierTooLow

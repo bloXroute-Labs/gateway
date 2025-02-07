@@ -57,8 +57,6 @@ type grpcParams struct {
 	connector                      Connector
 	validatorsManager              *validator.Manager
 	txFromFieldIncludable          bool
-	allowIntroductoryTierAccess    bool
-	intentsManager                 services.IntentsManager
 	feedManager                    feedManager
 	txStore                        services.TxStore
 	chainID                        types.NetworkID
@@ -245,15 +243,6 @@ func (g *server) Status(ctx context.Context, req *pb.StatusRequest) (*pb.StatusR
 			AccountId:  string(accountModel.AccountID),
 			ExpireDate: accountModel.ExpireDate,
 		},
-		QueueStats: &pb.QueuesStats{
-			TxsQueueCount:      g.params.txsQueue.TxsCount(),
-			TxsOrderQueueCount: g.params.txsOrderQueue.TxsCount(),
-		},
-		IntentStats: &pb.IntentStats{
-			SubmittedIntentsCount:   g.params.intentsManager.TotalIntentSubmissions(),
-			SubmittedSolutionsCount: g.params.intentsManager.TotalSolutionSubmissions(),
-			SubmittedQuotesCount:    g.params.intentsManager.TotalQuoteSubmissions(),
-		},
 	}
 
 	return rsp, nil
@@ -309,7 +298,7 @@ func (g *server) validateAuthHeader(authHeader string, isRequiredForExternalGate
 		return nil, err
 	}
 
-	accountModel, err := g.params.accService.Authorize(accountID, secretHash, allowAccessByOtherAccounts, false, ip)
+	accountModel, err := g.params.accService.Authorize(accountID, secretHash, allowAccessByOtherAccounts, ip)
 	if err != nil {
 		return nil, err
 	}

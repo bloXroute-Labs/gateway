@@ -53,7 +53,6 @@ func TestAuthorization(t *testing.T) {
 	feedManager := feed.NewManager(sdn, services.NewNoOpSubscriptionServices(),
 		accountIDToAccountModel["gw"], stats, types.NetworkNum(5), true)
 
-	im := services.NewIntentsManager()
 	accService := &mockAccountService{}
 
 	g := bxmock.MockBxListener{}
@@ -71,7 +70,7 @@ func TestAuthorization(t *testing.T) {
 	nodeWSManager := eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false)
 
 	server := NewWSServer(cfg, "", "", sdn, g, accService, feedManager, nodeWSManager,
-		nil, im, stats, true)
+		nil, stats, true)
 	server.wsConnDelayOnErr = 10 * time.Millisecond // set a shorted delay for tests
 
 	eg.Go(func() error {

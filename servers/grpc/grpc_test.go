@@ -63,7 +63,7 @@ var (
 
 type mockAccountService struct{}
 
-func (s *mockAccountService) Authorize(accountID types.AccountID, hash string, _ bool, _ bool, _ string) (sdnmessage.Account, error) {
+func (s *mockAccountService) Authorize(accountID types.AccountID, hash string, _ bool, _ string) (sdnmessage.Account, error) {
 	acc, ok := accountIDToAccountModel[accountID]
 	if !ok {
 		return sdnmessage.Account{}, errTestAuth
@@ -145,7 +145,6 @@ func testGRPCServer(t *testing.T, port int, user string, password string) (*Serv
 		"",
 		bx,
 		nil,
-		services.NewIntentsManager(),
 		feedMngr,
 		nil,
 	)

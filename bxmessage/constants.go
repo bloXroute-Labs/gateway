@@ -68,18 +68,7 @@ const (
 	ValidatorUpdatesType         = "validator"
 	MEVBundleType                = "mevbundle"
 	ErrorNotificationType        = "notify"
-	IntentType                   = "intent"
-	IntentSolutionType           = "intentsol"
-	IntentSolutionsType          = "intentsols"
-	IntentsSubscriptionType      = "intentssub"
-	IntentsUnsubscriptionType    = "intentsunsub"
-	SolutionsSubscriptionType    = "solssub"
-	SolutionsUnsubscriptionType  = "solsunsub"
 	BeaconMessageType            = "beaconmsg"
-	GetIntentSolutionsType       = "getintsol"
-	QuotesType                   = "quotes"
-	QuotesSubscriptionType       = "quotessub"
-	QuotesUnsubscriptionType     = "quotesunsub"
 )
 
 // SenderLen is the byte length of sender
@@ -104,7 +93,10 @@ const EmptyProtocol = 0
 const MinProtocol = NextValidatorMultipleProtocol
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
-const CurrentProtocol = BundleBlocksCountAndDroppingTxs
+const CurrentProtocol = BundlesEndOfBlocks
+
+// BundlesEndOfBlocks is the minimum protocol version that supports bundle end of block
+const BundlesEndOfBlocks = 53
 
 // BundleBlocksCountAndDroppingTxs is the minimum protocol version that supports bundle blocks count and  dropping txs
 const BundleBlocksCountAndDroppingTxs = 52

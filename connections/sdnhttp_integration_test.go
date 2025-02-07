@@ -8,17 +8,18 @@ import (
 	"os"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/stretchr/testify/assert"
 )
 
-//Requires setting these environment variables:
-//REGISTRATION_ONLY_CERT_PATH
-//REGISTRATION_ONLY_KEY_PATH
-//API_CERT_PATH (for testnet)
-//API_KEY_PATH (for testnet)
+// Requires setting these environment variables:
+// REGISTRATION_ONLY_CERT_PATH
+// REGISTRATION_ONLY_KEY_PATH
+// API_CERT_PATH (for testnet)
+// API_KEY_PATH (for testnet)
 
 func getSSLCerts(t *testing.T) utils.SSLCerts {
 	apiCertPath := os.Getenv("API_CERT_PATH")
@@ -53,7 +54,6 @@ func TestInitGateway_GetsCorrectBlockchainNetworkFromProtocolAndNetwork(t *testi
 		txSyncIntervalS         float64
 	}{
 		{"Ethereum", "Mainnet", 5, "d4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3", 15, 1048576, 1048576, 12, 1800},
-		{"Ethereum", "Polygon-Mainnet", 36, "a9c28ce2141b56c474f1dc504bee9b01eb1bd7d1a507580d5519d4437a97de1b", 600, 2097152, 100000, 6, 1800},
 		{"Ethereum", "BSC-Mainnet", 10, "0d21840abff46b96c84b2ac9e10e4f5cdaeb5693cb665db62a2f3b02d2d57b5b", 15, 1048576, 1048576, 12, 1800},
 		{"BitcoinCash", "Mainnet", 3, "", 600, 33554432, 1048576, 6, 1800},
 	}
@@ -72,14 +72,14 @@ func TestInitGateway_GetsCorrectBlockchainNetworkFromProtocolAndNetwork(t *testi
 			err := s.InitGateway(testCase.protocol, testCase.network)
 			assert.NoError(t, err)
 
-			//check Network Number correct
+			// check Network Number correct
 			bcn, found := (*s.Networks())[testCase.networkNumber]
 			if !found || bcn == nil {
 				t.FailNow()
 			}
 			assert.Len(t, *s.Networks(), 1)
 
-			//check Network correct
+			// check Network correct
 			assert.Equal(t, testCase.protocol, bcn.Protocol)
 			assert.Equal(t, testCase.network, bcn.Network)
 			assert.Equal(t, testCase.networkNumber, bcn.NetworkNum)

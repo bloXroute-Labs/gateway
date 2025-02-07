@@ -55,7 +55,6 @@ func NewClientHandler(
 	gatewayPublicKey string,
 	feedManager *feed.Manager,
 	validatorsManager *validator.Manager,
-	intentsManager services.IntentsManager,
 	stats statistics.Stats,
 	txStore services.TxStore,
 	txFromFieldIncludable bool,
@@ -69,13 +68,13 @@ func NewClientHandler(
 	if config.WebsocketEnabled || config.WebsocketTLSEnabled {
 		websocketServer = ws.NewWSServer(config, certFile, keyFile,
 			sdn, node, accService, feedManager, nodeWSManager, validatorsManager,
-			intentsManager, stats, txFromFieldIncludable)
+			stats, txFromFieldIncludable)
 	}
 
 	if config.GRPC.Enabled {
 		gRPCServer = grpc.NewGRPCServer(config, stats, node, sdn, accService,
 			bridge, blockchainPeers, nodeWSManager, bdnStats, timeStarted,
-			txsQueue, txsOrderQueue, gatewayPublicKey, bx, validatorsManager, intentsManager, feedManager, txStore,
+			txsQueue, txsOrderQueue, gatewayPublicKey, bx, validatorsManager, feedManager, txStore,
 		)
 	}
 

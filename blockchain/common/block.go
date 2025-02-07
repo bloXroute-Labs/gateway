@@ -6,7 +6,7 @@ import (
 
 // Block represents a wrapper around an ethereum execution layer block, providing additional functionality.
 // It is a copy of the original go-ethereum Block struct, with the addition of the sidecars field to support BSC.
-// Currently used only by BSC or Polygon chains.
+// Currently used only by BSC chain.
 type Block struct {
 	ethTypes.Block
 

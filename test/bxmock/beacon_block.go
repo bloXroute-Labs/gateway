@@ -7,13 +7,14 @@ import (
 
 	"github.com/prysmaticlabs/go-bitfield"
 
-	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/prysmaticlabs/prysm/v5/config/params"
 	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
 	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
 	enginev1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
 	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 	"github.com/stretchr/testify/assert"
+
+	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 )
 
 // NewDenebBeaconBlock creates beacon block using execution layer block

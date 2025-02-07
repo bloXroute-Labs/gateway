@@ -345,38 +345,6 @@ func (b *BxConn) ProcessMessage(msgBytes bxmessage.MessageBytes) {
 			return
 		}
 		_ = b.Node.HandleMsg(mevBundle, b, connections.RunForeground)
-	case bxmessage.IntentType:
-		intent, err := bxmessage.UnpackIntent(msg, b.Protocol())
-		if err != nil {
-			b.log.Warnf("failed to unpack intent message: %v", err)
-			return
-		}
-
-		_ = b.Node.HandleMsg(intent, b, connections.RunBackground) //nolint:errcheck
-	case bxmessage.QuotesType:
-		quote, err := bxmessage.UnpackQuote(msg, b.Protocol())
-		if err != nil {
-			b.log.Warnf("failed to unpack quote message: %v", err)
-			return
-		}
-
-		_ = b.Node.HandleMsg(quote, b, connections.RunBackground) //nolint:errcheck
-	case bxmessage.IntentSolutionType:
-		solution, err := bxmessage.UnpackIntentSolution(msg, b.Protocol())
-		if err != nil {
-			b.log.Warnf("failed to unpack intent solution message: %v", err)
-			return
-		}
-
-		_ = b.Node.HandleMsg(solution, b, connections.RunBackground) //nolint:errcheck
-	case bxmessage.IntentSolutionsType:
-		solutions, err := bxmessage.UnpackIntentSolutions(msg, b.Protocol())
-		if err != nil {
-			b.Log().Warnf("failed to unpack intent solutions message: %v", err)
-			return
-		}
-
-		_ = b.Node.HandleMsg(solutions, b, connections.RunForeground) //nolint:errcheck
 	case bxmessage.BeaconMessageType:
 		beaconMessage := &bxmessage.BeaconMessage{}
 		if err := beaconMessage.Unpack(msg, b.Protocol()); err != nil {

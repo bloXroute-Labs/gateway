@@ -10,6 +10,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/eth/protocols/eth"
+	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
@@ -17,11 +23,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
-	"github.com/ethereum/go-ethereum/common"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/eth/protocols/eth"
-	"github.com/ethereum/go-ethereum/p2p"
-	"github.com/ethereum/go-ethereum/rlp"
 )
 
 // UpgradeStatusMsg is a message overloaded in eth/66
@@ -336,9 +337,7 @@ func (ep *Peer) Handshake(version uint32, networkChain uint64, td *big.Int, head
 
 	// for ethereum override the TD and the Head as get from the peer
 	// Nethermind checks reject connections which brings old value
-	// New: If polygon sees old head it sends header request for it and of course it fails. This causes gateway to be disconnected
-	switch networkChain {
-	case network.EthMainnetChainID, network.PolygonMainnetChainID, network.PolygonMumbaiChainID:
+	if networkChain == network.EthMainnetChainID {
 		td = peerStatus.TD
 		head = peerStatus.Head
 	}
@@ -563,10 +562,11 @@ func (ep *Peer) NotifyResponse(requestID uint64, packet eth.Packet) (bool, error
 
 // UpdateHead sets the latest confirmed block on the peer. This may release or prune queued blocks on the peer connection.
 func (ep *Peer) UpdateHead(height uint64, hash common.Hash) {
-	ep.Log().Debugf("confirming new head (height=%v, hash=%v)", height, hash)
-	ep.newHeadCh <- blockRef{
-		height: height,
-		hash:   hash,
+	ep.Log().Debugf("confirming new head (height=%v, hash=%v), newHeadCh len %v", height, hash, len(ep.newHeadCh))
+	select {
+	case ep.newHeadCh <- blockRef{height: height, hash: hash}:
+	default:
+		ep.Log().Errorf("newHeadCh channel is full(height=%v, hash=%v), dropping new head update", height, hash)
 	}
 }
 

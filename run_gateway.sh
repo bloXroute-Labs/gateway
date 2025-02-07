@@ -7,7 +7,7 @@
 # The external_gateway folder should contain a registration_only folder with certs inside
 # LOGS_PATH: Where you want a logs folder to be created with a gateway.log file inside
 # DATADIR_PATH: The directory for storing various persistent files such as gateway private key file
-# BLOCKCHAIN_NETWORK: available options are Mainnet (for Ethereum), BSC-Mainnet, Polygon-Mainnet
+# BLOCKCHAIN_NETWORK: available options are Mainnet (for Ethereum), BSC-Mainnet
 # ENODES: Local blockchain node, Enterprise clients must start the gateway with local node connection
 
 

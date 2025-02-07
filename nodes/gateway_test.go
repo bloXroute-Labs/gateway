@@ -113,7 +113,6 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 		sdn,
 		nil,
 		0,
-		"",
 		0,
 		0,
 		false,
@@ -316,7 +315,7 @@ func TestGateway_HandleTransactionFromBlockchain_SeenInBloomFilter(t *testing.T)
 	assert.Equal(t, true, g.pendingTxs.Exists(txHash))
 
 	// Bloom filter is adding asynchronously, so wait a bit
-	time.Sleep(time.Microsecond)
+	time.Sleep(time.Millisecond)
 
 	// create empty TxStore to make sure transaction is ignored due to bloom_filter
 	g.TxStore = services.NewEthTxStore(g.clock, 30*time.Minute, 10*time.Minute,
@@ -1191,7 +1190,7 @@ func TestGateway_Status(t *testing.T) {
 	g.clientHandler = servers.NewClientHandler(&g.Bx, g.BxConfig, g, g.sdn, accService, g.bridge,
 		g.blockchainPeers, services.NewNoOpSubscriptionServices(), g.wsManager, g.bdnStats,
 		g.timeStarted, g.txsQueue, g.txsOrderQueue, g.gatewayPublicKey, g.feedManager, g.validatorsManager,
-		g.intentsManager, g.stats, g.TxStore,
+		g.stats, g.TxStore,
 		false, "", "",
 	)
 

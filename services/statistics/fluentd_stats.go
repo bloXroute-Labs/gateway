@@ -48,7 +48,6 @@ type Stats interface {
 		mevBuilderNames []string, uuid string, targetBlockNumber int64, minTimestamp int, maxTimestamp int)
 	LogUnsubscribeStats(subscriptionID string, feedName types.FeedType, networkNum types.NetworkNum, accountID types.AccountID, tierName sdnmessage.AccountTier)
 	LogSDKInfo(blockchain, method, sourceCode, version string, accountID types.AccountID, feed types.FeedConnectionType, start, end time.Time)
-	BundleSentToBuilderStats(timestamp time.Time, builderName string, bundleHash string, blockNumber string, uuid string, networkNum types.NetworkNum, accountID types.AccountID, accountTier sdnmessage.AccountTier, builderURL string, statusCode int)
 	AddBuilderGatewaySentBundleToMEVBuilderEvent(timestamp time.Time, builderName, bundleHash, blockNumber, uuid, builderURL string,
 		networkNum types.NetworkNum, accountID types.AccountID, accountTier sdnmessage.AccountTier, statusCode int)
 	AddBlobEvent(name, eventSubjectID string, sourceID types.NodeID, networkNum types.NetworkNum, startTime, endTime time.Time, originalSize, compressSize int, blobIndex uint32, blockHash string)
@@ -88,10 +87,6 @@ func (NoStats) LogUnsubscribeStats(string, types.FeedType, types.NetworkNum, typ
 
 // LogSDKInfo does nothing
 func (NoStats) LogSDKInfo(_, _, _, _ string, _ types.AccountID, _ types.FeedConnectionType, _, _ time.Time) {
-}
-
-// BundleSentToBuilderStats does nothing
-func (NoStats) BundleSentToBuilderStats(_ time.Time, _ string, _ string, _ string, _ string, _ types.NetworkNum, _ types.AccountID, _ sdnmessage.AccountTier, _ string, _ int) {
 }
 
 // AddBuilderGatewaySentBundleToMEVBuilderEvent does nothing
@@ -455,34 +450,6 @@ func (s FluentdStats) LogSDKInfo(blockchain, method, sourceCode, version string,
 	s.LogToFluentD(record, now, "stats.sdk.events")
 }
 
-// BundleSentToBuilderStats generates a fluentd STATS event
-func (s FluentdStats) BundleSentToBuilderStats(estimatedBundleReceivedTime time.Time, builderName string, bundleHash string, blockNumber string, uuid string, networkNum types.NetworkNum, accountID types.AccountID, accountTier sdnmessage.AccountTier, builderURL string, statusCode int) {
-	now := time.Now()
-	blockNumberInt64, err := hex2int64(blockNumber)
-	if err != nil {
-		log.Errorf("BundleSentToBuilderStats: parse blockNumber: %s", blockNumber)
-		return
-	}
-
-	record := Record{
-		Type: "bundleSentToExternalBuilder",
-		Data: bundleSentToBuilderRecord{
-			EstimatedBundleReceivedTime: estimatedBundleReceivedTime.Format(DateFormat),
-			BundleHash:                  bundleHash,
-			BlockNumber:                 blockNumberInt64,
-			BuilderName:                 builderName,
-			UUID:                        uuid,
-			NetworkNum:                  networkNum,
-			AccountID:                   accountID,
-			AccountTier:                 accountTier,
-			BuilderURL:                  builderURL,
-			StatusCode:                  statusCode,
-		},
-	}
-
-	s.LogToFluentD(record, now, "stats.bundles_sent_to_external_builder")
-}
-
 // hex2int64 takes a hex string and returns the parsed integer value.
 // It handles hex strings with or without the "0x" prefix.
 func hex2int64(hexStr string) (int64, error) {
@@ -506,7 +473,7 @@ func (s FluentdStats) AddBuilderGatewaySentBundleToMEVBuilderEvent(timestamp tim
 
 	record := Record{
 		Type: "BuilderGatewaySentBundleToMEVBuilder",
-		Data: bundleSentToBuilderRecord{
+		Data: BundleSentToBuilderRecord{
 			BundleHash:  bundleHash,
 			BlockNumber: blockNumberInt64,
 			BuilderName: builderName,

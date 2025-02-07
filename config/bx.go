@@ -7,10 +7,11 @@ import (
 	"os"
 	"time"
 
+	"github.com/urfave/cli/v2"
+
 	"github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/bundle"
-	"github.com/urfave/cli/v2"
 )
 
 const (
@@ -57,7 +58,6 @@ type Bx struct {
 	NoTxsToBlockchain            bool
 	NoBlocks                     bool
 	NoStats                      bool
-	AllowIntroductoryTierAccess  bool
 
 	*GRPC
 	*Env
@@ -123,15 +123,14 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 
 		MEVBuilders: mevBuilders,
 
-		ForwardTransactionEndpoint:  ctx.String(utils.ForwardTransactionEndpoint.Name),
-		ForwardTransactionMethod:    ctx.String(utils.ForwardTransactionMethod.Name),
-		EnableDynamicPeers:          ctx.Bool(utils.EnableDynamicPeers.Name),
-		EnableBlockchainRPC:         ctx.Bool(utils.EnableBlockchainRPCMethodSupport.Name),
-		PendingTxsSourceFromNode:    ctx.Bool(utils.PendingTxsSourceFromNode.Name),
-		NoTxsToBlockchain:           ctx.Bool(utils.NoTxsToBlockchain.Name),
-		NoBlocks:                    ctx.Bool(utils.NoBlocks.Name),
-		NoStats:                     ctx.Bool(utils.NoStats.Name),
-		AllowIntroductoryTierAccess: ctx.Bool(utils.EnableIntroductoryIntentsAccess.Name),
+		ForwardTransactionEndpoint: ctx.String(utils.ForwardTransactionEndpoint.Name),
+		ForwardTransactionMethod:   ctx.String(utils.ForwardTransactionMethod.Name),
+		EnableDynamicPeers:         ctx.Bool(utils.EnableDynamicPeers.Name),
+		EnableBlockchainRPC:        ctx.Bool(utils.EnableBlockchainRPCMethodSupport.Name),
+		PendingTxsSourceFromNode:   ctx.Bool(utils.PendingTxsSourceFromNode.Name),
+		NoTxsToBlockchain:          ctx.Bool(utils.NoTxsToBlockchain.Name),
+		NoBlocks:                   ctx.Bool(utils.NoBlocks.Name),
+		NoStats:                    ctx.Bool(utils.NoStats.Name),
 
 		GRPC:       grpcConfig,
 		Env:        env,

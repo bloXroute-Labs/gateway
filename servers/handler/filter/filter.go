@@ -7,11 +7,12 @@ import (
 	"strconv"
 	"strings"
 
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/zhouzhuojie/conditions"
+
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/zhouzhuojie/conditions"
 )
 
 const txFromFilter = "from"
@@ -74,30 +75,6 @@ func ValidateFilters(filters string, txFromFieldIncludable bool) (conditions.Exp
 
 	log.Infof("GetTxContentAndFilters string - %s, GetTxContentAndFilters args - %s", expr, expr.Args())
 	return expr, nil
-}
-
-// ValidateIntentsFilters validate filters from intents request
-func ValidateIntentsFilters(filters string) (conditions.Expr, error) {
-	_, expr, err := parseFilter(filters)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing Filters: %v", err)
-	}
-	if expr == nil {
-		return nil, nil
-	}
-
-	err = evaluateIntentsFilters(expr)
-	if err != nil {
-		return nil, fmt.Errorf("error evaluated Filters: %v", err)
-	}
-
-	log.Infof("GetTxContentAndFilters string - %s, GetTxContentAndFilters args - %s", expr, expr.Args())
-	return expr, nil
-}
-
-func evaluateIntentsFilters(expr conditions.Expr) error {
-	_, err := conditions.Evaluate(expr, types.EmptyFilteredIntentMap)
-	return err
 }
 
 // evaluateFilters - evaluating if the Filters provided by the user are ok

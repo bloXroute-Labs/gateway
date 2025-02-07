@@ -5,24 +5,28 @@ import (
 	"errors"
 	"fmt"
 
-	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
 	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 	"github.com/prysmaticlabs/prysm/v5/runtime/version"
+
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/bdn"
+	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
 )
 
 // NewBeaconBlockNotification creates beacon block notification
 func NewBeaconBlockNotification(block interfaces.ReadOnlySignedBeaconBlock) (BlockNotification, error) {
+	genericBlock, err := bdn.PbGenericBlock(block)
+	if err != nil {
+		return nil, err
+	}
+
 	switch block.Version() {
 	case version.Bellatrix:
-		blk, err := block.PbBellatrixBlock()
-		if err != nil {
-			return nil, err
-		}
+		blk := genericBlock.GetBellatrix()
 
 		hash, err := blk.GetBlock().HashTreeRoot()
 		if err != nil {
@@ -34,10 +38,7 @@ func NewBeaconBlockNotification(block interfaces.ReadOnlySignedBeaconBlock) (Blo
 			SignedBeaconBlockBellatrix: blk,
 		}, nil
 	case version.Capella:
-		blk, err := block.PbCapellaBlock()
-		if err != nil {
-			return nil, err
-		}
+		blk := genericBlock.GetCapella()
 
 		hash, err := blk.GetBlock().HashTreeRoot()
 		if err != nil {
@@ -49,10 +50,8 @@ func NewBeaconBlockNotification(block interfaces.ReadOnlySignedBeaconBlock) (Blo
 			SignedBeaconBlockCapella: blk,
 		}, nil
 	case version.Deneb:
-		blk, err := block.PbDenebBlock()
-		if err != nil {
-			return nil, err
-		}
+		blk := genericBlock.GetDeneb().GetBlock()
+
 		hash, err := blk.GetBlock().HashTreeRoot()
 		if err != nil {
 			return nil, err

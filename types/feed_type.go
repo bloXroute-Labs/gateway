@@ -5,16 +5,13 @@ type FeedType string
 
 // FeedType enumeration
 const (
-	NewTxsFeed              FeedType = "newTxs"
-	PendingTxsFeed          FeedType = "pendingTxs"
-	BDNBlocksFeed           FeedType = "bdnBlocks"
-	NewBlocksFeed           FeedType = "newBlocks"
-	OnBlockFeed             FeedType = "ethOnBlock"
-	TxReceiptsFeed          FeedType = "txReceipts"
-	TransactionStatusFeed   FeedType = "transactionStatus"
-	UserIntentsFeed         FeedType = "userIntentFeed"
-	UserIntentSolutionsFeed FeedType = "userIntentSolutionsFeed"
-	QuotesFeed              FeedType = "quotesFeed"
+	NewTxsFeed            FeedType = "newTxs"
+	PendingTxsFeed        FeedType = "pendingTxs"
+	BDNBlocksFeed         FeedType = "bdnBlocks"
+	NewBlocksFeed         FeedType = "newBlocks"
+	OnBlockFeed           FeedType = "ethOnBlock"
+	TxReceiptsFeed        FeedType = "txReceipts"
+	TransactionStatusFeed FeedType = "transactionStatus"
 )
 
 // FeedConnectionType types of feeds

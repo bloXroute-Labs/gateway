@@ -28,14 +28,6 @@ service Gateway {
   rpc ShortIDs (ShortIDsRequest) returns (ShortIDsReply);
   rpc TxsFromShortIDs (ShortIDListRequest) returns (TxListReply) {}
   rpc BlxrSubmitBundle (BlxrSubmitBundleRequest) returns (BlxrSubmitBundleReply) {}
-
-  //Intent Gateway functions
-  rpc SubmitIntent(SubmitIntentRequest) returns (SubmitIntentReply){}
-  rpc SubmitIntentSolution(SubmitIntentSolutionRequest) returns (SubmitIntentSolutionReply){}
-  rpc Intents(IntentsRequest) returns (stream IntentsReply){}
-  rpc IntentSolutions(IntentSolutionsRequest) returns (stream IntentSolutionsReply){}
-  rpc SubmitQuote(SubmitQuoteRequest) returns (SubmitQuoteReply){}
-  rpc Quotes(QuotesRequest) returns (stream QuotesReply){}
 }
 
 message TxLogs {
@@ -107,6 +99,7 @@ message BlxrSubmitBundleRequest {
   string refund_recipient = 12;
   int64 blocks_count = 13;
   repeated string dropping_hashes = 14;
+  bool end_of_block = 15;
 }
 
 message BlxrSubmitBundleReply {
@@ -378,17 +371,6 @@ message AccountInfo {
   string expire_date = 2;
 }
 
-message QueuesStats {
-  uint64 txs_queue_count = 1;
-  uint64 txs_order_queue_count = 2;
-}
-
-message IntentStats {
-  uint64 submitted_intents_count = 1;
-  uint64 submitted_solutions_count = 2;
-  uint64 submitted_quotes_count = 3;
-}
-
 message NodePerformance {
   string since = 1;
   uint32 new_blocks_received_from_blockchain_node = 2;
@@ -451,8 +433,6 @@ message StatusResponse {
   map<string, NodeConnStatus> nodes = 3;
   map<string, BDNConnStatus> relays = 4;
   AccountInfo account_info = 1;
-  QueuesStats queue_stats = 5;
-  IntentStats intent_stats = 6;
 }
 
 message TxResult {
@@ -525,83 +505,3 @@ message ProposedBlockStatsRecord {
   int64 validator_reply_time = 6;
 }
 
-
-// Intent Gateway Messages
-message SubmitIntentRequest {
-  string dappAddress = 1; // ETH address
-  string senderAddress = 2; // ETH address
-  bytes intent = 3; // The intent payload
-  bytes hash = 4; // Keccak256Hash of the Intent bytes
-  bytes signature = 5; // ECDSA signature of hash
-}
-
-message SubmitIntentReply {
-  string intentId = 1;
-  google.protobuf.Timestamp first_seen = 2;
-}
-
-message SubmitIntentSolutionRequest {
-  string solverAddress = 1;
-  string intentId = 2;
-  bytes intentSolution = 3; //The solution payload
-  bytes hash = 4; //Keccak256Hash of the IntentSolution bytes
-  bytes signature = 5; //ECDSA signature of the hash
-}
-
-message SubmitIntentSolutionReply {
-  string solutionId = 1;
-  google.protobuf.Timestamp first_seen = 2;
-}
-
-message SubmitQuoteRequest {
-  string dappAddress = 1; // ETH address
-  string solverAddress = 2; // ETH address
-  bytes quote = 3; // The quote payload
-  bytes hash = 4; // Keccak256Hash of the quote bytes
-  bytes signature = 5; // ECDSA signature of hash
-}
-
-message SubmitQuoteReply {
-  string quoteId = 1;
-  google.protobuf.Timestamp first_seen = 2;
-}
-
-message QuotesRequest {
-  string dappAddress = 1; // dApp address
-}
-
-message QuotesReply {
-  string dappAddress = 1; // GUID expected
-  string solverAddress = 2; // GUID expected
-  string quoteId = 3;
-  bytes quote = 4; //The intent payload
-  google.protobuf.Timestamp timestamp = 5;
-}
-
-message IntentsRequest {
-  string solverAddress = 1;
-  bytes hash = 3; //Keccak256Hash of the solverAddress bytes
-  bytes signature = 4; //ECDSA signature
-  google.protobuf.Timestamp fromTimestamp = 5;
-  string filters = 6;
-}
-
-message IntentsReply {
-  string dappAddress = 1; // GUID expected
-  string senderAddress = 2;
-  string intentId = 3;
-  bytes intent = 4; //The intent payload
-  google.protobuf.Timestamp timestamp = 5;
-}
-
-message IntentSolutionsRequest {
-  string dappAddress = 1; // dApp or sender address
-  bytes hash = 2; // Keccak256Hash of the dappAddress bytes
-  bytes signature = 3; // ECDSA signature of the hash
-}
-
-message IntentSolutionsReply {
-  string intentId = 1;
-  bytes intentSolution = 2; //The solution payload
-  string solutionId = 3;
-}
