@@ -58,8 +58,8 @@ import (
 )
 
 const (
-	bscMainnetBloomCap = 35e6
-	mainnetBloomCap    = 85e5
+	bscMainnetBloomCap = 519e6
+	mainnetBloomCap    = 85e6
 
 	bloomStoreInterval = time.Hour
 
@@ -70,6 +70,7 @@ const (
 
 var (
 	errUnsupportedBlockType = errors.New("block type is not supported")
+	errIgnored              = errors.New("ignored request")
 )
 
 type gateway struct {
@@ -397,13 +398,6 @@ func (g *gateway) Run() error {
 		"accountID": g.accountID,
 		"nodeID":    nodeID,
 	}).Info("ssl certificate successfully loaded")
-
-	blockchainPeerEndpoint := types.NodeEndpoint{IP: "", Port: 0, PublicKey: ""}
-	if len(g.blockchainPeers) > 0 {
-		blockchainPeerEndpoint.IP = g.blockchainPeers[0].IP
-		blockchainPeerEndpoint.Port = g.blockchainPeers[0].Port
-		blockchainPeerEndpoint.PublicKey = g.blockchainPeers[0].PublicKey
-	}
 
 	accountModel := g.sdn.AccountModel()
 

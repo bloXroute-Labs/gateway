@@ -200,7 +200,7 @@ func (bt *BxTransaction) parseTransaction(sender Sender) (BlockchainTransaction,
 
 	// for now, since we only support Ethereum based transaction
 	// we are not checking but parsing as if the transaction is Ethereum based.
-	return ethTransactionFromBytes(bt.hash, bt.content, sender)
+	return ethTransactionFromBytes(bt.content, sender)
 	/*
 		switch bt.networkNum {
 		case EthereumNetworkNum:

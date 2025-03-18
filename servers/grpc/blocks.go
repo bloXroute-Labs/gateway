@@ -22,7 +22,8 @@ var (
 	txContentFields = []string{"tx_contents.nonce", "tx_contents.tx_hash",
 		"tx_contents.gas_price", "tx_contents.gas", "tx_contents.to", "tx_contents.value", "tx_contents.input",
 		"tx_contents.v", "tx_contents.r", "tx_contents.s", "tx_contents.from", "tx_contents.type", "tx_contents.access_list",
-		"tx_contents.chain_id", "tx_contents.max_priority_fee_per_gas", "tx_contents.max_fee_per_gas", "tx_contents.max_fee_per_blob_gas", "tx_contents.blob_versioned_hashes", "tx_contents.y_parity"}
+		"tx_contents.chain_id", "tx_contents.max_priority_fee_per_gas", "tx_contents.max_fee_per_gas", "tx_contents.max_fee_per_blob_gas",
+		"tx_contents.blob_versioned_hashes", "tx_contents.y_parity", "tx_contents.authorization_list"}
 	validOnBlockParams = []string{"name", "response", "block_height", "tag"}
 	validBlockParams   = append(txContentFields, "tx_contents.from", "hash", "header", "transactions", "uncles", "future_validator_info", "withdrawals")
 )
@@ -190,6 +191,9 @@ func (*server) generateBlockReplyHeader(h *types.Header) *pb.BlockHeader {
 	}
 	if h.BaseFee != nil {
 		blockReplyHeader.BaseFeePerGas = strconv.FormatInt(int64(*h.BaseFee), 10)
+	}
+	if h.RequestsHash != nil {
+		blockReplyHeader.RequestsHash = h.RequestsHash.String()
 	}
 	return &blockReplyHeader
 }

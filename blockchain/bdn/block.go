@@ -9,7 +9,10 @@ import (
 )
 
 // ErrNotDenebBlock is returned when the block is not a Deneb block.
-var ErrNotDenebBlock = errors.New("block is not Deneb block")
+var (
+	ErrNotDenebBlock   = errors.New("block is not Deneb block")
+	ErrNotElectraBlock = errors.New("block is not Electra block")
+)
 
 // PbGenericBlock returns a generic signed beacon block.
 func PbGenericBlock(b interfaces.ReadOnlySignedBeaconBlock) (*ethpb.GenericSignedBeaconBlock, error) {

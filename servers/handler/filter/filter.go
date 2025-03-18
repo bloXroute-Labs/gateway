@@ -42,7 +42,7 @@ func IsFiltersSupportedByTxType(txType uint8, filters []string) bool {
 		if gasPriceExists && !maxFeePerGasExists && !maxPriorityFeePerGasExists && !maxFeePerBlobGasExists {
 			return false
 		}
-	case ethtypes.DynamicFeeTxType:
+	case ethtypes.DynamicFeeTxType, ethtypes.SetCodeTxType:
 		if gasPriceExists && !maxFeePerGasExists && !maxPriorityFeePerGasExists {
 			return false
 		}
@@ -51,6 +51,7 @@ func IsFiltersSupportedByTxType(txType uint8, filters []string) bool {
 			return false
 		}
 	}
+
 	return true
 }
 

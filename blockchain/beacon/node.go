@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -354,60 +355,65 @@ func newNode(params NodeParams, clock utils.Clock) (*Node, error) {
 	return n, nil
 }
 
-func (n *Node) scheduleDenebForkUpdate() error {
+func (n *Node) scheduleElectraForkUpdate() error {
 	// TODO: do for all forks
 
-	currentSlot := slots.CurrentSlot(n.genesisState.GenesisTime())
-	currentEpoch := slots.ToEpoch(currentSlot)
-
-	// Check if we haven't passed deneb update yet
-	if currentEpoch >= beaconParams.BeaconConfig().DenebForkEpoch {
+	// check this to avoid multiplication overflow
+	if beaconParams.BeaconConfig().ElectraForkEpoch == math.MaxUint64 {
+		// the epoch is still not set
 		return nil
 	}
 
-	n.log.Debug("Scheduling Deneb fork update: ", currentEpoch, beaconParams.BeaconConfig().DenebForkEpoch)
+	currentEpoch := slots.ToEpoch(slots.CurrentSlot(n.genesisState.GenesisTime()))
 
-	denebForkEpoch := beaconParams.BeaconConfig().DenebForkEpoch
-	denebTime, err := epochStartTime(n.genesisState.GenesisTime(), denebForkEpoch)
+	// check if we haven't passed Electra update yet
+	if currentEpoch >= beaconParams.BeaconConfig().ElectraForkEpoch {
+		return nil
+	}
+
+	n.log.Debug("Scheduling Electra fork update: ", currentEpoch, beaconParams.BeaconConfig().ElectraForkEpoch)
+
+	electraForkEpoch := beaconParams.BeaconConfig().ElectraForkEpoch
+	electraTime, err := epochStartTime(n.genesisState.GenesisTime(), electraForkEpoch)
 	if err != nil {
-		return fmt.Errorf("could not get deneb time: %v", err)
+		return fmt.Errorf("could not get Electra time: %v", err)
 	}
 
 	timeInEpoch := time.Second * time.Duration(beaconParams.BeaconConfig().SecondsPerSlot*uint64(beaconParams.BeaconConfig().SlotsPerEpoch))
 
-	// Subscribe to Deneb topics before update and unsubscribe Capella topics after.
+	// Subscribe to Electra topics before update and unsubscribe Deneb topics after.
 	// So we maintain two sets of subscriptions during the merge.
-	epochBeforeDenebTime := denebTime.Add(-timeInEpoch) // 1 full epoch before Deneb merge
-	epochAfterDenebTime := denebTime.Add(timeInEpoch)   // 1 full epoch after Deneb merge
+	epochBeforeElectraTime := electraTime.Add(-timeInEpoch) // 1 full epoch before Electra merge
+	epochAfterElectraTime := electraTime.Add(timeInEpoch)   // 1 full epoch after Electra merge
 
 	currentForkDigest, err := currentForkDigest(n.genesisState)
 	if err != nil {
 		return fmt.Errorf("could not get current fork digest: %v", err)
 	}
-	denebForkDigest, err := forks.ForkDigestFromEpoch(beaconParams.BeaconConfig().DenebForkEpoch, n.genesisState.GenesisValidatorsRoot())
+	electraForkDigest, err := forks.ForkDigestFromEpoch(beaconParams.BeaconConfig().ElectraForkEpoch, n.genesisState.GenesisValidatorsRoot())
 	if err != nil {
-		return fmt.Errorf("could not get deneb fork digest: %v", err)
+		return fmt.Errorf("could not get Electra fork digest: %v", err)
 	}
 
-	if n.clock.Now().After(epochBeforeDenebTime) {
+	if n.clock.Now().After(epochBeforeElectraTime) {
 		// Gateway started in the middle between epochs during the update
-		if err := n.subscribeAll(denebForkDigest); err != nil {
-			n.log.Errorf("could not subscribe after deneb update: %v", err)
+		if err := n.subscribeAll(electraForkDigest, true); err != nil {
+			n.log.Errorf("could not subscribe after Electra update: %v", err)
 		}
 	} else {
 		// Gateway started before the update
-		duration := epochBeforeDenebTime.Sub(n.clock.Now())
-		n.log.Debugf("Subscribing to Deneb topics in %v", duration)
+		duration := epochBeforeElectraTime.Sub(n.clock.Now())
+		n.log.Debugf("Subscribing to Electra topics in %v", duration)
 
 		n.clock.AfterFunc(duration, func() {
-			n.log.Debugf("Subscribing to Deneb topics at %v", n.clock.Now())
-			if err := n.subscribeAll(denebForkDigest); err != nil {
-				n.log.Errorf("could not subscribe before deneb update: %v", err)
+			n.log.Debugf("Subscribing to Electra topics at %v", n.clock.Now())
+			if err := n.subscribeAll(electraForkDigest, true); err != nil {
+				n.log.Errorf("could not subscribe before Electra update: %v", err)
 			}
 		})
 	}
 
-	n.clock.AfterFunc(epochAfterDenebTime.Sub(n.clock.Now()), func() {
+	n.clock.AfterFunc(epochAfterElectraTime.Sub(n.clock.Now()), func() {
 		n.unsubscribeAll(currentForkDigest)
 	})
 
@@ -422,16 +428,19 @@ func (n *Node) Start() error {
 	go n.sendStatusRequests()
 	go n.bxStatusHandler()
 
-	if err := n.scheduleDenebForkUpdate(); err != nil {
-		return fmt.Errorf("could not schedule deneb fork update: %v", err)
+	if err := n.scheduleElectraForkUpdate(); err != nil {
+		return fmt.Errorf("could not schedule Electra fork update: %v", err)
 	}
 
 	currentForkDigest, err := currentForkDigest(n.genesisState)
 	if err != nil {
-		return fmt.Errorf("could not get deneb fork digest: %v", err)
+		return fmt.Errorf("could not get current fork digest: %v", err)
 	}
 
-	return n.subscribeAll(currentForkDigest)
+	epoch := slots.ToEpoch(slots.CurrentSlot(n.genesisState.GenesisTime()))
+	isElectra := beaconParams.BeaconConfig().DenebForkEpoch <= epoch && epoch < beaconParams.BeaconConfig().ElectraForkEpoch
+
+	return n.subscribeAll(currentForkDigest, isElectra)
 }
 
 func (n *Node) sendStatusRequests() {
@@ -529,7 +538,7 @@ func (n *Node) FilterIncomingSubscriptions(_ libp2pPeer.ID, subs []*pubsubpb.RPC
 	return pubsub.FilterSubscriptions(subs, n.CanSubscribe), nil
 }
 
-// CanSubscribe returns true if the topic is of interest and we could subscribe to it.
+// CanSubscribe returns true if the topic is of interest, and we can subscribe to it.
 func (n *Node) CanSubscribe(topic string) bool {
 	parts := strings.Split(topic, "/")
 	if len(parts) != 5 {
@@ -567,6 +576,11 @@ func (n *Node) CanSubscribe(topic string) bool {
 		n.log.Errorf("Could not determine Deneb fork digest: %v", err)
 		return false
 	}
+	electraForDigest, err := forks.ForkDigestFromEpoch(beaconParams.BeaconConfig().ElectraForkEpoch, n.genesisState.GenesisValidatorsRoot())
+	if err != nil {
+		n.log.Errorf("Could not determine Electra fork digest: %v", err)
+		return false
+	}
 
 	switch parts[2] {
 	case fmt.Sprintf("%x", phase0ForkDigest):
@@ -574,6 +588,7 @@ func (n *Node) CanSubscribe(topic string) bool {
 	case fmt.Sprintf("%x", bellatrixForkDigest):
 	case fmt.Sprintf("%x", capellaForkDigest):
 	case fmt.Sprintf("%x", denebForkDigest):
+	case fmt.Sprintf("%x", electraForDigest):
 	default:
 		return false
 	}
@@ -654,7 +669,7 @@ func (n *Node) blobSubscriber(msg *pubsub.Message) {
 	n.log.Tracef("Received blob message from %v, index %v, block hash: %v, slot %v, kzg commitment: %v", msg.ReceivedFrom, blobSidecar.Index, hex.EncodeToString(blockHash[:]), blobSidecar.SignedBlockHeader.Header.Slot, hex.EncodeToString(blobSidecar.KzgCommitment))
 }
 
-func (n *Node) subscribeAll(digest [4]byte) error {
+func (n *Node) subscribeAll(digest [4]byte, isElectra bool) error {
 	// Required to be on top gossip score rating and not be disconnected by prysm
 	dontCare := func(msg *pubsub.Message) {}
 
@@ -681,7 +696,15 @@ func (n *Node) subscribeAll(digest [4]byte) error {
 		return err
 	}
 
-	for i := uint64(0); i < beaconParams.BeaconConfig().BlobsidecarSubnetCount; i++ {
+	var subnetCount uint64
+
+	if !isElectra {
+		subnetCount = beaconParams.BeaconConfig().BlobsidecarSubnetCount
+	} else {
+		subnetCount = beaconParams.BeaconConfig().BlobsidecarSubnetCountElectra
+	}
+
+	for i := uint64(0); i < subnetCount; i++ {
 		if err := n.subscribe(blobSubnetToTopic(i, digest), n.blobSubscriber); err != nil {
 			return err
 		}
@@ -953,7 +976,7 @@ func (n *Node) pubsubOptions() []pubsub.Option {
 }
 
 func (n *Node) bxStatusHandler() {
-	statusBridge := n.bridge.SubscribeStatus()
+	statusBridge := n.bridge.SubscribeStatus(true)
 
 	for {
 		select {
@@ -969,6 +992,7 @@ func (n *Node) bxStatusHandler() {
 
 				endpoint := utils.MultiaddrToNodeEndoint(peer.addrInfo.Load().Addrs[0], n.networkName)
 				endpoint.ConnectedAt = peer.connectedAt().Format(time.RFC3339)
+				endpoint.ID = peerID.String()
 				endpoints = append(endpoints, &endpoint)
 
 				return true
@@ -976,6 +1000,10 @@ func (n *Node) bxStatusHandler() {
 
 			if err := statusBridge.SendBlockchainStatusResponse(endpoints); err != nil {
 				n.log.Errorf("could not send blockchain status response: %v", err)
+			}
+		case <-statusBridge.ReceiveTrustedPeerRequest():
+			if err := statusBridge.SendTrustedPeerResponse(n.trustedPeers.list()); err != nil {
+				n.log.Errorf("could not send trusted peer response: %v", err)
 			}
 		}
 	}

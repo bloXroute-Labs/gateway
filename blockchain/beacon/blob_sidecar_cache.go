@@ -7,11 +7,12 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
+	gethparams "github.com/ethereum/go-ethereum/params"
 	prysmTypes "github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
 	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
+
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 )
 
 const cleaningFrequency = 12 * time.Second
@@ -44,7 +45,7 @@ func (m *BlobSidecarCacheManager) AddBlobSidecar(blobSidecar *ethpb.BlobSidecar)
 
 	value, _ := m.blobSidecars.LoadOrStore(blockHashStr, &BlobCacheValue{
 		slot: blobSidecar.SignedBlockHeader.Header.Slot,
-		ch:   make(chan *ethpb.BlobSidecar, fieldparams.MaxBlobsPerBlock),
+		ch:   make(chan *ethpb.BlobSidecar, gethparams.DefaultPragueBlobConfig.Max),
 	})
 
 	value.closeLock.RLock()
@@ -68,7 +69,7 @@ func (m *BlobSidecarCacheManager) SubscribeToBlobByBlockHash(blockHash string, s
 	blockHash = strings.TrimPrefix(blockHash, "0x")
 	value, _ := m.blobSidecars.LoadOrStore(blockHash, &BlobCacheValue{
 		slot: slot,
-		ch:   make(chan *ethpb.BlobSidecar, fieldparams.MaxBlobsPerBlock),
+		ch:   make(chan *ethpb.BlobSidecar, gethparams.DefaultPragueBlobConfig.Max),
 	})
 
 	value.closeLock.RLock()

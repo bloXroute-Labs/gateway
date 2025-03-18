@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -45,7 +46,7 @@ func (*PublicIPResolver) GetPublicIP() (string, error) {
 		return "", err
 	}
 	if response.StatusCode != 200 {
-		return "", fmt.Errorf(string(body))
+		return "", errors.New(string(body))
 	}
 
 	return string(ipRegex.Find(body)), nil

@@ -15,7 +15,9 @@ V = 0
 Q = $(if $(filter 1,$V),,@)
 M = $(shell printf "\033[34;1m▶\033[0m")
 
-GOLANGCI_LINT_VERSION=v1.61.0
+GOLANGCI_LINT_VERSION=1.64.5
+GOLANGCI_LINT_VERSION_COMMAND = golangci-lint --version
+GOLANGCI_LINT_VERSION_PRINT = $(shell $(GOLANGCI_LINT_VERSION_COMMAND) | sed -n 's/.*version \([0-9.]*\).*/\1/p')
 
 .PHONY: all
 all: check-go-mod gateway 
@@ -93,6 +95,8 @@ golangci-lint:
 	@if ! command -v golangci-lint >/dev/null 2>&1; then \
 		echo "golangci-lint not found, installing..."; \
 		$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}; \
+	else \
+	  	echo "using golangci-lint version $(GOLANGCI_LINT_VERSION_PRINT)"; \
 	fi
 
 .PHONY: fmt

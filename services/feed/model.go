@@ -3,9 +3,10 @@ package feed
 import (
 	"time"
 
+	"github.com/sourcegraph/jsonrpc2"
+
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/sourcegraph/jsonrpc2"
 )
 
 // ClientSubscription contains client subscription feed and connection

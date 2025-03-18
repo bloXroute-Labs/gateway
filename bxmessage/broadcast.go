@@ -10,12 +10,9 @@ import (
 type broadcastType string
 
 const (
-	broadcastTypeEth             broadcastType = "blck"
-	broadcastTypeBeaconPhase0    broadcastType = "bcn0"
-	broadcastTypeBeaconAltair    broadcastType = "bcna"
-	broadcastTypeBeaconBellatrix broadcastType = "bcnb"
-	broadcastTypeBeaconCapella   broadcastType = "bcnc"
-	broadcastTypeBeaconDeneb     broadcastType = "bcnd"
+	broadcastTypeEth           broadcastType = "blck"
+	broadcastTypeBeaconDeneb   broadcastType = "bcnd"
+	broadcastTypeBeaconElectra broadcastType = "bcne"
 )
 
 // Broadcast - represent the "broadcast" message
@@ -30,16 +27,10 @@ type Broadcast struct {
 
 func blockToBroadcastType(blockType types.BxBlockType) broadcastType {
 	switch blockType {
-	case types.BxBlockTypeBeaconPhase0:
-		return broadcastTypeBeaconPhase0
-	case types.BxBlockTypeBeaconAltair:
-		return broadcastTypeBeaconAltair
-	case types.BxBlockTypeBeaconBellatrix:
-		return broadcastTypeBeaconBellatrix
-	case types.BxBlockTypeBeaconCapella:
-		return broadcastTypeBeaconCapella
 	case types.BxBlockTypeBeaconDeneb:
 		return broadcastTypeBeaconDeneb
+	case types.BxBlockTypeBeaconElectra:
+		return broadcastTypeBeaconElectra
 	case types.BxBlockTypeEth:
 		fallthrough
 	default:
@@ -50,7 +41,7 @@ func blockToBroadcastType(blockType types.BxBlockType) broadcastType {
 // NewBlockBroadcast creates a new broadcast message containing block message bytes
 func NewBlockBroadcast(hash, beaconHash types.SHA256Hash, bType types.BxBlockType, block []byte, shortIDs types.ShortIDList, networkNum types.NetworkNum) *Broadcast {
 	var broadcastType [BroadcastTypeLen]byte
-	copy(broadcastType[:], []byte(blockToBroadcastType(bType)))
+	copy(broadcastType[:], blockToBroadcastType(bType))
 
 	b := &Broadcast{
 		broadcastType: broadcastType,
@@ -76,7 +67,7 @@ func (b Broadcast) String() string {
 // IsBeaconBlock returns true if block is beacon
 func (b *Broadcast) IsBeaconBlock() bool {
 	switch broadcastType(b.broadcastType[:]) {
-	case broadcastTypeBeaconPhase0, broadcastTypeBeaconAltair, broadcastTypeBeaconBellatrix, broadcastTypeBeaconCapella, broadcastTypeBeaconDeneb:
+	case broadcastTypeBeaconDeneb, broadcastTypeBeaconElectra:
 		return true
 	default:
 		return false
@@ -88,14 +79,10 @@ func (b Broadcast) BlockType() types.BxBlockType {
 	switch broadcastType(b.broadcastType[:]) {
 	case broadcastTypeEth:
 		return types.BxBlockTypeEth
-	case broadcastTypeBeaconPhase0:
-		return types.BxBlockTypeBeaconPhase0
-	case broadcastTypeBeaconBellatrix:
-		return types.BxBlockTypeBeaconBellatrix
-	case broadcastTypeBeaconCapella:
-		return types.BxBlockTypeBeaconCapella
 	case broadcastTypeBeaconDeneb:
 		return types.BxBlockTypeBeaconDeneb
+	case broadcastTypeBeaconElectra:
+		return types.BxBlockTypeBeaconElectra
 	default:
 		return types.BxBlockTypeUnknown
 	}

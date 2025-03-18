@@ -474,23 +474,33 @@ func cmdVersion(ctx *cli.Context) error {
 }
 
 type txContent struct {
-	From                string   `json:"from"`
-	Gas                 string   `json:"gas"`
-	GasPrice            string   `json:"gasPrice"`
-	GasFeeCap           string   `json:"gasFeeCap"`
-	GasTipCap           string   `json:"gasTipCap"`
-	MaxFeePerBlobGas    string   `json:"maxFeePerBlobGas"`
-	BlobVersionedHashes []string `json:"blobVersionedHashes"`
-	Hash                string   `json:"hash"`
-	Input               string   `json:"input"`
-	Nonce               string   `json:"nonce"`
-	Value               string   `json:"value"`
-	V                   string   `json:"v"`
-	R                   string   `json:"r"`
-	S                   string   `json:"s"`
-	YParity             string   `json:"yParity"`
-	Type                string   `json:"type"`
-	To                  string   `json:"to"`
+	From                string                 `json:"from"`
+	Gas                 string                 `json:"gas"`
+	GasPrice            string                 `json:"gasPrice"`
+	GasFeeCap           string                 `json:"gasFeeCap"`
+	GasTipCap           string                 `json:"gasTipCap"`
+	MaxFeePerBlobGas    string                 `json:"maxFeePerBlobGas"`
+	BlobVersionedHashes []string               `json:"blobVersionedHashes"`
+	AuthorizationList   []setCodeAuthorization `json:"authorizationList"`
+	Hash                string                 `json:"hash"`
+	Input               string                 `json:"input"`
+	Nonce               string                 `json:"nonce"`
+	Value               string                 `json:"value"`
+	V                   string                 `json:"v"`
+	R                   string                 `json:"r"`
+	S                   string                 `json:"s"`
+	YParity             string                 `json:"yParity"`
+	Type                string                 `json:"type"`
+	To                  string                 `json:"to"`
+}
+
+type setCodeAuthorization struct {
+	ChainID string `json:"chainId"`
+	Address string `json:"address"`
+	Nonce   string `json:"nonce"`
+	V       string `json:"yParity"`
+	R       string `json:"r"`
+	S       string `json:"s"`
 }
 
 type txReply struct {
@@ -556,6 +566,21 @@ func parseTxResponse(rawTxs []*pb.Tx) ([]txReply, error) {
 			txContent.GasTipCap = hexutil.EncodeBig(ethTx.GasTipCap())
 		} else {
 			txContent.GasPrice = hexutil.EncodeBig(ethTx.GasPrice())
+		}
+
+		if ethTx.Type() == ethtypes.SetCodeTxType {
+			authList := ethTx.SetCodeAuthorizations()
+			txContent.AuthorizationList = make([]setCodeAuthorization, len(authList))
+			for i := range authList {
+				txContent.AuthorizationList[i] = setCodeAuthorization{
+					ChainID: authList[i].ChainID.String(),
+					Address: strings.ToLower(authList[i].Address.Hex()),
+					Nonce:   hexutil.EncodeUint64(authList[i].Nonce),
+					V:       strconv.Itoa(int(authList[i].V)),
+					R:       authList[i].R.String(),
+					S:       authList[i].S.String(),
+				}
+			}
 		}
 
 		reply := txReply{
@@ -863,7 +888,7 @@ func cmdBlxrBatchTX(ctx *cli.Context) error {
 			}
 		}
 
-		ethSender, err := ethtypes.Sender(ethtypes.NewCancunSigner(ethTx.ChainId()), &ethTx)
+		ethSender, err := ethtypes.Sender(ethtypes.NewPragueSigner(ethTx.ChainId()), &ethTx)
 		if err != nil {
 			fmt.Printf("Error - failed to get sender from the transaction %v: %v. continue..", transaction, err)
 		}

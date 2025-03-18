@@ -14,11 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/blockchain"
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ssz "github.com/prysmaticlabs/fastssz"
 	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
@@ -29,6 +24,12 @@ import (
 	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 	"github.com/r3labs/sse"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // For the lighthouse client, we make different block encoding for now
@@ -36,15 +37,7 @@ import (
 const (
 	lighthouse       = "lighthouse"
 	keepAliveMessage = ""
-)
 
-type nodeVersionResponse struct {
-	Data struct {
-		Version string `json:"version"`
-	} `json:"data"`
-}
-
-const (
 	// Beacon API routes
 	requestBlockRoute         = "http://%s/eth/v2/beacon/blocks/%s"
 	requestBlobSidecarRoute   = "http://%s/eth/v1/beacon/blob_sidecars/%s?indices=%s"
@@ -56,6 +49,14 @@ const (
 	topicsNewBlockHead    = "head"
 	topicsNewBlobsSidecar = "blob_sidecar"
 )
+
+var errUnknownClientVersion = errors.New("unknown client version")
+
+type nodeVersionResponse struct {
+	Data struct {
+		Version string `json:"version"`
+	} `json:"data"`
+}
 
 type blobDecoder interface {
 	decodeBlobSidecar([]byte) (*ethpb.BlobSidecars, error)
@@ -177,18 +178,12 @@ func (c *APIClient) newRequest(uri string) (*http.Request, error) {
 func (c *APIClient) processResponse(respBodyRaw []byte, v, hash string) (interfaces.ReadOnlySignedBeaconBlock, error) {
 	var rawBlock ssz.Unmarshaler
 	switch v {
-	case version.String(version.Bellatrix):
-		rawBlock = &ethpb.SignedBlindedBeaconBlockBellatrix{}
-	case version.String(version.Altair):
-		rawBlock = &ethpb.SignedBeaconBlockAltair{}
-	case version.String(version.Phase0):
-		rawBlock = &ethpb.SignedBeaconBlock{}
-	case version.String(version.Capella):
-		rawBlock = &ethpb.SignedBeaconBlockCapella{}
+	case version.String(version.Deneb):
+		rawBlock = &ethpb.SignedBeaconBlockDeneb{}
 	default:
 		// Not all the clients support the block's version in the HTTP header of the response.
 		// If version didn't mention - use the last one.
-		rawBlock = &ethpb.SignedBeaconBlockDeneb{}
+		rawBlock = &ethpb.SignedBeaconBlockElectra{}
 	}
 	if err := rawBlock.UnmarshalSSZ(respBodyRaw); err != nil {
 		return nil, fmt.Errorf("[hash=%s,version=%s], failed to unmarshal response body: %s, err: %v", hash, v, string(respBodyRaw), err)
@@ -522,18 +517,21 @@ func (c *APIClient) isOldBlock(block interfaces.ReadOnlySignedBeaconBlock) bool 
 	return block.Block().Slot() <= currentSlot(c.config.GenesisTime)-prysmTypes.Slot(c.config.IgnoreSlotCount)
 }
 
-// BroadcastBlock sends the block in octet-stream format to the beacon API endpoint
-func (c *APIClient) BroadcastBlock(block *ethpb.SignedBeaconBlockContentsDeneb) error {
+func (c *APIClient) shouldBroadcastBlock(blockSlot uint64) (bool, error) {
 	if !c.initialized.Load() {
-		return fmt.Errorf("unknown client version")
+		return false, errUnknownClientVersion
 	}
 
-	blockSlot := uint64(block.GetBlock().GetBlock().GetSlot())
 	if c.sharedSync.isKnownSlot(blockSlot, false) {
 		c.log.Tracef("skip broadcast already processed block[slot=%d]", blockSlot)
-		return nil
+		return false, nil
 	}
 
+	return true, nil
+}
+
+// BroadcastBlock sends the block in octet-stream format to the beacon API endpoint
+func (c *APIClient) BroadcastBlock(block ssz.Marshaler, ethConsensusVersion string) error {
 	uri := fmt.Sprintf(broadcastBlockRoute, c.URL)
 
 	rawBlock, err := block.MarshalSSZ()
@@ -546,7 +544,7 @@ func (c *APIClient) BroadcastBlock(block *ethpb.SignedBeaconBlockContentsDeneb) 
 		return fmt.Errorf("failed to create new request: %v", err)
 	}
 
-	req.Header.Set("Eth-Consensus-Version", version.String(version.Deneb))
+	req.Header.Set("Eth-Consensus-Version", ethConsensusVersion)
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("Accept", "application/json")
 

@@ -9,6 +9,7 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
+	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 	"github.com/stretchr/testify/require"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bdn"
@@ -132,11 +133,26 @@ func TestConverter_BSCBlockWithBlobs(t *testing.T) {
 	}
 }
 
-func TestConverter_DenebBeaconBlock(t *testing.T) {
+func TestConverter(t *testing.T) {
 	c := Converter{}
+
 	block := bxmock.NewEthBlock(10, common.Hash{})
 
-	beaconBlock := bxmock.NewDenebBeaconBlock(t, 11, nil, block)
+	t.Run("DenebBeaconBlock", func(t *testing.T) {
+		beaconBlock := bxmock.NewDenebBeaconBlock(t, block)
+
+		testConverter(t, c, beaconBlock, block)
+	})
+	t.Run("ElectraBeaconBlock", func(t *testing.T) {
+		beaconBlock := bxmock.NewElectraBeaconBlock(t, block)
+
+		testConverter(t, c, beaconBlock, block)
+	})
+}
+
+func testConverter(t *testing.T, c Converter, beaconBlock interfaces.ReadOnlySignedBeaconBlock, block *bxethcommon.Block) {
+	t.Helper()
+
 	header, err := beaconBlock.Header()
 	require.NoError(t, err)
 
@@ -150,18 +166,26 @@ func TestConverter_DenebBeaconBlock(t *testing.T) {
 	blockchainBlock, err := c.BlockBDNtoBlockchain(bxBlock)
 	require.NoError(t, err)
 
-	genericBlock, err := bdn.PbGenericBlock(blockchainBlock.(interfaces.ReadOnlySignedBeaconBlock))
+	readOnlyBlock, err := bdn.PbGenericBlock(blockchainBlock.(interfaces.ReadOnlySignedBeaconBlock))
 	require.NoError(t, err)
 
-	denebBlock := genericBlock.GetDeneb()
-	require.NotNil(t, denebBlock)
+	genericBlock := readOnlyBlock.GetBlock()
 
-	signedBlock := denebBlock.GetBlock()
+	var gbTransactions [][]byte
+
+	switch bb := genericBlock.(type) {
+	case *eth.GenericSignedBeaconBlock_Deneb:
+		gbTransactions = bb.Deneb.GetBlock().GetBlock().GetBody().GetExecutionPayload().GetTransactions()
+	case *eth.GenericSignedBeaconBlock_Electra:
+		gbTransactions = bb.Electra.GetBlock().GetBlock().GetBody().GetExecutionPayload().GetTransactions()
+	default:
+		t.Fatalf("unexpected block type: %T", genericBlock)
+	}
 
 	// Check beacon BxBlock transactions exactly same as eth block
 	for i, tx := range block.Transactions() {
 		blockTx := new(ethtypes.Transaction)
-		err = blockTx.UnmarshalBinary(signedBlock.GetBlock().GetBody().GetExecutionPayload().GetTransactions()[i])
+		err = blockTx.UnmarshalBinary(gbTransactions[i])
 		require.NoError(t, err)
 
 		require.Equal(t, blockTx.Hash(), tx.Hash())
@@ -170,14 +194,25 @@ func TestConverter_DenebBeaconBlock(t *testing.T) {
 	beaconCanonicFormat, err := types.NewBeaconBlockNotification(blockchainBlock.(interfaces.ReadOnlySignedBeaconBlock))
 	require.NoError(t, err)
 
+	var transactions [][]byte
+
+	switch notification := beaconCanonicFormat.(type) {
+	case *types.DenebBlockNotification:
+		transactions = notification.Block.Body.ExecutionPayload.Transactions
+	case *types.ElectraBlockNotification:
+		transactions = notification.Block.Body.ExecutionPayload.Transactions
+	default:
+		t.Fatalf("unexpected notification type: %T", notification)
+	}
+
 	// Check beacon notification transactions exactly same as beacon BxBlock
-	for i, txRaw := range beaconCanonicFormat.(*types.DenebBlockNotification).Block.Body.ExecutionPayload.Transactions {
+	for i, txRaw := range transactions {
 		notificationTx := new(ethtypes.Transaction)
 		err = notificationTx.UnmarshalBinary(txRaw)
 		require.NoError(t, err)
 
 		tx := new(ethtypes.Transaction)
-		err = tx.UnmarshalBinary(signedBlock.GetBlock().GetBody().GetExecutionPayload().GetTransactions()[i])
+		err = tx.UnmarshalBinary(gbTransactions[i])
 		require.NoError(t, err)
 
 		require.Equal(t, notificationTx.Hash(), tx.Hash())

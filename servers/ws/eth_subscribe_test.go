@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
@@ -53,7 +55,9 @@ func (s *wsSuite) assertEthSubscribe(filter string) (string, string) {
 	clientRes := s.getClientResponse(subscribeMsg)
 	subscriptionID := fmt.Sprintf("%v", clientRes.Result)
 
-	s.Assert().True(s.feedManager.SubscriptionExists(subscriptionID))
+	require.Eventually(s.T(), func() bool {
+		return s.feedManager.SubscriptionExists(subscriptionID)
+	}, 1*time.Second, 10*time.Millisecond)
 	return fmt.Sprintf(
 		`{"id": 1, "method": "eth_unsubscribe", "params": ["%v"]}`,
 		subscriptionID,

@@ -24,7 +24,7 @@ func (g *server) BlxrSubmitBundle(ctx context.Context, req *pb.BlxrSubmitBundleR
 
 	accountID, err := retrieveOriginalSenderAccountID(ctx, accountModel)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	mevBundleParams := &jsonrpc.RPCBundleSubmissionPayload{
