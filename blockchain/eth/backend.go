@@ -8,6 +8,15 @@ import (
 	"sync"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/eth/protocols/eth"
+	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/google/uuid"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
@@ -17,14 +26,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
-	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/eth/protocols/eth"
-	"github.com/ethereum/go-ethereum/p2p"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/google/uuid"
 )
 
 const (
@@ -64,7 +65,7 @@ func NewHandler(parent context.Context, config *network.EthConfig, chain *Chain,
 		config:           config,
 		chain:            chain,
 		bridge:           bridge,
-		statusBridge:     bridge.SubscribeStatus(),
+		statusBridge:     bridge.SubscribeStatus(false),
 		peers:            newPeerSet(),
 		cancel:           cancel,
 		wsManager:        wsManager,
@@ -334,7 +335,7 @@ func (h *Handler) processBDNTransactions(bdnTxs blockchain.Transactions) {
 			continue
 		}
 
-		// Blob transactions should be send via PoolTransactions message
+		// Blob transactions should be sent via PoolTransactions message
 		if ethTx.Type() == ethtypes.BlobTxType {
 			// For some reason blob tx with a missed sidecar passes the tx store check
 			if ethTx.BlobTxSidecar() != nil {
@@ -661,7 +662,13 @@ func (h *Handler) processTransactions(peer *Peer, txs []*ethtypes.Transaction) e
 	bdnTxs := make([]*types.BxTransaction, 0, len(txs))
 	for _, tx := range txs {
 		if tx.Type() == ethtypes.BlobTxType && tx.BlobTxSidecar() == nil {
-			log.Debugf("blob tx from blockchain peer %v has no sidecar data", peer.endpoint.IPPort())
+			log.Debugf("blob tx %v from blockchain peer %v has no sidecar data", tx.Hash().String(), peer.endpoint.IPPort())
+			continue
+		}
+
+		// the transaction is considered invalid if the length of authorization_list is zero.
+		if tx.Type() == ethtypes.SetCodeTxType && tx.SetCodeAuthorizations() == nil {
+			log.Debugf("set code tx %v from blockchain peer %v has no authorization list", tx.Hash().String(), peer.endpoint.IPPort())
 			continue
 		}
 

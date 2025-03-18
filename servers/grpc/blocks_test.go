@@ -6,6 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
@@ -13,9 +17,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestNewBlocks(t *testing.T) {
@@ -63,7 +64,7 @@ func TestNewBlocks(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, newBlocksNotification.Header)
 	assert.Equal(t, ethBlock.Hash().String(), newBlocksNotification.Hash)
-	assert.Equal(t, 4, len(ethBlock.Transactions()))
+	assert.Equal(t, 5, len(ethBlock.Transactions()))
 }
 
 func TestBdnBlocks(t *testing.T) {
@@ -113,5 +114,5 @@ func TestBdnBlocks(t *testing.T) {
 	require.Nil(t, err)
 	require.NotNil(t, bdnBlocksNotification.Header)
 	require.Equal(t, ethBlock.Hash().String(), bdnBlocksNotification.Hash)
-	require.Equal(t, 4, len(ethBlock.Transactions()))
+	require.Equal(t, 5, len(ethBlock.Transactions()))
 }

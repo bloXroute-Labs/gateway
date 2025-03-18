@@ -6,18 +6,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
-	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 const bytesPerBlob = 131072 + // Blob
@@ -321,7 +323,7 @@ func TestEthTxStore_AddReuseSenderNonce(t *testing.T) {
 	assert.False(t, result3.Transaction.Flags().IsReuseSenderNonce())
 	result3.Transaction.SetAddTime(mc.Now())
 
-	//// Hash2 is already in txstore
+	// // Hash2 is already in txstore
 	mc.IncTime(time.Duration(1+nc.AllowTimeReuseSenderNonce) * time.Second)
 	result2 = store.Add(hash2, content2, types.ShortIDEmpty, testNetworkNum, true, types.TFPaidTx, mc.Now(), tx2.ChainId().Int64(), types.EmptySender)
 	assert.False(t, result2.NewTx)
@@ -336,11 +338,11 @@ func TestEthTxStore_AddReuseSenderNonce(t *testing.T) {
 	cleaned, cleanedShortIDs := store.BxTxStore.clean()
 	assert.Equal(t, 0, len(cleanedShortIDs[testNetworkNum]))
 	assert.Equal(t, 4, cleaned)
-	//// clean tx without shortID - now we should clean hash2
-	//mc.IncTime(11 * time.Second)
-	//cleaned, cleanedShortIDs = store.BxTxStore.clean()
-	//assert.Equal(t, 0, len(cleanedShortIDs[testNetworkNum]))
-	//assert.Equal(t, 1, cleaned)
+	// // clean tx without shortID - now we should clean hash2
+	// mc.IncTime(11 * time.Second)
+	// cleaned, cleanedShortIDs = store.BxTxStore.clean()
+	// assert.Equal(t, 0, len(cleanedShortIDs[testNetworkNum]))
+	// assert.Equal(t, 1, cleaned)
 
 	// still, can't add it back due to history
 	mc.IncTime(11 * time.Second)
@@ -386,12 +388,12 @@ func newEthTransaction(nonce uint64, gasFee, gasTip int64) (*types.EthTransactio
 	})
 
 	// Sign the transaction with same private key
-	signedTx, err := ethtypes.SignTx(rawTx, ethtypes.NewCancunSigner(rawTx.ChainId()), privateKey)
+	signedTx, err := ethtypes.SignTx(rawTx, ethtypes.NewPragueSigner(rawTx.ChainId()), privateKey)
 	if err != nil {
 		return nil, err
 	}
 
-	return types.NewEthTransaction(types.SHA256Hash(signedTx.Hash()), signedTx, types.EmptySender)
+	return types.NewEthTransaction(signedTx, types.EmptySender)
 }
 
 func newBlobTypeTransaction(nonce uint64, gasFee, gasTip, blobFeeCap uint64) (*types.EthTransaction, error) {
@@ -414,12 +416,50 @@ func newBlobTypeTransaction(nonce uint64, gasFee, gasTip, blobFeeCap uint64) (*t
 	})
 
 	// Sign the transaction with same private key
-	signedTx, err := ethtypes.SignTx(rawTx, ethtypes.NewCancunSigner(rawTx.ChainId()), privateKey)
+	signedTx, err := ethtypes.SignTx(rawTx, ethtypes.NewPragueSigner(rawTx.ChainId()), privateKey)
 	if err != nil {
 		return nil, err
 	}
 
-	return types.NewEthTransaction(types.SHA256Hash(signedTx.Hash()), signedTx, types.EmptySender)
+	return types.NewEthTransaction(signedTx, types.EmptySender)
+}
+
+func newSetCodeTransaction(nonce uint64, gasFee, gasTip uint64) (*types.EthTransaction, error) {
+	keyA, err := crypto.GenerateKey()
+	if err != nil {
+		return nil, err
+	}
+
+	to := common.HexToAddress("0x12345")
+
+	auth, err := ethtypes.SignSetCode(keyA, ethtypes.SetCodeAuthorization{
+		ChainID: *uint256.MustFromBig(params.TestChainConfig.ChainID),
+		Address: common.Address{0x42},
+		Nonce:   0,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	rawTx := ethtypes.NewTx(&ethtypes.SetCodeTx{
+		ChainID:   uint256.NewInt(uint64(testChainID)),
+		Nonce:     nonce,
+		GasFeeCap: uint256.NewInt(gasFee),
+		GasTipCap: uint256.NewInt(gasTip),
+		Gas:       1000,
+		To:        to,
+		Value:     uint256.NewInt(100),
+		Data:      []byte{},
+		AuthList:  []ethtypes.SetCodeAuthorization{auth},
+	})
+
+	// Sign the transaction with same private key
+	signedTx, err := ethtypes.SignTx(rawTx, ethtypes.NewPragueSigner(rawTx.ChainId()), privateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return types.NewEthTransaction(signedTx, types.EmptySender)
 }
 
 func TestNonceTracker_track(t *testing.T) {
@@ -493,6 +533,58 @@ func TestNonceTrackerBlobTx_track(t *testing.T) {
 	require.NoError(t, err)
 
 	txHigherGas, err := newBlobTypeTransaction(nonce, 111, 1111, 1111)
+	require.NoError(t, err)
+
+	duplicate, _, err := n.track(tx, testNetworkNum)
+	require.NoError(t, err)
+
+	require.False(t, duplicate)
+
+	duplicate, _, err = n.track(txSame, testNetworkNum)
+	require.NoError(t, err)
+	require.True(t, duplicate)
+
+	duplicate, _, err = n.track(txLowerGas, testNetworkNum)
+	require.NoError(t, err)
+	require.True(t, duplicate)
+
+	duplicate, _, err = n.track(txSlightlyHigherGas, testNetworkNum)
+	require.NoError(t, err)
+
+	require.True(t, duplicate)
+
+	duplicate, _, err = n.track(txHigherGas, testNetworkNum)
+	require.NoError(t, err)
+	require.False(t, duplicate)
+
+	c.IncTime(5 * time.Second)
+	duplicate, _, err = n.track(txLowerGas, testNetworkNum)
+	require.NoError(t, err)
+	require.False(t, duplicate)
+}
+
+func TestNonceTrackerSetCodeTx_track(t *testing.T) {
+	c := utils.MockClock{}
+
+	nc := blockchainNetwork
+	nc.AllowTimeReuseSenderNonce = 1
+	nc.NetworkNum = testNetworkNum
+	n := newNonceTracker(&c, sdnmessage.BlockchainNetworks{nc.NetworkNum: &nc}, 10)
+	nonce := uint64(1)
+
+	tx, err := newSetCodeTransaction(nonce, 100, 100)
+	require.NoError(t, err)
+
+	txSame, err := newSetCodeTransaction(nonce, 100, 100)
+	require.NoError(t, err)
+
+	txLowerGas, err := newSetCodeTransaction(nonce, 5, 5)
+	require.NoError(t, err)
+
+	txSlightlyHigherGas, err := newSetCodeTransaction(nonce, 101, 101)
+	require.NoError(t, err)
+
+	txHigherGas, err := newSetCodeTransaction(nonce, 111, 1111)
 	require.NoError(t, err)
 
 	duplicate, _, err := n.track(tx, testNetworkNum)

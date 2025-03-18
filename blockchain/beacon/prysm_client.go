@@ -93,16 +93,10 @@ func (c *PrysmClient) run() {
 
 					var blk interfaces.ReadOnlySignedBeaconBlock
 					switch b := res.Block.(type) {
-					case *ethpb.StreamBlocksResponse_Phase0Block:
-						blk, err = blocks.NewSignedBeaconBlock(b.Phase0Block)
-					case *ethpb.StreamBlocksResponse_AltairBlock:
-						blk, err = blocks.NewSignedBeaconBlock(b.AltairBlock)
-					case *ethpb.StreamBlocksResponse_BellatrixBlock:
-						blk, err = blocks.NewSignedBeaconBlock(b.BellatrixBlock)
-					case *ethpb.StreamBlocksResponse_CapellaBlock:
-						blk, err = blocks.NewSignedBeaconBlock(b.CapellaBlock)
 					case *ethpb.StreamBlocksResponse_DenebBlock:
 						blk, err = blocks.NewSignedBeaconBlock(b.DenebBlock)
+					case *ethpb.StreamBlocksResponse_ElectraBlock:
+						blk, err = blocks.NewSignedBeaconBlock(b.ElectraBlock)
 					}
 
 					if err != nil {

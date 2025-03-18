@@ -4,10 +4,11 @@ import (
 	"math/big"
 	"time"
 
-	eth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
+
+	eth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // NewEthBlockHeader generates a test header. Note that tx hash, uncle hash, receipt hash, and bloom will be overridden by when actually constructing a blocks
@@ -57,6 +58,7 @@ func NewEthBlockWithHeader(header *ethtypes.Header) *eth.Block {
 		NewSignedEthTx(ethtypes.AccessListTxType, 2, nil, nil),
 		NewSignedEthTx(ethtypes.DynamicFeeTxType, 3, nil, nil),
 		NewSignedEthTx(ethtypes.BlobTxType, 4, nil, nil),
+		NewSignedEthTx(ethtypes.SetCodeTxType, 5, nil, nil),
 	}
 	uncles := []*ethtypes.Header{
 		NewEthBlockHeader(header.Number.Uint64(), common.Hash{}),

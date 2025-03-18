@@ -3,6 +3,9 @@ package ws
 import (
 	"encoding/json"
 	"fmt"
+	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
@@ -23,7 +26,9 @@ func (s *wsSuite) TestBlxrTxEnsureNodeValidation() {
 		wsProvider.(*eth.MockWSProvider).TxSent = []string{}
 	}
 
-	s.Assert().Equal(1, len(txSent))
+	require.Eventually(s.T(), func() bool {
+		return len(txSent) == 1
+	}, 1*time.Second, 10*time.Millisecond)
 	s.Assert().Equal("0x"+fixtures.LegacyTransaction, txSent[0])
 }
 

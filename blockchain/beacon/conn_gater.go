@@ -1,6 +1,7 @@
 package beacon
 
 import (
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/libp2p/go-libp2p/core/control"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -42,6 +43,12 @@ func (n *Node) InterceptUpgraded(conn network.Conn) (bool, control.DisconnectRea
 	})
 
 	if len(inboundConns) >= n.inboundLimit {
+		n.log.WithFields(log.Fields{
+			"inboundConnections": len(inboundConns),
+			"inboundLimit":       n.inboundLimit,
+			"peerID":             conn.RemotePeer(),
+			"peerAddr":           conn.RemoteMultiaddr(),
+		}).Infof("connection rejected: inbound connection limit reached")
 		return false, control.DisconnectReason(1)
 	}
 
@@ -53,5 +60,9 @@ func (n *Node) InterceptUpgraded(conn network.Conn) (bool, control.DisconnectRea
 		return true, 0
 	}
 
+	n.log.WithFields(log.Fields{
+		"peerID":   conn.RemotePeer(),
+		"peerAddr": conn.RemoteMultiaddr(),
+	}).Infof("connection rejected: peer is not trusted")
 	return false, control.DisconnectReason(1)
 }

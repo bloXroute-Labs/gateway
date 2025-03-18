@@ -43,7 +43,7 @@ func (g *server) BlxrTx(ctx context.Context, req *pb.BlxrTxRequest) (*pb.BlxrTxR
 
 	accountID, err := retrieveOriginalSenderAccountID(ctx, accountModel)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	grpc := connections.NewRPCConn(*accountID, getPeerAddr(ctx), g.params.sdn.NetworkNum(), utils.GRPC)
@@ -82,7 +82,7 @@ func (g *server) BlxrBatchTX(ctx context.Context, req *pb.BlxrBatchTXRequest) (*
 
 	accountID, err := retrieveOriginalSenderAccountID(ctx, accountModel)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	grpc := connections.NewRPCConn(*accountID, getPeerAddr(ctx), g.params.sdn.NetworkNum(), utils.GRPC)

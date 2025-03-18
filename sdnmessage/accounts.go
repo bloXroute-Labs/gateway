@@ -2,11 +2,11 @@ package sdnmessage
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
-
-	"github.com/ethereum/go-ethereum/common/math"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/types"
@@ -158,7 +158,7 @@ type quotaService struct {
 func (i *BDNServiceLimit) UnmarshalJSON(b []byte) error {
 	stringElement := json.Number(b)
 	limit, err := stringElement.Int64()
-	if err != nil && err.(*strconv.NumError).Err == strconv.ErrRange {
+	if err != nil && errors.Is(err.(*strconv.NumError).Err, strconv.ErrRange) {
 		*i = math.MaxInt64
 	} else if err != nil {
 		return err
@@ -246,6 +246,7 @@ type Account struct {
 	PrivateTransaction                  BDNQuotaService        `json:"private_transaction"`
 	PrivateTransactionFee               BDNQuotaService        `json:"private_transaction_fee"`
 	OnlineGateways                      BDNQuotaService        `json:"online_gateways"`
+	OnlineSolanaGateways                BDNQuotaService        `json:"online_solana_gateways"`
 	TxTraceRateLimit                    BDNQuotaService        `json:"tx_trace_rate_limitation"`
 	RelayLimit                          BDNQuotaService        `json:"relay_limit"`
 	MinAllowedNodes                     BDNQuotaService        `json:"min_allowed_nodes"`
@@ -267,6 +268,11 @@ type Account struct {
 	MEVProposerGetHeaderStreaming BDNFeedService `json:"mev_get_header_streaming"`
 
 	EthValidatorGateway BDNQuotaService `json:"eth_validator_gateway"`
+
+	EthBundlePerBlock  BDNQuotaService `json:"eth_bundle_per_block"`
+	EthBundlePerSecond BDNQuotaService `json:"eth_bundle_per_second"`
+	BscBundlePerBlock  BDNQuotaService `json:"bsc_bundle_per_block"`
+	BscBundlePerSecond BDNQuotaService `json:"bsc_bundle_per_second"`
 }
 
 // Validate verifies the response that the response from bxapi is well understood
@@ -277,6 +283,18 @@ func (a *Account) Validate() error {
 		return err
 	}
 	return nil
+}
+
+// GetBundlesLimitForNetwork returns the bundle limits for the given network
+func (a *Account) GetBundlesLimitForNetwork(network string) (uint64, uint64) {
+	switch network {
+	case bxgateway.Mainnet:
+		return uint64(a.EthBundlePerBlock.MsgQuota.Limit), uint64(a.EthBundlePerSecond.MsgQuota.Limit)
+	case bxgateway.BSCMainnet:
+		return uint64(a.BscBundlePerBlock.MsgQuota.Limit), uint64(a.BscBundlePerSecond.MsgQuota.Limit)
+	}
+
+	return 10000, 10000
 }
 
 // AccountInfo represents basic info about the account model
@@ -412,6 +430,14 @@ func GetDefaultEliteAccount(now time.Time) Account {
 			},
 			ExpireDateTime: now.Add(time.Hour),
 		},
+		OnlineSolanaGateways: BDNQuotaService{
+			MsgQuota: BDNService{
+				TimeInterval: TimeIntervalDaily,
+				ServiceType:  BDNServiceMsgQuota,
+				Limit:        5,
+			},
+			ExpireDateTime: now.Add(time.Hour),
+		},
 		TxTraceRateLimit: BDNQuotaService{
 			MsgQuota: BDNService{
 				TimeInterval: TimeIntervalDaily,
@@ -491,5 +517,31 @@ func GetDefaultEliteAccount(now time.Time) Account {
 				Limit:        0,
 			},
 		},
+		EthBundlePerBlock: BDNQuotaService{
+			MsgQuota: BDNService{
+				TimeInterval: TimeIntervalWithout,
+				Limit:        10000,
+			},
+		},
+
+		EthBundlePerSecond: BDNQuotaService{
+			MsgQuota: BDNService{
+				TimeInterval: TimeIntervalWithout,
+				Limit:        10000,
+			},
+		},
+		BscBundlePerBlock: BDNQuotaService{
+			MsgQuota: BDNService{
+				TimeInterval: TimeIntervalWithout,
+				Limit:        30,
+			},
+		},
+		BscBundlePerSecond: BDNQuotaService{
+			MsgQuota: BDNService{
+				TimeInterval: TimeIntervalWithout,
+				Limit:        15,
+			},
+		},
 	}
+
 }

@@ -112,7 +112,7 @@ func ParseRawTransactionGroup(transactions []string, trimTxHashPrefix bool, chai
 			return nil, fmt.Errorf("unable to parse %d transaction error: %v", i, err)
 		}
 
-		_, err = ethtypes.NewCancunSigner(big.NewInt(chainID)).Sender(transaction)
+		_, err = ethtypes.NewPragueSigner(big.NewInt(chainID)).Sender(transaction)
 		if err != nil {
 			return nil, err
 		}

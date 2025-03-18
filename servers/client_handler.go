@@ -78,7 +78,7 @@ func NewClientHandler(
 		)
 	}
 
-	httpServer := http2.NewServer(node, feedManager, config.HTTPPort)
+	httpServer := http2.NewServer(node, feedManager, config.HTTPPort, sdn)
 
 	return &ClientHandler{
 		subscriptionServices: subscriptionServices,

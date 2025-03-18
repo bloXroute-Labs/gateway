@@ -4,10 +4,11 @@ import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -18,7 +19,7 @@ func TestBroadcastPackUnpack(t *testing.T) {
 	blockHash := types.GenerateSHA256Hash()
 	beaconBlockHash := types.GenerateSHA256Hash()
 	blockBody := test.GenerateBytes(500)
-	broadcast := NewBlockBroadcast(blockHash, beaconBlockHash, types.BxBlockTypeBeaconBellatrix, blockBody, types.ShortIDList{}, networkNum)
+	broadcast := NewBlockBroadcast(blockHash, beaconBlockHash, types.BxBlockTypeBeaconDeneb, blockBody, types.ShortIDList{}, networkNum)
 
 	b, err := broadcast.Pack(MinProtocol)
 	assert.NoError(t, err)

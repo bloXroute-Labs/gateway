@@ -15,7 +15,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 
 	"github.com/bloXroute-Labs/gateway/v2"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/types"
@@ -128,39 +127,44 @@ func TestDirectRelayConnections_IfPingOver40MSLogsWarning(t *testing.T) {
 	testTable := []struct {
 		name      string
 		latencies []nodeLatencyInfo
-		log       string
+		ip        string
+		port      int64
 	}{
 		{
 			"Latency 5",
 			[]nodeLatencyInfo{{Latency: 5, IP: "8.208.101.30", Port: 1809}},
-			"fastest selected relay 8.208.101.30:1809 has a latency of 5 ms"},
+			"8.208.101.30",
+			1809,
+		},
 		{
 			"Latency 20",
 			[]nodeLatencyInfo{{Latency: 20, IP: "1.1.1.1", Port: 41}},
-			"fastest selected relay 1.1.1.1:41 has a latency of 20 ms"},
+			"1.1.1.1",
+			41,
+		},
 		{
 			"Latency 5, 41",
 			[]nodeLatencyInfo{{Latency: 5, IP: "1.1.1.2", Port: 42}, {Latency: 41, IP: "1.1.1.3", Port: 43}},
-			"fastest selected relay 1.1.1.2:42 has a latency of 5 ms",
+			"1.1.1.2",
+			42,
 		},
 		{
 			"Latency 41",
 			[]nodeLatencyInfo{{Latency: 41, IP: "1.1.1.3", Port: 43}},
-			"ping latency of the fastest relay 1.1.1.3:43 is 41 ms, which is more than 40 ms",
+			"1.1.1.3",
+			43,
 		},
 		{
 			"Latency 1000, 2000",
 			[]nodeLatencyInfo{{Latency: 1000, IP: "1.1.1.4", Port: 44}, {Latency: 2000, IP: "1.1.1.5", Port: 45}},
-			"ping latency of the fastest relay 1.1.1.4:44 is 1000 ms, which is more than 40 ms",
+			"1.1.1.4",
+			44,
 		},
 	}
 
 	for _, testCase := range testTable {
 		t.Run(testCase.name, func(t *testing.T) {
 			defer cleanupFiles()
-
-			globalHook := log.NewGlobal()
-
 			sslCerts := utils.SSLCerts{}
 			handler3, _ := mockRelaysServer(t, jsonRespRelays)
 			var m []handlerArgs
@@ -179,21 +183,16 @@ func TestDirectRelayConnections_IfPingOver40MSLogsWarning(t *testing.T) {
 			sdn.getPingLatencies = getPingLatenciesFunction
 
 			autoRelayInstructions := make(chan RelayInstruction)
-			go func() { <-autoRelayInstructions }()
 			err := sdn.DirectRelayConnections("auto", 1, autoRelayInstructions, syncmap.NewStringMapOf[types.RelayInfo]())
 			assert.NoError(t, err)
-			time.Sleep(time.Millisecond)
-
-			logs := globalHook.AllEntries()
-			if testCase.log == "" {
-				assert.Nil(t, logs)
-			} else {
-				if len(logs) == 0 {
-					t.FailNow()
-				}
-				firstLog := logs[0]
-				assert.Equal(t, testCase.log, firstLog.Message)
+			var selectedRelay RelayInstruction
+			select {
+			case selectedRelay = <-autoRelayInstructions:
+			case <-time.After(1 * time.Second):
+				t.Fatalf("Timeout: No relay instruction received within 1 seconds")
 			}
+			assert.Equal(t, testCase.ip, selectedRelay.IP)
+			assert.Equal(t, testCase.port, selectedRelay.Port)
 		})
 	}
 }

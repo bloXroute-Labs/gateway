@@ -154,6 +154,7 @@ message BlockHeader{
   string blob_gas_used = 18;
   string excess_blob_gas = 19;
   string parent_beacon_root = 20;
+  string requests_hash = 21;
 }
 
 message FutureValidatorInfo{
@@ -401,6 +402,7 @@ message NodeConnStatus {
   int64 Version = 7;
   string Name = 8;
   string ConnectedAt = 9;
+  string PeerId = 10;
 }
 
 message BDNConnStatus {
@@ -426,6 +428,7 @@ message GatewayInfo {
   string network = 8;
   string startup_params = 7;
   string gateway_public_key = 9;
+  repeated string trusted_peers = 10;
 }
 
 message StatusResponse {

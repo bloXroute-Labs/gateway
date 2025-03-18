@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/peer"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
@@ -81,13 +83,17 @@ type Converter interface {
 type StatusBridge interface {
 	SendBlockchainStatusRequest() error
 	ReceiveBlockchainStatusResponse() ([]*types.NodeEndpoint, error)
-	SubscribeStatus() StatusSubscription
+	SubscribeStatus(shouldCheckTrustedPeers bool) StatusSubscription
+	SendTrustedPeerRequest() error
+	ReceiveTrustedPeerResponse() ([]peer.ID, error)
 }
 
 // StatusSubscription defines an interface for handling blockchain status requests
 type StatusSubscription interface {
 	ReceiveBlockchainStatusRequest() <-chan struct{}
 	SendBlockchainStatusResponse([]*types.NodeEndpoint) error
+	ReceiveTrustedPeerRequest() <-chan struct{}
+	SendTrustedPeerResponse([]peer.ID) error
 }
 
 // constants for transaction channel buffer sizes
@@ -348,7 +354,7 @@ func (b BxBridge) SendBlockToNode(block *types.BxBlock) error {
 		default:
 			return ErrChannelFull
 		}
-	case types.BxBlockTypeBeaconPhase0, types.BxBlockTypeBeaconAltair, types.BxBlockTypeBeaconBellatrix, types.BxBlockTypeBeaconCapella, types.BxBlockTypeBeaconDeneb:
+	case types.BxBlockTypeBeaconDeneb, types.BxBlockTypeBeaconElectra:
 		// No listener, `b.withBeacon` is true if the gateway started with a beacon P2P node or Beacon API
 		if !b.withBeacon {
 			return nil
@@ -459,6 +465,25 @@ func (b BxStatusBridge) SendBlockchainStatusRequest() error {
 	return nil
 }
 
+// SendTrustedPeerRequest sends trusted peers signal
+func (b BxStatusBridge) SendTrustedPeerRequest() error {
+	b.lock.RLock()
+	subscriptions := b.subscriptions
+	b.lock.RUnlock()
+
+	for _, sub := range subscriptions {
+		if sub.shouldCheckTrustedPeers {
+			select {
+			case sub.trustedPeersRequest <- struct{}{}:
+			default:
+				return ErrChannelFull
+			}
+		}
+	}
+
+	return nil
+}
+
 // ReceiveBlockchainStatusResponse handles blockchain connection status response from backend
 func (b BxStatusBridge) ReceiveBlockchainStatusResponse() ([]*types.NodeEndpoint, error) {
 	t := time.NewTimer(1 * time.Second)
@@ -481,11 +506,40 @@ func (b BxStatusBridge) ReceiveBlockchainStatusResponse() ([]*types.NodeEndpoint
 	return result, nil
 }
 
+// ReceiveTrustedPeerResponse handles trusted peers response
+func (b BxStatusBridge) ReceiveTrustedPeerResponse() ([]peer.ID, error) {
+	t := time.NewTimer(1 * time.Second)
+	result := make([]peer.ID, 0)
+
+	b.lock.RLock()
+	subscriptions := b.subscriptions
+	b.lock.RUnlock()
+
+	for i := 0; i < len(subscriptions); i++ {
+		if subscriptions[i].shouldCheckTrustedPeers {
+			ch := subscriptions[i].trustedPeersResponse
+			select {
+			case status := <-ch:
+				result = append(result, status...)
+			case <-t.C:
+				return nil, errors.New("timeout")
+			}
+		}
+	}
+
+	return result, nil
+}
+
 // SubscribeStatus subscribes to blockchain connection status updates
-func (b *BxStatusBridge) SubscribeStatus() StatusSubscription {
+func (b *BxStatusBridge) SubscribeStatus(shouldCheckTrustedPeers bool) StatusSubscription {
 	subscription := &BxStatusSubscription{
 		blockchainStatusRequest:  make(chan struct{}, 1),
 		blockchainStatusResponse: make(chan []*types.NodeEndpoint, 1),
+		shouldCheckTrustedPeers:  shouldCheckTrustedPeers,
+	}
+	if shouldCheckTrustedPeers {
+		subscription.trustedPeersRequest = make(chan struct{}, 1)
+		subscription.trustedPeersResponse = make(chan []peer.ID)
 	}
 
 	b.lock.Lock()
@@ -499,6 +553,9 @@ func (b *BxStatusBridge) SubscribeStatus() StatusSubscription {
 type BxStatusSubscription struct {
 	blockchainStatusRequest  chan struct{}
 	blockchainStatusResponse chan []*types.NodeEndpoint
+	trustedPeersRequest      chan struct{}
+	trustedPeersResponse     chan []peer.ID
+	shouldCheckTrustedPeers  bool
 }
 
 // ReceiveBlockchainStatusRequest handles SendBlockchainStatusRequest signal
@@ -506,10 +563,25 @@ func (b BxStatusSubscription) ReceiveBlockchainStatusRequest() <-chan struct{} {
 	return b.blockchainStatusRequest
 }
 
+// ReceiveTrustedPeerRequest handles SendTrustedPeerRequest signal
+func (b BxStatusSubscription) ReceiveTrustedPeerRequest() <-chan struct{} {
+	return b.trustedPeersRequest
+}
+
 // SendBlockchainStatusResponse sends a response for blockchain connection status request
 func (b BxStatusSubscription) SendBlockchainStatusResponse(endpoints []*types.NodeEndpoint) error {
 	select {
 	case b.blockchainStatusResponse <- endpoints:
+		return nil
+	default:
+		return ErrChannelFull
+	}
+}
+
+// SendTrustedPeerResponse sends trusted peers
+func (b BxStatusSubscription) SendTrustedPeerResponse(trustedPeers []peer.ID) error {
+	select {
+	case b.trustedPeersResponse <- trustedPeers:
 		return nil
 	default:
 		return ErrChannelFull

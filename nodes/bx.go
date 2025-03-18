@@ -123,14 +123,14 @@ func (bn *Bx) HandleMsg(msg bxmessage.Message, source connections.Conn) error {
 					hex.EncodeToString(csi.Hash[:]), result.NewTx, result.NewContent, result.NewSID, result.Transaction.NetworkNum()))
 				syncTxCount++
 				if syncTxCount == 1000 {
-					source.Log().Tracef(syncTxBuffer.String())
+					source.Log().Trace(syncTxBuffer.String())
 					syncTxBuffer.Reset()
 					syncTxCount = 0
 				}
 			}
 		}
 		if syncTxCount != 0 {
-			source.Log().Tracef(syncTxBuffer.String())
+			source.Log().Trace(syncTxBuffer.String())
 		}
 
 	case *bxmessage.SyncReq:

@@ -4,14 +4,16 @@ import (
 	"crypto/ecdsa"
 	"math/big"
 
-	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/holiman/uint256"
+
+	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // ChainID ethereum chain ID
@@ -40,15 +42,21 @@ func NewSignedEthTx(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey, ch
 		unsignedTx = newEthDynamicFeeTx(nonce, privateKey, chainID)
 	case ethtypes.BlobTxType:
 		unsignedTx = newEthBlobTx(nonce, privateKey, uint256.MustFromBig(chainID))
+	case ethtypes.SetCodeTxType:
+		unsignedTx = newSetCodeTx(nonce, privateKey, uint256.MustFromBig(chainID))
 	default:
 		panic("provided tx type does not exist")
 	}
 
-	signer := ethtypes.NewCancunSigner(chainID)
+	signer := ethtypes.NewPragueSigner(chainID)
 	hash := signer.Hash(unsignedTx)
 	signature, _ := crypto.Sign(hash.Bytes(), privateKey)
 
-	signedTx, _ := unsignedTx.WithSignature(signer, signature)
+	signedTx, err := unsignedTx.WithSignature(signer, signature)
+	if err != nil {
+		panic(err)
+	}
+
 	return signedTx
 }
 
@@ -80,7 +88,7 @@ func NewSignedEthBlobTxWithSidecar(nonce uint64, privateKey *ecdsa.PrivateKey, c
 		S:          &uint256.Int{},
 	})
 
-	signer := ethtypes.NewCancunSigner(chainID)
+	signer := ethtypes.NewPragueSigner(chainID)
 	hash := signer.Hash(unsignedTx)
 	signature, _ := crypto.Sign(hash.Bytes(), privateKey)
 
@@ -151,6 +159,26 @@ func newEthAccessListTx(nonce uint64, privateKey *ecdsa.PrivateKey, chainID *big
 	return unsignedTx
 }
 
+// newEthDynamicFeeTx generates a valid signed Ethereum transaction from a provided private key. nil can be specified to use a hardcoded private key.
+func newEthDynamicFeeTx(nonce uint64, privateKey *ecdsa.PrivateKey, chainID *big.Int) *ethtypes.Transaction {
+	address := crypto.PubkeyToAddress(privateKey.PublicKey)
+	unsignedTx := ethtypes.NewTx(&ethtypes.DynamicFeeTx{
+		ChainID:    chainID,
+		Nonce:      nonce,
+		GasTipCap:  big.NewInt(100),
+		GasFeeCap:  big.NewInt(100),
+		Gas:        0,
+		To:         &address,
+		Value:      big.NewInt(1),
+		Data:       []byte{},
+		AccessList: nil,
+		V:          nil,
+		R:          nil,
+		S:          nil,
+	})
+	return unsignedTx
+}
+
 // newEthBlobTx generates a valid signed Ethereum transaction from a provided private key. nil can be specified to use a hardcoded private key.
 func newEthBlobTx(nonce uint64, privateKey *ecdsa.PrivateKey, chainID *uint256.Int) *ethtypes.Transaction {
 	address := crypto.PubkeyToAddress(privateKey.PublicKey)
@@ -178,22 +206,37 @@ func newEthBlobTx(nonce uint64, privateKey *ecdsa.PrivateKey, chainID *uint256.I
 	return unsignedTx
 }
 
-// newEthDynamicFeeTx generates a valid signed Ethereum transaction from a provided private key. nil can be specified to use a hardcoded private key.
-func newEthDynamicFeeTx(nonce uint64, privateKey *ecdsa.PrivateKey, chainID *big.Int) *ethtypes.Transaction {
+func newSetCodeTx(nonce uint64, privateKey *ecdsa.PrivateKey, chainID *uint256.Int) *ethtypes.Transaction {
+	keyA, err := crypto.GenerateKey()
+	if err != nil {
+		panic(err)
+	}
+
+	auth, err := ethtypes.SignSetCode(keyA, ethtypes.SetCodeAuthorization{
+		ChainID: *uint256.MustFromBig(params.TestChainConfig.ChainID),
+		Address: common.Address{0x42},
+		Nonce:   0,
+	})
+	if err != nil {
+		panic(err)
+	}
+
 	address := crypto.PubkeyToAddress(privateKey.PublicKey)
-	unsignedTx := ethtypes.NewTx(&ethtypes.DynamicFeeTx{
+	unsignedTx := ethtypes.NewTx(&ethtypes.SetCodeTx{
 		ChainID:    chainID,
 		Nonce:      nonce,
-		GasTipCap:  big.NewInt(100),
-		GasFeeCap:  big.NewInt(100),
+		GasTipCap:  uint256.NewInt(100),
+		GasFeeCap:  uint256.NewInt(100),
 		Gas:        0,
-		To:         &address,
-		Value:      big.NewInt(1),
+		To:         address,
+		Value:      uint256.NewInt(1),
 		Data:       []byte{},
-		AccessList: nil,
-		V:          nil,
-		R:          nil,
-		S:          nil,
+		AccessList: ethtypes.AccessList{},
+		AuthList:   []ethtypes.SetCodeAuthorization{auth},
+		V:          &uint256.Int{},
+		R:          &uint256.Int{},
+		S:          &uint256.Int{},
 	})
+
 	return unsignedTx
 }

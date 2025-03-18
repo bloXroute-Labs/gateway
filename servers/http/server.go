@@ -30,11 +30,12 @@ type Server struct {
 }
 
 // NewServer creates and returns a new websocket server managed by feedManager
-func NewServer(node connections.BxListener, feedManager *feed.Manager, port int) *Server {
+func NewServer(node connections.BxListener, feedManager *feed.Manager, port int, sdn connections.SDNHTTP) *Server {
 	return &Server{
 		port:        port,
 		node:        node,
 		feedManager: feedManager,
+		sdn:         sdn,
 	}
 }
 

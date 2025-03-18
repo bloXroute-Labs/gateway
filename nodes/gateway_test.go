@@ -1003,7 +1003,7 @@ func TestGateway_HandleBeaconBlockFromRelay(t *testing.T) {
 	}
 
 	// beacon block after eth block is not treated as duplicate
-	beaconBlock := bxmock.NewDenebBeaconBlock(t, 11, nil, ethBlock)
+	beaconBlock := bxmock.NewDenebBeaconBlock(t, ethBlock)
 	bxBlock, err = bridge.BlockBlockchainToBDN(beacon.NewWrappedReadOnlySignedBeaconBlock(beaconBlock))
 	assert.Nil(t, err)
 
@@ -1230,7 +1230,7 @@ func TestGateway_Status(t *testing.T) {
 	for _, endpoint := range endpoints {
 		g.bdnStats.NodeStats()[endpoint.IPPort()] = stats[endpoint.IPPort()]
 	}
-	err = g.bridge.SubscribeStatus().SendBlockchainStatusResponse(endpoints)
+	err = g.bridge.SubscribeStatus(false).SendBlockchainStatusResponse(endpoints)
 	assert.NoError(t, err)
 
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")

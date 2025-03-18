@@ -10,87 +10,56 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/blockchain"
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
-	"github.com/bloXroute-Labs/gateway/v2/test"
-	"github.com/bloXroute-Labs/gateway/v2/types"
-	httputils "github.com/bloXroute-Labs/gateway/v2/utils/http"
 	"github.com/jarcoal/httpmock"
+	ssz "github.com/prysmaticlabs/fastssz"
 	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
 	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
 	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
 	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
 	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
 	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
+	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
+	"github.com/bloXroute-Labs/gateway/v2/test"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+	httputils "github.com/bloXroute-Labs/gateway/v2/utils/http"
 )
 
 var (
-	ctx                    = context.Background()
-	config                 = &network.EthConfig{}
-	bridge                 = &blockchain.BxBridge{}
-	url                    = "localhost:4000"
-	blockchainNetwork      = "Test"
-	blockID                = "0x025ad52b0739ebbfcbe967b880d426b406764efff1515b555853c43bff81378a"
-	file                   *os.File
-	denebBlockContentsData []byte
-	denebBlockData         []byte
-	err                    error
-	validBlock             interfaces.ReadOnlySignedBeaconBlock
+	ctx                      = context.Background()
+	config                   = &network.EthConfig{}
+	bridge                   = &blockchain.BxBridge{}
+	url                      = "localhost:4000"
+	blockID                  = "0x025ad52b0739ebbfcbe967b880d426b406764efff1515b555853c43bff81378a"
+	denebBlockContentsData   []byte
+	denebBlockData           []byte
+	electraBlockContentsData []byte
+	validBlock               interfaces.ReadOnlySignedBeaconBlock
 )
 
 func init() {
-	file, err = os.Open("test_data/contents_deneb_block.ssz")
-	if err == nil {
-		defer file.Close()
-		denebBlockContentsData, err = io.ReadAll(file)
-	} else {
-		panic(err)
-	}
+	var err error
 
-	file, err = os.Open("test_data/deneb_block.ssz")
-	if err == nil {
-		defer file.Close()
-		denebBlockData, err = io.ReadAll(file)
-	} else {
-		panic(err)
-	}
-
-	validBlock = newBlock(201)
-}
-
-func newBlock(slot uint64) interfaces.ReadOnlySignedBeaconBlock {
-	hashLen := 32
-
-	b, err := blocks.NewSignedBeaconBlock(&eth.SignedBeaconBlock{
-		Block: &eth.BeaconBlock{
-			Slot:          primitives.Slot(slot),
-			ProposerIndex: 2,
-			ParentRoot:    bytesutil.PadTo([]byte("parent root"), hashLen),
-			StateRoot:     bytesutil.PadTo([]byte("state root"), hashLen),
-			Body: &eth.BeaconBlockBody{
-				Eth1Data: &eth.Eth1Data{
-					BlockHash:    bytesutil.PadTo([]byte("block hash"), hashLen),
-					DepositRoot:  bytesutil.PadTo([]byte("deposit root"), hashLen),
-					DepositCount: 1,
-				},
-				RandaoReveal:      bytesutil.PadTo([]byte("randao"), fieldparams.BLSSignatureLength),
-				Graffiti:          bytesutil.PadTo([]byte("teehee"), hashLen),
-				ProposerSlashings: []*eth.ProposerSlashing{},
-				AttesterSlashings: []*eth.AttesterSlashing{},
-				Attestations:      []*eth.Attestation{},
-				Deposits:          []*eth.Deposit{},
-				VoluntaryExits:    []*eth.SignedVoluntaryExit{},
-			},
-		},
-		Signature: bytesutil.PadTo([]byte("signature"), fieldparams.BLSSignatureLength),
-	})
+	denebBlockContentsData, err = readTestBlock("test_data/contents_deneb_block.ssz")
 	if err != nil {
 		panic(err)
 	}
 
-	return b
+	denebBlockData, err = readTestBlock("test_data/deneb_block.ssz")
+	if err != nil {
+		panic(err)
+	}
+
+	electraBlockContentsData, err = readTestBlock("test_data/contents_electra_block.ssz")
+	if err != nil {
+		panic(err)
+	}
+
+	validBlock = newBlock(201)
 }
 
 func TestNewAPIClient(t *testing.T) {
@@ -102,7 +71,6 @@ func TestNewAPIClient(t *testing.T) {
 	client := NewAPIClient(ctx, httpClient, config, bridge, url, types.NodeEndpoint{}, NewAPISharedSync())
 
 	time.Sleep(time.Second)
-	assert.NoError(t, err)
 	assert.Equal(t, ctx, client.ctx)
 	assert.Equal(t, url, client.URL)
 	assert.Equal(t, bridge, client.bridge)
@@ -299,30 +267,97 @@ func TestAPIClient_broadcastBlock(t *testing.T) {
 
 	test.WaitUntilTrueOrFail(t, client.initialized.Load)
 
-	// Test Case 1: Successful broadcast ssz
+	testCases := []struct {
+		name        string
+		block       func() (ssz.Marshaler, []byte)
+		expectError bool
+	}{
+		{
+			name:        "successful broadcast deneb",
+			expectError: false,
+			block: func() (ssz.Marshaler, []byte) {
+				mockRawBlock := denebBlockContentsData
+				denebBlock := &eth.SignedBeaconBlockContentsDeneb{}
+				err := denebBlock.UnmarshalSSZ(denebBlockContentsData)
+				require.NoError(t, err)
+
+				return denebBlock, mockRawBlock
+			},
+		},
+		{
+			name:        "successful broadcast electra",
+			expectError: false,
+			block: func() (ssz.Marshaler, []byte) {
+				mockRawBlock := electraBlockContentsData
+				electraBlock := &eth.SignedBeaconBlockContentsElectra{}
+				err := electraBlock.UnmarshalSSZ(electraBlockContentsData)
+				require.NoError(t, err)
+
+				return electraBlock, mockRawBlock
+			},
+		},
+		{
+			name:        "failed broadcast deneb",
+			expectError: true,
+			block: func() (ssz.Marshaler, []byte) {
+				mockRawBlock := denebBlockContentsData
+				denebBlock := &eth.SignedBeaconBlockContentsDeneb{}
+				err := denebBlock.UnmarshalSSZ(denebBlockContentsData)
+				require.NoError(t, err)
+
+				denebBlock.Block.Block.Slot++
+
+				return denebBlock, mockRawBlock
+			},
+		},
+	}
+
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			blockToBroadcast, mockRawBlock := tt.block()
+
+			if !tt.expectError {
+				httpmock.Reset()
+				httpmock.RegisterResponder(http.MethodPost, fmt.Sprintf("http://%s/eth/v1/beacon/blocks", url),
+					func(req *http.Request) (*http.Response, error) {
+						if req.Header.Get("Content-Type") != "application/octet-stream" {
+							t.Errorf("Expected content type to be 'application/octet-stream', but got '%s'", req.Header.Get("Content-Type"))
+						}
+
+						reqBody, _ := io.ReadAll(req.Body)
+
+						if !bytes.Equal(reqBody, mockRawBlock) {
+							t.Errorf("Expected request body:\n%s\nBut got:\n%s", mockRawBlock, reqBody)
+						}
+
+						return httpmock.NewStringResponse(http.StatusOK, ""), nil
+					},
+				)
+			} else {
+				httpmock.Reset()
+				httpmock.RegisterResponder(http.MethodPost, fmt.Sprintf("http://%s/eth/v1/beacon/blocks", url),
+					func(*http.Request) (*http.Response, error) {
+						return httpmock.NewStringResponse(http.StatusServiceUnavailable, `{"code":503,"message":"Service Unavailable"}`), nil
+					},
+				)
+			}
+
+			err := client.BroadcastBlock(blockToBroadcast, version.String(version.Deneb))
+			if tt.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+
+	/*// Test Case 1: Successful broadcast ssz
 	mockRawBlock := denebBlockContentsData
 	denebBlock := &eth.SignedBeaconBlockContentsDeneb{}
-	err = denebBlock.UnmarshalSSZ(denebBlockContentsData)
+	err := denebBlock.UnmarshalSSZ(denebBlockContentsData)
 	require.NoError(t, err)
 
-	httpmock.Reset()
-	httpmock.RegisterResponder(http.MethodPost, fmt.Sprintf("http://%s/eth/v1/beacon/blocks", url),
-		func(req *http.Request) (*http.Response, error) {
-			if req.Header.Get("Content-Type") != "application/octet-stream" {
-				t.Errorf("Expected content type to be 'application/octet-stream', but got '%s'", req.Header.Get("Content-Type"))
-			}
-
-			reqBody, _ := io.ReadAll(req.Body)
-
-			if !bytes.Equal(reqBody, mockRawBlock) {
-				t.Errorf("Expected request body:\n%s\nBut got:\n%s", mockRawBlock, reqBody)
-			}
-
-			return httpmock.NewStringResponse(http.StatusOK, ""), nil
-		},
-	)
-
-	err = client.BroadcastBlock(denebBlock)
+	err = client.BroadcastBlock(denebBlock, version.String(version.Deneb))
 	if err != nil {
 		t.Errorf("Expected no error, but got: %v", err)
 	}
@@ -336,10 +371,10 @@ func TestAPIClient_broadcastBlock(t *testing.T) {
 	)
 
 	denebBlock.Block.Block.Slot++
-	err = client.BroadcastBlock(denebBlock)
+	err = client.BroadcastBlock(denebBlock, version.String(version.Deneb))
 	if err == nil {
 		t.Error("Expected an error, but got none")
-	}
+	}*/
 }
 
 func TestAPIClient_UnmarshallBlobFromRequest(t *testing.T) {
@@ -354,4 +389,47 @@ func TestAPIClient_UnmarshallBlobFromRequest(t *testing.T) {
 
 	_, err = lightHouseBlobDecoder{}.decodeBlobSidecar(blobData)
 	require.NoError(t, err)
+}
+
+func newBlock(slot uint64) interfaces.ReadOnlySignedBeaconBlock {
+	hashLen := 32
+
+	b, err := blocks.NewSignedBeaconBlock(&eth.SignedBeaconBlock{
+		Block: &eth.BeaconBlock{
+			Slot:          primitives.Slot(slot),
+			ProposerIndex: 2,
+			ParentRoot:    bytesutil.PadTo([]byte("parent root"), hashLen),
+			StateRoot:     bytesutil.PadTo([]byte("state root"), hashLen),
+			Body: &eth.BeaconBlockBody{
+				Eth1Data: &eth.Eth1Data{
+					BlockHash:    bytesutil.PadTo([]byte("block hash"), hashLen),
+					DepositRoot:  bytesutil.PadTo([]byte("deposit root"), hashLen),
+					DepositCount: 1,
+				},
+				RandaoReveal:      bytesutil.PadTo([]byte("randao"), fieldparams.BLSSignatureLength),
+				Graffiti:          bytesutil.PadTo([]byte("teehee"), hashLen),
+				ProposerSlashings: []*eth.ProposerSlashing{},
+				AttesterSlashings: []*eth.AttesterSlashing{},
+				Attestations:      []*eth.Attestation{},
+				Deposits:          []*eth.Deposit{},
+				VoluntaryExits:    []*eth.SignedVoluntaryExit{},
+			},
+		},
+		Signature: bytesutil.PadTo([]byte("signature"), fieldparams.BLSSignatureLength),
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	return b
+}
+
+func readTestBlock(name string) ([]byte, error) {
+	file, err := os.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	return io.ReadAll(file)
 }

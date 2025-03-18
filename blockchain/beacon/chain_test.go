@@ -13,22 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func block(t *testing.T, i uint64) (interfaces.ReadOnlySignedBeaconBlock, []byte) {
-	denebBlock := util.HydrateSignedBeaconBlockDeneb(&ethpb.SignedBeaconBlockDeneb{
-		Block: &ethpb.BeaconBlockDeneb{
-			Slot: primitives.Slot(i),
-		},
-	})
-
-	blk, err := blocks.NewSignedBeaconBlock(denebBlock)
-	require.NoError(t, err)
-
-	root, err := denebBlock.Block.HashTreeRoot()
-	require.NoError(t, err)
-
-	return blk, root[:]
-}
-
 func TestChain(t *testing.T) {
 	st, err := transition.EmptyGenesisState()
 	require.NoError(t, err)
@@ -159,4 +143,20 @@ func TestChain(t *testing.T) {
 		HeadRoot:       root,
 		HeadSlot:       10,
 	}, c.status)
+}
+
+func block(t *testing.T, i uint64) (interfaces.ReadOnlySignedBeaconBlock, []byte) {
+	denebBlock := util.HydrateSignedBeaconBlockDeneb(&ethpb.SignedBeaconBlockDeneb{
+		Block: &ethpb.BeaconBlockDeneb{
+			Slot: primitives.Slot(i),
+		},
+	})
+
+	blk, err := blocks.NewSignedBeaconBlock(denebBlock)
+	require.NoError(t, err)
+
+	root, err := denebBlock.Block.HashTreeRoot()
+	require.NoError(t, err)
+
+	return blk, root[:]
 }

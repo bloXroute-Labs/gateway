@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"time"
 
+	ssz "github.com/prysmaticlabs/fastssz"
 	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
+	prysmTypes "github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
 	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
 	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
+	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
@@ -81,25 +84,7 @@ func HandleBDNBlocks(ctx context.Context, b blockchain.Bridge, n *Node, beaconAP
 			}
 
 			if broadcastBeaconAPI {
-				go func() {
-					blockHash := bdnBlock.BeaconHash().String()
-
-					denebBlockContents, err := fillBlockContents(blobsManager, castedBlock, blockHash)
-					if err != nil {
-						log.Errorf("failed to fill block contents for block %s: %v, skipping block broadcasting", blockHash, err)
-						return
-					}
-
-					for _, client := range beaconAPIClients {
-						go func(client *APIClient) {
-							if err := client.BroadcastBlock(denebBlockContents); err != nil {
-								log.Errorf("failed to broadcast block to Beacon API endpoint %s, block hash: %v, err %v", client.URL, blockHash, err)
-							} else {
-								log.Debugf("broadcasted block to Beacon API endpoint: %v, block hash: %v", client.URL, blockHash)
-							}
-						}(client)
-					}
-				}()
+				go broadcastToClients(bdnBlock.Hash().String(), castedBlock, beaconAPIClients, blobsManager)
 			}
 		case <-ctx.Done():
 			log.Infof("ending handleBDNBlocksBridge")
@@ -108,41 +93,109 @@ func HandleBDNBlocks(ctx context.Context, b blockchain.Bridge, n *Node, beaconAP
 	}
 }
 
-func fillBlockContents(blobsManager *BlobSidecarCacheManager, castedBlock interfaces.ReadOnlySignedBeaconBlock, blockHash string) (*ethpb.SignedBeaconBlockContentsDeneb, error) {
+func broadcastToClients(blockHash string, castedBlock interfaces.ReadOnlySignedBeaconBlock, beaconAPIClients []*APIClient, blobsManager *BlobSidecarCacheManager) {
+	castedBlock.Block().Slot()
+
+	blockContents, ethConsensusVersion, err := fillBlockContents(blobsManager, castedBlock, blockHash)
+	if err != nil {
+		log.Errorf("failed to fill block contents for block %s: %v, skipping block broadcasting", blockHash, err)
+		return
+	}
+
+	for _, client := range beaconAPIClients {
+		go func(client *APIClient) {
+			shouldBroadcast, err := client.shouldBroadcastBlock(uint64(castedBlock.Block().Slot()))
+			if err != nil {
+				log.Errorf("failed to broadcast block to Beacon API endpoint %s: %v", client.URL, err)
+				return
+			}
+
+			if !shouldBroadcast {
+				return
+			}
+
+			if err := client.BroadcastBlock(blockContents, ethConsensusVersion); err != nil {
+				log.Errorf("failed to broadcast block to Beacon API endpoint %s, block hash: %v, err %v", client.URL, blockHash, err)
+			} else {
+				log.Debugf("broadcasted block to Beacon API endpoint: %v, block hash: %v", client.URL, blockHash)
+			}
+		}(client)
+	}
+}
+
+func fillBlockContents(blobsManager *BlobSidecarCacheManager, castedBlock interfaces.ReadOnlySignedBeaconBlock, blockHash string) (ssz.Marshaler, string, error) {
 	bp, err := castedBlock.Proto()
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert block to proto message: %v", err)
+		return nil, "", fmt.Errorf("failed to convert block to proto message: %v", err)
 	}
 
-	denebBlock, ok := bp.(*ethpb.SignedBeaconBlockDeneb)
-	if !ok {
-		return nil, fmt.Errorf("failed to convert block of type %T to Deneb block", bp)
-	}
+	switch block := bp.(type) {
+	case *ethpb.SignedBeaconBlockDeneb:
+		kzgCommits := block.Block.Body.BlobKzgCommitments
+		expectedBlobSidecarAmount := len(kzgCommits)
 
-	kzgCommits := denebBlock.Block.Body.BlobKzgCommitments
-	expectedBlobSidecarAmount := len(kzgCommits)
-	receivedBlobSidecarAmount := 0
+		denebBlockContents := &ethpb.SignedBeaconBlockContentsDeneb{
+			Block:     block,
+			KzgProofs: make([][]byte, expectedBlobSidecarAmount),
+			Blobs:     make([][]byte, expectedBlobSidecarAmount),
+		}
 
-	denebBlockContents := &ethpb.SignedBeaconBlockContentsDeneb{
-		Block:     denebBlock,
-		KzgProofs: make([][]byte, expectedBlobSidecarAmount),
-		Blobs:     make([][]byte, expectedBlobSidecarAmount),
-	}
+		if expectedBlobSidecarAmount == 0 {
+			log.Tracef("no blob sidecars expected for block hash %s, broadcasting", blockHash)
+			return denebBlockContents, version.String(version.Deneb), nil
+		}
 
-	if expectedBlobSidecarAmount == 0 {
-		log.Tracef("no blob sidecars expected for block hash %s, broadcasting", blockHash)
-		return denebBlockContents, nil
+		kzgProofs, blobs, err := proofsAndBlobs(blobsManager, kzgCommits, blockHash, castedBlock.Block().Slot(), uint64(expectedBlobSidecarAmount))
+		if err != nil {
+			return nil, "", err
+		}
+
+		denebBlockContents.KzgProofs = kzgProofs
+		denebBlockContents.Blobs = blobs
+
+		return denebBlockContents, version.String(version.Deneb), nil
+	case *ethpb.SignedBeaconBlockElectra:
+		kzgCommits := block.Block.Body.BlobKzgCommitments
+		expectedBlobSidecarAmount := len(kzgCommits)
+
+		electraBlockContents := &ethpb.SignedBeaconBlockContentsElectra{
+			Block:     block,
+			KzgProofs: make([][]byte, expectedBlobSidecarAmount),
+			Blobs:     make([][]byte, expectedBlobSidecarAmount),
+		}
+
+		if expectedBlobSidecarAmount == 0 {
+			log.Tracef("no blob sidecars expected for block hash %s, broadcasting", blockHash)
+			return electraBlockContents, version.String(version.Electra), nil
+		}
+
+		kzgProofs, blobs, err := proofsAndBlobs(blobsManager, kzgCommits, blockHash, castedBlock.Block().Slot(), uint64(expectedBlobSidecarAmount))
+		if err != nil {
+			return nil, "", err
+		}
+
+		electraBlockContents.KzgProofs = kzgProofs
+		electraBlockContents.Blobs = blobs
+		return electraBlockContents, version.String(version.Electra), nil
+	default:
+		return nil, "", fmt.Errorf("unrecognized block type: %T", block)
 	}
+}
+
+func proofsAndBlobs(blobsManager *BlobSidecarCacheManager, kzgCommits [][]byte, blockHash string, slot prysmTypes.Slot, expectedBlobSidecarAmount uint64) (kzgProofs, blobs [][]byte, err error) {
+	kzgProofs = make([][]byte, expectedBlobSidecarAmount)
+	blobs = make([][]byte, expectedBlobSidecarAmount)
+	receivedBlobSidecarAmount := uint64(0)
 
 	log.Tracef("waiting for %d blob sidecars for block hash %s", expectedBlobSidecarAmount, blockHash)
 
-	blobsCh := blobsManager.SubscribeToBlobByBlockHash(blockHash, castedBlock.Block().Slot())
 	waitingStartingTime := time.Now()
+	blobsCh := blobsManager.SubscribeToBlobByBlockHash(blockHash, slot)
 
 	for blob := range blobsCh {
 		log.Tracef("received blob sidecar for block hash %s, index: %d", blockHash, blob.Index)
 
-		if blob.Index >= uint64(expectedBlobSidecarAmount) {
+		if blob.Index >= expectedBlobSidecarAmount {
 			log.Warnf("received blob sidecar with bigger index than expected, index: %v, expected max: %v", blob.Index, expectedBlobSidecarAmount-1)
 			continue
 		}
@@ -157,8 +210,8 @@ func fillBlockContents(blobsManager *BlobSidecarCacheManager, castedBlock interf
 		receivedBlobSidecarAmount++
 		// only success case
 
-		denebBlockContents.KzgProofs[blob.Index] = blob.KzgProof
-		denebBlockContents.Blobs[blob.Index] = blob.Blob
+		kzgProofs[blob.Index] = blob.KzgProof
+		blobs[blob.Index] = blob.Blob
 
 		if receivedBlobSidecarAmount == expectedBlobSidecarAmount {
 			break
@@ -170,12 +223,12 @@ func fillBlockContents(blobsManager *BlobSidecarCacheManager, castedBlock interf
 	if receivedBlobSidecarAmount != expectedBlobSidecarAmount {
 		// not all blob sidecars were received and the block should not be broadcasted
 		// also it means that received channel for blobs was closed, so we don't need to unsubscribe
-		return nil, fmt.Errorf("received %d blob sidecars, expected %d", receivedBlobSidecarAmount, expectedBlobSidecarAmount)
+		err = fmt.Errorf("received %d blob sidecars, expected %d", receivedBlobSidecarAmount, expectedBlobSidecarAmount)
+
+		return
 	}
 
-	waitedTime := time.Since(waitingStartingTime).Milliseconds()
+	log.Tracef("received all %d blob sidecars for block hash %s, waited %d ms", expectedBlobSidecarAmount, blockHash, time.Since(waitingStartingTime).Milliseconds())
 
-	log.Tracef("received all %d blob sidecars for block hash %s, waited %d ms", expectedBlobSidecarAmount, blockHash, waitedTime)
-
-	return denebBlockContents, nil
+	return
 }

@@ -8,11 +8,12 @@ import (
 	"strconv"
 	"sync"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
+
+	log "github.com/bloXroute-Labs/gateway/v2/logger"
 )
 
 // EthTransaction represents the JSON encoding of an Ethereum transaction
@@ -56,13 +57,15 @@ var paramToName = map[string]string{
 	"tx_contents.max_fee_per_blob_gas":     "maxFeePerBlobGas",
 	"tx_contents.blob_versioned_hashes":    "blobVersionedHashes",
 	"tx_contents.y_parity":                 "yParity",
+	"tx_contents.authorization_list":       "authorizationList",
 }
 
 // AllFields is used with blocks feeds
 var AllFields = []string{
 	"tx_contents.tx_hash", "tx_contents.nonce", "tx_contents.input", "tx_contents.v", "tx_contents.r",
 	"tx_contents.s", "tx_contents.access_list", "tx_contents.chain_id", "tx_contents.max_fee_per_gas", "tx_contents.max_priority_fee_per_gas",
-	"tx_contents.gas_price", "tx_contents.type", "tx_contents.value", "tx_contents.gas", "tx_contents.to", "tx_contents.max_fee_per_blob_gas", "tx_contents.blob_versioned_hashes", "tx_contents.y_parity",
+	"tx_contents.gas_price", "tx_contents.type", "tx_contents.value", "tx_contents.gas", "tx_contents.to", "tx_contents.max_fee_per_blob_gas",
+	"tx_contents.blob_versioned_hashes", "tx_contents.y_parity", "tx_contents.authorization_list",
 }
 
 // AllFieldsWithFrom is used with transactions feeds
@@ -87,7 +90,7 @@ var EmptyFilteredTransactionMap = map[string]interface{}{
 }
 
 // NewEthTransaction converts a canonic Ethereum transaction to EthTransaction
-func NewEthTransaction(h SHA256Hash, rawEthTx *ethtypes.Transaction, sender Sender) (*EthTransaction, error) {
+func NewEthTransaction(rawEthTx *ethtypes.Transaction, sender Sender) (*EthTransaction, error) {
 	ethTx := &EthTransaction{
 		tx:      rawEthTx,
 		lock:    &sync.Mutex{},
@@ -117,7 +120,7 @@ func (et *EthTransaction) From() (*common.Address, error) {
 		return et.from, nil
 	}
 
-	from, err := ethtypes.Sender(ethtypes.NewCancunSigner(et.tx.ChainId()), et.tx)
+	from, err := ethtypes.Sender(ethtypes.NewPragueSigner(et.tx.ChainId()), et.tx)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse Ethereum transaction from: %v", err)
 	}
@@ -177,7 +180,7 @@ func (et *EthTransaction) createFilters() {
 		et.filters["max_priority_fee_per_gas"] = int(tx.GasTipCap().Int64())
 		et.filters["max_fee_per_blob_gas"] = int(tx.BlobGasFeeCap().Int64())
 		et.filters["gas_price"] = 0
-	case ethtypes.DynamicFeeTxType:
+	case ethtypes.DynamicFeeTxType, ethtypes.SetCodeTxType:
 		et.filters["max_fee_per_gas"] = int(tx.GasFeeCap().Int64())
 		et.filters["max_priority_fee_per_gas"] = int(tx.GasTipCap().Int64())
 		et.filters["gas_price"] = 0
@@ -259,7 +262,7 @@ func (et *EthTransaction) createFields() {
 		et.fields["maxPriorityFeePerGas"] = hexutil.EncodeBig(tx.GasTipCap())
 		et.fields["maxFeePerBlobGas"] = hexutil.EncodeBig(tx.BlobGasFeeCap())
 		et.fields["gasPrice"] = nil
-	} else if tx.Type() == ethtypes.DynamicFeeTxType {
+	} else if tx.Type() == ethtypes.DynamicFeeTxType || tx.Type() == ethtypes.SetCodeTxType {
 		et.fields["maxFeePerGas"] = hexutil.EncodeBig(tx.GasFeeCap())
 		et.fields["maxPriorityFeePerGas"] = hexutil.EncodeBig(tx.GasTipCap())
 		et.fields["gasPrice"] = nil
@@ -276,10 +279,14 @@ func (et *EthTransaction) createFields() {
 	if tx.To() != nil {
 		et.fields["to"] = AddressAsString(tx.To())
 	}
+
+	if len(tx.SetCodeAuthorizations()) != 0 {
+		et.fields["authorizationList"] = tx.SetCodeAuthorizations()
+	}
 }
 
 // EthTransactionFromBytes parses and constructs an Ethereum transaction from bytes
-func ethTransactionFromBytes(h SHA256Hash, tc TxContent, sender Sender) (*EthTransaction, error) {
+func ethTransactionFromBytes(tc TxContent, sender Sender) (*EthTransaction, error) {
 	var rawEthTx ethtypes.Transaction
 
 	err := rlp.DecodeBytes(tc, &rawEthTx)
@@ -287,12 +294,12 @@ func ethTransactionFromBytes(h SHA256Hash, tc TxContent, sender Sender) (*EthTra
 		return nil, fmt.Errorf("could not decode Ethereum transaction: %v", err)
 	}
 
-	return NewEthTransaction(h, &rawEthTx, sender)
+	return NewEthTransaction(&rawEthTx, sender)
 }
 
 // EffectiveGasFeeCap returns a common "gas fee cap" that can be used for all types of transactions
 func (et *EthTransaction) EffectiveGasFeeCap() *big.Int {
-	if et.Type() == ethtypes.DynamicFeeTxType || et.Type() == ethtypes.BlobTxType {
+	if et.Type() == ethtypes.DynamicFeeTxType || et.Type() == ethtypes.BlobTxType || et.Type() == ethtypes.SetCodeTxType {
 		return et.tx.GasFeeCap()
 	}
 
@@ -301,7 +308,7 @@ func (et *EthTransaction) EffectiveGasFeeCap() *big.Int {
 
 // EffectiveGasTipCap returns a common "gas tip cap" that can be used for all types of transactions
 func (et *EthTransaction) EffectiveGasTipCap() *big.Int {
-	if et.Type() == ethtypes.DynamicFeeTxType || et.Type() == ethtypes.BlobTxType {
+	if et.Type() == ethtypes.DynamicFeeTxType || et.Type() == ethtypes.BlobTxType || et.Type() == ethtypes.SetCodeTxType {
 		return et.tx.GasTipCap()
 	}
 

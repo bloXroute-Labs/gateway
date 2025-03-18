@@ -20,12 +20,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jinzhu/copier"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/jinzhu/copier"
 )
 
 //go:generate mockgen -destination ../../bxgateway/test/mock/mock_sdnhttp.go -package mock . SDNHTTP
@@ -466,16 +467,12 @@ func (s realSDNHTTP) FindNewRelay(ctx context.Context, oldRelayIP string, oldRel
 		if err == nil {
 			return // Exit the function if successful
 		}
-		log.Errorf("error while trying to reconnect to other relay %v", err)
-
-		// Wait before trying again
-		ticker := time.NewTicker(types.RelayMonitorInterval)
-		defer ticker.Stop()
+		log.Errorf("error while trying to reconnect to other relay: %v", err)
 
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-time.After(types.RelayMonitorInterval):
 		}
 	}
 }

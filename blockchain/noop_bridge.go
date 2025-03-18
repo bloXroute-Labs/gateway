@@ -3,6 +3,7 @@ package blockchain
 import (
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 // NoOpBxBridge is a placeholder bridge that still operates as a Converter
@@ -155,13 +156,21 @@ func (n NoOpBxBridge) SendConfirmedBlockToGateway(block *types.BxBlock, peerEndp
 // SendBlockchainStatusRequest is a no-op
 func (n NoOpBxBridge) SendBlockchainStatusRequest() error { return nil }
 
+// SendTrustedPeerRequest is a no-op
+func (n NoOpBxBridge) SendTrustedPeerRequest() error { return nil }
+
 // ReceiveBlockchainStatusResponse is a no-op
 func (n NoOpBxBridge) ReceiveBlockchainStatusResponse() ([]*types.NodeEndpoint, error) {
 	return nil, nil
 }
 
+// ReceiveTrustedPeerResponse is a no-op
+func (n NoOpBxBridge) ReceiveTrustedPeerResponse() ([]peer.ID, error) {
+	return nil, nil
+}
+
 // SubscribeStatus is a no-op
-func (n NoOpBxBridge) SubscribeStatus() StatusSubscription { return nil }
+func (n NoOpBxBridge) SubscribeStatus(_ bool) StatusSubscription { return nil }
 
 // SendNodeConnectionCheckRequest is a no-op
 func (n NoOpBxBridge) SendNodeConnectionCheckRequest() error { return nil }

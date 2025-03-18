@@ -160,6 +160,9 @@ func (g *server) Status(ctx context.Context, req *pb.StatusRequest) (*pb.StatusR
 			if ok {
 				connStatus.IsConnected = nstat.IsConnected
 				connStatus.ConnectedAt = peer.ConnectedAt
+				if peer.IsBeacon {
+					connStatus.PeerId = peer.ID
+				}
 				connStatus.NodePerformance = &pb.NodePerformance{
 					Since:                                   g.params.bdnStats.StartTime().Format(time.RFC3339),
 					NewBlocksReceivedFromBlockchainNode:     uint32(nstat.NewBlocksReceivedFromBlockchainNode),
@@ -225,6 +228,21 @@ func (g *server) Status(ctx context.Context, req *pb.StatusRequest) (*pb.StatusR
 		accountModel = g.params.sdn.AccountModel()
 	)
 
+	if err = g.params.bridge.SendTrustedPeerRequest(); err != nil {
+		g.log.Errorf("failed to send trusted peer request: %v", err)
+		return nil, err
+	}
+
+	trustedPeers, err := g.params.bridge.ReceiveTrustedPeerResponse()
+	if err != nil {
+		g.log.Errorf("failed to receive trusted peer response: %v", err)
+		return nil, err
+	}
+	trustedPeersStr := make([]string, 0, len(trustedPeers))
+	for _, peer := range trustedPeers {
+		trustedPeersStr = append(trustedPeersStr, peer.String())
+	}
+
 	rsp := &pb.StatusResponse{
 		GatewayInfo: &pb.GatewayInfo{
 			Version:          version.BuildVersion,
@@ -236,6 +254,7 @@ func (g *server) Status(ctx context.Context, req *pb.StatusRequest) (*pb.StatusR
 			Network:          nodeModel.Network,
 			StartupParams:    strings.Join(os.Args[1:], " "),
 			GatewayPublicKey: g.params.gatewayPublicKey,
+			TrustedPeers:     trustedPeersStr,
 		},
 		Nodes:  nodeConn(),
 		Relays: bdnConn(),
