@@ -1,10 +1,11 @@
 package loggers
 
 import (
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/connections"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // TxTrace is used to generate log records for TxTrace
@@ -32,7 +33,7 @@ func NewTxTrace(txTraceLogger *log.Logger) TxTrace {
 
 func (tt txTrace) Log(hash types.SHA256Hash, source connections.Conn) {
 	var sourceName string
-	if source.GetConnectionType() == utils.Blockchain {
+	if source.GetConnectionType() == bxtypes.Blockchain {
 		sourceName = "Blockchain"
 	} else {
 		sourceName = "BDN"

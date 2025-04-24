@@ -6,18 +6,19 @@ import (
 	"testing"
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	"github.com/stretchr/testify/require"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/connections/handler"
-	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/stretchr/testify/require"
 )
 
 type MockConnection struct {
 	handler.Relay
 }
 
-func (m MockConnection) GetNodeID() types.NodeID {
+func (m MockConnection) GetNodeID() bxtypes.NodeID {
 	return "test"
 }
 

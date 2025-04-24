@@ -9,11 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2"
-
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/forkid"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
@@ -21,8 +20,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func testPeer(writeChannelSize int, peerCount int) (*Peer, *test.MsgReadWriter, *utils.MockClock) {
-	clock := &utils.MockClock{}
+func testPeer(writeChannelSize int, peerCount int) (*Peer, *test.MsgReadWriter, *clock.MockClock) {
+	clock := &clock.MockClock{}
 	rw := test.NewMsgReadWriter(100, writeChannelSize)
 	peer := newPeer(context.Background(), p2p.NewPeerPipe(test.GenerateEnodeID(), fmt.Sprintf("test peer_%v", peerCount), []p2p.Cap{}, nil), rw, ETH66, clock, 1)
 	return peer, rw, clock
@@ -118,7 +117,7 @@ func TestPeer_SendNewBlock(t *testing.T) {
 
 	peer, rw, _ := testPeer(1, 1)
 	maxWriteTimeout := time.Millisecond // to allow for blockLoop goroutine to write to buffer
-	clock := peer.clock.(*utils.MockClock)
+	clock := peer.clock.(*clock.MockClock)
 	go peer.Start()
 
 	time.Sleep(15 * time.Millisecond)
@@ -291,9 +290,9 @@ func TestPeer_RequestBlockHeaderNonBlocking(t *testing.T) {
 
 func TestPeer_BSC_SendFutureBlock_Pass(t *testing.T) {
 	peer, rw, _ := testPeer(1, 1)
-	peer.chainID = bxgateway.BSCChainID
+	peer.chainID = bxtypes.BSCChainID
 	maxWriteTimeout := time.Millisecond // to allow for blockLoop goroutine to write to buffer
-	mockClock := peer.clock.(*utils.MockClock)
+	mockClock := peer.clock.(*clock.MockClock)
 	go peer.Start()
 
 	block1a := bxmock.NewEthBlock(1, common.Hash{})
@@ -309,9 +308,9 @@ func TestPeer_BSC_SendFutureBlock_Pass(t *testing.T) {
 
 func TestPeer_BSC_SendFutureBlock_Delay(t *testing.T) {
 	peer, rw, _ := testPeer(1, 1)
-	peer.chainID = bxgateway.BSCChainID
+	peer.chainID = bxtypes.BSCChainID
 	maxWriteTimeout := time.Millisecond // to allow for blockLoop goroutine to write to buffer
-	mockClock := peer.clock.(*utils.MockClock)
+	mockClock := peer.clock.(*clock.MockClock)
 	go peer.Start()
 
 	block1a := bxmock.NewEthBlock(1, common.Hash{})

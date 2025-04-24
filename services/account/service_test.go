@@ -3,11 +3,11 @@ package account
 /*
 func TestGateway_Authorize(t *testing.T) {
 	type fields struct {
-		accountFetcher  func(accountID types.AccountID) (*accountResult, error)
+		accountFetcher  func(accountID bxtypes.AccountID) (*accountResult, error)
 		sdnAccountModel sdnmessage.Account
 	}
 	type args struct {
-		accountID                    types.AccountID
+		accountID                    bxtypes.AccountID
 		secretHash                   string
 		allowAccessToInternalGateway bool
 		allowIntroductoryTierAccess  bool
@@ -91,7 +91,7 @@ func TestGateway_Authorize(t *testing.T) {
 			name: "account manager not authorized error",
 			fields: fields{
 				sdnAccountModel: sdnAccountModelEnterprise,
-				accountFetcher: func(accountID types.AccountID) (*accountResult, error) {
+				accountFetcher: func(accountID bxtypes.AccountID) (*accountResult, error) {
 					return &accountResult{
 						notAuthorizedErr: fmt.Errorf("not authorized"),
 					}, nil
@@ -109,7 +109,7 @@ func TestGateway_Authorize(t *testing.T) {
 			name: "success with enterprise account",
 			fields: fields{
 				sdnAccountModel: sdnAccountModelEnterprise,
-				accountFetcher: func(accountID types.AccountID) (*accountResult, error) {
+				accountFetcher: func(accountID bxtypes.AccountID) (*accountResult, error) {
 					return &accountResult{account: sdnAccountModelEnterprise}, nil
 				},
 			},
@@ -125,7 +125,7 @@ func TestGateway_Authorize(t *testing.T) {
 			name: "tier to low error",
 			fields: fields{
 				sdnAccountModel: sdnAccountModelEnterprise,
-				accountFetcher: func(accountID types.AccountID) (*accountResult, error) {
+				accountFetcher: func(accountID bxtypes.AccountID) (*accountResult, error) {
 					return &accountResult{account: sdnAccountModelProfessional}, nil
 				},
 			},
@@ -141,7 +141,7 @@ func TestGateway_Authorize(t *testing.T) {
 			name: "success with introductory tier access enabled",
 			fields: fields{
 				sdnAccountModel: sdnAccountModelEnterprise,
-				accountFetcher: func(accountID types.AccountID) (*accountResult, error) {
+				accountFetcher: func(accountID bxtypes.AccountID) (*accountResult, error) {
 					return &accountResult{account: sdnAccountModelProfessional}, nil
 				},
 			},
@@ -161,7 +161,7 @@ func TestGateway_Authorize(t *testing.T) {
 			mockedSdn := mock.NewMockSDNHTTP(ctl)
 
 			g := &gateway{
-				accountsCacheManager: utils.NewCache[types.AccountID, accountResult](syncmap.AccountIDHasher, tt.fields.accountFetcher, accountsCacheManagerExpDur, accountsCacheManagerCleanDur),
+				accountsCacheManager: utils.NewCache[bxtypes.AccountID, accountResult](syncmap.AccountIDHasher, tt.fields.accountFetcher, accountsCacheManagerExpDur, accountsCacheManagerCleanDur),
 				log:                  log.Discard(),
 				sdn:                  mockedSdn,
 			}

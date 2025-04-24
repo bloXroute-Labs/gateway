@@ -6,12 +6,12 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/servers/grpc"
 	http2 "github.com/bloXroute-Labs/gateway/v2/servers/http"
 	"github.com/bloXroute-Labs/gateway/v2/servers/ws"
@@ -42,7 +42,7 @@ func NewClientHandler(
 	bx grpc.Connector,
 	config *config.Bx,
 	node connections.BxListener,
-	sdn connections.SDNHTTP,
+	sdn sdnsdk.SDNHTTP,
 	accService account.Accounter,
 	bridge blockchain.Bridge,
 	blockchainPeers []types.NodeEndpoint,
@@ -50,8 +50,6 @@ func NewClientHandler(
 	nodeWSManager blockchain.WSManager,
 	bdnStats *bxmessage.BdnPerformanceStats,
 	timeStarted time.Time,
-	txsQueue *services.MessageQueue,
-	txsOrderQueue *services.MessageQueue,
 	gatewayPublicKey string,
 	feedManager *feed.Manager,
 	validatorsManager *validator.Manager,
@@ -74,7 +72,7 @@ func NewClientHandler(
 	if config.GRPC.Enabled {
 		gRPCServer = grpc.NewGRPCServer(config, stats, node, sdn, accService,
 			bridge, blockchainPeers, nodeWSManager, bdnStats, timeStarted,
-			txsQueue, txsOrderQueue, gatewayPublicKey, bx, validatorsManager, feedManager, txStore,
+			gatewayPublicKey, bx, validatorsManager, feedManager, txStore,
 		)
 	}
 
@@ -130,7 +128,7 @@ func (ch *ClientHandler) ManageServers(ctx context.Context, activeManagement boo
 						ch.log.Errorf("error running servers: %v", err)
 					}
 				}
-				ch.subscriptionServices.SendSubscriptionResetNotification(make([]sdnmessage.SubscriptionModel, 0))
+				ch.subscriptionServices.SendSubscriptionResetNotification(make([]types.SubscriptionModel, 0))
 			}
 		}
 	}

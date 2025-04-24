@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"time"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // Blockchain is a placeholder struct to represent a connection for blockchain nodes
@@ -22,7 +23,7 @@ var blockchainTLSPlaceholder = TLS{}
 
 // NewBlockchainConn return a new instance of the Blockchain placeholder connection
 func NewBlockchainConn(ipEndpoint types.NodeEndpoint) Blockchain {
-	connType := utils.Blockchain.String()
+	connType := bxtypes.Blockchain.String()
 
 	var remoteAddr string
 	if ipEndpoint.DNS != "" {

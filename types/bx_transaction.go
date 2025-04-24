@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pbbase "github.com/bloXroute-Labs/gateway/v2/protobuf"
@@ -20,13 +21,13 @@ type BxTransaction struct {
 	shortIDs   ShortIDList
 	addTime    time.Time
 	flags      TxFlags
-	networkNum NetworkNum
+	networkNum bxtypes.NetworkNum
 	sender     Sender
 	rawTx      string
 }
 
 // NewBxTransaction creates a new transaction to be stored. Transactions are not expected to be initialized with content or shortIDs; they should be added via AddShortID and SetContent.
-func NewBxTransaction(hash SHA256Hash, networkNum NetworkNum, flags TxFlags, timestamp time.Time) *BxTransaction {
+func NewBxTransaction(hash SHA256Hash, networkNum bxtypes.NetworkNum, flags TxFlags, timestamp time.Time) *BxTransaction {
 	return &BxTransaction{
 		hash:       hash,
 		addTime:    timestamp,
@@ -100,7 +101,7 @@ func (bt *BxTransaction) ShortIDs() ShortIDList {
 }
 
 // NetworkNum provides the network number of the transaction
-func (bt *BxTransaction) NetworkNum() NetworkNum {
+func (bt *BxTransaction) NetworkNum() bxtypes.NetworkNum {
 	bt.m.RLock()
 	defer bt.m.RUnlock()
 

@@ -4,26 +4,28 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/types"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	uuid "github.com/satori/go.uuid"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // BroadcastHeader represents the shared header of a bloxroute broadcast message
 type BroadcastHeader struct {
 	Header
 	hash          types.SHA256Hash
-	networkNumber types.NetworkNum
+	networkNumber bxtypes.NetworkNum
 	sourceID      [SourceIDLen]byte
 }
 
 // GetNetworkNum gets the message network number
-func (b *BroadcastHeader) GetNetworkNum() types.NetworkNum {
+func (b *BroadcastHeader) GetNetworkNum() bxtypes.NetworkNum {
 	return b.networkNumber
 }
 
 // SetNetworkNum sets the message network number
-func (b *BroadcastHeader) SetNetworkNum(networkNum types.NetworkNum) {
+func (b *BroadcastHeader) SetNetworkNum(networkNum bxtypes.NetworkNum) {
 	b.networkNumber = networkNum
 }
 
@@ -38,17 +40,17 @@ func (b *BroadcastHeader) SetHash(hash types.SHA256Hash) {
 }
 
 // SourceID returns the source ID of the broadcast in string format
-func (b *BroadcastHeader) SourceID() (sourceID types.NodeID) {
+func (b *BroadcastHeader) SourceID() (sourceID bxtypes.NodeID) {
 	u, err := uuid.FromBytes(b.sourceID[:])
 	if err != nil {
 		log.Errorf("Failed to parse source id from broadcast message, raw bytes: %v", b.sourceID)
 		return
 	}
-	return types.NodeID(u.String())
+	return bxtypes.NodeID(u.String())
 }
 
 // SetSourceID sets the source id of the tx
-func (b *BroadcastHeader) SetSourceID(sourceID types.NodeID) error {
+func (b *BroadcastHeader) SetSourceID(sourceID bxtypes.NodeID) error {
 	sourceIDBytes, err := uuid.FromString(string(sourceID))
 	if err != nil {
 		return fmt.Errorf("Failed to set source id, source id: %v", sourceIDBytes)
@@ -83,7 +85,7 @@ func (b *BroadcastHeader) Unpack(buf []byte, protocol Protocol) error {
 	offset := HeaderLen
 	copy(b.hash[:], buf[HeaderLen:])
 	offset += types.SHA256HashLen
-	b.networkNumber = types.NetworkNum(binary.LittleEndian.Uint32(buf[offset:]))
+	b.networkNumber = bxtypes.NetworkNum(binary.LittleEndian.Uint32(buf[offset:]))
 	offset += types.NetworkNumLen
 	copy(b.sourceID[:], buf[offset:])
 	return nil

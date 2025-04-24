@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -30,7 +31,7 @@ func mockNewValidTxNotification() *NewTransactionNotification {
 	copy(hash[:], hashRes)
 	content, _ := hex.DecodeString("f8708301b7f8851bf08eb0008301388094b877c7e556d50b0027053336b90f36becf67b3dd88050b32f902486000801ca0aa803263146bda76a58ebf9f54be589280e920616bc57e7bd68248821f46fd0ca040266f84a2ecd4719057b0633cc80e3e0b3666f6f6ec1890a920239634ec6531")
 
-	tx := NewBxTransaction(hash, NetworkNum(5), TFPaidTx, time.Now())
+	tx := NewBxTransaction(hash, bxtypes.NetworkNum(5), TFPaidTx, time.Now())
 	tx.SetContent(content)
 	return CreateNewTransactionNotification(tx)
 }
@@ -43,7 +44,7 @@ func mockNewInvalidTxNotification() *NewTransactionNotification {
 	// length too short
 	content, _ := hex.DecodeString("f8708301b7f8851bf08eb0008301388094b877c7e556d50b0027053336b90f36becf67b3dd88050b32f902486000801ca0aa803263146bda76a58ebf9f54be589280e920616bc57e7bd68248821f46fd0ca040266f84a2ecd4719057b0633cc80e3e0b3666f6")
 
-	tx := NewBxTransaction(hash, NetworkNum(5), TFPaidTx, time.Now())
+	tx := NewBxTransaction(hash, bxtypes.NetworkNum(5), TFPaidTx, time.Now())
 	tx.SetContent(content)
 	return CreateNewTransactionNotification(tx)
 }

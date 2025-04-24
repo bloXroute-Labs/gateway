@@ -10,16 +10,18 @@ import (
 	"testing"
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"github.com/bloXroute-Labs/gateway/v2"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
+
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/rpc"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/services/account"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
@@ -30,7 +32,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/test/mock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 )
 
 func TestNewTxs(t *testing.T) {
@@ -139,16 +140,16 @@ func TestBlxrTx(t *testing.T) {
 	privKey, _ := crypto.GenerateKey()
 
 	resetNetworks := func() {
-		bxgateway.NetworkNumToChainID = map[types.NetworkNum]types.NetworkID{
-			bxgateway.MainnetNum:    bxgateway.EthChainID,
-			bxgateway.BSCMainnetNum: bxgateway.BSCChainID,
-			bxgateway.HoleskyNum:    bxgateway.HoleskyChainID,
+		bxtypes.NetworkNumToChainID = map[bxtypes.NetworkNum]bxtypes.NetworkID{
+			bxtypes.MainnetNum:    bxtypes.EthChainID,
+			bxtypes.BSCMainnetNum: bxtypes.BSCChainID,
+			bxtypes.HoleskyNum:    bxtypes.HoleskyChainID,
 		}
 	}
 	// swapChainID swaps the chainID for the mainnet to 10
 	swapChainID := func() {
-		bxgateway.NetworkNumToChainID = map[types.NetworkNum]types.NetworkID{
-			bxgateway.MainnetNum: 10,
+		bxtypes.NetworkNumToChainID = map[bxtypes.NetworkNum]bxtypes.NetworkID{
+			bxtypes.MainnetNum: 10,
 		}
 	}
 	generateLegacyTxAndHash := func() (string, string) {
@@ -243,7 +244,7 @@ func TestBlxrTx(t *testing.T) {
 				ctl := gomock.NewController(t)
 				sdn := mock.NewMockSDNHTTP(ctl)
 				sdn.EXPECT().AccountModel().Return(testAccountModel).AnyTimes()
-				sdn.EXPECT().NetworkNum().Return(bxgateway.BSCMainnetNum).AnyTimes()
+				sdn.EXPECT().NetworkNum().Return(bxtypes.BSCMainnetNum).AnyTimes()
 				s.params.sdn = sdn
 			},
 			setupValidatorFunc: func(g *server) {
@@ -280,7 +281,7 @@ func TestBlxrTx(t *testing.T) {
 				ctl := gomock.NewController(t)
 				sdn := mock.NewMockSDNHTTP(ctl)
 				sdn.EXPECT().AccountModel().Return(testAccountModel).AnyTimes()
-				sdn.EXPECT().NetworkNum().Return(bxgateway.BSCMainnetNum).AnyTimes()
+				sdn.EXPECT().NetworkNum().Return(bxtypes.BSCMainnetNum).AnyTimes()
 				s.params.sdn = sdn
 			},
 			setupValidatorFunc: func(g *server) {
@@ -299,7 +300,7 @@ func TestBlxrTx(t *testing.T) {
 				ctl := gomock.NewController(t)
 				sdn := mock.NewMockSDNHTTP(ctl)
 				sdn.EXPECT().AccountModel().Return(testAccountModel).AnyTimes()
-				sdn.EXPECT().NetworkNum().Return(bxgateway.BSCMainnetNum).AnyTimes()
+				sdn.EXPECT().NetworkNum().Return(bxtypes.BSCMainnetNum).AnyTimes()
 				s.params.sdn = sdn
 			},
 			setupValidatorFunc: func(g *server) {
@@ -377,16 +378,16 @@ func TestGatewayGRPCBlxrBatchTx(t *testing.T) {
 	privKey, _ := crypto.GenerateKey()
 
 	resetNetworks := func() {
-		bxgateway.NetworkNumToChainID = map[types.NetworkNum]types.NetworkID{
-			bxgateway.MainnetNum:    bxgateway.EthChainID,
-			bxgateway.BSCMainnetNum: bxgateway.BSCChainID,
-			bxgateway.HoleskyNum:    bxgateway.HoleskyChainID,
+		bxtypes.NetworkNumToChainID = map[bxtypes.NetworkNum]bxtypes.NetworkID{
+			bxtypes.MainnetNum:    bxtypes.EthChainID,
+			bxtypes.BSCMainnetNum: bxtypes.BSCChainID,
+			bxtypes.HoleskyNum:    bxtypes.HoleskyChainID,
 		}
 	}
 	// swapChainID swaps the chainID for the mainnet to 10
 	swapChainID := func() {
-		bxgateway.NetworkNumToChainID = map[types.NetworkNum]types.NetworkID{
-			bxgateway.MainnetNum: 10,
+		bxtypes.NetworkNumToChainID = map[bxtypes.NetworkNum]bxtypes.NetworkID{
+			bxtypes.MainnetNum: 10,
 		}
 	}
 
@@ -653,9 +654,9 @@ func TestGatewaySubmitBundle(t *testing.T) {
 				ctl := gomock.NewController(t)
 				sdn := mock.NewMockSDNHTTP(ctl)
 				sdn.EXPECT().AccountModel().Return(testAccountModel).AnyTimes()
-				sdn.EXPECT().NodeID().Return(types.NodeID("node_id")).AnyTimes()
+				sdn.EXPECT().NodeID().Return(bxtypes.NodeID("node_id")).AnyTimes()
 				sdn.EXPECT().Networks().Return(&blockchainNetworks).AnyTimes()
-				sdn.EXPECT().NetworkNum().Return(types.NetworkNum(36)).AnyTimes()
+				sdn.EXPECT().NetworkNum().Return(bxtypes.NetworkNum(36)).AnyTimes()
 				s.params.sdn = sdn
 			},
 			request: &pb.BlxrSubmitBundleRequest{

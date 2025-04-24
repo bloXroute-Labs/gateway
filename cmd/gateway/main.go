@@ -13,8 +13,11 @@ import (
 	"runtime/debug"
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/sync/errgroup"
+
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
@@ -22,7 +25,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/config"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/nodes"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	httputils "github.com/bloXroute-Labs/gateway/v2/utils/http"
@@ -162,7 +164,7 @@ func runGateway(c *cli.Context) error {
 	startupPrysmClient := len(ethConfig.StaticPeers.PrysmAddrs()) > 0
 
 	var bridge blockchain.Bridge
-	if blockchainNetwork == bxgateway.Mainnet || startupBlockchainClient || startupPrysmClient {
+	if blockchainNetwork == bxtypes.Mainnet || startupBlockchainClient || startupPrysmClient {
 		// for ethereum initialize bridge even if startupPrysmClient and startupBlockchainClient are false
 		bridge = blockchain.NewBxBridge(eth.Converter{}, startupBeaconNode || startupBeaconAPIClients)
 	} else {
@@ -346,9 +348,9 @@ func runGateway(c *cli.Context) error {
 func downloadGenesisFile(ctx context.Context, network, genesisFilePath string) (string, error) {
 	var genesisFileURL string
 	switch network {
-	case bxgateway.Mainnet:
+	case bxtypes.Mainnet:
 		genesisFileURL = "https://github.com/eth-clients/eth2-mainnet/raw/master/genesis.ssz"
-	case bxgateway.Holesky:
+	case bxtypes.Holesky:
 		genesisFileURL = "https://github.com/eth-clients/holesky/raw/main/custom_config_data/genesis.ssz"
 	default:
 		return "", fmt.Errorf("beacon node is only supported on Ethereum")

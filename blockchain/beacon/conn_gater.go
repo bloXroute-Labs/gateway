@@ -1,7 +1,7 @@
 package beacon
 
 import (
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/libp2p/go-libp2p/core/control"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -34,6 +34,11 @@ func (n *Node) InterceptSecured(_ network.Direction, _ libp2pPeer.ID, _ network.
 
 // InterceptUpgraded tests whether a fully capable connection is allowed.
 func (n *Node) InterceptUpgraded(conn network.Conn) (bool, control.DisconnectReason) {
+	n.log.WithFields(log.Fields{
+		"inboundLimit": n.inboundLimit,
+		"peerID":       conn.RemotePeer(),
+		"peerAddr":     conn.RemoteMultiaddr(),
+	}).Tracef("got new inbound connection request")
 	if conn.Stat().Direction == network.DirOutbound {
 		return true, 0
 	}

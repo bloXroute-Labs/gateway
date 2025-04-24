@@ -5,9 +5,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 )
 
 // TxSizeCleaner is a utility that keeps track of the total size of transactions that are currently in the mempool.

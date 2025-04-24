@@ -4,14 +4,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/types"
+	bxclock "github.com/bloXroute-Labs/bxcommon-go/clock"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestNewTimeSeriesCounterPoolPeerDoesNotExists(t *testing.T) {
-	id := types.NodeID("id")
-	clock := MockClock{}
+	id := bxtypes.NodeID("id")
+	clock := bxclock.MockClock{}
 	now := time.Now()
 	clock.SetTime(now)
 
@@ -22,8 +23,8 @@ func TestNewTimeSeriesCounterPoolPeerDoesNotExists(t *testing.T) {
 }
 
 func TestNewTimeSeriesCounterPoolPeerTrack(t *testing.T) {
-	id := types.NodeID("id")
-	clock := MockClock{}
+	id := bxtypes.NodeID("id")
+	clock := bxclock.MockClock{}
 	now := time.Now()
 	clock.SetTime(now)
 
@@ -34,8 +35,8 @@ func TestNewTimeSeriesCounterPoolPeerTrack(t *testing.T) {
 }
 
 func TestNewTimeSeriesCounterPoolPeerRemovedPeer(t *testing.T) {
-	id := types.NodeID("id")
-	clock := MockClock{}
+	id := bxtypes.NodeID("id")
+	clock := bxclock.MockClock{}
 	now := time.Now()
 	clock.SetTime(now)
 
@@ -48,8 +49,8 @@ func TestNewTimeSeriesCounterPoolPeerRemovedPeer(t *testing.T) {
 }
 
 func TestNewTimeSeriesCounterPoolPeerExpiration(t *testing.T) {
-	id := types.NodeID("id")
-	clock := &MockClock{}
+	id := bxtypes.NodeID("id")
+	clock := &bxclock.MockClock{}
 	now := time.Now()
 	clock.SetTime(now)
 

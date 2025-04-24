@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/sourcegraph/jsonrpc2"
 
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 type rpcTxResponse struct {
@@ -21,7 +21,7 @@ type rpcTxResponse struct {
 func (h *handlerObj) handleRPCTx(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
 	if h.serverAccountID != h.connectionAccount.AccountID {
 		errDifferentAccAuth := fmt.Sprintf(errFDifferentAccAuth, jsonrpc.RPCTx)
-		if h.serverAccountID == types.BloxrouteAccountID {
+		if h.serverAccountID == bxtypes.BloxrouteAccountID {
 			h.log.Infof("received a tx from user account %v, remoteAddr %v: %v", h.connectionAccount.AccountID, h.remoteAddress, errDifferentAccAuth)
 		} else {
 			h.log.Errorf("%v. account auth: %v, node account: %v", errDifferentAccAuth, h.connectionAccount.AccountID, h.serverAccountID)
@@ -45,18 +45,18 @@ func (h *handlerObj) handleRPCTx(ctx context.Context, conn *jsonrpc2.Conn, req *
 	}
 
 	// if user tried to send transaction directly to the internal gateway, return error
-	if h.serverAccountID == types.BloxrouteAccountID && types.AccountID(params.OriginalSenderAccountID) == types.EmptyAccountID {
+	if h.serverAccountID == bxtypes.BloxrouteAccountID && bxtypes.AccountID(params.OriginalSenderAccountID) == types.EmptyAccountID {
 		h.log.Errorf("cannot send transaction to internal gateway directly")
 		sendErrorMsg(ctx, jsonrpc.InvalidRequest, "failed to send transaction", conn, req.ID)
 		return
 	}
 
 	var ws connections.RPCConn
-	if h.connectionAccount.AccountID == types.BloxrouteAccountID {
+	if h.connectionAccount.AccountID == bxtypes.BloxrouteAccountID {
 		// Tx sent from cloud services, need to update account ID of the connection to be the origin sender
-		ws = connections.NewRPCConn(types.AccountID(params.OriginalSenderAccountID), h.remoteAddress, h.networkNum, utils.CloudAPI)
+		ws = connections.NewRPCConn(bxtypes.AccountID(params.OriginalSenderAccountID), h.remoteAddress, h.networkNum, bxtypes.CloudAPI)
 	} else {
-		ws = connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.networkNum, utils.Websocket)
+		ws = connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.networkNum, bxtypes.Websocket)
 	}
 
 	txHash, ok, err := handler.HandleSingleTransaction(h.node, h.nodeWSManager, h.validatorsManager, params.Transaction, nil, ws, params.ValidatorsOnly,

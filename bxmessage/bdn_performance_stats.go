@@ -9,10 +9,12 @@ import (
 	"sync"
 	"time"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
@@ -133,11 +135,11 @@ func (bs *BdnPerformanceStats) LogNewBlockFromNode(node types.NodeEndpoint) {
 	nodeStats := bs.getOrCreateNodeStats(node)
 	nodeStats.NewBlocksReceivedFromBlockchainNode++
 	for endpoint, stats := range bs.nodeStats {
-		if !stats.IsConnected || (stats.BlockchainNetwork == bxgateway.Mainnet && !stats.IsBeacon) {
+		if !stats.IsConnected || (stats.BlockchainNetwork == bxtypes.Mainnet && !stats.IsBeacon) {
 			continue
 		}
 		stats.NewBlocksSeen++
-		if endpoint == node.IPPort() || (!stats.IsBeacon && node.BlockchainNetwork == bxgateway.Mainnet) { // if the stats is the source blockchain then counter already updated.
+		if endpoint == node.IPPort() || (!stats.IsBeacon && node.BlockchainNetwork == bxtypes.Mainnet) { // if the stats is the source blockchain then counter already updated.
 			continue // Or if the stats is for execution layer then no need to update block counter
 		}
 		stats.NewBlocksReceivedFromBdn++
@@ -149,7 +151,7 @@ func (bs *BdnPerformanceStats) LogNewBlockFromBDN(blockchainNetwork string) {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
 	for _, stats := range bs.nodeStats {
-		if !stats.IsBeacon && blockchainNetwork == bxgateway.Mainnet { // no need to update execution layer block counter
+		if !stats.IsBeacon && blockchainNetwork == bxtypes.Mainnet { // no need to update execution layer block counter
 			continue
 		}
 		if stats.IsConnected {
@@ -163,7 +165,7 @@ func (bs *BdnPerformanceStats) LogNewBlockFromBDN(blockchainNetwork string) {
 func (bs *BdnPerformanceStats) LogNewBlockMessageFromNode(node types.NodeEndpoint) {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
-	if node.BlockchainNetwork == bxgateway.Mainnet && !node.IsBeacon { // no need to update execution layer block counter
+	if node.BlockchainNetwork == bxtypes.Mainnet && !node.IsBeacon { // no need to update execution layer block counter
 		return
 	}
 
@@ -186,7 +188,7 @@ func (bs *BdnPerformanceStats) LogNewTxFromNode(node types.NodeEndpoint) {
 
 	bs.getOrCreateNodeStats(node)
 	for endpoint, stats := range bs.nodeStats {
-		if (stats.IsBeacon && stats.BlockchainNetwork == bxgateway.Mainnet) || !stats.IsConnected { // do not update tx counter for consensus layer
+		if (stats.IsBeacon && stats.BlockchainNetwork == bxtypes.Mainnet) || !stats.IsConnected { // do not update tx counter for consensus layer
 			continue
 		} else if endpoint == node.IPPort() {
 			stats.IsConnected = true
@@ -222,7 +224,7 @@ func (bs *BdnPerformanceStats) LogNewTxFromBDN() {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
 	for _, stats := range bs.nodeStats {
-		if (stats.IsBeacon && stats.BlockchainNetwork == bxgateway.Mainnet) || !stats.IsConnected {
+		if (stats.IsBeacon && stats.BlockchainNetwork == bxtypes.Mainnet) || !stats.IsConnected {
 			continue
 		}
 		stats.NewTxReceivedFromBdn++
@@ -234,7 +236,7 @@ func (bs *BdnPerformanceStats) LogTxSentToAllNodesExceptSourceNode(sourceNode ty
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
 	for endpoint, stats := range bs.nodeStats {
-		if endpoint == sourceNode.IPPort() || !stats.IsConnected || (stats.IsBeacon && stats.BlockchainNetwork == bxgateway.Mainnet) {
+		if endpoint == sourceNode.IPPort() || !stats.IsConnected || (stats.IsBeacon && stats.BlockchainNetwork == bxtypes.Mainnet) {
 			continue
 		}
 		stats.TxSentToNode++

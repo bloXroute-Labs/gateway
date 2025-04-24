@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
-	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
 )
 
@@ -41,7 +42,7 @@ func (s *wsSuite) TestQuotaUsage() {
 	b, err := json.Marshal(clientRes.Result)
 	s.Require().NoError(err)
 
-	var res connections.QuotaResponseBody
+	var res sdnsdk.QuotaResponseBody
 	err = json.Unmarshal(b, &res)
 	s.Require().NoError(err)
 	s.Assert().Equal("gw", res.AccountID)

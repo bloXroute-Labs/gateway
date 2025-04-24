@@ -12,11 +12,11 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 const prysmClientTimeout = 10 * time.Second
@@ -24,7 +24,7 @@ const prysmClientTimeout = 10 * time.Second
 // PrysmClient is gRPC Prysm client
 type PrysmClient struct {
 	ctx         context.Context
-	clock       utils.Clock
+	clock       clock.Clock
 	config      *network.EthConfig
 	addr        string
 	bridge      blockchain.Bridge
@@ -36,10 +36,10 @@ type PrysmClient struct {
 
 // NewPrysmClient creates new Prysm gRPC client
 func NewPrysmClient(ctx context.Context, config *network.EthConfig, addr string, bridge blockchain.Bridge, endpoint types.NodeEndpoint) *PrysmClient {
-	return newPrysmClient(ctx, config, addr, bridge, endpoint, utils.RealClock{})
+	return newPrysmClient(ctx, config, addr, bridge, endpoint, clock.RealClock{})
 }
 
-func newPrysmClient(ctx context.Context, config *network.EthConfig, addr string, bridge blockchain.Bridge, endpoint types.NodeEndpoint, clock utils.Clock) *PrysmClient {
+func newPrysmClient(ctx context.Context, config *network.EthConfig, addr string, bridge blockchain.Bridge, endpoint types.NodeEndpoint, clock clock.Clock) *PrysmClient {
 	return &PrysmClient{
 		ctx:      ctx,
 		clock:    clock,

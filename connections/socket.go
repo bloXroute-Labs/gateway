@@ -6,7 +6,9 @@ import (
 	"strconv"
 	"time"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/cert"
+
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
@@ -31,7 +33,7 @@ type TLS struct {
 }
 
 // NewTLS dials and creates a new TLS connection
-func NewTLS(ip string, port int, certs *utils.SSLCerts) (*TLS, error) {
+func NewTLS(ip string, port int, certs *cert.SSLCerts) (*TLS, error) {
 	config, err := certs.LoadPrivateConfig()
 	if err != nil {
 		log.Errorf("servers: loadkeys: %s", err)

@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -17,7 +18,7 @@ type ValidatorUpdates struct {
 }
 
 // NewValidatorUpdates constructs a new transaction message, using the provided hash function on the transaction contents to determine the hash
-func NewValidatorUpdates(networkNum types.NetworkNum, onlineLength int, onlineList []string) (*ValidatorUpdates, error) {
+func NewValidatorUpdates(networkNum bxtypes.NetworkNum, onlineLength int, onlineList []string) (*ValidatorUpdates, error) {
 	if len(onlineList) != onlineLength {
 		return nil, fmt.Errorf("input online validator length is %v, however the length of the list is %v", onlineLength, len(onlineList))
 	}
@@ -108,6 +109,6 @@ func (vu *ValidatorUpdates) String() string {
 }
 
 // GetNetworkNum return network number of the validator update message
-func (vu *ValidatorUpdates) GetNetworkNum() types.NetworkNum {
-	return types.NetworkNum(vu.networkNum)
+func (vu *ValidatorUpdates) GetNetworkNum() bxtypes.NetworkNum {
+	return bxtypes.NetworkNum(vu.networkNum)
 }

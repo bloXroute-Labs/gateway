@@ -5,16 +5,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
+	bxclock "github.com/bloXroute-Labs/bxcommon-go/clock"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 var nullByteAccountID = bytes.Repeat([]byte("\x00"), 36)
 
 func TestTx_AccountIDEmpty(t *testing.T) {
 	tx := Tx{}
-	assert.Equal(t, types.AccountID(""), tx.AccountID())
+	assert.Equal(t, bxtypes.AccountID(""), tx.AccountID())
 }
 
 func TestTx_AccountIDNullBytes(t *testing.T) {
@@ -24,33 +26,33 @@ func TestTx_AccountIDNullBytes(t *testing.T) {
 	tx := Tx{
 		accountID: accountID,
 	}
-	assert.Equal(t, types.AccountID(""), tx.AccountID())
+	assert.Equal(t, bxtypes.AccountID(""), tx.AccountID())
 
 	b, _ := tx.Pack(MinProtocol)
 	tx2 := Tx{}
 	_ = tx2.Unpack(b, MinProtocol)
-	assert.Equal(t, types.AccountID(""), tx2.AccountID())
+	assert.Equal(t, bxtypes.AccountID(""), tx2.AccountID())
 }
 
 func TestTx_SourceIDValid(t *testing.T) {
 	sourceID := "4c5df5f8-2fd9-4739-a319-8beeba554a88"
 	tx := Tx{}
-	err := tx.SetSourceID(types.NodeID(sourceID))
+	err := tx.SetSourceID(bxtypes.NodeID(sourceID))
 	assert.NoError(t, err)
-	assert.Equal(t, types.NodeID(sourceID), tx.SourceID())
+	assert.Equal(t, bxtypes.NodeID(sourceID), tx.SourceID())
 
 	newSourceID := "9ee4ec57-d189-428e-92e6-d496670b5022"
-	err = tx.SetSourceID(types.NodeID(newSourceID))
+	err = tx.SetSourceID(bxtypes.NodeID(newSourceID))
 	assert.NoError(t, err)
-	assert.Equal(t, types.NodeID(newSourceID), tx.SourceID())
+	assert.Equal(t, bxtypes.NodeID(newSourceID), tx.SourceID())
 
 	newInvalidSourceID := "invalid-source-id"
-	err = tx.SetSourceID(types.NodeID(newInvalidSourceID))
+	err = tx.SetSourceID(bxtypes.NodeID(newInvalidSourceID))
 	assert.NotNil(t, err)
 }
 
 func TestTx_TimeStamp(t *testing.T) {
-	mockClock := utils.MockClock{}
+	mockClock := bxclock.MockClock{}
 	clock = &mockClock
 
 	// case 1, normal situation
@@ -92,7 +94,7 @@ func TestTx_TimeStamp(t *testing.T) {
 	// with has binary format of 0b1011011011101100000+11111111111111111111111111111111+1111111111, after the merge the Tx time is
 	// 0b1011011011101100000+00000000010010101000000101111100+0000000000, which is 2022-03-18 09:29:41.175824384 -0500 CDT, and it's more than
 	// an hour before the current time
-	packTime = time.Unix(0, 0x16dd840000000000) //2022-03-18 10:42:59.22
+	packTime = time.Unix(0, 0x16dd840000000000) // 2022-03-18 10:42:59.22
 	tx = Tx{
 		timestamp: packTime,
 	}

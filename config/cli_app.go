@@ -6,8 +6,8 @@ import (
 
 	"fmt"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/gateway/v2"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/version"
 	"github.com/urfave/cli/v2"
 )

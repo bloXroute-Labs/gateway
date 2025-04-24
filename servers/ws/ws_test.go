@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"testing"
 	"time"
@@ -16,13 +17,16 @@ import (
 	"go.uber.org/mock/gomock"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
 	"github.com/bloXroute-Labs/gateway/v2/config"
-	"github.com/bloXroute-Labs/gateway/v2/connections"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
@@ -31,7 +35,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/test/mock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 )
 
 var (
@@ -39,7 +42,7 @@ var (
 	wsPort  = 28332
 	wsURL   = fmt.Sprintf("ws://localhost:%v/ws", wsPort)
 
-	accountIDToAccountModel = map[types.AccountID]sdnmessage.Account{
+	accountIDToAccountModel = map[bxtypes.AccountID]sdnmessage.Account{
 		"a": {AccountInfo: sdnmessage.AccountInfo{AccountID: "a", TierName: sdnmessage.ATierElite}, SecretHash: "123456"},
 		"b": {AccountInfo: sdnmessage.AccountInfo{AccountID: "b", TierName: sdnmessage.ATierDeveloper}, SecretHash: "7891011"},
 		"c": {AccountInfo: sdnmessage.AccountInfo{AccountID: "c", TierName: sdnmessage.ATierElite}},
@@ -88,7 +91,7 @@ type wsSuite struct {
 	feedManager      *feed.Manager
 	validatorManager *validator.Manager
 	nodeWSManager    blockchain.WSManager
-	sdn              connections.SDNHTTP
+	sdn              sdnsdk.SDNHTTP
 	blockchainPeers  []types.NodeEndpoint
 	server           *Server
 
@@ -98,10 +101,10 @@ type wsSuite struct {
 }
 
 func (s *wsSuite) SetupSuite() {
-	s.setupSuit(bxgateway.MainnetNum)
+	s.setupSuit(bxtypes.MainnetNum)
 }
 
-func (s *wsSuite) setupSuit(networkNum types.NetworkNum) {
+func (s *wsSuite) setupSuit(networkNum bxtypes.NetworkNum) {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.ctx, s.cancel = ctx, cancel
 
@@ -109,12 +112,12 @@ func (s *wsSuite) setupSuit(networkNum types.NetworkNum) {
 
 	ctl := gomock.NewController(s.T())
 	mockedSdn := mock.NewMockSDNHTTP(ctl)
-	mockedSdn.EXPECT().FetchCustomerAccountModel(types.AccountID("gw")).Return(accountIDToAccountModel["gw"], nil).AnyTimes()
-	mockedSdn.EXPECT().NodeID().Return(types.NodeID("nodeID")).AnyTimes()
+	mockedSdn.EXPECT().FetchCustomerAccountModel(bxtypes.AccountID("gw")).Return(accountIDToAccountModel["gw"], nil).AnyTimes()
+	mockedSdn.EXPECT().NodeID().Return(bxtypes.NodeID("nodeID")).AnyTimes()
 	mockedSdn.EXPECT().NetworkNum().Return(networkNum).AnyTimes()
 	mockedSdn.EXPECT().AccountModel().Return(accountIDToAccountModel["gw"]).AnyTimes()
-	mockedSdn.EXPECT().GetQuotaUsage(gomock.AnyOf("a", "b", "c", "i", "gw")).DoAndReturn(func(accountID string) (*connections.QuotaResponseBody, error) {
-		res := connections.QuotaResponseBody{
+	mockedSdn.EXPECT().GetQuotaUsage(gomock.AnyOf("a", "b", "c", "i", "gw")).DoAndReturn(func(accountID string) (*sdnsdk.QuotaResponseBody, error) {
+		res := sdnsdk.QuotaResponseBody{
 			AccountID:   accountID,
 			QuotaFilled: 1,
 			QuotaLimit:  2,
@@ -157,7 +160,7 @@ func (s *wsSuite) setupSuit(networkNum types.NetworkNum) {
 	s.Assert().NotNil(p3)
 
 	var validatorManager *validator.Manager
-	if networkNum == bxgateway.BSCMainnetNum {
+	if networkNum == bxtypes.BSCMainnetNum {
 		nextValidatorMap := orderedmap.New[uint64, string]()
 		validatorStatusMap := syncmap.NewStringMapOf[bool]()
 		validatorListMap := syncmap.NewIntegerMapOf[uint64, validator.List]()
@@ -174,7 +177,8 @@ func (s *wsSuite) setupSuit(networkNum types.NetworkNum) {
 	s.server.wsConnDelayOnErr = 10 * time.Millisecond
 
 	s.eg.Go(func() error {
-		return s.feedManager.Start(ctx)
+		s.feedManager.Start(ctx)
+		return nil
 	})
 	s.eg.Go(s.server.Run)
 
@@ -184,11 +188,26 @@ func (s *wsSuite) setupSuit(networkNum types.NetworkNum) {
 	// pass - same account for server and client
 	dummyAuthHeader := "Z3c6c2VjcmV0" //gw:secret
 	headers.Set("Authorization", dummyAuthHeader)
+	err := waitForWebSocketReady("localhost:28332", 2*time.Second)
+	s.Require().NoError(err)
 	ws, _, err := dialer.Dial(s.wsURL, headers)
 	s.Require().NoError(err)
 
 	// reusing the same ws connection for all tests
 	s.conn = ws
+}
+
+func waitForWebSocketReady(addr string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("websocket server at %s not ready after %s", addr, timeout)
 }
 
 func (s *wsSuite) SetupTest() {
@@ -270,7 +289,7 @@ func (s *wsSuite) markAllPeersWithSyncStatus(status blockchain.NodeSyncStatus) {
 
 type mockAccountService struct{}
 
-func (s *mockAccountService) Authorize(accountID types.AccountID, _ string, _ bool, _ string) (sdnmessage.Account, error) {
+func (s *mockAccountService) Authorize(accountID bxtypes.AccountID, _ string, _ bool, _ string) (sdnmessage.Account, error) {
 	var err error
 	if accountID == "d" {
 		err = errAuth

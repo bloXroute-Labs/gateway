@@ -3,12 +3,13 @@ package utils
 import (
 	"fmt"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/types"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"golang.org/x/crypto/sha3"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // ParseRawTransaction parses a raw Ethereum transaction

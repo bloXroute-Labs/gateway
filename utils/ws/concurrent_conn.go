@@ -14,7 +14,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 )
 
 const (

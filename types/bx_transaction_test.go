@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -14,7 +15,7 @@ import (
 // "hash":"0xed2b4580a766bc9d81c73c35a8496f0461e9c261621cb9f4565ae52ade56056d","input":"0x","nonce":"0x1b7f8",
 // "value":"0x50b32f902486000","v":"0x1c","r":"0xaa803263146bda76a58ebf9f54be589280e920616bc57e7bd68248821f46fd0c",
 // "s":"0x40266f84a2ecd4719057b0633cc80e3e0b3666f6f6ec1890a920239634ec6531","to":"0xb877c7e556d50b0027053336b90f36becf67b3dd"}}}}
-var testNetworkNum = NetworkNum(5)
+var testNetworkNum = bxtypes.NetworkNum(5)
 
 func TestValidContentParsing(t *testing.T) {
 	var hash SHA256Hash
@@ -49,7 +50,7 @@ func TestValidContentParsing(t *testing.T) {
 
 }
 
-//func TestValidContentParsingType1Tx(t *testing.T) {
+// func TestValidContentParsingType1Tx(t *testing.T) {
 //	var hash SHA256Hash
 //	hashRes, _ := hex.DecodeString("9310dc4f07748222d37f43c7296826cf4bf6693fa207968bd7500659ee2cc04d")
 //	copy(hash[:], hashRes)
@@ -72,7 +73,7 @@ func TestValidContentParsing(t *testing.T) {
 //	assert.Equal(t, uint64(225600000000), ethTx.GasPrice.Uint64())
 //	assert.Equal(t, uint64(165358), ethTx.GasLimit.UInt64)
 //	assert.Equal(t, "0x0087c5900b9bbc051b5f6299f5bce92383273b28", strings.ToLower(ethTx.From.String()))
-//}
+// }
 
 func TestNotValidContentParsing(t *testing.T) {
 	var hash SHA256Hash

@@ -1,5 +1,7 @@
 package types
 
+import bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 // SubscriptionResponse struct that represent subscription response from the node
 type SubscriptionResponse struct {
 	Jsonrpc string `json:"jsonrpc"`
@@ -16,7 +18,7 @@ type SubscriptionResponse struct {
 type ClientInfo struct {
 	RemoteAddress string
 	Tier          string
-	AccountID     AccountID
+	AccountID     bxtypes.AccountID
 	MetaInfo      map[string]string
 }
 

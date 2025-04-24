@@ -5,30 +5,31 @@ import (
 	"testing"
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/sync/errgroup"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/config"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/mock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 func TestManageServers(t *testing.T) {
-	networkNum := types.NetworkNum(1)
+	networkNum := bxtypes.NetworkNum(1)
 	nm := sdnmessage.NodeModel{}
 	bxConfig := &config.Bx{
 		NoStats:          true,
 		Config:           &log.Config{},
-		NodeType:         utils.Gateway,
+		NodeType:         bxtypes.Gateway,
 		GRPC:             &config.GRPC{Enabled: true, Port: 9100},
 		WebsocketEnabled: true,
 		WebsocketPort:    28333,
@@ -39,7 +40,7 @@ func TestManageServers(t *testing.T) {
 	sdn := mock.NewMockSDNHTTP(ctrl)
 	sdn.EXPECT().NetworkNum().Return(networkNum).AnyTimes()
 	sdn.EXPECT().NodeModel().Return(&nm).AnyTimes()
-	sdn.EXPECT().NodeID().Return(types.NodeID("node_id")).AnyTimes()
+	sdn.EXPECT().NodeID().Return(bxtypes.NodeID("node_id")).AnyTimes()
 
 	wsManager := &mockNodeWSManager{
 		syncChan: make(chan blockchain.NodeSyncStatus, 1),
@@ -48,7 +49,7 @@ func TestManageServers(t *testing.T) {
 
 	clientHandler := NewClientHandler(nil, bxConfig, nil, sdn, nil, nil,
 		nil, services.NewNoOpSubscriptionServices(), wsManager, nil,
-		time.Now(), &services.MessageQueue{}, &services.MessageQueue{}, "", fm, nil,
+		time.Now(), "", fm, nil,
 		statistics.NoStats{}, nil,
 		false, "", "",
 	)

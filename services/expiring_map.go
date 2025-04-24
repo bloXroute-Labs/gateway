@@ -3,9 +3,9 @@ package services
 import (
 	"time"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
 )
 
 // Element represents an element stored in the history.
@@ -17,17 +17,17 @@ type Element[T any] struct {
 // ExpiringMap holds hashes that we have seen in the past
 type ExpiringMap[T any] struct {
 	name        string // for logging
-	clock       utils.Clock
+	clock       clock.Clock
 	cleanupFreq time.Duration
 	data        *syncmap.SyncMap[string, *Element[T]]
 }
 
 // NewExpiringMap creates a new object
 func NewExpiringMap[T any](name string, cleanupFreq time.Duration) ExpiringMap[T] {
-	return newExpiringMap[T](name, utils.RealClock{}, cleanupFreq)
+	return newExpiringMap[T](name, clock.RealClock{}, cleanupFreq)
 }
 
-func newExpiringMap[T any](name string, clock utils.Clock, cleanupFreq time.Duration) ExpiringMap[T] {
+func newExpiringMap[T any](name string, clock clock.Clock, cleanupFreq time.Duration) ExpiringMap[T] {
 	em := ExpiringMap[T]{
 		name:        name,
 		clock:       clock,

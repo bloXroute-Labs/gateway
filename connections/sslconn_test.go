@@ -4,10 +4,14 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestSSLConn_ClosingFromSend(t *testing.T) {
@@ -46,12 +50,12 @@ func sslConn(backlog int) (*MockTLS, *SSLConn) {
 	ip := "127.0.0.1"
 	port := int64(3000)
 
-	tls := NewMockTLS(ip, port, "", utils.ExternalGateway, "")
+	tls := NewMockTLS(ip, port, "", bxtypes.ExternalGateway, "")
 	certs := utils.TestCerts()
 	s := NewSSLConnection(
 		func() (Socket, error) {
 			return tls, nil
 		},
-		&certs, ip, port, bxmessage.CurrentProtocol, false, false, backlog, utils.RealClock{})
+		&certs, ip, port, bxmessage.CurrentProtocol, false, false, backlog, clock.RealClock{})
 	return tls, s
 }

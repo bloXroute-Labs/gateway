@@ -7,14 +7,16 @@ import (
 	"strings"
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/gorilla/websocket"
 	"github.com/sourcegraph/jsonrpc2"
 	"github.com/zhouzhuojie/conditions"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler/filter"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
@@ -36,7 +38,7 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *jsonrpc2.Conn
 	}
 
 	if len(h.nodeWSManager.Providers()) == 0 && feed == types.NewBlocksFeed &&
-		h.networkNum != bxgateway.MainnetNum && h.networkNum != bxgateway.HoleskyNum {
+		h.networkNum != bxtypes.MainnetNum && h.networkNum != bxtypes.HoleskyNum {
 		errMsg := fmt.Sprintf("%v Feed requires a websockets endpoint to be specifed via either --eth-ws-uri or --multi-node startup parameter", feed)
 		sendErrorMsg(ctx, jsonrpc.InvalidParams, errMsg, conn, req.ID)
 		return
@@ -187,7 +189,9 @@ func (h *handlerObj) sendTxNotification(ctx context.Context, subscriptionID stri
 
 	err := conn.Notify(ctx, "subscribe", response)
 	if err != nil {
-		h.log.Errorf("error notifying subscriptionID %v: %v", subscriptionID, err)
+		if !errors.Is(err, jsonrpc2.ErrClosed) {
+			h.log.Errorf("error notifying subscriptionID %v: %v", subscriptionID, err)
+		}
 		return err
 	}
 
@@ -203,7 +207,9 @@ func (h *handlerObj) sendTxReceiptNotification(ctx context.Context, subscription
 		response.Result = receipt
 		err := conn.Notify(ctx, "subscribe", response)
 		if err != nil {
-			h.log.Errorf("error reply to subscriptionID %v: %v", subscriptionID, err.Error())
+			if !errors.Is(err, jsonrpc2.ErrClosed) {
+				h.log.Errorf("error reply to subscriptionID %v: %v", subscriptionID, err.Error())
+			}
 			return err
 		}
 	}
@@ -276,7 +282,9 @@ func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan types.
 			if len(multiTxsResponse.Result) > 0 {
 				err := conn.Notify(ctx, "subscribe", multiTxsResponse)
 				if err != nil {
-					h.log.Errorf("error notifying subscriptionID %v: %v", subscriptionID, err)
+					if !errors.Is(err, jsonrpc2.ErrClosed) {
+						h.log.Errorf("error notifying subscriptionID %v: %v", subscriptionID, err)
+					}
 					return err
 				}
 			}
@@ -284,7 +292,7 @@ func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan types.
 	}
 }
 
-func filterAndIncludeTx(clientReq *ClientReq, tx *types.NewTransactionNotification, remoteAddress string, accountID types.AccountID) *TxResult {
+func filterAndIncludeTx(clientReq *ClientReq, tx *types.NewTransactionNotification, remoteAddress string, accountID bxtypes.AccountID) *TxResult {
 	if !shouldSendTx(clientReq, tx, remoteAddress, accountID) {
 		return nil
 	}
@@ -292,7 +300,7 @@ func filterAndIncludeTx(clientReq *ClientReq, tx *types.NewTransactionNotificati
 	return includeTx(clientReq, tx)
 }
 
-func shouldSendTx(clientReq *ClientReq, tx *types.NewTransactionNotification, remoteAddress string, accountID types.AccountID) bool {
+func shouldSendTx(clientReq *ClientReq, tx *types.NewTransactionNotification, remoteAddress string, accountID bxtypes.AccountID) bool {
 	if clientReq.Expr == nil {
 		return true
 	}

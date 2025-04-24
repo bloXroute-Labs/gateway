@@ -9,10 +9,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
 	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
+	"github.com/bloXroute-Labs/gateway/v2/utils/hasher"
+
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
@@ -47,7 +49,7 @@ type Chain struct {
 
 	chainState blockRefChain
 
-	clock utils.RealClock
+	clock clock.RealClock
 }
 
 // BlockSource indicates the origin of a block message in the blockchain
@@ -113,15 +115,15 @@ func newChain(ctx context.Context, ignoreBlockTimeout time.Duration, maxReorg, m
 		chainLock:               sync.RWMutex{},
 		headerLock:              sync.RWMutex{},
 		heightToBlockHeaders:    syncmap.NewIntegerMapOf[uint64, []ethHeader](),
-		blockHashMetadata:       syncmap.NewTypedMapOf[ethcommon.Hash, blockMetadata](syncmap.EthCommonHasher),
-		blockHashToBody:         syncmap.NewTypedMapOf[ethcommon.Hash, *ethtypes.Body](syncmap.EthCommonHasher),
-		blockHashToBlobSidecars: syncmap.NewTypedMapOf[ethcommon.Hash, bxethcommon.BlobSidecars](syncmap.EthCommonHasher),
-		blockHashToDifficulty:   syncmap.NewTypedMapOf[ethcommon.Hash, *big.Int](syncmap.EthCommonHasher),
+		blockHashMetadata:       syncmap.NewTypedMapOf[ethcommon.Hash, blockMetadata](hasher.EthCommonHasher),
+		blockHashToBody:         syncmap.NewTypedMapOf[ethcommon.Hash, *ethtypes.Body](hasher.EthCommonHasher),
+		blockHashToBlobSidecars: syncmap.NewTypedMapOf[ethcommon.Hash, bxethcommon.BlobSidecars](hasher.EthCommonHasher),
+		blockHashToDifficulty:   syncmap.NewTypedMapOf[ethcommon.Hash, *big.Int](hasher.EthCommonHasher),
 		chainState:              make([]blockRef, 0),
 		maxReorg:                maxReorg,
 		minValidChain:           minValidChain,
 		ignoreBlockTimeout:      ignoreBlockTimeout,
-		clock:                   utils.RealClock{},
+		clock:                   clock.RealClock{},
 	}
 	go c.cleanBlockStorage(ctx, cleanInterval, maxSize)
 	return c

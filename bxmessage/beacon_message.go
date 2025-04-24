@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
@@ -31,7 +33,7 @@ func beaconMessageTypeToBx(bType types.BxBeaconMessageType) beaconMessageType {
 }
 
 // NewBeaconMessage creates a new beacon message
-func NewBeaconMessage(hash, blockHash types.SHA256Hash, mType types.BxBeaconMessageType, data []byte, index, slot uint32, networkNum types.NetworkNum) *BeaconMessage {
+func NewBeaconMessage(hash, blockHash types.SHA256Hash, mType types.BxBeaconMessageType, data []byte, index, slot uint32, networkNum bxtypes.NetworkNum) *BeaconMessage {
 	var beaconMessageType [BeaconMessageTypeLen]byte
 	copy(beaconMessageType[:], []byte(beaconMessageTypeToBx(mType)))
 

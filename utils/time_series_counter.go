@@ -3,6 +3,8 @@ package utils
 import (
 	"sync"
 	"time"
+
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
 )
 
 type entry struct {
@@ -40,7 +42,7 @@ type entry struct {
 // more precise results with less deviation it provides.
 type TimeSeriesCounter struct {
 	mu           sync.RWMutex
-	clock        Clock
+	clock        clock.Clock
 	duration     time.Duration
 	timeFrame    time.Duration
 	entriesCount int
@@ -49,7 +51,7 @@ type TimeSeriesCounter struct {
 }
 
 // NewTimeSeriesCounter initializes a new time series tracker for the previous duration with the provided fidelity.
-func NewTimeSeriesCounter(clock Clock, duration time.Duration, timeFrame time.Duration) *TimeSeriesCounter {
+func NewTimeSeriesCounter(clock clock.Clock, duration time.Duration, timeFrame time.Duration) *TimeSeriesCounter {
 	entriesCount := duration / timeFrame
 	if entriesCount*timeFrame != duration {
 		panic("cannot create a time series counter with a fractional entry count")

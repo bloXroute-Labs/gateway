@@ -6,13 +6,15 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // error constants for identifying special processing cases
@@ -42,7 +44,7 @@ type ErrAlreadyProcessed struct {
 
 // BxBlockConverter is the service interface for converting broadcast messages to/from bx blocks
 type BxBlockConverter interface {
-	BxBlockToBroadcast(*types.BxBlock, types.NetworkNum, time.Duration) (*bxmessage.Broadcast, types.ShortIDList, error)
+	BxBlockToBroadcast(*types.BxBlock, bxtypes.NetworkNum, time.Duration) (*bxmessage.Broadcast, types.ShortIDList, error)
 	BxBlockFromBroadcast(*bxmessage.Broadcast) (*types.BxBlock, types.ShortIDList, error)
 }
 
@@ -55,7 +57,7 @@ type BlockProcessor interface {
 func NewBlockProcessor(txStore TxStore) BlockProcessor {
 	bp := &blockProcessor{
 		txStore:         txStore,
-		processedBlocks: NewBlockHistory("processedBlocks", 30*time.Minute, utils.RealClock{}),
+		processedBlocks: NewBlockHistory("processedBlocks", 30*time.Minute, clock.RealClock{}),
 	}
 	return bp
 }
@@ -93,7 +95,7 @@ type bxBlockRLP struct {
 	Sidecars        []bxBroadcastBSCBlobSidecar `rlp:"optional"`
 }
 
-func (bp *blockProcessor) BxBlockToBroadcast(block *types.BxBlock, networkNum types.NetworkNum, minTxAge time.Duration) (*bxmessage.Broadcast, types.ShortIDList, error) {
+func (bp *blockProcessor) BxBlockToBroadcast(block *types.BxBlock, networkNum bxtypes.NetworkNum, minTxAge time.Duration) (*bxmessage.Broadcast, types.ShortIDList, error) {
 	blockHash := block.Hash().String()
 	status := bp.processedBlocks.Status(blockHash)
 	switch status {
@@ -370,7 +372,7 @@ func (bp *blockProcessor) processBlobSidecarToRLPBroadcast(bxBlobSidecars []*typ
 	return rlpBlobSidecars, nil
 }
 
-func (bp *blockProcessor) newRLPBlockBroadcast(block *types.BxBlock, networkNum types.NetworkNum, minTxAge time.Duration) (*bxmessage.Broadcast, types.ShortIDList, error) {
+func (bp *blockProcessor) newRLPBlockBroadcast(block *types.BxBlock, networkNum bxtypes.NetworkNum, minTxAge time.Duration) (*bxmessage.Broadcast, types.ShortIDList, error) {
 	usedShortIDs := make(types.ShortIDList, 0)
 	txs := make([]bxCompressedTransaction, 0, len(block.Txs))
 	maxTimestampForCompression := time.Now().Add(-minTxAge)
@@ -427,7 +429,7 @@ func (bp *blockProcessor) newRLPBlockBroadcast(block *types.BxBlock, networkNum 
 	return bxmessage.NewBlockBroadcast(block.ExecutionHash(), types.EmptyHash, block.Type, encodedBlock, usedShortIDs, networkNum), usedShortIDs, nil
 }
 
-func (bp *blockProcessor) newSSZBlockBroadcast(block *types.BxBlock, networkNum types.NetworkNum, minTxAge time.Duration) (*bxmessage.Broadcast, types.ShortIDList, error) {
+func (bp *blockProcessor) newSSZBlockBroadcast(block *types.BxBlock, networkNum bxtypes.NetworkNum, minTxAge time.Duration) (*bxmessage.Broadcast, types.ShortIDList, error) {
 	usedShortIDs := make(types.ShortIDList, 0)
 	txs := make([]*bxCompressedTransaction, 0, len(block.Txs))
 	maxTimestampForCompression := time.Now().Add(-minTxAge)

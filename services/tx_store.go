@@ -3,6 +3,7 @@ package services
 import (
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	pbbase "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
@@ -25,7 +26,7 @@ type TxStore interface {
 	Start() error
 	Stop()
 
-	Add(hash types.SHA256Hash, content types.TxContent, shortID types.ShortID, network types.NetworkNum,
+	Add(hash types.SHA256Hash, content types.TxContent, shortID types.ShortID, network bxtypes.NetworkNum,
 		validate bool, flags types.TxFlags, timestamp time.Time, networkChainID int64, sender types.Sender) types.TransactionResult
 	Get(hash types.SHA256Hash) (*types.BxTransaction, bool)
 	Known(hash types.SHA256Hash) bool

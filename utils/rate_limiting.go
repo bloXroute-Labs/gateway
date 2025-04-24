@@ -5,8 +5,9 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 )
 
 // RateLimiter represents any struct that can be used to limit the amount of calls per time period
@@ -26,7 +27,7 @@ type bucket struct {
 // leakyBucketRateLimiter enables rate limiting using the leaky bucket algorithm
 type leakyBucketRateLimiter struct {
 	lock       sync.Mutex
-	clock      Clock
+	clock      clock.Clock
 	bucket     bucket
 	interval   time.Duration
 	lastCall   time.Time
@@ -34,7 +35,7 @@ type leakyBucketRateLimiter struct {
 }
 
 // NewLeakyBucketRateLimiter creates a new leakyBucketRateLimiter
-func NewLeakyBucketRateLimiter(clock Clock, limit uint64, interval time.Duration) RateLimiter {
+func NewLeakyBucketRateLimiter(clock clock.Clock, limit uint64, interval time.Duration) RateLimiter {
 	rateLimiter := &leakyBucketRateLimiter{
 		clock:    clock,
 		interval: interval,
@@ -111,7 +112,7 @@ var rateLimitTypeToIntervalDuration = map[rateLimitType]time.Duration{
 // txToolsLeakyBucketRateLimiter adds extra logging during Take as a sanity check when running the txtrace API
 type txToolsLeakyBucketRateLimiter struct {
 	*leakyBucketRateLimiter
-	accountID     types.AccountID
+	accountID     bxtypes.AccountID
 	rateLimitType rateLimitType
 }
 
@@ -126,7 +127,7 @@ func (t *txToolsLeakyBucketRateLimiter) Take() (bool, float32) {
 }
 
 // NewTxToolsLeakyBucketRateLimiter creates a RateLimiter using the leaky bucket rate algorithm; it has logging during `Take()` compared to the leakyBucketRateLimiter
-func NewTxToolsLeakyBucketRateLimiter(clock Clock, limit uint64, rateLimitType rateLimitType, accountID types.AccountID) RateLimiter {
+func NewTxToolsLeakyBucketRateLimiter(clock clock.Clock, limit uint64, rateLimitType rateLimitType, accountID bxtypes.AccountID) RateLimiter {
 	interval := rateLimitTypeToIntervalDuration[rateLimitType]
 	rateLimiter := NewLeakyBucketRateLimiter(clock, limit, interval).(*leakyBucketRateLimiter)
 

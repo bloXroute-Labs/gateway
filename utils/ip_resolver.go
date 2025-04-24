@@ -3,11 +3,11 @@ package utils
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"regexp"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 )
 
 const publicIPResolver = "http://checkip.dyndns.org/"
@@ -41,7 +41,7 @@ func (*PublicIPResolver) GetPublicIP() (string, error) {
 		}
 	}()
 
-	body, err := ioutil.ReadAll(response.Body)
+	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		return "", err
 	}

@@ -5,9 +5,10 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -17,7 +18,7 @@ import (
 // BlobProcessor is responsible for processing blob sidecars from BDN and to BDN
 type BlobProcessor interface {
 	BeaconMessageToBxBeaconMessage(beaconMessage *bxmessage.BeaconMessage) (*types.BxBeaconMessage, error)
-	BxBeaconMessageToBeaconMessage(bxBeaconMessage *types.BxBeaconMessage, networkNum types.NetworkNum) (*bxmessage.BeaconMessage, error)
+	BxBeaconMessageToBeaconMessage(bxBeaconMessage *types.BxBeaconMessage, networkNum bxtypes.NetworkNum) (*bxmessage.BeaconMessage, error)
 }
 
 type blobProcessor struct {
@@ -172,7 +173,7 @@ func (bp *blobProcessor) decompressFromBDN(beaconMessage *bxmessage.BeaconMessag
 	}, nil
 }
 
-func (bp *blobProcessor) BxBeaconMessageToBeaconMessage(bxBeaconMessage *types.BxBeaconMessage, networkNum types.NetworkNum) (*bxmessage.BeaconMessage, error) {
+func (bp *blobProcessor) BxBeaconMessageToBeaconMessage(bxBeaconMessage *types.BxBeaconMessage, networkNum bxtypes.NetworkNum) (*bxmessage.BeaconMessage, error) {
 	compressedBxBeaconMessage, err := bp.compressForBDN(bxBeaconMessage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare for BDN: %v", err)

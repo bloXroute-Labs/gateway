@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 	"math/big"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -117,7 +118,7 @@ func NewSignedEthTxBytes(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKe
 }
 
 // NewSignedEthTxMessage generates a valid Ethereum transaction, and packs it into a bloxroute tx message
-func NewSignedEthTxMessage(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey, networkNum types.NetworkNum, flags types.TxFlags, chainID *big.Int) (*ethtypes.Transaction, *bxmessage.Tx) {
+func NewSignedEthTxMessage(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey, networkNum bxtypes.NetworkNum, flags types.TxFlags, chainID *big.Int) (*ethtypes.Transaction, *bxmessage.Tx) {
 	ethTx, ethTxBytes := NewSignedEthTxBytes(txType, nonce, privateKey, chainID)
 	var hash types.SHA256Hash
 	copy(hash[:], ethTx.Hash().Bytes())

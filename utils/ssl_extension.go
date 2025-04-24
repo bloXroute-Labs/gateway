@@ -5,15 +5,15 @@ import (
 	"crypto/x509/pkix"
 	"errors"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/types"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 )
 
 // BxSSLProperties represents extension data encoded in bloxroute SSL certificates
 type BxSSLProperties struct {
-	NodeType       NodeType
-	NodeID         types.NodeID
-	AccountID      types.AccountID
+	NodeType       bxtypes.NodeType
+	NodeID         bxtypes.NodeID
+	AccountID      bxtypes.AccountID
 	NodePrivileges string // not currently used in Ethereum
 }
 
@@ -40,9 +40,9 @@ const (
 // ParseBxCertificate extracts bloXroute specific extension information from the SSL certificates
 func ParseBxCertificate(certificate *x509.Certificate) (BxSSLProperties, error) {
 	var (
-		nodeType        NodeType
-		nodeID          types.NodeID
-		accountID       types.AccountID
+		nodeType        bxtypes.NodeType
+		nodeID          bxtypes.NodeID
+		accountID       bxtypes.AccountID
 		nodePrivileges  string
 		err             error
 		bxSSLExtensions BxSSLProperties
@@ -51,14 +51,14 @@ func ParseBxCertificate(certificate *x509.Certificate) (BxSSLProperties, error) 
 	for _, extension := range certificate.Extensions {
 		switch extension.Id.String() {
 		case nodeTypeExtensionID:
-			nodeType, err = DeserializeNodeType(extension.Value)
+			nodeType, err = bxtypes.DeserializeNodeType(extension.Value)
 			if err != nil {
 				return bxSSLExtensions, err
 			}
 		case nodeIDExtensionID:
-			nodeID = types.NodeID(extension.Value)
+			nodeID = bxtypes.NodeID(extension.Value)
 		case accountIDExtensionID:
-			accountID = types.AccountID(extension.Value)
+			accountID = bxtypes.AccountID(extension.Value)
 		case nodePrivilegesExtensionID:
 			nodePrivileges = string(extension.Value)
 		case subjectKeyID:
@@ -84,11 +84,11 @@ func ParseBxCertificate(certificate *x509.Certificate) (BxSSLProperties, error) 
 }
 
 // GetAccountIDFromBxCertificate get account ID from cert
-func GetAccountIDFromBxCertificate(extensions []pkix.Extension) (types.AccountID, error) {
-	var accountID types.AccountID
+func GetAccountIDFromBxCertificate(extensions []pkix.Extension) (bxtypes.AccountID, error) {
+	var accountID bxtypes.AccountID
 	for _, extension := range extensions {
 		if extension.Id.String() == accountIDExtensionID {
-			accountID = types.AccountID(extension.Value)
+			accountID = bxtypes.AccountID(extension.Value)
 			return accountID, nil
 		}
 	}

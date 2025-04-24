@@ -1,7 +1,9 @@
 package statistics
 
 import (
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
@@ -12,54 +14,54 @@ type Record struct {
 }
 
 type blockRecord struct {
-	EventSubjectID   string           `json:"event_subject_id"`
-	EventLogic       EventLogic       `json:"event_logic"`
-	NodeID           types.NodeID     `json:"node_id"`
-	EventName        string           `json:"event_name"`
-	NetworkNum       types.NetworkNum `json:"network_num"`
-	SourceID         types.NodeID     `json:"source_id"`
-	StartDateTime    string           `json:"start_date_time"`
-	ExtraData        blockExtraData   `json:"extra_data,omitempty"`
-	EndDateTime      string           `json:"end_date_time"`
-	SentGatewayPeers int              `json:"gateway_peers"`
-	BeaconBlockHash  string           `json:"beacon_block_hash,omitempty"`
+	EventSubjectID   string             `json:"event_subject_id"`
+	EventLogic       EventLogic         `json:"event_logic"`
+	NodeID           bxtypes.NodeID     `json:"node_id"`
+	EventName        string             `json:"event_name"`
+	NetworkNum       bxtypes.NetworkNum `json:"network_num"`
+	SourceID         bxtypes.NodeID     `json:"source_id"`
+	StartDateTime    string             `json:"start_date_time"`
+	ExtraData        blockExtraData     `json:"extra_data,omitempty"`
+	EndDateTime      string             `json:"end_date_time"`
+	SentGatewayPeers int                `json:"gateway_peers"`
+	BeaconBlockHash  string             `json:"beacon_block_hash,omitempty"`
 }
 
 type gatewayBlockRecord struct {
-	EventSubjectID    string           `json:"event_subject_id"`
-	EventLogic        EventLogic       `json:"event_logic"`
-	NodeID            types.NodeID     `json:"node_id"`
-	EventName         string           `json:"event_name"`
-	NetworkNum        types.NetworkNum `json:"network_num"`
-	SourceID          types.NodeID     `json:"source_id"`
-	StartDateTime     string           `json:"start_date_time"`
-	ExtraData         blockExtraData   `json:"extra_data,omitempty"`
-	EndDateTime       string           `json:"end_date_time"`
-	SentGatewayPeers  int              `json:"gateway_peers"`
-	OriginalSize      int              `json:"original_size"`
-	CompressSize      int              `json:"compress_size"`
-	ShortIDsCount     int              `json:"short_ids_count"`
-	TxsCount          int              `json:"txs_count"`
-	RecoveredTxsCount int              `json:"recovered_txs_count"`
-	BeaconBlockHash   string           `json:"beacon_block_hash,omitempty"`
+	EventSubjectID    string             `json:"event_subject_id"`
+	EventLogic        EventLogic         `json:"event_logic"`
+	NodeID            bxtypes.NodeID     `json:"node_id"`
+	EventName         string             `json:"event_name"`
+	NetworkNum        bxtypes.NetworkNum `json:"network_num"`
+	SourceID          bxtypes.NodeID     `json:"source_id"`
+	StartDateTime     string             `json:"start_date_time"`
+	ExtraData         blockExtraData     `json:"extra_data,omitempty"`
+	EndDateTime       string             `json:"end_date_time"`
+	SentGatewayPeers  int                `json:"gateway_peers"`
+	OriginalSize      int                `json:"original_size"`
+	CompressSize      int                `json:"compress_size"`
+	ShortIDsCount     int                `json:"short_ids_count"`
+	TxsCount          int                `json:"txs_count"`
+	RecoveredTxsCount int                `json:"recovered_txs_count"`
+	BeaconBlockHash   string             `json:"beacon_block_hash,omitempty"`
 }
 
 type bundleRecord struct {
-	EventSubjectID   string           `json:"event_subject_id"`
-	EventName        string           `json:"event_name"`
-	AccountID        types.AccountID  `json:"account_id"`
-	NodeID           types.NodeID     `json:"node_id"`
-	StartDateTime    string           `json:"start_date_time"`
-	EndDateTime      string           `json:"end_date_time"`
-	NetworkNum       types.NetworkNum `json:"network_num"`
-	MEVBuilderNames  []string         `json:"mev_builder_names"`
-	UUID             string           `json:"uuid"`
-	BlockNumber      int64            `json:"block_number"`
-	MinTimestamp     int              `json:"min_timestamp"`
-	MaxTimestamp     int              `json:"max_timestamp"`
-	ExtraData        bundleExtraData  `json:"extra_data,omitempty"`
-	SentPeers        int              `json:"sent_peers,omitempty"`
-	SentGatewayPeers int              `json:"gateway_peers,omitempty"`
+	EventSubjectID   string             `json:"event_subject_id"`
+	EventName        string             `json:"event_name"`
+	AccountID        bxtypes.AccountID  `json:"account_id"`
+	NodeID           bxtypes.NodeID     `json:"node_id"`
+	StartDateTime    string             `json:"start_date_time"`
+	EndDateTime      string             `json:"end_date_time"`
+	NetworkNum       bxtypes.NetworkNum `json:"network_num"`
+	MEVBuilderNames  []string           `json:"mev_builder_names"`
+	UUID             string             `json:"uuid"`
+	BlockNumber      int64              `json:"block_number"`
+	MinTimestamp     int                `json:"min_timestamp"`
+	MaxTimestamp     int                `json:"max_timestamp"`
+	ExtraData        bundleExtraData    `json:"extra_data,omitempty"`
+	SentPeers        int                `json:"sent_peers,omitempty"`
+	SentGatewayPeers int                `json:"gateway_peers,omitempty"`
 }
 
 // BundleSentToBuilderRecord represents a record of a bundle sent to a builder
@@ -70,8 +72,8 @@ type BundleSentToBuilderRecord struct {
 	UUID                        string                 `json:"uuid"`
 	UserSetUUID                 bool                   `json:"user_set_UUID"`
 	BuilderName                 string                 `json:"builder_name"`
-	NetworkNum                  types.NetworkNum       `json:"network_num"`
-	AccountID                   types.AccountID        `json:"account_id"`
+	NetworkNum                  bxtypes.NetworkNum     `json:"network_num"`
+	AccountID                   bxtypes.AccountID      `json:"account_id"`
 	AccountTier                 sdnmessage.AccountTier `json:"account_tier"`
 	BuilderURL                  string                 `json:"builder_url"`
 	StatusCode                  int                    `json:"status_code"`
@@ -79,11 +81,11 @@ type BundleSentToBuilderRecord struct {
 }
 
 type ethBlockContent struct {
-	BlockHash  string           `json:"block_hash"`
-	NetworkNum types.NetworkNum `json:"network_num"`
-	Header     string           `json:"header"`
-	Txs        string           `json:"txs"`
-	Trailer    string           `json:"trailer"`
+	BlockHash  string             `json:"block_hash"`
+	NetworkNum bxtypes.NetworkNum `json:"network_num"`
+	Header     string             `json:"header"`
+	Txs        string             `json:"txs"`
+	Trailer    string             `json:"trailer"`
 }
 
 type blockExtraData struct {
@@ -96,33 +98,39 @@ type bundleExtraData struct {
 
 // LogRecord represents a log message to be sent to FluentD
 type LogRecord struct {
-	Level     string       `json:"level"`
-	Name      string       `json:"name"`
-	Instance  types.NodeID `json:"instance"`
-	Msg       interface{}  `json:"msg"`
-	Timestamp string       `json:"timestamp"`
+	Level     string         `json:"level"`
+	Name      string         `json:"name"`
+	Instance  bxtypes.NodeID `json:"instance"`
+	Msg       interface{}    `json:"msg"`
+	Timestamp string         `json:"timestamp"`
+}
+
+// LogRecordWithNetwork represents a log message to be sent to FluentD with network number
+type LogRecordWithNetwork struct {
+	LogRecord
+	NetworkNum bxtypes.NetworkNum `json:"network_num"`
 }
 
 type txRecord struct {
-	EventSubjectID   string           `json:"event_subject_id"`
-	EventLogic       EventLogic       `json:"event_logic"`
-	NodeID           types.NodeID     `json:"node_id"`
-	EventName        string           `json:"event_name"`
-	NetworkNum       types.NetworkNum `json:"network_num"`
-	StartDateTime    string           `json:"start_date_time"`
-	ExtraData        txExtraData      `json:"extra_data,omitempty"`
-	EndDateTime      string           `json:"end_date_time"`
-	SentGatewayPeers int              `json:"gateway_peers"`
+	EventSubjectID   string             `json:"event_subject_id"`
+	EventLogic       EventLogic         `json:"event_logic"`
+	NodeID           bxtypes.NodeID     `json:"node_id"`
+	EventName        string             `json:"event_name"`
+	NetworkNum       bxtypes.NetworkNum `json:"network_num"`
+	StartDateTime    string             `json:"start_date_time"`
+	ExtraData        txExtraData        `json:"extra_data,omitempty"`
+	EndDateTime      string             `json:"end_date_time"`
+	SentGatewayPeers int                `json:"gateway_peers"`
 }
 
 type txExtraData struct {
-	MoreInfo             string            `json:"more_info,omitempty"`
-	ShortID              types.ShortID     `json:"short_id"`
-	NetworkNum           types.NetworkNum  `json:"network_num"`
-	SourceID             types.NodeID      `json:"source_id"`
-	IsCompactTransaction bool              `json:"is_compact_transaction"`
-	AlreadySeenContent   bool              `json:"already_seen_content"`
-	ExistingShortIds     types.ShortIDList `json:"existing_short_ids"`
+	MoreInfo             string             `json:"more_info,omitempty"`
+	ShortID              types.ShortID      `json:"short_id"`
+	NetworkNum           bxtypes.NetworkNum `json:"network_num"`
+	SourceID             bxtypes.NodeID     `json:"source_id"`
+	IsCompactTransaction bool               `json:"is_compact_transaction"`
+	AlreadySeenContent   bool               `json:"already_seen_content"`
+	ExistingShortIDs     types.ShortIDList  `json:"existing_short_ids"`
 }
 
 type subscribeRecord struct {
@@ -131,11 +139,11 @@ type subscribeRecord struct {
 	Event          string                 `json:"event"`
 	FeedFilters    string                 `json:"feed_filters"`
 	IP             string                 `json:"ip"`
-	AccountID      types.AccountID        `json:"account_id"`
+	AccountID      bxtypes.AccountID      `json:"account_id"`
 	Tier           sdnmessage.AccountTier `json:"tier"`
 	FeedName       types.FeedType         `json:"feed_name"`
 	FeedInclude    []string               `json:"feed_include"`
-	NetworkNum     types.NetworkNum       `json:"network_num"`
+	NetworkNum     bxtypes.NetworkNum     `json:"network_num"`
 }
 
 type unsubscribeRecord struct {
@@ -143,33 +151,33 @@ type unsubscribeRecord struct {
 	Type           string                 `json:"type"`
 	Event          string                 `json:"event"`
 	FeedName       types.FeedType         `json:"feed_name"`
-	NetworkNum     types.NetworkNum       `json:"network_num"`
-	AccountID      types.AccountID        `json:"account_id"`
+	NetworkNum     bxtypes.NetworkNum     `json:"network_num"`
+	AccountID      bxtypes.AccountID      `json:"account_id"`
 	Tier           sdnmessage.AccountTier `json:"tier"`
 }
 
 type sdkInfoRecord struct {
-	Blockchain string          `json:"blockchain"`
-	Method     string          `json:"method"`
-	Feed       string          `json:"feed"`
-	SourceCode string          `json:"source_code"`
-	Version    string          `json:"version"`
-	AccountID  types.AccountID `json:"account_id"`
-	Start      string          `json:"start"`
-	End        string          `json:"end"`
+	Blockchain string            `json:"blockchain"`
+	Method     string            `json:"method"`
+	Feed       string            `json:"feed"`
+	SourceCode string            `json:"source_code"`
+	Version    string            `json:"version"`
+	AccountID  bxtypes.AccountID `json:"account_id"`
+	Start      string            `json:"start"`
+	End        string            `json:"end"`
 }
 
 // BlobRecord represents a blob record
 type BlobRecord struct {
-	EventSubjectID string           `json:"event_subject_id"`
-	EventName      string           `json:"event_name"`
-	NodeID         types.NodeID     `json:"node_id"`
-	SourceID       types.NodeID     `json:"source_id"`
-	NetworkNum     types.NetworkNum `json:"network_num"`
-	StartDateTime  string           `json:"start_date_time"`
-	EndDateTime    string           `json:"end_date_time"`
-	OriginalSize   int              `json:"original_size"`
-	CompressSize   int              `json:"compress_size"`
-	BlobIndex      uint32           `json:"blob_index"`
-	BlockHash      string           `json:"block_hash"`
+	EventSubjectID string             `json:"event_subject_id"`
+	EventName      string             `json:"event_name"`
+	NodeID         bxtypes.NodeID     `json:"node_id"`
+	SourceID       bxtypes.NodeID     `json:"source_id"`
+	NetworkNum     bxtypes.NetworkNum `json:"network_num"`
+	StartDateTime  string             `json:"start_date_time"`
+	EndDateTime    string             `json:"end_date_time"`
+	OriginalSize   int                `json:"original_size"`
+	CompressSize   int                `json:"compress_size"`
+	BlobIndex      uint32             `json:"blob_index"`
+	BlockHash      string             `json:"block_hash"`
 }

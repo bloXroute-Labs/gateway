@@ -1,7 +1,7 @@
 package datatype
 
 import (
-	"github.com/bloXroute-Labs/gateway/v2/utils"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -26,8 +26,8 @@ func (p *ProcessingETHTransaction) Add(tx *ethtypes.Transaction, isAllowedForInb
 }
 
 // Transactions return list of transactions based on input parameters
-func (p *ProcessingETHTransaction) Transactions(connectionType utils.NodeType, inbound bool) ethtypes.Transactions {
-	if connectionType == utils.Blockchain && inbound {
+func (p *ProcessingETHTransaction) Transactions(connectionType bxtypes.NodeType, inbound bool) ethtypes.Transactions {
+	if connectionType == bxtypes.Blockchain && inbound {
 		var result ethtypes.Transactions
 		for i, tx := range p.txs {
 			if p.isAllowedForInbound[i] {

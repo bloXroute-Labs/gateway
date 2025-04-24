@@ -2,23 +2,24 @@ package utils
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
+
+	"github.com/bloXroute-Labs/bxcommon-go/cert"
 
 	"github.com/bloXroute-Labs/gateway/v2/test"
 )
 
 // TestCerts uses the test certs specified in constants to return an utils.SSLCerts object for connection testing
-func TestCerts() SSLCerts {
+func TestCerts() cert.SSLCerts {
 	defer CleanupSSLCerts()
 	SetupSSLFiles("test")
 	return TestCertsWithoutSetup()
 }
 
 // TestCertsWithoutSetup uses the test certs specified in constants to return an utils.SSLCerts object for connection testing. This function does not do any setup/teardown of writing said files temporarily to disk.
-func TestCertsWithoutSetup() SSLCerts {
-	return NewSSLCerts(test.SSLTestPath, test.SSLTestPath, "test")
+func TestCertsWithoutSetup() cert.SSLCerts {
+	return cert.NewSSLCerts(test.SSLTestPath, test.SSLTestPath, "test")
 }
 
 // SetupSSLFiles writes the fixed test certificates to disk for loading into an SSL context.
@@ -44,7 +45,7 @@ func SetupCAFiles() {
 	if err != nil {
 		panic(err)
 	}
-	err = ioutil.WriteFile(test.CACertPath, []byte(test.CACert), 0644)
+	err = os.WriteFile(test.CACertPath, []byte(test.CACert), 0644) //nolint:gosec
 	if err != nil {
 		panic(err)
 	}
@@ -68,11 +69,11 @@ func writeCerts(folder, name, cert, key string) {
 	keyPath := path.Join(p, fmt.Sprintf("%v_cert.pem", name))
 	certPath := path.Join(p, fmt.Sprintf("%v_key.pem", name))
 
-	err := ioutil.WriteFile(keyPath, []byte(cert), 0644)
+	err := os.WriteFile(keyPath, []byte(cert), 0644) //nolint:gosec
 	if err != nil {
 		panic(err)
 	}
-	err = ioutil.WriteFile(certPath, []byte(key), 0644)
+	err = os.WriteFile(certPath, []byte(key), 0644) //nolint:gosec
 	if err != nil {
 		panic(err)
 	}

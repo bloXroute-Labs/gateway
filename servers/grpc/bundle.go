@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -10,7 +11,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // BlxrSubmitBundle submit blxr bundle
@@ -43,7 +43,7 @@ func (g *server) BlxrSubmitBundle(ctx context.Context, req *pb.BlxrSubmitBundleR
 		EndOfBlock:              req.EndOfBlock,
 	}
 
-	grpc := connections.NewRPCConn(*accountID, getPeerAddr(ctx), g.params.sdn.NetworkNum(), utils.GRPC)
+	grpc := connections.NewRPCConn(*accountID, getPeerAddr(ctx), g.params.sdn.NetworkNum(), bxtypes.GRPC)
 	bundleSubmitResult, _, err := handler.HandleMEVBundle(g.params.node, grpc, *accountModel, mevBundleParams)
 	if err != nil {
 		// TODO need to refactor errors returned from HandleMEVBundle and then map them to jsonrpc and gRPC codes accordingly

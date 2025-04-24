@@ -11,43 +11,43 @@ import (
 	"go.uber.org/mock/gomock"
 	"golang.org/x/sync/errgroup"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	ethtest "github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/config"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/rpc"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/test/mock"
-	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/version"
 )
 
 const (
-	networkNum                types.NetworkNum = 5
-	testGatewayAccountID                       = "user"
-	testGatewaySecretHash                      = "password"
-	testTierName                               = sdnmessage.ATierUltra
-	testGatewayUserAuthHeader                  = "dXNlcjpwYXNzd29yZA==" // encoded testGatewayAccountID and testGatewaySecretHash
-	testGatewayAccountID2                      = "user2"
-	testGatewaySecretHash2                     = "password2"
-	testWalletID                               = "0x00112233445566778899AABBCCDDEEFFGGHHIIJJ"
-	testWalletID2                              = "0xAABBCCDDEEFFGGHHIIJJ00112233445566778899"
+	networkNum                bxtypes.NetworkNum = 5
+	testGatewayAccountID                         = "user"
+	testGatewaySecretHash                        = "password"
+	testTierName                                 = sdnmessage.ATierUltra
+	testGatewayUserAuthHeader                    = "dXNlcjpwYXNzd29yZA==" // encoded testGatewayAccountID and testGatewaySecretHash
+	testGatewayAccountID2                        = "user2"
+	testGatewaySecretHash2                       = "password2"
+	testWalletID                                 = "0x00112233445566778899AABBCCDDEEFFGGHHIIJJ"
+	testWalletID2                                = "0xAABBCCDDEEFFGGHHIIJJ00112233445566778899"
 )
 
 var (
 	testAccountModel = sdnmessage.Account{
 		AccountInfo: sdnmessage.AccountInfo{
-			AccountID: types.AccountID(testGatewayAccountID),
+			AccountID: bxtypes.AccountID(testGatewayAccountID),
 			TierName:  testGatewaySecretHash,
 		},
 		SecretHash: testGatewaySecretHash,
@@ -55,7 +55,7 @@ var (
 	blockchainNetworks = sdnmessage.BlockchainNetworks{5: bxmock.MockNetwork(networkNum, "Ethereum", "Mainnet", 0)}
 	errTestAuth        = fmt.Errorf("some error")
 
-	accountIDToAccountModel = map[types.AccountID]sdnmessage.Account{
+	accountIDToAccountModel = map[bxtypes.AccountID]sdnmessage.Account{
 		"user":  {AccountInfo: sdnmessage.AccountInfo{AccountID: testGatewayAccountID, TierName: sdnmessage.ATierUltra}, SecretHash: testGatewaySecretHash},
 		"user2": {AccountInfo: sdnmessage.AccountInfo{AccountID: testGatewayAccountID2, TierName: sdnmessage.ATierDeveloper}, SecretHash: testGatewaySecretHash2},
 	}
@@ -63,7 +63,7 @@ var (
 
 type mockAccountService struct{}
 
-func (s *mockAccountService) Authorize(accountID types.AccountID, hash string, _ bool, _ string) (sdnmessage.Account, error) {
+func (s *mockAccountService) Authorize(accountID bxtypes.AccountID, hash string, _ bool, _ string) (sdnmessage.Account, error) {
 	acc, ok := accountIDToAccountModel[accountID]
 	if !ok {
 		return sdnmessage.Account{}, errTestAuth
@@ -100,7 +100,7 @@ func testGRPCServer(t *testing.T, port int, user string, password string) (*Serv
 		Host:       "0.0.0.0",
 		NoStats:    true,
 		Config:     &logConfig,
-		NodeType:   utils.Gateway,
+		NodeType:   bxtypes.Gateway,
 		TxTraceLog: &txTraceLog,
 		GRPC:       serverConfig,
 	}
@@ -110,7 +110,7 @@ func testGRPCServer(t *testing.T, port int, user string, password string) (*Serv
 	ctl := gomock.NewController(t)
 	sdn := mock.NewMockSDNHTTP(ctl)
 	sdn.EXPECT().AccountModel().Return(testAccountModel).AnyTimes()
-	sdn.EXPECT().NodeID().Return(types.NodeID("node_id")).AnyTimes()
+	sdn.EXPECT().NodeID().Return(bxtypes.NodeID("node_id")).AnyTimes()
 	sdn.EXPECT().NodeModel().Return(&nm).AnyTimes()
 	sdn.EXPECT().Networks().Return(&blockchainNetworks).AnyTimes()
 	sdn.EXPECT().NetworkNum().Return(networkNum).AnyTimes()
@@ -121,13 +121,10 @@ func testGRPCServer(t *testing.T, port int, user string, password string) (*Serv
 	wsManager := eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false)
 	wsManager.UpdateNodeSyncStatus(blockchainPeers[0], blockchain.Synced) // required for TxReceipts feed
 
-	txsQueue := services.NewMsgQueue(1, 1, nil)
-	txsOrderQueue := services.NewMsgQueue(1, 1, nil)
-
 	bx := mock.NewMockConnector(ctl)
 
 	feedMngr := feed.NewManager(sdn, services.NewNoOpSubscriptionServices(),
-		accountIDToAccountModel["gw"], stats, types.NetworkNum(5), true)
+		accountIDToAccountModel["gw"], stats, bxtypes.NetworkNum(5), true)
 
 	grpcServer := NewGRPCServer(
 		cfg,
@@ -140,8 +137,6 @@ func testGRPCServer(t *testing.T, port int, user string, password string) (*Serv
 		wsManager,
 		bxmessage.NewBDNStats(blockchainPeers, make(map[string]struct{})),
 		time.Now(),
-		txsQueue,
-		txsOrderQueue,
 		"",
 		bx,
 		nil,
@@ -158,7 +153,8 @@ func start(ctx context.Context, t *testing.T, serverAddress string, grpcServer *
 		return grpcServer.Run()
 	})
 	eg.Go(func() error {
-		return manager.Start(gCtx)
+		manager.Start(gCtx)
+		return nil
 	})
 
 	test.WaitServerStarted(t, serverAddress)
@@ -255,7 +251,7 @@ func TestServerAuth(t *testing.T) {
 
 	t.Run("internal gateway unauthorized access", func(t *testing.T) {
 		mockedSdn = mock.NewMockSDNHTTP(ctl)
-		mockedSdn.EXPECT().AccountModel().Return(sdnmessage.Account{AccountInfo: sdnmessage.AccountInfo{AccountID: types.BloxrouteAccountID}}).AnyTimes()
+		mockedSdn.EXPECT().AccountModel().Return(sdnmessage.Account{AccountInfo: sdnmessage.AccountInfo{AccountID: bxtypes.BloxrouteAccountID}}).AnyTimes()
 		testServer.gatewayServer.(*server).params.sdn = mockedSdn
 		grpcConfig := config.NewGRPC("127.0.0.1", port, "", "")
 		_, err := rpc.GatewayCall(grpcConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {

@@ -3,17 +3,21 @@ package ws
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/sourcegraph/jsonrpc2"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
 	"github.com/bloXroute-Labs/gateway/v2/services/validator"
@@ -26,17 +30,17 @@ var (
 )
 
 type handlerObj struct {
-	chainID                  types.NetworkID
-	sdn                      connections.SDNHTTP
+	sdn                      sdnsdk.SDNHTTP
 	node                     connections.BxListener
 	feedManager              *feed.Manager
+	chainID                  bxtypes.NetworkID
 	nodeWSManager            blockchain.WSManager
 	validatorsManager        *validator.Manager
 	log                      *log.Entry
-	networkNum               types.NetworkNum
+	networkNum               bxtypes.NetworkNum
 	remoteAddress            string
 	connectionAccount        sdnmessage.Account
-	serverAccountID          types.AccountID
+	serverAccountID          bxtypes.AccountID
 	ethSubscribeIDToChanMap  map[string]chan bool
 	headers                  map[string]string
 	stats                    statistics.Stats
@@ -138,7 +142,9 @@ func (h *handlerObj) sendNotification(ctx context.Context, subscriptionID string
 	response.Result = content
 	err := conn.Notify(ctx, "subscribe", response)
 	if err != nil {
-		h.log.Errorf("error reply to subscriptionID %v: %v", subscriptionID, err.Error())
+		if !errors.Is(err, jsonrpc2.ErrClosed) {
+			h.log.Errorf("error reply to subscriptionID %v: %v", subscriptionID, err.Error())
+		}
 		return err
 	}
 	return nil

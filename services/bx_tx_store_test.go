@@ -5,20 +5,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
+
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/bloXroute-Labs/gateway/v2"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/stretchr/testify/assert"
 )
 
 const (
-	testNetworkNum types.NetworkNum = 5
-	testChainID    int64            = 1
+	testNetworkNum bxtypes.NetworkNum = 5
+	testChainID    int64              = 1
 )
 
 func newTestBxTxStore() BxTxStore {
-	return newBxTxStore(&utils.MockClock{}, sdnmessage.BlockchainNetworks{testNetworkNum: {MaxTxAgeSeconds: 30}}, 30*time.Second, 10*time.Second,
+	return newBxTxStore(&clock.MockClock{}, sdnmessage.BlockchainNetworks{testNetworkNum: {MaxTxAgeSeconds: 30}}, 30*time.Second, 10*time.Second,
 		NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, 30*time.Minute, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage(), false)
 }
 
@@ -126,7 +129,7 @@ func TestBxTxStore_Add(t *testing.T) {
 }
 
 func TestBxTxStore_clean(t *testing.T) {
-	clock := utils.MockClock{}
+	clock := clock.MockClock{}
 
 	cleanedShortIDsChan := make(chan types.ShortIDsByNetwork)
 	store := newBxTxStore(&clock, sdnmessage.BlockchainNetworks{testNetworkNum: {MaxTxAgeSeconds: 30}}, 30*time.Second, 10*time.Second, NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), cleanedShortIDsChan, 30*time.Minute, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage(), false)
@@ -158,9 +161,10 @@ func TestBxTxStore_clean(t *testing.T) {
 }
 
 func TestBxTxStore_clean256K(t *testing.T) {
+	zerolog.SetGlobalLevel(zerolog.WarnLevel)
 	otherNetworkTxs := 20
 	extra := 10
-	clock := utils.MockClock{}
+	clock := clock.MockClock{}
 
 	store := newBxTxStore(&clock, sdnmessage.BlockchainNetworks{
 		testNetworkNum:     {MaxTxAgeSeconds: 60 * 60 * 300},
@@ -206,7 +210,7 @@ func TestBxTxStore_clean256K(t *testing.T) {
 }
 
 func TestHistory(t *testing.T) {
-	clock := utils.MockClock{}
+	clock := clock.MockClock{}
 	// have to use date between 1678 and 2262 for UnixNano to work
 	clock.SetTime(time.Date(2000, 0o1, 0o1, 0o0, 0o0, 0o0, 0o0, time.UTC))
 
@@ -300,7 +304,7 @@ func TestGetTxByShortID(t *testing.T) {
 }
 
 func TestHistoryTxWithShortID(t *testing.T) {
-	clock := utils.MockClock{}
+	clock := clock.MockClock{}
 
 	cleanedShortIDsChan := make(chan types.ShortIDsByNetwork)
 	store := newBxTxStore(&clock, sdnmessage.BlockchainNetworks{testNetworkNum: &sdnmessage.BlockchainNetwork{MaxTxAgeSeconds: 30}}, 30*time.Second, 10*time.Second, NewEmptyShortIDAssigner(), newHashHistory("seenTxs", &clock, 60*time.Minute), cleanedShortIDsChan, 30*time.Minute, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage(), false)
@@ -330,7 +334,7 @@ func TestHistoryTxWithShortID(t *testing.T) {
 }
 
 func TestBxTxStore_ResetSeenTxTime(t *testing.T) {
-	clock := utils.MockClock{}
+	clock := clock.MockClock{}
 	cleanedShortIDsChan := make(chan types.ShortIDsByNetwork)
 	store := newBxTxStore(&clock, sdnmessage.BlockchainNetworks{testNetworkNum: &sdnmessage.BlockchainNetwork{MaxTxAgeSeconds: 30}}, 30*time.Second, 10*time.Second, NewEmptyShortIDAssigner(), newHashHistory("seenTxs", &clock, 60*time.Minute), cleanedShortIDsChan, 30*time.Second, NoOpBloomFilter{}, NewNoOpBlockCompressorStorage(), false)
 

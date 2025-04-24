@@ -13,8 +13,8 @@ import (
 
 	"github.com/bits-and-blooms/bloom/v3"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 )
 
 const (
@@ -56,7 +56,7 @@ type bloomFilter struct {
 	current       *bloom.BloomFilter
 	previous      *bloom.BloomFilter
 	storeInterval time.Duration
-	clock         utils.Clock
+	clock         clock.Clock
 	datadir       string
 	counter       atomic.Uint32
 	queue         chan []byte
@@ -64,11 +64,11 @@ type bloomFilter struct {
 }
 
 // NewBloomFilter constructor for BloomFilter
-func NewBloomFilter(ctx context.Context, clock utils.Clock, storeInterval time.Duration, datadir string, capacity uint32, queueSize uint32) (BloomFilter, error) {
+func NewBloomFilter(ctx context.Context, clock clock.Clock, storeInterval time.Duration, datadir string, capacity uint32, queueSize uint32) (BloomFilter, error) {
 	return newBloomFilter(ctx, clock, storeInterval, datadir, capacity, queueSize)
 }
 
-func newBloomFilter(ctx context.Context, clock utils.Clock, storeInterval time.Duration, datadir string, capacity uint32, queueSize uint32) (*bloomFilter, error) {
+func newBloomFilter(ctx context.Context, clock clock.Clock, storeInterval time.Duration, datadir string, capacity uint32, queueSize uint32) (*bloomFilter, error) {
 	bf := &bloomFilter{
 		ctx:           ctx,
 		mx:            &sync.RWMutex{},

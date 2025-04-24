@@ -6,7 +6,7 @@ import (
 
 	"github.com/prysmaticlabs/go-bitfield"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	ssz "github.com/prysmaticlabs/fastssz"

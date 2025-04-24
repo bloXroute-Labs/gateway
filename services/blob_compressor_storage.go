@@ -3,7 +3,7 @@ package services
 import (
 	"encoding/hex"
 
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 )

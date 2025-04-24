@@ -5,18 +5,19 @@ import (
 	"testing"
 	"time"
 
+	bxclock "github.com/bloXroute-Labs/bxcommon-go/clock"
+	"github.com/ethereum/go-ethereum/common"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/ethereum/go-ethereum/common"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -35,8 +36,8 @@ func init() {
 func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 	store := newTestBxTxStore()
 	bp := NewBlockProcessor(&store)
-	clock := utils.MockClock{}
-	clock.SetTime(time.Now())
+	clock1 := bxclock.MockClock{}
+	clock1.SetTime(time.Now())
 
 	blockHash := types.GenerateSHA256Hash()
 	header, _ := rlp.EncodeToBytes(test.GenerateBytes(300))
@@ -53,10 +54,10 @@ func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 	blockSize := int(rlp.ListSize(300 + rlp.ListSize(25000+250+250+250+250) + 350))
 
 	// create delay the txs[0], so it passes the age check
-	store.Add(txs[0].Hash(), txs[0].Content(), 1, testNetworkNum, false, 0, clock.Now().Add(-2*time.Second), 0, types.EmptySender)
+	store.Add(txs[0].Hash(), txs[0].Content(), 1, testNetworkNum, false, 0, clock1.Now().Add(-2*time.Second), 0, types.EmptySender)
 
 	// The txs[2] will not be included in shortID since it's too recent
-	store.Add(txs[3].Hash(), txs[3].Content(), 2, testNetworkNum, false, 0, clock.Now(), 0, types.EmptySender)
+	store.Add(txs[3].Hash(), txs[3].Content(), 2, testNetworkNum, false, 0, clock1.Now(), 0, types.EmptySender)
 
 	bxBlock, err := types.NewBxBlock(blockHash, types.EmptyHash, types.BxBlockTypeEth, header, txs, trailer, big.NewInt(10000), big.NewInt(10), blockSize, nil)
 	assert.NoError(t, err)
@@ -85,7 +86,7 @@ func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 	assert.Equal(t, string(err.(*ErrAlreadyProcessed).Status()), SeenFromNode)
 
 	// decompress same block works after clearing a processed list
-	bp.(*blockProcessor).processedBlocks = NewBlockHistory("processedBlocks", 30*time.Minute, utils.NewMockClock())
+	bp.(*blockProcessor).processedBlocks = NewBlockHistory("processedBlocks", 30*time.Minute, bxclock.NewMockClock())
 	decodedBxBlock, missingShortIDs, err := bp.BxBlockFromBroadcast(broadcastMessage)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(missingShortIDs))
@@ -101,7 +102,7 @@ func TestRLPBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 func TestRLPBlockProcessor_BxBlockToBroadcast_WithSidecars_Compressed(t *testing.T) {
 	store := newTestBxTxStore()
 	bp := NewBlockProcessor(&store)
-	clock := utils.MockClock{}
+	clock := bxclock.MockClock{}
 	clock.SetTime(time.Now())
 
 	blockHash := types.GenerateSHA256Hash()
@@ -159,7 +160,7 @@ func TestRLPBlockProcessor_BxBlockToBroadcast_WithSidecars_Compressed(t *testing
 	require.Equal(t, string(err.(*ErrAlreadyProcessed).Status()), SeenFromNode)
 
 	// decompress same block works after clearing a processed list
-	bp.(*blockProcessor).processedBlocks = NewBlockHistory("processedBlocks", 30*time.Minute, utils.NewMockClock())
+	bp.(*blockProcessor).processedBlocks = NewBlockHistory("processedBlocks", 30*time.Minute, bxclock.NewMockClock())
 	decodedBxBlock, missingShortIDs, err := bp.BxBlockFromBroadcast(broadcastMessage)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(missingShortIDs))
@@ -180,7 +181,7 @@ func TestRLPBlockProcessor_BxBlockToBroadcast_WithSidecars_Compressed(t *testing
 func TestRLPBlockProcessor_BxBlockToBroadcast_WithSidecars_Decompressed(t *testing.T) {
 	store := newTestBxTxStore()
 	bp := NewBlockProcessor(&store)
-	clock := utils.MockClock{}
+	clock := bxclock.MockClock{}
 	clock.SetTime(time.Now())
 
 	blockHash := types.GenerateSHA256Hash()
@@ -235,7 +236,7 @@ func TestRLPBlockProcessor_BxBlockToBroadcast_WithSidecars_Decompressed(t *testi
 	require.Equal(t, string(err.(*ErrAlreadyProcessed).Status()), SeenFromNode)
 
 	// decompress same block works after clearing a processed list
-	bp.(*blockProcessor).processedBlocks = NewBlockHistory("processedBlocks", 30*time.Minute, utils.NewMockClock())
+	bp.(*blockProcessor).processedBlocks = NewBlockHistory("processedBlocks", 30*time.Minute, bxclock.NewMockClock())
 	decodedBxBlock, missingShortIDs, err := bp.BxBlockFromBroadcast(broadcastMessage)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(missingShortIDs))
@@ -423,7 +424,7 @@ func TestSSZBlockProcessor_BxBlockToBroadcast(t *testing.T) {
 	store.Add(txHash1, txContent1, 1, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 	store.Add(txHash2, txContent2, 2, testNetworkNum, false, types.TFPaidTx, time.Now(), testChainID, types.EmptySender)
 	bp := NewBlockProcessor(&store)
-	clock := utils.MockClock{}
+	clock := bxclock.MockClock{}
 	clock.SetTime(time.Now())
 
 	blockHash := types.GenerateSHA256Hash()

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
@@ -29,7 +31,7 @@ type Tx struct {
 }
 
 // NewTx constructs a new transaction message, using the provided hash function on the transaction contents to determine the hash
-func NewTx(hash types.SHA256Hash, content []byte, networkNum types.NetworkNum, flags types.TxFlags, accountID types.AccountID) *Tx {
+func NewTx(hash types.SHA256Hash, content []byte, networkNum bxtypes.NetworkNum, flags types.TxFlags, accountID bxtypes.AccountID) *Tx {
 	tx := &Tx{}
 
 	if accountID != types.EmptyAccountID {
@@ -92,7 +94,7 @@ func (m *Tx) Timestamp() time.Time {
 }
 
 // AccountID indicates the account ID the TxMessage originated from
-func (m *Tx) AccountID() types.AccountID {
+func (m *Tx) AccountID() bxtypes.AccountID {
 	if bytes.Equal(m.accountID[:], NullByteAccountID) {
 		return ""
 	}
@@ -100,7 +102,7 @@ func (m *Tx) AccountID() types.AccountID {
 }
 
 // SetAccountID sets the account ID
-func (m *Tx) SetAccountID(accountID types.AccountID) {
+func (m *Tx) SetAccountID(accountID bxtypes.AccountID) {
 	copy(m.accountID[:], accountID)
 }
 

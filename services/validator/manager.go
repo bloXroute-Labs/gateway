@@ -5,13 +5,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 )
 
 // Manager manages the next validators and their status
@@ -48,8 +48,8 @@ func NewManager(nextValidatorMap *orderedmap.OrderedMap[uint64, string], validat
 }
 
 // ProcessNextValidatorTx - sets next validator wallets if accessible and returns bool indicating if tx is pending reevaluation due to inaccessible first validator for BSC
-func (m *Manager) ProcessNextValidatorTx(tx *bxmessage.Tx, fallback uint16, networkNum types.NetworkNum, source connections.Conn) (bool, error) {
-	if networkNum != bxgateway.BSCMainnetNum {
+func (m *Manager) ProcessNextValidatorTx(tx *bxmessage.Tx, fallback uint16, networkNum bxtypes.NetworkNum, source connections.Conn) (bool, error) {
+	if networkNum != bxtypes.BSCMainnetNum {
 		return false, errors.New("currently next_validator is only supported on BSC networks, please contact bloXroute support")
 	}
 
@@ -80,7 +80,7 @@ func (m *Manager) ProcessNextValidatorTx(tx *bxmessage.Tx, fallback uint16, netw
 	if n1ValidatorAccessible {
 		tx.SetWalletID(0, n1Wallet)
 	} else {
-		blockIntervalBSC := bxgateway.NetworkToBlockDuration[bxgateway.BSCMainnet]
+		blockIntervalBSC := bxtypes.NetworkToBlockDuration(bxtypes.BSCMainnet)
 		if fallback != 0 && int64(fallback) < blockIntervalBSC.Milliseconds() {
 			return false, nil
 		}

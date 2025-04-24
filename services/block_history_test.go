@@ -4,13 +4,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestBlockHistory_Set_Get(t *testing.T) {
-	clock := &utils.MockClock{}
+	clock := &clock.MockClock{}
 	// have to use date between 1678 and 2262 for UnixNano to work
 	clock.SetTime(time.Date(2000, 01, 01, 00, 00, 00, 00, time.UTC))
 
@@ -55,7 +55,7 @@ func TestBlockHistory_Set_Get(t *testing.T) {
 }
 
 func TestBlockHistory_AddOrUpdate(t *testing.T) {
-	clock := &utils.MockClock{}
+	clock := &clock.MockClock{}
 	// have to use date between 1678 and 2262 for UnixNano to work
 	clock.SetTime(time.Date(2000, 01, 01, 00, 00, 00, 00, time.UTC))
 	history := NewBlockHistory("", 60*time.Minute, clock)

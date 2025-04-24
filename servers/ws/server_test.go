@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,14 +20,12 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
 	"github.com/bloXroute-Labs/gateway/v2/config"
-	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
 	"github.com/bloXroute-Labs/gateway/v2/test/mock"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 func TestAuthorization(t *testing.T) {
@@ -35,11 +35,12 @@ func TestAuthorization(t *testing.T) {
 
 	ctl := gomock.NewController(t)
 	sdn := mock.NewMockSDNHTTP(ctl)
-	sdn.EXPECT().NodeID().Return(types.NodeID("nodeID")).AnyTimes()
-	sdn.EXPECT().NetworkNum().Return(types.NetworkNum(5)).AnyTimes()
+	sdn.EXPECT().NodeID().Return(bxtypes.NodeID("nodeID")).AnyTimes()
+	sdn.EXPECT().NetworkNum().Return(bxtypes.NetworkNum(5)).AnyTimes()
 	sdn.EXPECT().AccountModel().Return(accountIDToAccountModel["gw"]).AnyTimes()
-	sdn.EXPECT().GetQuotaUsage(gomock.AnyOf("a", "b", "c", "i", "gw")).DoAndReturn(func(accountID string) (*connections.QuotaResponseBody, error) {
-		res := connections.QuotaResponseBody{
+	sdn.EXPECT().GetQuotaUsage(gomock.AnyOf("a", "b", "c", "i", "gw")).DoAndReturn(func(accountID string) (*sdnsdk.QuotaResponseBody, error) {
+		sdn.EXPECT().NodeID().Return(bxtypes.NodeID("nodeID")).AnyTimes()
+		res := sdnsdk.QuotaResponseBody{
 			AccountID:   accountID,
 			QuotaFilled: 1,
 			QuotaLimit:  2,
@@ -51,7 +52,7 @@ func TestAuthorization(t *testing.T) {
 	stats := statistics.NoStats{}
 
 	feedManager := feed.NewManager(sdn, services.NewNoOpSubscriptionServices(),
-		accountIDToAccountModel["gw"], stats, types.NetworkNum(5), true)
+		accountIDToAccountModel["gw"], stats, bxtypes.NetworkNum(5), true)
 
 	accService := &mockAccountService{}
 
@@ -74,7 +75,8 @@ func TestAuthorization(t *testing.T) {
 	server.wsConnDelayOnErr = 10 * time.Millisecond // set a shorted delay for tests
 
 	eg.Go(func() error {
-		return feedManager.Start(gCtx)
+		feedManager.Start(gCtx)
+		return nil
 	})
 	eg.Go(server.Run)
 

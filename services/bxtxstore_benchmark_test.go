@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/struCoder/pidusage"
 )

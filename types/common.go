@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"time"
+
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 )
 
 // UInt32Len is the byte length of unsigned 32bit integers
@@ -65,13 +67,7 @@ type ShortID uint32
 type ShortIDList []ShortID
 
 // ShortIDsByNetwork represents map of shortIDs by network
-type ShortIDsByNetwork map[NetworkNum]ShortIDList
-
-// NodeID represents a node's assigned ID. This field is a UUID.
-type NodeID string
-
-// AccountID represents a user's BDN account. This field is a UUID.
-type AccountID string
+type ShortIDsByNetwork map[bxtypes.NetworkNum]ShortIDList
 
 // Sender represents sender type
 type Sender [20]byte
@@ -90,12 +86,12 @@ func (s Sender) Bytes() []byte {
 }
 
 // EmptyAccountID represent no Account ID set
-const EmptyAccountID AccountID = ""
+const EmptyAccountID bxtypes.AccountID = ""
 
 // NewAccountID constructs an accountID from bytes, stripping off null bytes.
-func NewAccountID(b []byte) AccountID {
+func NewAccountID(b []byte) bxtypes.AccountID {
 	trimmed := bytes.Trim(b, "\x00")
-	return AccountID(trimmed)
+	return bxtypes.AccountID(trimmed)
 }
 
 // NodeIDLen is the number of characters in a NodeID
@@ -107,26 +103,14 @@ const ShortIDEmpty = 0
 // ShortIDLen is the byte length of packed short IDs
 const ShortIDLen = UInt32Len
 
-// NetworkNum represents the network that a message is being routed in (Ethereum Mainnet, Ethereum Holesky, etc.)
-type NetworkNum uint32
-
-// NetworkID represent the chain ID that a message is being routed in (1 for Ethereum Mainnet, 56 for BSC-Mainnet, etc.)
-type NetworkID int64
-
-// NetworkNumLen is the byte length of packed network numbers
-const NetworkNumLen = UInt32Len
-
-// BloxrouteAccountID marks an internally generated certificate (e.g. for relays / internal gateways)
-const BloxrouteAccountID = "bloXroute LABS"
-
 // BloxrouteGoGateway is initiated in gateway node model for the field: name
 const BloxrouteGoGateway = "bloxroute go gateway"
 
-// GoGatewayVersion is version of gateway
-const GoGatewayVersion = "2.0.1"
-
 // AllNetworkNum is the network number for relays that facilitate transactions from all networks
-const AllNetworkNum NetworkNum = 0
+const AllNetworkNum bxtypes.NetworkNum = 0
+
+// NetworkNumLen is the byte length of packed network numbers
+const NetworkNumLen = UInt32Len
 
 // ErrorNotificationCodeLen represents len of code
 const ErrorNotificationCodeLen = 4
@@ -145,12 +129,3 @@ const ECDSASignatureLen = 65
 
 // RelayMonitorInterval is interval for relay monitor
 const RelayMonitorInterval = time.Minute
-
-// RelayInfo - represent connected relays info
-type RelayInfo struct {
-	TimeAdded   time.Time
-	IsConnected bool
-	IsStatic    bool
-	Latency     float64
-	Port        int64
-}

@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ssz "github.com/prysmaticlabs/fastssz"
 	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
@@ -25,11 +26,11 @@ import (
 	"github.com/r3labs/sse"
 	"golang.org/x/sync/errgroup"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // For the lighthouse client, we make different block encoding for now
@@ -82,7 +83,7 @@ type APIClient struct {
 	log          *log.Entry
 	bridge       blockchain.Bridge
 	config       *network.EthConfig
-	clock        utils.Clock
+	clock        clock.Clock
 	ctx          context.Context
 	httpClient   *http.Client
 	nodeEndpoint types.NodeEndpoint
@@ -105,7 +106,7 @@ func NewAPIClient(ctx context.Context, httpClient *http.Client, config *network.
 		}),
 		bridge:       bridge,
 		config:       config,
-		clock:        utils.RealClock{},
+		clock:        clock.RealClock{},
 		httpClient:   httpClient,
 		blobDecoder:  newDefaultBlobDecoder(),
 		nodeEndpoint: endpoint,

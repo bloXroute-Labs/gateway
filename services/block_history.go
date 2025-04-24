@@ -3,9 +3,9 @@ package services
 import (
 	"time"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
 )
 
 const (
@@ -31,14 +31,14 @@ type blockData struct {
 // BlockHistory holds block hashes that we have seen in the past and if block received by blockchain node
 type BlockHistory struct {
 	name        string // for logging
-	clock       utils.Clock
+	clock       clock.Clock
 	cleanupFreq time.Duration
 	data        *syncmap.SyncMap[string, blockData]
 	expiration  time.Duration
 }
 
 // NewBlockHistory create a new object
-func NewBlockHistory(name string, cleanupFreq time.Duration, clock utils.Clock) BlockHistory {
+func NewBlockHistory(name string, cleanupFreq time.Duration, clock clock.Clock) BlockHistory {
 	bh := BlockHistory{
 		name:        name,
 		clock:       clock,

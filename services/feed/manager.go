@@ -8,12 +8,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/sourcegraph/jsonrpc2"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+
 	"github.com/bloXroute-Labs/gateway/v2"
-	"github.com/bloXroute-Labs/gateway/v2/connections"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/v2/metrics"
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
 	"github.com/bloXroute-Labs/gateway/v2/types"
@@ -28,21 +31,21 @@ type Manager struct {
 	idToClientSubscription map[string]ClientSubscription
 	subscriptionServices   services.SubscriptionServices
 	lock                   sync.RWMutex
-	networkNum             types.NetworkNum
-	nodeID                 types.NodeID
+	networkNum             bxtypes.NetworkNum
+	nodeID                 bxtypes.NodeID
 	accountModel           sdnmessage.Account
-	sdn                    connections.SDNHTTP
+	sdn                    sdnsdk.SDNHTTP
 	log                    *log.Entry
 	stats                  statistics.Stats
 	sendNotifications      bool
 }
 
 // NewManager - create a new feedManager
-func NewManager(sdn connections.SDNHTTP,
+func NewManager(sdn sdnsdk.SDNHTTP,
 	subscriptionServices services.SubscriptionServices,
 	accountModel sdnmessage.Account,
 	stats statistics.Stats,
-	blockchainNum types.NetworkNum,
+	blockchainNum bxtypes.NetworkNum,
 	sendNotifications bool,
 ) *Manager {
 
@@ -68,9 +71,26 @@ func NewManager(sdn connections.SDNHTTP,
 }
 
 // Start - start feed manager
-func (f *Manager) Start(ctx context.Context) error {
-	f.run(ctx)
-	return nil
+func (f *Manager) Start(ctx context.Context) {
+	wg := sync.WaitGroup{}
+	wg.Add(3)
+
+	go func() {
+		defer wg.Done()
+		f.notifySubscribers(ctx)
+	}()
+
+	go func() {
+		defer wg.Done()
+		f.notifyErrors(ctx)
+	}()
+
+	go func() {
+		defer wg.Done()
+		f.midnightCleanup(ctx)
+	}()
+
+	wg.Wait()
 }
 
 // Notify sends a notification to the feed
@@ -79,10 +99,12 @@ func (f *Manager) Notify(notification types.Notification) {
 		return
 	}
 
+	metrics.IncrFeedNotification(uint32(f.networkNum), string(notification.NotificationType()), metrics.SdNotificationsCreated)
 	select {
 	case f.feed <- notification:
 	default:
-		f.log.Errorf("%v feed manager channel is full, ignoring %v notification type with hash %v", f.networkNum, notification.NotificationType(), notification.GetHash())
+		f.log.Errorf("%v feed manager channel is full, ignoring %v notification type with hash %v",
+			bxtypes.NetworkNumToBlockchainNetwork[f.networkNum], notification.NotificationType(), notification.GetHash())
 	}
 }
 
@@ -121,7 +143,7 @@ func (f *Manager) Subscribe(feedName types.FeedType, feedConnectionType types.Fe
 		return nil, err
 	}
 
-	subscriptionModel := sdnmessage.SubscriptionModel{
+	subscriptionModel := types.SubscriptionModel{
 		SubscriptionID: id,
 		SubscriberIP:   strings.Split(ci.RemoteAddress, ":")[0],
 		NodeID:         string(f.nodeID),
@@ -182,7 +204,7 @@ func (f *Manager) Unsubscribe(subscriptionID string, closeClientConnection bool,
 		clientSub.errMsgChan <- errMsg
 	}
 
-	subscription := sdnmessage.SubscriptionModel{
+	subscription := types.SubscriptionModel{
 		SubscriptionID: subscriptionID,
 		SubscriberIP:   strings.Split(clientSub.RemoteAddress, ":")[0],
 		NodeID:         string(f.nodeID),
@@ -302,13 +324,13 @@ func (f *Manager) GetGrpcSubscriptionReply() []ClientSubscriptionFullInfo {
 }
 
 // GetAllSubscriptions returns all subscriptions
-func (f *Manager) GetAllSubscriptions() []sdnmessage.SubscriptionModel {
+func (f *Manager) GetAllSubscriptions() []types.SubscriptionModel {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
-	subscriptionModels := make([]sdnmessage.SubscriptionModel, len(f.idToClientSubscription))
+	subscriptionModels := make([]types.SubscriptionModel, len(f.idToClientSubscription))
 	i := 0
 	for id, sub := range f.idToClientSubscription {
-		subscriptionModel := sdnmessage.SubscriptionModel{
+		subscriptionModel := types.SubscriptionModel{
 			SubscriptionID: id,
 			SubscriberIP:   strings.Split(sub.RemoteAddress, ":")[0],
 			NodeID:         string(f.nodeID),
@@ -337,20 +359,63 @@ func (f *Manager) CloseAllClientConnections() {
 	}
 }
 
-// run - getting feed notification and pass to client via common channel
-func (f *Manager) run(ctx context.Context) {
+// notifySubscribers - getting feed notification and pass to client via common channel
+func (f *Manager) notifySubscribers(ctx context.Context) {
 	f.log.Infof("feedManager is starting for network %v", f.networkNum)
+
+	for {
+		select {
+		case <-ctx.Done():
+			f.log.Infof("feedManager stopped for network %v", f.networkNum)
+			return
+		case notification := <-f.feed:
+			metrics.IncrFeedNotification(uint32(f.networkNum), string(notification.NotificationType()), metrics.SdNotificationsProcessed)
+
+			f.lock.RLock()
+			for uid, clientSub := range f.idToClientSubscription {
+				if (clientSub.feedConnectionType == types.WebSocketFeed || clientSub.feedConnectionType == types.GRPCFeed) && clientSub.feedType == notification.NotificationType() {
+					select {
+					case clientSub.feed <- notification:
+						metrics.IncrFeedNotificationDelivered(uint32(f.networkNum), string(notification.NotificationType()), string(clientSub.AccountID))
+					default:
+						f.log.Errorf("can't send %v to channel %v without blocking. Ignored hash %v and unsubscribing", clientSub.feedType, uid, notification.GetHash())
+						go f.unsubscribeFromFeed(uid)
+					}
+				}
+			}
+			f.lock.RUnlock()
+		}
+	}
+}
+
+func (f *Manager) notifyErrors(ctx context.Context) {
+	f.log.Infof("feedManager error channel is starting for network %v", f.networkNum)
+
+	for {
+		select {
+		case <-ctx.Done():
+			f.log.Infof("feedManager error channel stopped for network %v", f.networkNum)
+			return
+		case errNotification := <-f.errFeed:
+			f.sendErrorMsgToClient(errNotification)
+		}
+	}
+}
+
+func (f *Manager) midnightCleanup(ctx context.Context) {
+	f.log.Infof("midnight cleanup started for network %v", f.networkNum)
 
 	// variables needed for daily account expiration check
 	firstDailyCheckTriggered := true
 	now := time.Now().UTC()
 	durationUntilMidnight := now.Truncate(24 * time.Hour).Add(24 * time.Hour).Sub(now)
 	dailyTicker := time.NewTicker(durationUntilMidnight)
+	defer dailyTicker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			f.log.Infof("feedManager stopped for network %v", f.networkNum)
+			f.log.Infof("midnight cleanup stopped for network %v", f.networkNum)
 			return
 		case <-dailyTicker.C:
 			timeNow := time.Now()
@@ -396,42 +461,14 @@ func (f *Manager) run(ctx context.Context) {
 				}
 			}
 			log.Tracef("midnight subscription cleanup took %v", time.Since(timeNow))
-		case errNotification, ok := <-f.errFeed:
-			if !ok {
-				f.log.Errorf("can't pull from ws error feed channel. Terminating")
-				break
-			}
-			f.sendErrorMsgToClient(errNotification)
-		case notification, ok := <-f.feed:
-			if !ok {
-				f.log.Errorf("can't pull from ws feed channel. Terminating")
-				break
-			}
-
-			f.lock.RLock()
-			for uid, clientSub := range f.idToClientSubscription {
-				if (clientSub.feedConnectionType == types.WebSocketFeed || clientSub.feedConnectionType == types.GRPCFeed) && clientSub.feedType == notification.NotificationType() {
-					select {
-					case clientSub.feed <- notification:
-						// Offer: I took this out as we are locking the map in read and can't write.
-						// also, do we need to update the map after we update the counter?
-						// if entry, ok := f.idToClientSubscription[uid]; ok {
-						//	entry.messagesSent++
-						//	f.idToClientSubscription[uid] = entry
-						// }
-					default:
-						f.log.Errorf("can't send %v to channel %v without blocking. Ignored hash %v and unsubscribing", clientSub.feedType, uid, notification.GetHash())
-						go f.unsubscribeFromFeed(uid)
-					}
-				}
-			}
-			f.lock.RUnlock()
 		}
 	}
 }
 
 func (f *Manager) sendErrorMsgToClient(errNotification ErrorNotification) {
 	f.lock.RLock()
+	defer f.lock.RUnlock()
+
 	for uid, clientSub := range f.idToClientSubscription {
 		if (clientSub.feedConnectionType == types.WebSocketFeed || clientSub.feedConnectionType == types.GRPCFeed) && clientSub.feedType == errNotification.FeedType {
 			select {
@@ -442,7 +479,6 @@ func (f *Manager) sendErrorMsgToClient(errNotification ErrorNotification) {
 			}
 		}
 	}
-	f.lock.RUnlock()
 }
 
 func (f *Manager) unsubscribeFromFeed(subscriptionID string) {

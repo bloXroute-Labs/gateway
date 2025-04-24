@@ -5,7 +5,8 @@ import (
 	"testing"
 	"time"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	bxclock "github.com/bloXroute-Labs/bxcommon-go/clock"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -29,7 +30,7 @@ func TestLeakyBucketRateLimiter_refill(t *testing.T) {
 
 	for _, testCase := range testTable {
 		t.Run(fmt.Sprint(testCase), func(t *testing.T) {
-			clock := MockClock{}
+			clock := bxclock.MockClock{}
 			clock.SetTime(time.Unix(0, 0))
 			l := leakyBucketRateLimiter{
 				clock: &clock,
@@ -64,7 +65,7 @@ func TestLeakyBucketRateLimiter_Take_RefillRateCalculatedCorrectly(t *testing.T)
 
 	for _, testCase := range testTable {
 		t.Run(fmt.Sprint(testCase), func(t *testing.T) {
-			l := NewLeakyBucketRateLimiter(&MockClock{}, testCase.limit, testCase.interval)
+			l := NewLeakyBucketRateLimiter(&bxclock.MockClock{}, testCase.limit, testCase.interval)
 
 			l.Take()
 			rateLimiter := l.(*leakyBucketRateLimiter)
@@ -87,7 +88,7 @@ func TestLeakyBucketRateLimiter_Take_NotSuccessfulWhenOutOfCalls(t *testing.T) {
 	for _, testCase := range testTable {
 		t.Run(fmt.Sprint(testCase), func(t *testing.T) {
 			l := leakyBucketRateLimiter{
-				clock: &MockClock{},
+				clock: &bxclock.MockClock{},
 				bucket: bucket{
 					counter: testCase.startingCounter,
 					limit:   5,
@@ -115,7 +116,7 @@ func TestLeakyBucketRateLimiter_Take_BucketCounterSameWhenOutOfCalls(t *testing.
 	for _, testCase := range testTable {
 		t.Run(fmt.Sprint(testCase), func(t *testing.T) {
 			l := leakyBucketRateLimiter{
-				clock: &MockClock{},
+				clock: &bxclock.MockClock{},
 				bucket: bucket{
 					counter: testCase.startingCounter,
 					limit:   5,
@@ -130,7 +131,7 @@ func TestLeakyBucketRateLimiter_Take_BucketCounterSameWhenOutOfCalls(t *testing.
 }
 
 func TestTxTraceLeakyBucketRateLimiter_Take_HasCorrectLogging(t *testing.T) {
-	mockClock := &MockClock{}
+	mockClock := &bxclock.MockClock{}
 	startTime := time.Unix(0, 0)
 	mockClock.SetTime(startTime)
 	l := NewTxToolsLeakyBucketRateLimiter(mockClock, 2, PerSecond, "abc")

@@ -1,26 +1,28 @@
 package services
 
 import (
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
+	"github.com/bloXroute-Labs/gateway/v2/utils/hasher"
 )
 
 // SerialPeerQueue - queue of messages to process
 type SerialPeerQueue struct {
-	queues *syncmap.SyncMap[types.NodeID, *MessageQueue]
+	queues *syncmap.SyncMap[bxtypes.NodeID, *MessageQueue]
 }
 
 // NewSerialPeerQueue - create SerialPeerQueue object
 func NewSerialPeerQueue() SerialPeerQueue {
-	return SerialPeerQueue{queues: syncmap.NewTypedMapOf[types.NodeID, *MessageQueue](syncmap.NodeIDHasher)}
+	return SerialPeerQueue{queues: syncmap.NewTypedMapOf[bxtypes.NodeID, *MessageQueue](hasher.NodeIDHasher)}
 }
 
 // AddPeer - add peer to queue
-func (q *SerialPeerQueue) AddPeer(peerID types.NodeID, callback MessageQueueCallback) {
+func (q *SerialPeerQueue) AddPeer(peerID bxtypes.NodeID, callback MessageQueueCallback) {
 	if q.queues.Has(peerID) {
 		log.Errorf("failed to add peer %s to message queue, message queue for peer already exists", peerID)
 		return
@@ -31,7 +33,7 @@ func (q *SerialPeerQueue) AddPeer(peerID types.NodeID, callback MessageQueueCall
 }
 
 // RemovePeer - remove peer from queue
-func (q *SerialPeerQueue) RemovePeer(peerID types.NodeID) {
+func (q *SerialPeerQueue) RemovePeer(peerID bxtypes.NodeID) {
 	queue, ok := q.queues.Load(peerID)
 	if !ok {
 		return

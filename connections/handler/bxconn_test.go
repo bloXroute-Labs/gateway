@@ -6,13 +6,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 type testHandler struct {
@@ -125,13 +128,13 @@ func bxConn(handler connections.ConnHandler) (*connections.MockTLS, *BxConn) {
 	ip := "127.0.0.1"
 	port := int64(3000)
 
-	tls := connections.NewMockTLS(ip, port, "", utils.ExternalGateway, "")
+	tls := connections.NewMockTLS(ip, port, "", bxtypes.ExternalGateway, "")
 	certs := utils.TestCerts()
 	b := NewBxConn(bxmock.MockBxListener{},
 		func() (connections.Socket, error) {
 			return tls, nil
 		},
-		handler, &certs, ip, port, "", utils.RelayProxy, true, false, true, false, connections.LocalInitiatedPort, utils.RealClock{},
+		handler, &certs, ip, port, "", bxtypes.RelayProxy, true, false, true, false, connections.LocalInitiatedPort, clock.RealClock{},
 		false)
 	return tls, b
 }

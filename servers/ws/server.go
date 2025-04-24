@@ -8,17 +8,19 @@ import (
 	"net/http"
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/gorilla/websocket"
 	"github.com/sourcegraph/jsonrpc2"
 	websocketjsonrpc2 "github.com/sourcegraph/jsonrpc2/websocket"
 
-	"github.com/bloXroute-Labs/gateway/v2"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/services/account"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
@@ -39,14 +41,14 @@ type Server struct {
 	keyFile               string
 	cfg                   *config.Bx
 	accService            account.Accounter
-	sdn                   connections.SDNHTTP
-	chainID               types.NetworkID
+	sdn                   sdnsdk.SDNHTTP
+	chainID               bxtypes.NetworkID
 	node                  connections.BxListener
 	feedManager           *feed.Manager
 	nodeWSManager         blockchain.WSManager
 	validatorsManager     *validator.Manager
 	log                   *log.Entry
-	networkNum            types.NetworkNum
+	networkNum            bxtypes.NetworkNum
 	stats                 statistics.Stats
 	wsConnDelayOnErr      time.Duration // wsConnDelayOnErr amount of time to sleep before closing a bad connection. This is configured by tests to a shorted value
 	txFromFieldIncludable bool
@@ -57,7 +59,7 @@ func NewWSServer(
 	cfg *config.Bx,
 	certFile,
 	keyFile string,
-	sdn connections.SDNHTTP,
+	sdn sdnsdk.SDNHTTP,
 	node connections.BxListener,
 	accService account.Accounter,
 	feedManager *feed.Manager,
@@ -67,7 +69,7 @@ func NewWSServer(
 	txFromFieldIncludable bool) *Server {
 
 	networkNum := sdn.NetworkNum()
-	chainID := bxgateway.NetworkNumToChainID[networkNum]
+	chainID := bxtypes.NetworkNumToChainID[networkNum]
 
 	s := &Server{
 		cfg:                   cfg,
@@ -154,14 +156,14 @@ func (s *Server) wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	var connectionAccountModel sdnmessage.Account
 	var err error
-	var accountID types.AccountID
+	var accountID bxtypes.AccountID
 	var secretHash string
 
 	if !s.cfg.EnableBlockchainRPC {
 		authHeader := r.Header.Get("Authorization")
 		switch {
 		case authHeader != "":
-			accountID, secretHash, err = utils.GetAccountIDSecretHashFromHeader(authHeader)
+			accountID, secretHash, err = sdnsdk.GetAccountIDSecretHashFromHeader(authHeader)
 			if err != nil {
 				log.Errorf("remoteAddr: %v requestURI: %v - %v.", r.RemoteAddr, r.RequestURI, err.Error())
 				s.errorWithDelay(w, r, "failed parsing the authorization header")

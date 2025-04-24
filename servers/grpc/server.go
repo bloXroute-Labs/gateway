@@ -1,7 +1,5 @@
 package grpc
 
-//go:generate mockgen -destination ../../test/mock/connector_mock.go -package mock . Bx
-
 import (
 	"context"
 	"errors"
@@ -15,24 +13,27 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 
-	"github.com/bloXroute-Labs/gateway/v2"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/rpc"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/services/account"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
 	"github.com/bloXroute-Labs/gateway/v2/services/validator"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
+
+//go:generate mockgen -destination ../../test/mock/connector_mock.go -package mock . Connector
 
 const (
 	windowSize = 128 * 1024
@@ -48,7 +49,7 @@ const (
 // Connector is responsible for broadcasting messages to all connected clients
 // and getting info about connected clients
 type Connector interface {
-	Broadcast(msg bxmessage.Message, source connections.Conn, to utils.NodeType) types.BroadcastResults
+	Broadcast(msg bxmessage.Message, source connections.Conn, to bxtypes.NodeType) types.BroadcastResults
 	Peers(peerType string) []bxmessage.PeerInfo
 	Relays() map[string]bxmessage.RelayConnectionInfo
 }
@@ -66,7 +67,7 @@ type Server struct {
 	listenAddr       string
 	encodedAuth      string
 	stats            statistics.Stats
-	gatewayAccountID types.AccountID
+	gatewayAccountID bxtypes.AccountID
 	server           *grpc.Server
 	gatewayServer    pb.GatewayServer
 	mu               sync.RWMutex
@@ -77,15 +78,13 @@ func NewGRPCServer(
 	config *config.Bx,
 	stats statistics.Stats,
 	node connections.BxListener,
-	sdn connections.SDNHTTP,
+	sdn sdnsdk.SDNHTTP,
 	accService account.Accounter,
 	bridge blockchain.Bridge,
 	blockchainPeers []types.NodeEndpoint,
 	wsManager blockchain.WSManager,
 	bdnStats *bxmessage.BdnPerformanceStats,
 	timeStarted time.Time,
-	txsQueue *services.MessageQueue,
-	txsOrderQueue *services.MessageQueue,
 	gatewayPublicKey string,
 	connector Connector,
 	validatorsManager *validator.Manager,
@@ -101,14 +100,12 @@ func NewGRPCServer(
 		wsManager:                      wsManager,
 		bdnStats:                       bdnStats,
 		timeStarted:                    timeStarted,
-		txsQueue:                       txsQueue,
-		txsOrderQueue:                  txsOrderQueue,
 		gatewayPublicKey:               gatewayPublicKey,
 		connector:                      connector,
 		validatorsManager:              validatorsManager,
 		feedManager:                    feedManager,
 		txStore:                        txStore,
-		chainID:                        bxgateway.NetworkNumToChainID[sdn.NetworkNum()],
+		chainID:                        bxtypes.NetworkNumToChainID[sdn.NetworkNum()],
 	}
 
 	grpcHostPort := fmt.Sprintf("%v:%v", config.Host, config.Port)
@@ -237,12 +234,12 @@ func retrieveAuthHeader(ctx context.Context, authFromRequestBody string) string 
 	return authFromRequestBody
 }
 
-func retrieveOriginalSenderAccountID(ctx context.Context, accountModel *sdnmessage.Account) (*types.AccountID, error) {
+func retrieveOriginalSenderAccountID(ctx context.Context, accountModel *sdnmessage.Account) (*bxtypes.AccountID, error) {
 	accountID := accountModel.AccountID
-	if accountModel.AccountID == types.BloxrouteAccountID {
+	if accountModel.AccountID == bxtypes.BloxrouteAccountID {
 		md, ok := metadata.FromIncomingContext(ctx)
 		if ok && len(md.Get(types.OriginalSenderAccountIDHeaderKey)) > 0 {
-			accountID = types.AccountID(md.Get(types.OriginalSenderAccountIDHeaderKey)[0])
+			accountID = bxtypes.AccountID(md.Get(types.OriginalSenderAccountIDHeaderKey)[0])
 		} else {
 			return nil, fmt.Errorf("request sent from cloud services and should include %v header", types.OriginalSenderAccountIDHeaderKey)
 		}

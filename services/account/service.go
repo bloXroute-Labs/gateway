@@ -8,11 +8,12 @@ import (
 	"strings"
 	"time"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
+	"github.com/bloXroute-Labs/bxcommon-go/cache"
+
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 )
 
 const (
@@ -31,17 +32,17 @@ var (
 
 // Accounter declares the interface of the account service
 type Accounter interface {
-	Authorize(accountID types.AccountID, secretHash string, isWebsocket bool, remoteAddr string) (sdnmessage.Account, error)
+	Authorize(accountID bxtypes.AccountID, secretHash string, isWebsocket bool, remoteAddr string) (sdnmessage.Account, error)
 }
 
 type accountFetcher interface {
-	FetchCustomerAccountModel(accountID types.AccountID) (sdnmessage.Account, error)
+	FetchCustomerAccountModel(accountID bxtypes.AccountID) (sdnmessage.Account, error)
 	AccountModel() sdnmessage.Account
 }
 
 // Service is a service for fetching and authorizing accounts
 type Service struct {
-	cacheMap *utils.Cache[types.AccountID, Result]
+	cacheMap *cache.Cache[bxtypes.AccountID, Result]
 	sdn      accountFetcher
 	log      *log.Entry
 }
@@ -60,13 +61,13 @@ func NewService(sdn accountFetcher, log *log.Entry) *Service {
 		log: log,
 	}
 
-	c.cacheMap = utils.NewCache[types.AccountID, Result](syncmap.AccountIDHasher, c.accountFetcher, accountsCacheManagerExpDur, accountsCacheManagerCleanDur)
+	c.cacheMap = cache.NewCache[bxtypes.AccountID, Result](syncmap.AccountIDHasher, c.accountFetcher, accountsCacheManagerExpDur, accountsCacheManagerCleanDur)
 
 	return c
 }
 
 // Authorize authorizes an account
-func (g *Service) Authorize(accountID types.AccountID, secretHash string, allowAccessByOtherAccounts bool, ip string) (sdnmessage.Account, error) {
+func (g *Service) Authorize(accountID bxtypes.AccountID, secretHash string, allowAccessByOtherAccounts bool, ip string) (sdnmessage.Account, error) {
 	// if gateway received request from a customer with a different account id, it should verify it with the SDN.
 	// if the gateway does not have permission to verify account id (which mostly happen with external gateways),
 	// SDN will return StatusUnauthorized and fail this connection. if SDN return any other error -
@@ -118,7 +119,7 @@ func (g *Service) Authorize(accountID types.AccountID, secretHash string, allowA
 }
 
 // accountFetcher fetches an account from the SDN
-func (g *Service) accountFetcher(accountID types.AccountID) (*Result, error) {
+func (g *Service) accountFetcher(accountID bxtypes.AccountID) (*Result, error) {
 	account, err := g.sdn.FetchCustomerAccountModel(accountID)
 	if err != nil {
 		if strings.Contains(err.Error(), strconv.FormatInt(http.StatusUnauthorized, 10)) {

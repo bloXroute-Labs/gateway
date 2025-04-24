@@ -4,14 +4,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 func TestFirewall_Add(t *testing.T) {
-	clock := &utils.MockClock{}
+	clock := &clock.MockClock{}
 	firewall := newFirewall(clock, 30*time.Minute)
 
 	firewall.AddRule(sdnmessage.FirewallRule{AccountID: generateRandAccountID(), PeerID: generateRandNodeID(), Duration: 10})
@@ -44,11 +46,11 @@ func TestFirewall_Add(t *testing.T) {
 }
 
 func TestFirewall_ConnectionAllowed(t *testing.T) {
-	clock := &utils.MockClock{}
+	clock := &clock.MockClock{}
 	firewall := newFirewall(clock, 30*time.Minute)
 
-	accountID1 := types.AccountID("")
-	nodeID1 := types.NodeID("")
+	accountID1 := bxtypes.AccountID("")
+	nodeID1 := bxtypes.NodeID("")
 	firewall.AddRule(sdnmessage.FirewallRule{AccountID: accountID1, PeerID: nodeID1, Duration: 20})
 
 	rejectConnection := firewall.Validate(accountID1, nodeID1)
@@ -75,7 +77,7 @@ func TestFirewall_ConnectionAllowed(t *testing.T) {
 	rejectConnection = firewall.Validate(generateRandAccountID(), generateRandNodeID())
 	assert.Nil(t, rejectConnection)
 
-	accountID3 := types.AccountID("*")
+	accountID3 := bxtypes.AccountID("*")
 	nodeID3 := generateRandNodeID()
 	firewall.AddRule(sdnmessage.FirewallRule{AccountID: accountID3, PeerID: nodeID3, Duration: 20})
 
@@ -91,7 +93,7 @@ func TestFirewall_ConnectionAllowed(t *testing.T) {
 	assert.Nil(t, rejectConnection)
 
 	accountID4 := generateRandAccountID()
-	nodeID4 := types.NodeID("*")
+	nodeID4 := bxtypes.NodeID("*")
 	firewall.AddRule(sdnmessage.FirewallRule{AccountID: accountID4, PeerID: nodeID4, Duration: 20})
 
 	rejectConnection = firewall.Validate("", "")
@@ -105,8 +107,8 @@ func TestFirewall_ConnectionAllowed(t *testing.T) {
 	rejectConnection = firewall.Validate(generateRandAccountID(), generateRandNodeID())
 	assert.Nil(t, rejectConnection)
 
-	accountID5 := types.AccountID("*")
-	nodeID5 := types.NodeID("*")
+	accountID5 := bxtypes.AccountID("*")
+	nodeID5 := bxtypes.NodeID("*")
 	firewall.AddRule(sdnmessage.FirewallRule{AccountID: accountID5, PeerID: nodeID5, Duration: 20})
 
 	rejectConnection = firewall.Validate("", "")
@@ -145,14 +147,14 @@ func TestFirewall_ConnectionAllowed(t *testing.T) {
 	assert.Equal(t, 1, firewall.clean())
 }
 
-func generateRandAccountID() types.AccountID {
+func generateRandAccountID() bxtypes.AccountID {
 	id := utils.GenerateUUID()
-	accountID := types.AccountID(id)
+	accountID := bxtypes.AccountID(id)
 	return accountID
 }
 
-func generateRandNodeID() types.NodeID {
+func generateRandNodeID() bxtypes.NodeID {
 	id := utils.GenerateUUID()
-	nodeID := types.NodeID(id)
+	nodeID := bxtypes.NodeID(id)
 	return nodeID
 }

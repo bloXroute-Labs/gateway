@@ -10,8 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
 	"github.com/bloXroute-Labs/gateway/v2/test"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 const (
@@ -52,7 +52,7 @@ func TestBloomFilter(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.Remove(tmpDir)
 
-	mockClock := utils.MockClock{}
+	mockClock := clock.MockClock{}
 
 	ctx := context.Background()
 	bf, _ := newBloomFilter(ctx, &mockClock, 1*time.Hour, tmpDir, capacity, bloomFilterQueueSize)
@@ -128,7 +128,7 @@ func TestBloomFilter_maybeSwitchFilters(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.Remove(tmpDir)
 
-	mockClock := utils.MockClock{}
+	mockClock := clock.MockClock{}
 
 	ctx := context.Background()
 	overflowPercent := 10
@@ -177,7 +177,7 @@ func TestBloomFilter_storeOnDisk(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.Remove(tmpDir)
 
-	mockClock := utils.MockClock{}
+	mockClock := clock.MockClock{}
 
 	ctx := context.Background()
 	bf, _ := newBloomFilter(ctx, &mockClock, 1*time.Hour, tmpDir, capacity, bloomFilterQueueSize)
@@ -211,7 +211,7 @@ func BenchmarkBloomFilter_Add(b *testing.B) {
 	assert.NoError(b, err)
 	defer os.Remove(tmpDir)
 
-	mockClock := utils.MockClock{}
+	mockClock := clock.MockClock{}
 
 	ctx := context.Background()
 	bf, _ := newBloomFilter(ctx, &mockClock, 1*time.Hour, tmpDir, 66e6, 10000)
@@ -230,7 +230,7 @@ func BenchmarkBloomFilter_Check(b *testing.B) {
 	assert.NoError(b, err)
 	defer os.Remove(tmpDir)
 
-	mockClock := utils.MockClock{}
+	mockClock := clock.MockClock{}
 
 	ctx := context.Background()
 	bf, err := newBloomFilter(ctx, &mockClock, 1*time.Hour, tmpDir, 66e6, 10000)
@@ -254,7 +254,7 @@ func Benchmark_storeOnDisk(b *testing.B) {
 	assert.NoError(b, err)
 	defer os.Remove(tmpDir)
 
-	mockClock := utils.MockClock{}
+	mockClock := clock.MockClock{}
 
 	ctx := context.Background()
 	bf, err := newBloomFilter(ctx, &mockClock, 1*time.Hour, tmpDir, 66e6, 10000)

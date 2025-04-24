@@ -6,7 +6,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
 )
 
 // resultWrapper holds the result or error from executing a request and a channel to signal completion.

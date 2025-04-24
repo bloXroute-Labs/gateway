@@ -23,7 +23,7 @@ func newPeers() peers {
 	}
 }
 
-func (p *peers) add(addrInfo libp2pPeer.AddrInfo) *peer {
+func (p *peers) add(addrInfo libp2pPeer.AddrInfo, isDynamic bool) *peer {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -34,6 +34,7 @@ func (p *peers) add(addrInfo libp2pPeer.AddrInfo) *peer {
 
 	pr := &peer{connected: &atomic.Bool{}}
 	pr.addrInfo.Store(&addrInfo)
+	pr.isDynamic.Store(isDynamic)
 
 	p.peersByID[addrInfo.ID] = pr
 
@@ -69,6 +70,7 @@ type peer struct {
 	handshaking    atomic.Bool
 	connected      *atomic.Bool
 	connectionTime atomic.Pointer[time.Time]
+	isDynamic      atomic.Bool
 }
 
 // String implements Stringer interface

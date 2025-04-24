@@ -12,10 +12,10 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 )
 
 // ETH66, ETH67 are the protocols that dropped by go-ethereum which still should be supported
