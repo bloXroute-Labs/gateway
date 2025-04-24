@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/ethereum/go-ethereum/rpc"

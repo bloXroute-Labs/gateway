@@ -3,8 +3,8 @@ package bxmessage
 import (
 	"encoding/binary"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 

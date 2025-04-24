@@ -3,25 +3,25 @@ package services
 import (
 	"time"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
 )
 
 // HashHistory holds hashes that we have seen in the past
 type HashHistory struct {
 	name        string // for logging
-	clock       utils.Clock
+	clock       clock.Clock
 	cleanupFreq time.Duration
 	data        *syncmap.SyncMap[string, int64]
 }
 
 // NewHashHistory creates a new object
 func NewHashHistory(name string, cleanupFreq time.Duration) HashHistory {
-	return newHashHistory(name, utils.RealClock{}, cleanupFreq)
+	return newHashHistory(name, clock.RealClock{}, cleanupFreq)
 }
 
-func newHashHistory(name string, clock utils.Clock, cleanupFreq time.Duration) HashHistory {
+func newHashHistory(name string, clock clock.Clock, cleanupFreq time.Duration) HashHistory {
 	hh := HashHistory{
 		name:        name,
 		clock:       clock,

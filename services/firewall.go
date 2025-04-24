@@ -5,10 +5,10 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 )
 
 // FirewallRulesCleanupInterval - is cleanup interval for firewall rules
@@ -18,15 +18,15 @@ const FirewallRulesCleanupInterval = 15 * time.Minute
 type Firewall struct {
 	rules []sdnmessage.FirewallRule
 	lock  sync.RWMutex
-	clock utils.Clock
+	clock clock.Clock
 }
 
 // NewFirewall returns new manager for FirewallRules
 func NewFirewall(cleanupInterval time.Duration) *Firewall {
-	return newFirewall(utils.RealClock{}, cleanupInterval)
+	return newFirewall(clock.RealClock{}, cleanupInterval)
 }
 
-func newFirewall(clock utils.Clock, cleanupInterval time.Duration) *Firewall {
+func newFirewall(clock clock.Clock, cleanupInterval time.Duration) *Firewall {
 	firewall := &Firewall{
 		rules: []sdnmessage.FirewallRule{},
 		clock: clock,
@@ -80,7 +80,7 @@ func (firewall *Firewall) clean() int {
 }
 
 // Validate - return error message if connection should be rejected
-func (firewall *Firewall) Validate(accountID types.AccountID, nodeID types.NodeID) error {
+func (firewall *Firewall) Validate(accountID bxtypes.AccountID, nodeID bxtypes.NodeID) error {
 	firewall.lock.RLock()
 	defer firewall.lock.RUnlock()
 	for _, rule := range firewall.rules {

@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/sourcegraph/jsonrpc2"
 
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 func (h *handlerObj) handleRPCEthSendTx(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request, rpcParams []interface{}) {
@@ -41,7 +41,7 @@ func (h *handlerObj) handleRPCEthSendTx(ctx context.Context, conn *jsonrpc2.Conn
 		return
 	}
 
-	reqWS := connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.networkNum, utils.Websocket)
+	reqWS := connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.networkNum, bxtypes.Websocket)
 	txHash, ok, err := handler.HandleSingleTransaction(h.node, h.nodeWSManager, h.validatorsManager, rawTxStr, nil, reqWS, false, false,
 		false, false, 0, h.chainID)
 	if err != nil {

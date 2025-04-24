@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
@@ -39,7 +41,7 @@ func blockToBroadcastType(blockType types.BxBlockType) broadcastType {
 }
 
 // NewBlockBroadcast creates a new broadcast message containing block message bytes
-func NewBlockBroadcast(hash, beaconHash types.SHA256Hash, bType types.BxBlockType, block []byte, shortIDs types.ShortIDList, networkNum types.NetworkNum) *Broadcast {
+func NewBlockBroadcast(hash, beaconHash types.SHA256Hash, bType types.BxBlockType, block []byte, shortIDs types.ShortIDList, networkNum bxtypes.NetworkNum) *Broadcast {
 	var broadcastType [BroadcastTypeLen]byte
 	copy(broadcastType[:], blockToBroadcastType(bType))
 

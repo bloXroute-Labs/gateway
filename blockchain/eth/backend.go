@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -17,15 +18,16 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/google/uuid"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/datatype"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 )
 
 const (
@@ -594,7 +596,7 @@ func (h *Handler) Handle(peer *Peer, packet eth.Packet) error {
 	}
 }
 
-func (h *Handler) broadcastTransactions(p *datatype.ProcessingETHTransaction, sourceNode types.NodeEndpoint, connectionType utils.NodeType) {
+func (h *Handler) broadcastTransactions(p *datatype.ProcessingETHTransaction, sourceNode types.NodeEndpoint, connectionType bxtypes.NodeType) {
 	for _, peer := range h.peers.getAll() {
 		if sourceNode.IPPort() == peer.IPEndpoint().IPPort() {
 			continue

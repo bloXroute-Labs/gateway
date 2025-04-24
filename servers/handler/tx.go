@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 
@@ -13,7 +15,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/services/validator"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
@@ -31,7 +32,7 @@ func HandleSingleTransaction(
 	nodeValidationRequested,
 	frontRunningProtection bool,
 	fallback uint16,
-	gatewayChainID types.NetworkID,
+	gatewayChainID bxtypes.NetworkID,
 ) (string, bool, error) {
 
 	txContent, err := types.DecodeHex(transaction)
@@ -86,7 +87,7 @@ func HandleSingleTransaction(
 }
 
 // validateTxFromExternalSource validate transaction from external source (ws / grpc), return bool indicates if tx is pending reevaluation
-func validateTxFromExternalSource(validatorsManager *validator.Manager, transaction string, txBytes []byte, validatorsOnly bool, gatewayChainID types.NetworkID, nextValidator bool, fallback uint16, nodeValidationRequested bool, wsManager blockchain.WSManager, source connections.Conn, frontRunningProtection bool) (*bxmessage.Tx, bool, error) {
+func validateTxFromExternalSource(validatorsManager *validator.Manager, transaction string, txBytes []byte, validatorsOnly bool, gatewayChainID bxtypes.NetworkID, nextValidator bool, fallback uint16, nodeValidationRequested bool, wsManager blockchain.WSManager, source connections.Conn, frontRunningProtection bool) (*bxmessage.Tx, bool, error) {
 	// Ethereum's transactions encoding for RPC interfaces is slightly different from the RLP encoded format, so decode + re-encode the transaction for consistency.
 	// Specifically, note `UnmarshalBinary` should be used for RPC interfaces, and rlp.DecodeBytes should be used for the wire protocol.
 	var ethTx ethtypes.Transaction
@@ -104,7 +105,7 @@ func validateTxFromExternalSource(validatorsManager *validator.Manager, transact
 	networkNum := source.GetNetworkNum()
 	accountID := source.GetAccountID()
 
-	if ethTx.ChainId().Int64() != 0 && gatewayChainID != 0 && types.NetworkID(ethTx.ChainId().Int64()) != gatewayChainID {
+	if ethTx.ChainId().Int64() != 0 && gatewayChainID != 0 && bxtypes.NetworkID(ethTx.ChainId().Int64()) != gatewayChainID {
 		log.Debugf("chainID mismatch for hash %v - tx chainID %v , gateway networkNum %v networkChainID %v", ethTx.Hash().String(), ethTx.ChainId().Int64(), networkNum, gatewayChainID)
 		return nil, false, fmt.Errorf("chainID mismatch for hash %v, expect %v got %v, make sure the tx is sent with the right blockchain network", ethTx.Hash().String(), gatewayChainID, ethTx.ChainId().Int64())
 	}

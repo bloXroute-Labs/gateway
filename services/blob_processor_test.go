@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/rlp"
 	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
@@ -61,7 +61,7 @@ func TestBlobProcessor_CompressDecompress(t *testing.T) {
 
 	blobCompressorStorage := NewBlobCompressorStorage().(*blobCompressorStorage)
 
-	txStore := NewEthTxStore(&utils.MockClock{}, 30*time.Second, 30*time.Second,
+	txStore := NewEthTxStore(&clock.MockClock{}, 30*time.Second, 30*time.Second,
 		NewEmptyShortIDAssigner(), NewHashHistory("seenTxs", 30*time.Minute), nil, sdnmessage.BlockchainNetworks{testNetworkNum: &blockchainNetwork}, newTestBloomFilter(t), blobCompressorStorage, false)
 
 	blobProcessor := NewBlobProcessor(txStore, nil).(*blobProcessor)

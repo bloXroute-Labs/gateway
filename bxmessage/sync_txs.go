@@ -4,7 +4,9 @@ import (
 	"encoding/binary"
 	"time"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
@@ -30,7 +32,7 @@ func (m *SyncTxContentsShortIDs) SetTimestamp(timestamp time.Time) {
 // SyncTxsMessage represents a chunk of transactions received during sync
 type SyncTxsMessage struct {
 	Header
-	networkNumber   types.NetworkNum
+	networkNumber   bxtypes.NetworkNum
 	ContentShortIds []SyncTxContentsShortIDs
 	_size           int
 
@@ -38,12 +40,12 @@ type SyncTxsMessage struct {
 }
 
 // GetNetworkNum gets the message network number
-func (m *SyncTxsMessage) GetNetworkNum() types.NetworkNum {
+func (m *SyncTxsMessage) GetNetworkNum() bxtypes.NetworkNum {
 	return m.networkNumber
 }
 
 // SetNetworkNum sets the message network number
-func (m *SyncTxsMessage) SetNetworkNum(networkNum types.NetworkNum) {
+func (m *SyncTxsMessage) SetNetworkNum(networkNum bxtypes.NetworkNum) {
 	m.networkNumber = networkNum
 }
 
@@ -110,7 +112,7 @@ func (m *SyncTxsMessage) Unpack(buf []byte, protocol Protocol) error {
 
 	offset := HeaderLen
 
-	m.networkNumber = types.NetworkNum(binary.LittleEndian.Uint32(buf[offset:]))
+	m.networkNumber = bxtypes.NetworkNum(binary.LittleEndian.Uint32(buf[offset:]))
 	offset += types.NetworkNumLen
 
 	txCount := binary.LittleEndian.Uint32(buf[offset:])

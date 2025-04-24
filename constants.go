@@ -3,8 +3,6 @@ package bxgateway
 import (
 	"errors"
 	"time"
-
-	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // MaxConnectionBacklog in addition to the socket write buffer and remote socket read buffer.
@@ -29,14 +27,8 @@ const SyncChunkSize = 500 * 1024
 // TxStoreMaxSize - If number of Txs in TxStore is above TxStoreMaxSize cleanup will bring it back to TxStoreMaxSize (per network)
 const TxStoreMaxSize = 200000
 
-// BlockRecoveryTimeout - max time to wait for block recovery before canceling block
-const BlockRecoveryTimeout = 10 * time.Second
-
 // ConnectionDisabledDuration - the duration for which an invalid connection is disabled before closing
 const ConnectionDisabledDuration = 15 * time.Minute
-
-// Ethereum - string representation for the Ethereum protocol
-const Ethereum = "Ethereum"
 
 // TimeDateLayoutISO - used to parse ISO time date format string
 const TimeDateLayoutISO = "2006-01-02"
@@ -51,7 +43,7 @@ const ExpiredDate = "1970-01-01"
 const AsyncMsgChannelSize = 500
 
 // BxNotificationChannelSize - is the size of feed channels
-const BxNotificationChannelSize = 1000
+const BxNotificationChannelSize = 1000000
 
 // BxErrorNotificationChannelSize - size of error feed channel
 const BxErrorNotificationChannelSize = 10
@@ -77,7 +69,7 @@ const EthTxReceiptCallRetrySleepInterval = 2 * time.Millisecond
 // TaskCompletedEvent - sent as notification on onBlock feed after all RPC calls are completed
 const TaskCompletedEvent = "TaskCompletedEvent"
 
-// TaskDisabledEvent - sent as notification on onBlock feed when a RPC call is disabled due to failure
+// TaskDisabledEvent - sent as notification on onBlock feed when an RPC call is disabled due to failure
 const TaskDisabledEvent = "TaskDisabledEvent"
 
 // BDNBlocksMaxBlocksAway - gateway should not publish blocks to BDNBlocks feed that are older than the best height from node minus BDNBlocksMaxBlocksAway
@@ -99,16 +91,10 @@ const DefaultRoutingConfigFileName = "defaultRoutingConfig.json"
 const MaxAnnouncementFromNode = 100
 
 // ParallelQueueChannelSize - size of TXQueueChannel
-const ParallelQueueChannelSize = 1000
+const ParallelQueueChannelSize = 2000
 
 // BloomFilterQueueSize - size of bloom filter queue
 const BloomFilterQueueSize = 10000
-
-// GetMethod - get method for http
-const GetMethod = "GET"
-
-// PostMethod - post method for http
-const PostMethod = "POST"
 
 // TimeToWaitBeforeClosing - set time to wait before closing the connection
 const TimeToWaitBeforeClosing = 500 * time.Millisecond
@@ -121,19 +107,6 @@ const SDNAccountRequestTimeout = time.Minute * 2
 
 
 const (
-	// InternalError - status Code for an unexpected condition was encountered
-	InternalError = 500
-	// NotImplemented - Status for the server does not recognize the request method
-	NotImplemented = 501
-	// BadGateway - status Code for a gateway which did not receive a timely response from the server
-	BadGateway = 502
-	// ServiceUnavailable - status Code for server unavailable on sdn
-	ServiceUnavailable = 503
-	// GatewayTimeout - status Code for invalid response from server
-	GatewayTimeout = 504
-)
-
-const (
 	// BloxrouteBuilderName - set bloxroute mev builder name
 	BloxrouteBuilderName = "bloxroute"
 
@@ -143,60 +116,9 @@ const (
 	// AllBuilderName - set all other external mev builders name
 	AllBuilderName = "all"
 
-	// External0x69BuilderName - set builder0x69 external mev builders name
-	External0x69BuilderName = "builder0x69"
-
 	// ExternalBeaverBuilderName - set beaverbuild external mev builders name
 	ExternalBeaverBuilderName = "beaverbuild"
-
-	// ExternalTitanBuilderName - for cloud-api private tx searcher name
-	ExternalTitanBuilderName = "titan"
 )
-
-// BaseMainnet - for Base main net blockchain network name
-const BaseMainnet = "Base-Mainnet"
-
-// Mainnet - for Ethereum main net blockchain network name
-const Mainnet = "Mainnet"
-
-// BSCMainnet - for BSC main net blockchain network name
-const BSCMainnet = "BSC-Mainnet"
-
-// BSCTestnet - for BSC testnet blockchain network name
-const BSCTestnet = "BSC-Testnet"
-
-// Holesky - for Holesky testnet blockchain network name
-const Holesky = "Holesky"
-
-// MainnetNum - for Ethereum main net blockchain network number
-const MainnetNum types.NetworkNum = 5
-
-// BSCMainnetNum - for BSC main net blockchain network number
-const BSCMainnetNum types.NetworkNum = 10
-
-// BaseChainID -- Base chain ID
-const BaseChainID = 8453
-
-// BSCChainID - BSC chain ID
-const BSCChainID = 56
-
-// EthChainID - eth chain ID
-const EthChainID types.NetworkID = 1
-
-// BSCTestnetChainID - BSC Testnet chain ID
-const BSCTestnetChainID = 97
-
-// HoleskyChainID - Holesky Testnet chain ID
-const HoleskyChainID = 17000
-
-// BaseMainnetNum - for Base main net blockchain network number
-const BaseMainnetNum types.NetworkNum = 456
-
-// BSCTestnetNum - for BSC-Testnet blockchain network number
-const BSCTestnetNum types.NetworkNum = 42
-
-// HoleskyNum - for Holesky Testnet network number
-const HoleskyNum types.NetworkNum = 49
 
 type contextKey string
 
@@ -207,37 +129,6 @@ const (
 	// CloseLoggerKey - close logger key for close logger from context
 	CloseLoggerKey = contextKey("closeLogger")
 )
-
-// BlockchainNetworkToNetworkNum converts blockchain network to number
-var BlockchainNetworkToNetworkNum = map[string]types.NetworkNum{
-	Mainnet:    MainnetNum,
-	BSCMainnet: BSCMainnetNum,
-	BSCTestnet: BSCTestnetNum,
-	Holesky:    HoleskyNum,
-}
-
-// NetworkToBlockDuration defines block interval for each network
-var NetworkToBlockDuration = map[string]time.Duration{
-	Mainnet:    12 * time.Second,
-	Holesky:    12 * time.Second,
-	BSCMainnet: 3 * time.Second,
-	BSCTestnet: 3 * time.Second,
-}
-
-// NetworkNumToChainID - Mapping from networkNum to chainID
-var NetworkNumToChainID = map[types.NetworkNum]types.NetworkID{
-	MainnetNum:    EthChainID,
-	BSCMainnetNum: BSCChainID,
-	HoleskyNum:    HoleskyChainID,
-}
-
-// NetworkNumToBlockchainNetwork - Mapping from networkNum to blockchain network
-var NetworkNumToBlockchainNetwork = map[types.NetworkNum]string{
-	MainnetNum:    Mainnet,
-	BSCMainnetNum: BSCMainnet,
-	BSCTestnetNum: BSCTestnet,
-	HoleskyNum:    Holesky,
-}
 
 // ErrSubscriptionNotFound - error for subscription not found
 var ErrSubscriptionNotFound = errors.New("subscription not found")

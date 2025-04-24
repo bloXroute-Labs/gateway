@@ -7,9 +7,11 @@ import (
 	"os"
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/urfave/cli/v2"
 
-	"github.com/bloXroute-Labs/gateway/v2/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/logger"
+
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/bundle"
 )
@@ -30,7 +32,7 @@ type Bx struct {
 	ExternalPort       int64
 	BlockchainNetwork  string
 	PrioritySending    bool
-	NodeType           utils.NodeType
+	NodeType           bxtypes.NodeType
 	LogNetworkContent  bool
 	FluentDEnabled     bool
 	FluentDHost        string
@@ -79,7 +81,7 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 
 	grpcConfig := NewGRPCFromCLI(ctx)
 
-	nodeType, err := utils.FromStringToNodeType(ctx.String(utils.NodeTypeFlag.Name))
+	nodeType, err := bxtypes.FromStringToNodeType(ctx.String(utils.NodeTypeFlag.Name))
 	if err != nil {
 		return nil, err
 	}

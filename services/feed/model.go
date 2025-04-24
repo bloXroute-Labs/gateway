@@ -3,9 +3,9 @@ package feed
 import (
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/sourcegraph/jsonrpc2"
 
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
@@ -17,7 +17,7 @@ type ClientSubscription struct {
 	feedType           types.FeedType
 	feedConnectionType types.FeedConnectionType
 	connection         *jsonrpc2.Conn
-	network            types.NetworkNum
+	network            bxtypes.NetworkNum
 	timeOpenedFeed     time.Time
 	messagesSent       uint64
 	errMsgChan         chan string
@@ -28,15 +28,15 @@ type ClientSubscriptionHandlingInfo struct {
 	SubscriptionID     string
 	FeedChan           chan types.Notification
 	ErrMsgChan         chan string
-	PermissionRespChan chan *sdnmessage.SubscriptionPermissionMessage
+	PermissionRespChan chan *types.SubscriptionPermissionMessage
 }
 
 // ClientSubscriptionFullInfo contains full info about client subscription
 type ClientSubscriptionFullInfo struct {
-	AccountID    types.AccountID
+	AccountID    bxtypes.AccountID
 	Tier         string
 	FeedName     types.FeedType
-	Network      types.NetworkNum
+	Network      bxtypes.NetworkNum
 	RemoteAddr   string
 	Include      string
 	Filter       string

@@ -2,7 +2,6 @@ package utils
 
 import (
 	"errors"
-	"io/ioutil"
 	"os"
 	"strconv"
 	"strings"
@@ -18,7 +17,7 @@ func GetAppMemoryUsage() (int, error) {
 }
 
 func getRss() (int64, error) {
-	buf, err := ioutil.ReadFile("/proc/self/statm")
+	buf, err := os.ReadFile("/proc/self/statm")
 	if err != nil {
 		return 0, err
 	}

@@ -12,17 +12,17 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/bloXroute-Labs/gateway/v2"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/connections"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler/filter"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler/validator"
 	"github.com/bloXroute-Labs/gateway/v2/servers/ws"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 const maxTxsInSingleResponse = 50
@@ -46,9 +46,9 @@ func (g *server) BlxrTx(ctx context.Context, req *pb.BlxrTxRequest) (*pb.BlxrTxR
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	grpc := connections.NewRPCConn(*accountID, getPeerAddr(ctx), g.params.sdn.NetworkNum(), utils.GRPC)
+	grpc := connections.NewRPCConn(*accountID, getPeerAddr(ctx), g.params.sdn.NetworkNum(), bxtypes.GRPC)
 	txHash, ok, err := handler.HandleSingleTransaction(g.params.node, g.params.wsManager, g.params.validatorsManager, req.Transaction, nil, grpc,
-		req.ValidatorsOnly, req.NextValidator, req.NodeValidation, req.FrontrunningProtection, uint16(req.Fallback), bxgateway.NetworkNumToChainID[g.params.sdn.NetworkNum()])
+		req.ValidatorsOnly, req.NextValidator, req.NodeValidation, req.FrontrunningProtection, uint16(req.Fallback), bxtypes.NetworkNumToChainID[g.params.sdn.NetworkNum()]) //nolint
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -85,7 +85,7 @@ func (g *server) BlxrBatchTX(ctx context.Context, req *pb.BlxrBatchTXRequest) (*
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	grpc := connections.NewRPCConn(*accountID, getPeerAddr(ctx), g.params.sdn.NetworkNum(), utils.GRPC)
+	grpc := connections.NewRPCConn(*accountID, getPeerAddr(ctx), g.params.sdn.NetworkNum(), bxtypes.GRPC)
 
 	for idx, transactionsAndSender := range transactionsAndSenders {
 		tx := transactionsAndSender.GetTransaction()
@@ -337,7 +337,7 @@ func generateTxReceiptReply(n *types.TxReceipt) *pb.TxReceiptsReply {
 	return txReceiptsReply
 }
 
-func processTx(clientReq *ws.ClientReq, notification types.Notification, multiTxsResponse *[]*pb.Tx, remoteAddress string, accountID types.AccountID, feedType types.FeedType, txFromFieldIncludable bool) {
+func processTx(clientReq *ws.ClientReq, notification types.Notification, multiTxsResponse *[]*pb.Tx, remoteAddress string, accountID bxtypes.AccountID, feedType types.FeedType, txFromFieldIncludable bool) {
 	var transaction *types.NewTransactionNotification
 	switch feedType {
 	case types.NewTxsFeed:
@@ -352,7 +352,7 @@ func processTx(clientReq *ws.ClientReq, notification types.Notification, multiTx
 	}
 }
 
-func shouldSendTx(clientReq *ws.ClientReq, tx *types.NewTransactionNotification, remoteAddress string, accountID types.AccountID) bool {
+func shouldSendTx(clientReq *ws.ClientReq, tx *types.NewTransactionNotification, remoteAddress string, accountID bxtypes.AccountID) bool {
 	if clientReq.Expr == nil {
 		return true
 	}

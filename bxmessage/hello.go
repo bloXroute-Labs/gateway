@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"strings"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
@@ -12,19 +14,19 @@ import (
 type Hello struct {
 	Header
 	Protocol      Protocol
-	networkNumber types.NetworkNum
-	NodeID        types.NodeID
+	networkNumber bxtypes.NetworkNum
+	NodeID        bxtypes.NodeID
 	Capabilities  types.CapabilityFlags
 	ClientVersion string
 }
 
 // GetNetworkNum gets the message network number
-func (m *Hello) GetNetworkNum() types.NetworkNum {
+func (m *Hello) GetNetworkNum() bxtypes.NetworkNum {
 	return m.networkNumber
 }
 
 // SetNetworkNum sets the message network number
-func (m *Hello) SetNetworkNum(networkNum types.NetworkNum) {
+func (m *Hello) SetNetworkNum(networkNum bxtypes.NetworkNum) {
 	m.networkNumber = networkNum
 }
 
@@ -71,13 +73,13 @@ func (m *Hello) Unpack(buf []byte, protocol Protocol) error {
 	if err := checkBufSize(&buf, offset, types.NetworkNumLen); err != nil {
 		return err
 	}
-	m.networkNumber = types.NetworkNum(binary.LittleEndian.Uint32(buf[offset:]))
+	m.networkNumber = bxtypes.NetworkNum(binary.LittleEndian.Uint32(buf[offset:]))
 	offset += types.NetworkNumLen
 
 	if err := checkBufSize(&buf, offset, types.NodeIDLen); err != nil {
 		return err
 	}
-	m.NodeID = types.NodeID(buf[offset:])
+	m.NodeID = bxtypes.NodeID(buf[offset:])
 	offset += types.NodeIDLen
 	if err := checkBufSize(&buf, offset, CapabilitiesLen); err != nil {
 		return err

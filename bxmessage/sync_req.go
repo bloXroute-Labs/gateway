@@ -3,22 +3,24 @@ package bxmessage
 import (
 	"encoding/binary"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // SyncReq requests to start transaction state sync on a network
 type SyncReq struct {
 	Header
-	networkNumber types.NetworkNum
+	networkNumber bxtypes.NetworkNum
 }
 
 // GetNetworkNum gets the message network number
-func (m *SyncReq) GetNetworkNum() types.NetworkNum {
+func (m *SyncReq) GetNetworkNum() bxtypes.NetworkNum {
 	return m.networkNumber
 }
 
 // SetNetworkNum sets the message network number
-func (m *SyncReq) SetNetworkNum(networkNum types.NetworkNum) {
+func (m *SyncReq) SetNetworkNum(networkNum bxtypes.NetworkNum) {
 	m.networkNumber = networkNum
 }
 
@@ -37,6 +39,6 @@ func (m SyncReq) Pack(protocol Protocol) ([]byte, error) {
 
 // Unpack deserializes a SyncReq from a buffer
 func (m *SyncReq) Unpack(buf []byte, protocol Protocol) error {
-	m.networkNumber = types.NetworkNum(binary.LittleEndian.Uint32(buf[HeaderLen:]))
+	m.networkNumber = bxtypes.NetworkNum(binary.LittleEndian.Uint32(buf[HeaderLen:]))
 	return m.Header.Unpack(buf, protocol)
 }

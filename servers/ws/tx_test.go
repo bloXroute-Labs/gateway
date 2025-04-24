@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
 )
@@ -92,8 +92,8 @@ func (s *wsSuite) TestBlxrTxRequestWithNextValidator() {
 }
 
 func (s *wsSuite) TestBlxrBSCTxRequestWithNextValidator() {
-	s.TearDownSuite()                    // tear down the suit
-	s.setupSuit(bxgateway.BSCMainnetNum) // set up the suit with BSC
+	s.TearDownSuite()                  // tear down the suit
+	s.setupSuit(bxtypes.BSCMainnetNum) // set up the suit with BSC
 
 	reqPayload := fmt.Sprintf(`{"id": "1", "method": "blxr_tx", "params": {"transaction": "%s", "next_validator":true}}}`, "0x"+fixtures.LegacyTransactionBSC)
 	msg := s.writeMsgToWsAndReadResponse([]byte(reqPayload), nil)

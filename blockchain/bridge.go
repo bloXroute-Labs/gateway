@@ -6,11 +6,11 @@ import (
 	"sync"
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // NoActiveBlockchainPeersAlert is used to send an alert to the gateway on initial liveliness check if no active blockchain peers
@@ -39,7 +39,7 @@ type TransactionsResponse struct {
 type Transactions struct {
 	Transactions   []*types.BxTransaction
 	PeerEndpoint   types.NodeEndpoint
-	ConnectionType utils.NodeType
+	ConnectionType bxtypes.NodeType
 }
 
 // BlockFromNode is used to pass blocks from a node to the BDN

@@ -8,7 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
@@ -26,7 +27,7 @@ func TestGRPCServer_RaceConditionOnShutdown(t *testing.T) {
 func TestRetrieveOriginalSenderAccountID_NoMetadata(t *testing.T) {
 	accountModel := &sdnmessage.Account{
 		AccountInfo: sdnmessage.AccountInfo{
-			AccountID: types.BloxrouteAccountID,
+			AccountID: bxtypes.BloxrouteAccountID,
 		},
 	}
 	ctx := context.Background()
@@ -39,7 +40,7 @@ func TestRetrieveOriginalSenderAccountID_NoMetadata(t *testing.T) {
 func TestRetrieveOriginalSenderAccountID_BloxrouteAccountID(t *testing.T) {
 	accountModel := &sdnmessage.Account{
 		AccountInfo: sdnmessage.AccountInfo{
-			AccountID: types.AccountID(types.BloxrouteAccountID),
+			AccountID: bxtypes.AccountID(bxtypes.BloxrouteAccountID),
 		},
 	}
 	ctx := createMockContextWithMetadata(testGatewayAccountID)
@@ -48,7 +49,7 @@ func TestRetrieveOriginalSenderAccountID_BloxrouteAccountID(t *testing.T) {
 
 	require.Nil(t, err)
 
-	expectedAccountID := types.AccountID(testGatewayAccountID)
+	expectedAccountID := bxtypes.AccountID(testGatewayAccountID)
 
 	require.Equal(t, expectedAccountID, *accountID)
 }
@@ -56,7 +57,7 @@ func TestRetrieveOriginalSenderAccountID_BloxrouteAccountID(t *testing.T) {
 func TestRetrieveOriginalSenderAccountID_NonBloxrouteAccountID(t *testing.T) {
 	accountModel := &sdnmessage.Account{
 		AccountInfo: sdnmessage.AccountInfo{
-			AccountID: types.AccountID(testGatewayAccountID),
+			AccountID: bxtypes.AccountID(testGatewayAccountID),
 		},
 	}
 	ctx := createMockContextWithMetadata(testGatewayAccountID2)
@@ -65,7 +66,7 @@ func TestRetrieveOriginalSenderAccountID_NonBloxrouteAccountID(t *testing.T) {
 
 	require.Nil(t, err)
 
-	expectedAccountID := types.AccountID(testGatewayAccountID)
+	expectedAccountID := bxtypes.AccountID(testGatewayAccountID)
 
 	require.Equal(t, expectedAccountID, *accountID)
 }

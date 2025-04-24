@@ -3,6 +3,8 @@ package bxmessage
 import (
 	"encoding/binary"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
@@ -53,7 +55,7 @@ func (m *abstractCleanup) Unpack(buf []byte, protocol Protocol) error {
 	if err := checkBufSize(&buf, offset, types.UInt32Len); err != nil {
 		return err
 	}
-	m.networkNumber = types.NetworkNum(binary.LittleEndian.Uint32(buf[offset:]))
+	m.networkNumber = bxtypes.NetworkNum(binary.LittleEndian.Uint32(buf[offset:]))
 	offset += types.NetworkNumLen
 
 	if err := checkBufSize(&buf, offset, SourceIDLen); err != nil {

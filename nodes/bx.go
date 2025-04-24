@@ -9,16 +9,18 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/connections/handler"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 const (
@@ -29,7 +31,7 @@ const (
 
 // AccountsFetcher method for getting sdnmessage.Account.
 type AccountsFetcher interface {
-	GetAccount(accountID types.AccountID) *sdnmessage.Account
+	GetAccount(accountID bxtypes.AccountID) *sdnmessage.Account
 }
 
 // Bx is a base struct for bloxroute nodes
@@ -40,7 +42,7 @@ type Bx struct {
 	Connections     connections.ConnList
 	AccountsFetcher AccountsFetcher
 	dataDir         string
-	clock           utils.RealClock
+	clock           clock.RealClock
 }
 
 // NewBx initializes a generic Bx node struct
@@ -50,7 +52,7 @@ func NewBx(bxConfig *config.Bx, dataDir string, accountsFetcher AccountsFetcher)
 		Connections:     make(connections.ConnList, 0),
 		ConnectionsLock: &sync.RWMutex{},
 		dataDir:         dataDir,
-		clock:           utils.RealClock{},
+		clock:           clock.RealClock{},
 		AccountsFetcher: accountsFetcher,
 	}
 }
@@ -77,7 +79,7 @@ func (bn *Bx) OnConnClosed(conn connections.Conn) error {
 	defer bn.ConnectionsLock.Unlock()
 	for idx, connection := range bn.Connections {
 		if connection.ID() == conn.ID() {
-			if conn.GetConnectionType()&utils.RelayProxy != 0 && !bn.isThereOtherConnectedRelay(conn) {
+			if conn.GetConnectionType()&bxtypes.RelayProxy != 0 && !bn.isThereOtherConnectedRelay(conn) {
 				bn.TxStore.Clear()
 			}
 			bn.Connections = append(bn.Connections[:idx], bn.Connections[idx+1:]...)
@@ -95,7 +97,7 @@ func (bn *Bx) isThereOtherConnectedRelay(conn connections.Conn) bool {
 		if connection.ID() == conn.ID() {
 			continue
 		}
-		if conn.GetConnectionType()&utils.RelayProxy != 0 {
+		if conn.GetConnectionType()&bxtypes.RelayProxy != 0 {
 			return true
 		}
 	}
@@ -140,7 +142,7 @@ func (bn *Bx) HandleMsg(msg bxmessage.Message, source connections.Conn) error {
 		syncTxs := &bxmessage.SyncTxsMessage{}
 		syncTxs.SetNetworkNum(syncReq.GetNetworkNum())
 		priority := bxmessage.OnPongPriority
-		if source.GetConnectionType()&utils.RelayProxy != 0 || source.Protocol() >= bxmessage.MinProtocol {
+		if source.GetConnectionType()&bxtypes.RelayProxy != 0 || source.Protocol() >= bxmessage.MinProtocol {
 			priority = bxmessage.NormalPriority
 		}
 
@@ -202,7 +204,7 @@ func (bn *Bx) HandleMsg(msg bxmessage.Message, source connections.Conn) error {
 }
 
 // DisconnectConn - disconnect a specific connection
-func (bn *Bx) DisconnectConn(id types.NodeID) {
+func (bn *Bx) DisconnectConn(id bxtypes.NodeID) {
 	bn.ConnectionsLock.Lock()
 	for _, conn := range bn.Connections {
 		if id == conn.GetNodeID() {
@@ -215,12 +217,12 @@ func (bn *Bx) DisconnectConn(id types.NodeID) {
 
 // Peers provides a list of current peers for the requested type
 func (bn *Bx) Peers(peerType string) []bxmessage.PeerInfo {
-	var nodeType utils.NodeType = -1 // all types
+	var nodeType bxtypes.NodeType = -1 // all types
 	switch peerType {
 	case "gw", "gateway":
-		nodeType = utils.Gateway
+		nodeType = bxtypes.Gateway
 	case "relay":
-		nodeType = utils.RelayProxy
+		nodeType = bxtypes.RelayProxy
 	}
 
 	peers := make([]bxmessage.PeerInfo, 0, len(bn.Connections))
@@ -278,7 +280,7 @@ func (bn *Bx) Relays() map[string]bxmessage.RelayConnectionInfo {
 	for _, conn := range bn.Connections {
 		connectionType := conn.GetConnectionType()
 
-		if connectionType&utils.RelayProxy == 0 {
+		if connectionType&bxtypes.RelayProxy == 0 {
 			continue
 		}
 
@@ -317,7 +319,7 @@ func (bn *Bx) Relays() map[string]bxmessage.RelayConnectionInfo {
 func (bn *Bx) PingLoop() {
 	pingTicker := bn.clock.Ticker(pingInterval)
 	ping := &bxmessage.Ping{}
-	to := utils.Gateway | utils.RelayProxy
+	to := bxtypes.Gateway | bxtypes.RelayProxy
 	for {
 		select {
 		case <-pingTicker.Alert():
@@ -340,7 +342,7 @@ func (bn *Bx) PingLoop() {
 }
 
 // Broadcast sends a message to all connections of the specified type
-func (bn *Bx) Broadcast(msg bxmessage.Message, source connections.Conn, to utils.NodeType) types.BroadcastResults {
+func (bn *Bx) Broadcast(msg bxmessage.Message, source connections.Conn, to bxtypes.NodeType) types.BroadcastResults {
 	results := types.BroadcastResults{}
 
 	bn.ConnectionsLock.RLock()

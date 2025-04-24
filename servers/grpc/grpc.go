@@ -9,21 +9,23 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	bxrpc "github.com/bloXroute-Labs/gateway/v2/rpc"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/services/account"
 	"github.com/bloXroute-Labs/gateway/v2/services/validator"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/version"
 )
 
@@ -44,22 +46,20 @@ type server struct {
 // grpcParams server params
 type grpcParams struct {
 	node                           connections.BxListener
-	sdn                            connections.SDNHTTP
+	sdn                            sdnsdk.SDNHTTP
 	accService                     account.Accounter
 	bridge                         blockchain.Bridge
 	blockchainPeers                []types.NodeEndpoint
 	wsManager                      blockchain.WSManager
 	bdnStats                       *bxmessage.BdnPerformanceStats
 	timeStarted                    time.Time
-	txsQueue                       *services.MessageQueue
-	txsOrderQueue                  *services.MessageQueue
 	gatewayPublicKey               string
 	connector                      Connector
 	validatorsManager              *validator.Manager
 	txFromFieldIncludable          bool
 	feedManager                    feedManager
 	txStore                        services.TxStore
-	chainID                        types.NetworkID
+	chainID                        bxtypes.NetworkID
 }
 
 // newServer return new server object
@@ -325,20 +325,20 @@ func (g *server) validateAuthHeader(authHeader string, isRequiredForExternalGate
 	return &accountModel, nil
 }
 
-func (g *server) accountIDAndHashFromAuthHeader(authHeader string, isRequiredForExternalGateway bool) (accountID types.AccountID, secretHash string, err error) {
+func (g *server) accountIDAndHashFromAuthHeader(authHeader string, isRequiredForExternalGateway bool) (accountID bxtypes.AccountID, secretHash string, err error) {
 	if authHeader == "" {
 		if isRequiredForExternalGateway {
 			err = errMissingAuthHeader
 			return
 		}
-		if g.params.sdn.AccountModel().AccountID == types.BloxrouteAccountID {
+		if g.params.sdn.AccountModel().AccountID == bxtypes.BloxrouteAccountID {
 			err = errInternalGwRequiredHeader
 			return
 		}
 		authHeader = g.getHeaderFromGateway()
 	}
 
-	accountID, secretHash, err = utils.GetAccountIDSecretHashFromHeader(authHeader)
+	accountID, secretHash, err = sdnsdk.GetAccountIDSecretHashFromHeader(authHeader)
 
 	return
 }

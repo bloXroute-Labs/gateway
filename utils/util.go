@@ -12,10 +12,11 @@ import (
 	"strconv"
 	"strings"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	uuid "github.com/satori/go.uuid"
+
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 )
 
 // Abs returns the absolute value of an integer
@@ -147,37 +148,4 @@ func GenerateU128() (string, error) {
 
 	hexEncoded := hex.EncodeToString(u128)
 	return "0x" + hexEncoded, nil
-}
-
-// ExtractArgsToMap transforms cmd arguments to a map
-func ExtractArgsToMap(argsString string) map[string]string {
-	args := strings.Split(argsString, "--")
-	argsMap := make(map[string]string)
-
-	for _, arg := range args {
-		arg = strings.TrimSpace(arg)
-		if arg == "" {
-			continue
-		}
-		switch {
-		case strings.Contains(arg, " "):
-			// arg key value are seperated by space
-			parts := strings.SplitN(arg, " ", 2)
-			key := strings.TrimSpace(parts[0])
-			value := strings.TrimSpace(parts[1])
-			argsMap[key] = value
-		case strings.Contains(arg, "="):
-			// arg key value are seperated by equals
-			parts := strings.SplitN(arg, "=", 2)
-			key := strings.TrimSpace(parts[0])
-			value := strings.TrimSpace(parts[1])
-			argsMap[key] = value
-		default:
-			// arg has only key
-			key := strings.TrimSpace(arg)
-			argsMap[key] = ""
-		}
-	}
-
-	return argsMap
 }

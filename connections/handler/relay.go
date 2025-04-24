@@ -3,12 +3,15 @@ package handler
 import (
 	"sync/atomic"
 
+	"github.com/bloXroute-Labs/bxcommon-go/cert"
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // Relay represents a connection to a relay Node
@@ -21,8 +24,8 @@ type Relay struct {
 
 // NewOutboundRelay builds a new connection to a relay Node
 func NewOutboundRelay(node connections.BxListener,
-	sslCerts *utils.SSLCerts, relayIP string, relayPort int64, nodeID types.NodeID, relayType utils.NodeType,
-	usePQ bool, networks *sdnmessage.BlockchainNetworks, localGEO bool, privateNetwork bool, clock utils.Clock,
+	sslCerts *cert.SSLCerts, relayIP string, relayPort int64, nodeID bxtypes.NodeID, relayType bxtypes.NodeType,
+	usePQ bool, networks *sdnmessage.BlockchainNetworks, localGEO bool, privateNetwork bool, clock clock.Clock,
 	sameRegion bool) *Relay {
 	return NewRelay(node,
 		func() (connections.Socket, error) {
@@ -34,9 +37,9 @@ func NewOutboundRelay(node connections.BxListener,
 
 // NewInboundRelay builds a relay connection from a socket event initiated by a remote relay node
 func NewInboundRelay(node connections.BxListener,
-	socket connections.Socket, sslCerts *utils.SSLCerts, relayIP string, nodeID types.NodeID,
-	relayType utils.NodeType, usePQ bool, networks *sdnmessage.BlockchainNetworks,
-	localGEO bool, privateNetwork bool, localPort int64, clock utils.Clock,
+	socket connections.Socket, sslCerts *cert.SSLCerts, relayIP string, nodeID bxtypes.NodeID,
+	relayType bxtypes.NodeType, usePQ bool, networks *sdnmessage.BlockchainNetworks,
+	localGEO bool, privateNetwork bool, localPort int64, clock clock.Clock,
 	sameRegion bool) *Relay {
 	return NewRelay(node,
 		func() (connections.Socket, error) {
@@ -48,9 +51,9 @@ func NewInboundRelay(node connections.BxListener,
 
 // NewRelay should only be called from test cases or NewOutboundRelay. It allows specifying a particular connect function for the SSL socket. However, in essentially all usages this should not be necessary as any node will initiate a connection to the relay, and as such should just use the default connect function to open a new socket.
 func NewRelay(node connections.BxListener,
-	connect func() (connections.Socket, error), sslCerts *utils.SSLCerts, relayIP string, relayPort int64,
-	nodeID types.NodeID, relayType utils.NodeType, usePQ bool, networks *sdnmessage.BlockchainNetworks,
-	localGEO bool, privateNetwork bool, localPort int64, clock utils.Clock,
+	connect func() (connections.Socket, error), sslCerts *cert.SSLCerts, relayIP string, relayPort int64,
+	nodeID bxtypes.NodeID, relayType bxtypes.NodeType, usePQ bool, networks *sdnmessage.BlockchainNetworks,
+	localGEO bool, privateNetwork bool, localPort int64, clock clock.Clock,
 	sameRegion bool) *Relay {
 	if networks == nil {
 		log.Panicf("TxStore sync: networks not provided. Please provide empty list of networks")

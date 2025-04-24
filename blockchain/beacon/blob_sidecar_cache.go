@@ -11,8 +11,8 @@ import (
 	prysmTypes "github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
 	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
 )
 
 const cleaningFrequency = 12 * time.Second

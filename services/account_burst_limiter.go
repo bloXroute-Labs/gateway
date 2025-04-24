@@ -3,34 +3,36 @@ package services
 import (
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/v2/types"
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 )
 
 // AccountBurstLimiter represents a service for managing burst limiters for accounts
 type AccountBurstLimiter interface {
-	AllowTransaction(id types.AccountID, paid bool) (bool, sdnmessage.BDNServiceBehaviorType)
+	AllowTransaction(id bxtypes.AccountID, paid bool) (bool, sdnmessage.BDNServiceBehaviorType)
 	Register(account *sdnmessage.Account)
-	BurstLimit(id types.AccountID, paid bool) uint64
+	BurstLimit(id bxtypes.AccountID, paid bool) uint64
 	TotalExcess() RateSnapshot
-	AccountExcess(id types.AccountID, paid bool) RateSnapshot
-	AccountTotal(id types.AccountID, paid bool) RateSnapshot
+	AccountExcess(id bxtypes.AccountID, paid bool) RateSnapshot
+	AccountTotal(id bxtypes.AccountID, paid bool) RateSnapshot
 }
 
 // NewAccountBurstLimiter returns a service for managing burst limiters for accounts with leaky bucket burst limiters
-func NewAccountBurstLimiter(clock utils.Clock) AccountBurstLimiter {
+func NewAccountBurstLimiter(clock clock.Clock) AccountBurstLimiter {
 	return &leakyBucketAccountBurstLimiter{
-		accountToLimiter: syncmap.NewTypedMapOf[types.AccountID, accountLimiter](syncmap.AccountIDHasher),
+		accountToLimiter: syncmap.NewTypedMapOf[bxtypes.AccountID, accountLimiter](syncmap.AccountIDHasher),
 		clock:            clock,
 		totalExcess:      NewRateSnapshot(clock),
 	}
 }
 
 type leakyBucketAccountBurstLimiter struct {
-	accountToLimiter *syncmap.SyncMap[types.AccountID, accountLimiter]
-	clock            utils.Clock
+	accountToLimiter *syncmap.SyncMap[bxtypes.AccountID, accountLimiter]
+	clock            clock.Clock
 	totalExcess      RateSnapshot
 }
 
@@ -48,7 +50,7 @@ type accountLimiter struct {
 }
 
 // AllowTransaction updates burst limit usage of transactions from a given account. Accounts that have not yet been loaded will always be passed.
-func (l *leakyBucketAccountBurstLimiter) AllowTransaction(id types.AccountID, paid bool) (bool, sdnmessage.BDNServiceBehaviorType) {
+func (l *leakyBucketAccountBurstLimiter) AllowTransaction(id bxtypes.AccountID, paid bool) (bool, sdnmessage.BDNServiceBehaviorType) {
 	al, ok := l.accountLimiter(id)
 	if !ok {
 		return true, sdnmessage.BehaviorNoAction
@@ -89,7 +91,7 @@ func (l *leakyBucketAccountBurstLimiter) Register(account *sdnmessage.Account) {
 	})
 }
 
-func (l *leakyBucketAccountBurstLimiter) BurstLimit(id types.AccountID, paid bool) uint64 {
+func (l *leakyBucketAccountBurstLimiter) BurstLimit(id bxtypes.AccountID, paid bool) uint64 {
 	al, ok := l.accountLimiter(id)
 	if !ok {
 		return 0
@@ -104,7 +106,7 @@ func (l *leakyBucketAccountBurstLimiter) TotalExcess() RateSnapshot {
 	return l.totalExcess
 }
 
-func (l *leakyBucketAccountBurstLimiter) AccountExcess(id types.AccountID, paid bool) RateSnapshot {
+func (l *leakyBucketAccountBurstLimiter) AccountExcess(id bxtypes.AccountID, paid bool) RateSnapshot {
 	al, ok := l.accountLimiter(id)
 	if !ok {
 		return emptySnapshot
@@ -115,7 +117,7 @@ func (l *leakyBucketAccountBurstLimiter) AccountExcess(id types.AccountID, paid 
 	return al.unpaidExcess
 }
 
-func (l *leakyBucketAccountBurstLimiter) AccountTotal(id types.AccountID, paid bool) RateSnapshot {
+func (l *leakyBucketAccountBurstLimiter) AccountTotal(id bxtypes.AccountID, paid bool) RateSnapshot {
 	al, ok := l.accountLimiter(id)
 	if !ok {
 		return emptySnapshot
@@ -126,7 +128,7 @@ func (l *leakyBucketAccountBurstLimiter) AccountTotal(id types.AccountID, paid b
 	return al.unpaidTotal
 }
 
-func (l *leakyBucketAccountBurstLimiter) limitBehavior(id types.AccountID, paid bool) sdnmessage.BDNServiceBehaviorType {
+func (l *leakyBucketAccountBurstLimiter) limitBehavior(id bxtypes.AccountID, paid bool) sdnmessage.BDNServiceBehaviorType {
 	al, ok := l.accountLimiter(id)
 	if !ok {
 		return sdnmessage.BehaviorNoAction
@@ -137,7 +139,7 @@ func (l *leakyBucketAccountBurstLimiter) limitBehavior(id types.AccountID, paid 
 	return al.unpaidBehavior
 }
 
-func (l *leakyBucketAccountBurstLimiter) accountLimiter(id types.AccountID) (accountLimiter, bool) {
+func (l *leakyBucketAccountBurstLimiter) accountLimiter(id bxtypes.AccountID) (accountLimiter, bool) {
 	rawAccountLimiter, ok := l.accountToLimiter.Load(id)
 	if !ok {
 		return accountLimiter{}, false

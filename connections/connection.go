@@ -3,23 +3,26 @@ package connections
 import (
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
+
+//go:generate mockgen -destination ../../bxgateway/test/mock/mock_sdnhttp.go -package mock github.com/bloXroute-Labs/bxcommon-go/sdnsdk SDNHTTP
 
 // ConnectionDetails interface of base details for all connections
 type ConnectionDetails interface {
-	GetNodeID() types.NodeID
+	GetNodeID() bxtypes.NodeID
 	GetPeerIP() string
 	GetVersion() string
 	GetPeerPort() int64
 	GetPeerEnode() string
 	GetLocalPort() int64
-	GetAccountID() types.AccountID
-	GetNetworkNum() types.NetworkNum
+	GetAccountID() bxtypes.AccountID
+	GetNetworkNum() bxtypes.NetworkNum
 	GetConnectedAt() time.Time
 	GetCapabilities() types.CapabilityFlags
-	GetConnectionType() utils.NodeType
+	GetConnectionType() bxtypes.NodeType
 	GetConnectionState() string
 
 	IsLocalGEO() bool
@@ -32,7 +35,7 @@ type ConnectionDetails interface {
 type ConnDetails struct{}
 
 // GetNodeID return node ID
-func (b ConnDetails) GetNodeID() types.NodeID { return "" }
+func (b ConnDetails) GetNodeID() bxtypes.NodeID { return "" }
 
 // GetPeerIP return peer IP
 func (b ConnDetails) GetPeerIP() string { return "" }
@@ -50,10 +53,10 @@ func (b ConnDetails) GetPeerEnode() string { return "" }
 func (b ConnDetails) GetLocalPort() int64 { return 0 }
 
 // GetAccountID return account ID (default empty)
-func (b ConnDetails) GetAccountID() types.AccountID { return "" }
+func (b ConnDetails) GetAccountID() bxtypes.AccountID { return "" }
 
 // GetNetworkNum gets the message network number
-func (b ConnDetails) GetNetworkNum() types.NetworkNum { return types.AllNetworkNum }
+func (b ConnDetails) GetNetworkNum() bxtypes.NetworkNum { return types.AllNetworkNum }
 
 // GetConnectedAt gets ttime of connection
 func (b ConnDetails) GetConnectedAt() time.Time { return time.Time{} }
@@ -62,7 +65,7 @@ func (b ConnDetails) GetConnectedAt() time.Time { return time.Time{} }
 func (b ConnDetails) GetCapabilities() types.CapabilityFlags { return 0 }
 
 // GetConnectionType returns type of the connection
-func (b ConnDetails) GetConnectionType() utils.NodeType { return utils.Blockchain }
+func (b ConnDetails) GetConnectionType() bxtypes.NodeType { return bxtypes.Blockchain }
 
 // GetConnectionState returns state of the connection
 func (b ConnDetails) GetConnectionState() string { return "" }
@@ -80,18 +83,18 @@ func (b ConnDetails) IsSameRegion() bool { return false }
 func (b ConnDetails) IsPrivateNetwork() bool { return false }
 
 // IsCustomerGateway indicates whether the connected gateway belongs to a customer
-func IsCustomerGateway(connectionType utils.NodeType, accountID types.AccountID) bool {
-	return connectionType&utils.ExternalGateway != 0 && accountID != types.BloxrouteAccountID
+func IsCustomerGateway(connectionType bxtypes.NodeType, accountID bxtypes.AccountID) bool {
+	return connectionType&bxtypes.ExternalGateway != 0 && accountID != bxtypes.BloxrouteAccountID
 }
 
 // IsBloxrouteGateway indicates if the connected gateway belongs to bloxroute
-func IsBloxrouteGateway(connectionType utils.NodeType, accountID types.AccountID) bool {
-	return connectionType&utils.Gateway != 0 && accountID == types.BloxrouteAccountID
+func IsBloxrouteGateway(connectionType bxtypes.NodeType, accountID bxtypes.AccountID) bool {
+	return connectionType&bxtypes.Gateway != 0 && accountID == bxtypes.BloxrouteAccountID
 }
 
 // IsGateway indicates if the connection is a gateway
-func IsGateway(connectionType utils.NodeType) bool {
-	return connectionType&utils.Gateway != 0
+func IsGateway(connectionType bxtypes.NodeType) bool {
+	return connectionType&bxtypes.Gateway != 0
 }
 
 // IsMevBuilderGateway indicates if the connection is a mev-builder gateway
@@ -110,26 +113,26 @@ func IsNoBlocks(capabilities types.CapabilityFlags) bool {
 }
 
 // IsCloudAPI indicates if the connection is a cloud-api
-func IsCloudAPI(connectionType utils.NodeType) bool {
-	return connectionType&utils.CloudAPI != 0
+func IsCloudAPI(connectionType bxtypes.NodeType) bool {
+	return connectionType&bxtypes.CloudAPI != 0
 }
 
 // IsLocalRegion indicates if the connection is a GW or a cloud-api
-func IsLocalRegion(connectionType utils.NodeType) bool {
+func IsLocalRegion(connectionType bxtypes.NodeType) bool {
 	return IsCloudAPI(connectionType) || IsGateway(connectionType)
 }
 
 // IsAPISocket indicates if the connection is api-socket
-func IsAPISocket(connectionType utils.NodeType) bool {
-	return connectionType&utils.APISocket != 0
+func IsAPISocket(connectionType bxtypes.NodeType) bool {
+	return connectionType&bxtypes.APISocket != 0
 }
 
 // IsRelay indicates if the connection is a relay type
-func IsRelay(connectionType utils.NodeType) bool {
-	return connectionType&utils.RelayProxy != 0
+func IsRelay(connectionType bxtypes.NodeType) bool {
+	return connectionType&bxtypes.RelayProxy != 0
 }
 
 // IsGrpc indicates if the connection is a gRPC type
-func IsGrpc(connectionType utils.NodeType) bool {
-	return connectionType&utils.GRPC != 0
+func IsGrpc(connectionType bxtypes.NodeType) bool {
+	return connectionType&bxtypes.GRPC != 0
 }

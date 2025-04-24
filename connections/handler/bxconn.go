@@ -9,17 +9,20 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bloXroute-Labs/bxcommon-go/cert"
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 const (
 	connTimeout        = 5 * time.Second
-	receiveChannelSize = 500
+	receiveChannelSize = 1000
 )
 
 // BxConn is a connection to any other bloxroute Node. BxConn implements connections.ConnHandler.
@@ -32,22 +35,22 @@ type BxConn struct {
 	lock                  *sync.Mutex
 	connectionEstablished bool
 	closed                bool
-	nodeID                types.NodeID
-	peerID                types.NodeID
-	accountID             types.AccountID
+	nodeID                bxtypes.NodeID
+	peerID                bxtypes.NodeID
+	accountID             bxtypes.AccountID
 	minToRelay            int64 // time in microseconds
 	minFromRelay          int64 // time in microseconds
 	minRoundTrip          int64 // time in microseconds
 	slowCount             int64
-	connectionType        utils.NodeType
+	connectionType        bxtypes.NodeType
 	stringRepresentation  string
 	onPongMsgs            *list.List
-	networkNum            types.NetworkNum
+	networkNum            bxtypes.NetworkNum
 	localGEO              bool
 	privateNetwork        bool
 	localPort             int64
 	log                   *log.Entry
-	clock                 utils.Clock
+	clock                 clock.Clock
 	capabilities          types.CapabilityFlags
 	clientVersion         string
 	sameRegion            bool
@@ -57,8 +60,8 @@ type BxConn struct {
 
 // NewBxConn constructs a connection to a bloxroute node.
 func NewBxConn(node connections.BxListener, connect func() (connections.Socket, error), handler connections.ConnHandler,
-	sslCerts *utils.SSLCerts, ip string, port int64, nodeID types.NodeID, connectionType utils.NodeType,
-	usePQ bool, logMessages bool, localGEO bool, privateNetwork bool, localPort int64, clock utils.Clock,
+	sslCerts *cert.SSLCerts, ip string, port int64, nodeID bxtypes.NodeID, connectionType bxtypes.NodeType,
+	usePQ bool, logMessages bool, localGEO bool, privateNetwork bool, localPort int64, clock clock.Clock,
 	sameRegion bool,
 ) *BxConn {
 	bc := &BxConn{
@@ -120,7 +123,7 @@ func (b *BxConn) Send(msg bxmessage.Message) error {
 }
 
 // GetNodeID return node ID
-func (b *BxConn) GetNodeID() types.NodeID { return b.peerID }
+func (b *BxConn) GetNodeID() bxtypes.NodeID { return b.peerID }
 
 // GetLocalPort return local port
 func (b *BxConn) GetLocalPort() int64 { return b.localPort }
@@ -132,7 +135,7 @@ func (b *BxConn) GetVersion() string { return b.clientVersion }
 func (b *BxConn) GetCapabilities() types.CapabilityFlags { return b.capabilities }
 
 // GetConnectionType returns type of the connection
-func (b *BxConn) GetConnectionType() utils.NodeType { return b.connectionType }
+func (b *BxConn) GetConnectionType() bxtypes.NodeType { return b.connectionType }
 
 // GetConnectionState returns state of the connection
 func (b *BxConn) GetConnectionState() string { return "todo" }
@@ -141,7 +144,7 @@ func (b *BxConn) GetConnectionState() string { return "todo" }
 func (b *BxConn) GetConnectedAt() time.Time { return b.connectedAt }
 
 // GetNetworkNum returns network number
-func (b *BxConn) GetNetworkNum() types.NetworkNum { return b.networkNum }
+func (b *BxConn) GetNetworkNum() bxtypes.NetworkNum { return b.networkNum }
 
 // IsLocalGEO indicates if the peer is form the same GEO as we (China vs non-China)
 func (b *BxConn) IsLocalGEO() bool { return b.localGEO }
@@ -153,7 +156,7 @@ func (b *BxConn) IsSameRegion() bool { return b.sameRegion }
 func (b *BxConn) IsPrivateNetwork() bool { return b.privateNetwork }
 
 // GetAccountID return account ID
-func (b *BxConn) GetAccountID() types.AccountID { return b.accountID }
+func (b *BxConn) GetAccountID() bxtypes.AccountID { return b.accountID }
 
 // IsOpen returns when the connection is ready for broadcasting
 func (b *BxConn) IsOpen() bool {
@@ -358,7 +361,7 @@ func (b *BxConn) ProcessMessage(msgBytes bxmessage.MessageBytes) {
 }
 
 // SetNetworkNum is used to specify the connection network number
-func (b *BxConn) SetNetworkNum(networkNum types.NetworkNum) {
+func (b *BxConn) SetNetworkNum(networkNum bxtypes.NetworkNum) {
 	b.networkNum = networkNum
 }
 
@@ -384,9 +387,9 @@ func (b *BxConn) handleNonces(nodeNonce, peerNonce uint64) {
 		b.minFromRelay = timeFromPeer
 	}
 	if timeFromPeer > b.minFromRelay+bxgateway.SlowPingPong &&
-		(!utils.IsGateway || log.GetLevel() > log.InfoLevel) {
+		(!bxgateway.IsGateway || log.GetLevel() > log.InfoLevel) {
 		b.slowCount++
-		if utils.IsGateway || b.privateNetwork || b.localGEO {
+		if bxgateway.IsGateway || b.privateNetwork || b.localGEO {
 			b.Log().Debugf("slow message: took %v ms vs minimum %v ms", timeFromPeer/1000, b.minFromRelay/1000)
 		}
 	}
@@ -401,9 +404,9 @@ func (b *BxConn) handleNonces(nodeNonce, peerNonce uint64) {
 		b.minToRelay = timeToPeer
 	}
 	if timeToPeer > b.minToRelay+bxgateway.SlowPingPong &&
-		(!utils.IsGateway || log.GetLevel() > log.InfoLevel) {
+		(!bxgateway.IsGateway || log.GetLevel() > log.InfoLevel) {
 		b.slowCount++
-		if utils.IsGateway || b.privateNetwork || b.localGEO {
+		if bxgateway.IsGateway || b.privateNetwork || b.localGEO {
 			b.Log().Debugf("slow message: took %v ms vs minimum %v ms", timeToPeer/1000, b.minToRelay/1000)
 		}
 	}
@@ -418,7 +421,7 @@ func (b *BxConn) processMessage(msgBytes bxmessage.MessageBytes) {
 	select {
 	case b.receiveChan <- msgBytes:
 	default:
-		b.log.Errorf("receiveChan is full")
+		b.log.Errorf("receiveChan is full, msg type: %s", msgBytes.BxType())
 		return
 	}
 }
@@ -506,7 +509,7 @@ func (b *BxConn) read(ctx context.Context, isInitiator bool) bool {
 
 // IsBloxroute detect if the peer belongs to bloxroute
 func (b *BxConn) IsBloxroute() bool {
-	return b.accountID == types.BloxrouteAccountID
+	return b.accountID == bxtypes.BloxrouteAccountID
 }
 
 // String represents a string conversion of this connection

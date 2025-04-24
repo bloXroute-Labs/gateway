@@ -1,6 +1,9 @@
 package bxmessage
 
-import "github.com/bloXroute-Labs/gateway/v2/types"
+import (
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	"github.com/bloXroute-Labs/gateway/v2/types"
+)
 
 // RefreshBlockchainNetwork acknowledges a received header message
 type RefreshBlockchainNetwork struct {
@@ -12,7 +15,7 @@ func (m *RefreshBlockchainNetwork) size() uint32 {
 }
 
 // GetNetworkNum gets the message network number
-func (m *RefreshBlockchainNetwork) GetNetworkNum() types.NetworkNum {
+func (m *RefreshBlockchainNetwork) GetNetworkNum() bxtypes.NetworkNum {
 	return types.AllNetworkNum
 }
 

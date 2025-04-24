@@ -4,11 +4,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestTimeSeriesCounter_Track(t *testing.T) {
-	mc := MockClock{}
+	mc := clock.MockClock{}
 	tsc := NewTimeSeriesCounter(&mc, time.Hour, time.Minute)
 
 	tsc.Track()
@@ -52,6 +53,6 @@ func TestTimeSeriesCounter_Track(t *testing.T) {
 }
 
 func TestTimeSeriesCounter_FractionalIntervals(t *testing.T) {
-	mc := MockClock{}
+	mc := clock.MockClock{}
 	assert.Panics(t, func() { NewTimeSeriesCounter(&mc, 10*time.Minute, 3*time.Minute) })
 }

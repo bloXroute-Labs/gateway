@@ -12,9 +12,9 @@ import (
 	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bdn"
 	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 )
 
 // NewBeaconBlockNotification creates beacon block notification

@@ -14,12 +14,13 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/sourcegraph/jsonrpc2"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 const (
@@ -104,7 +105,7 @@ func (d *Dispatcher) bundleForBuildersJSON(bundle *bxmessage.MEVBundle) ([]byte,
 		},
 	}
 
-	if bundle.GetNetworkNum() == bxgateway.BSCMainnetNum {
+	if bundle.GetNetworkNum() == bxtypes.BSCMainnetNum {
 		params[0].AvoidMixedBundles = bundle.AvoidMixedBundles
 		params[0].RefundRecipient = bundle.IncomingRefundRecipient
 		params[0].EndOfBlock = bundle.EndOfBlock
@@ -214,7 +215,7 @@ func (d *Dispatcher) sendBundleToBuilder(endpoint string, builder *Builder, bund
 				bundle.UUID,
 				endpoint,
 				bundle.GetNetworkNum(),
-				types.AccountID(bundle.OriginalSenderAccountID),
+				bxtypes.AccountID(bundle.OriginalSenderAccountID),
 				bundle.OriginalSenderAccountTier,
 				rsp.code,
 			)

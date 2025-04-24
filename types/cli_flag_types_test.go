@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/bloXroute-Labs/gateway/v2/protobuf"
+	gateway "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/stretchr/testify/require"
 )
 

@@ -7,11 +7,11 @@ import (
 
 	"github.com/sourcegraph/jsonrpc2"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler"
-	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 var errInvalidTransactions = "all transactions are invalid"
@@ -36,11 +36,11 @@ func (h *handlerObj) handleRPCBatchTx(ctx context.Context, conn *jsonrpc2.Conn, 
 	}
 
 	var ws connections.RPCConn
-	if h.connectionAccount.AccountID == types.BloxrouteAccountID {
+	if h.connectionAccount.AccountID == bxtypes.BloxrouteAccountID {
 		// Tx sent from cloud services, need to update account ID of the connection to be the origin sender
-		ws = connections.NewRPCConn(types.AccountID(params.OriginalSenderAccountID), h.remoteAddress, h.networkNum, utils.CloudAPI)
+		ws = connections.NewRPCConn(bxtypes.AccountID(params.OriginalSenderAccountID), h.remoteAddress, h.networkNum, bxtypes.CloudAPI)
 	} else {
-		ws = connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.networkNum, utils.Websocket)
+		ws = connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.networkNum, bxtypes.Websocket)
 	}
 
 	var txHashes []string

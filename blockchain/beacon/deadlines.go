@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/prysmaticlabs/prysm/v5/config/params"
 )

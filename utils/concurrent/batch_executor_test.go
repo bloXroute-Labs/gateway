@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
 )
 
 // Global map to track processed IDs.

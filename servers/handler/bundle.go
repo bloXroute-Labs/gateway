@@ -14,13 +14,13 @@ import (
 	"github.com/sourcegraph/jsonrpc2"
 	"golang.org/x/crypto/sha3"
 
-	"github.com/bloXroute-Labs/gateway/v2"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/ofac"
 )
@@ -77,7 +77,7 @@ func HandleMEVBundle(node connections.BxListener, conn connections.Conn, connect
 	mevBundle.SetNetworkNum(networkNum)
 
 	// sent from cloud api
-	if connectionAccount.AccountID == types.BloxrouteAccountID {
+	if connectionAccount.AccountID == bxtypes.BloxrouteAccountID {
 		mevBundle.SentFromCloudAPI = true
 	}
 
@@ -182,16 +182,16 @@ func trimZeroFromHEX(hex string) (string, error) {
 	return strings.ToLower(hexutil.EncodeUint64(value)), nil
 }
 
-func mevBundleFromRequest(payload *jsonrpc.RPCBundleSubmissionPayload, networkNum types.NetworkNum) (*bxmessage.MEVBundle, string, error) {
+func mevBundleFromRequest(payload *jsonrpc.RPCBundleSubmissionPayload, networkNum bxtypes.NetworkNum) (*bxmessage.MEVBundle, string, error) {
 	if err := payload.Validate(); err != nil {
 		return nil, "", fmt.Errorf("%w: %v", errInvalidPayload, err)
 	}
 
-	if networkNum != bxgateway.MainnetNum && networkNum != bxgateway.BSCMainnetNum && networkNum != bxgateway.HoleskyNum {
+	if networkNum != bxtypes.MainnetNum && networkNum != bxtypes.BSCMainnetNum && networkNum != bxtypes.HoleskyNum {
 		return nil, "", fmt.Errorf("%w: %v", errInvalidNetwork, networkNum)
 	}
 
-	parsedBundle, err := parseBundle(payload.Transaction, int64(bxgateway.NetworkNumToChainID[networkNum]))
+	parsedBundle, err := parseBundle(payload.Transaction, int64(bxtypes.NetworkNumToChainID[networkNum]))
 	if err != nil {
 		return nil, "", fmt.Errorf("%w: %v", errUnableToParseBundle, err)
 	}
@@ -209,7 +209,7 @@ func mevBundleFromRequest(payload *jsonrpc.RPCBundleSubmissionPayload, networkNu
 	}
 
 	var avoidMixedBundles, endOfBlock bool
-	if networkNum == bxgateway.BSCMainnetNum {
+	if networkNum == bxtypes.BSCMainnetNum {
 		avoidMixedBundles = payload.AvoidMixedBundles
 		endOfBlock = payload.EndOfBlock
 	}

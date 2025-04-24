@@ -1,15 +1,15 @@
 package services
 
 import (
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	baseutils "github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // SubscriptionServices provides interface to core subscription management functions
 type SubscriptionServices interface {
-	IsSubscriptionAllowed(*sdnmessage.SubscriptionModel) (bool, string, chan *sdnmessage.SubscriptionPermissionMessage)
-	SendUnsubscribeNotification(*sdnmessage.SubscriptionModel)
-	SendSubscriptionResetNotification([]sdnmessage.SubscriptionModel)
+	IsSubscriptionAllowed(*types.SubscriptionModel) (bool, string, chan *types.SubscriptionPermissionMessage)
+	SendUnsubscribeNotification(*types.SubscriptionModel)
+	SendSubscriptionResetNotification([]types.SubscriptionModel)
 	GenerateSubscriptionID(bool) string
 }
 
@@ -24,17 +24,17 @@ func NewNoOpSubscriptionServices() SubscriptionServices {
 }
 
 // IsSubscriptionAllowed approves all requests
-func (n NoOpSubscriptionServices) IsSubscriptionAllowed(*sdnmessage.SubscriptionModel) (bool, string, chan *sdnmessage.SubscriptionPermissionMessage) {
+func (n NoOpSubscriptionServices) IsSubscriptionAllowed(*types.SubscriptionModel) (bool, string, chan *types.SubscriptionPermissionMessage) {
 	return true, "", nil
 }
 
 // SendUnsubscribeNotification - no-op
-func (n NoOpSubscriptionServices) SendUnsubscribeNotification(*sdnmessage.SubscriptionModel) {
+func (n NoOpSubscriptionServices) SendUnsubscribeNotification(*types.SubscriptionModel) {
 	return
 }
 
 // SendSubscriptionResetNotification - no-op
-func (n NoOpSubscriptionServices) SendSubscriptionResetNotification([]sdnmessage.SubscriptionModel) {
+func (n NoOpSubscriptionServices) SendSubscriptionResetNotification([]types.SubscriptionModel) {
 	return
 }
 

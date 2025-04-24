@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bloXroute-Labs/gateway/v2"
+	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/ethereum/go-ethereum/common"
 )
 
 // newHeadsResponseParams - response of the jsonrpc params
@@ -28,7 +29,7 @@ func (s *wsSuite) TestEthSubscribe() {
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
 	feedNotification, _ := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil, false)
 	feedNotification.SetNotificationType(types.NewBlocksFeed)
-	sourceEndpoint := types.NodeEndpoint{IP: s.blockchainPeers[0].IP, Port: s.blockchainPeers[0].Port, BlockchainNetwork: bxgateway.Mainnet}
+	sourceEndpoint := types.NodeEndpoint{IP: s.blockchainPeers[0].IP, Port: s.blockchainPeers[0].Port, BlockchainNetwork: bxtypes.Mainnet}
 	feedNotification.SetSource(&sourceEndpoint)
 	s.Assert().True(s.nodeWSManager.Synced())
 

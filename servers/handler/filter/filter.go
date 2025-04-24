@@ -10,7 +10,7 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/zhouzhuojie/conditions"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 )

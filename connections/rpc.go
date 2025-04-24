@@ -4,10 +4,9 @@ import (
 	"fmt"
 	"time"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 var rpcTLSConn = TLS{}
@@ -16,15 +15,15 @@ var rpcTLSConn = TLS{}
 type RPCConn struct {
 	ConnDetails
 
-	AccountID      types.AccountID
+	AccountID      bxtypes.AccountID
 	RemoteAddress  string
-	networkNum     types.NetworkNum
-	connectionType utils.NodeType
+	networkNum     bxtypes.NetworkNum
+	connectionType bxtypes.NodeType
 	log            *log.Entry
 }
 
 // NewRPCConn return a new instance of RPCConn
-func NewRPCConn(accountID types.AccountID, remoteAddr string, networkNum types.NetworkNum, connType utils.NodeType) RPCConn {
+func NewRPCConn(accountID bxtypes.AccountID, remoteAddr string, networkNum bxtypes.NetworkNum, connType bxtypes.NodeType) RPCConn {
 	return RPCConn{
 		AccountID:      accountID,
 		RemoteAddress:  remoteAddr,
@@ -44,17 +43,17 @@ func (r RPCConn) ID() Socket {
 }
 
 // GetConnectionType returns type of the connection
-func (r RPCConn) GetConnectionType() utils.NodeType {
+func (r RPCConn) GetConnectionType() bxtypes.NodeType {
 	return r.connectionType
 }
 
 // GetNetworkNum gets the message network number
-func (r RPCConn) GetNetworkNum() types.NetworkNum {
+func (r RPCConn) GetNetworkNum() bxtypes.NetworkNum {
 	return r.networkNum
 }
 
 // GetAccountID return account ID
-func (r RPCConn) GetAccountID() types.AccountID {
+func (r RPCConn) GetAccountID() bxtypes.AccountID {
 	return r.AccountID
 }
 

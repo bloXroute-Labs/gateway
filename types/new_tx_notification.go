@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 )

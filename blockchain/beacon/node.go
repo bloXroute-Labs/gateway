@@ -38,12 +38,13 @@ import (
 	"github.com/prysmaticlabs/prysm/v5/time/slots"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	bxTypes "github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 )
 
 const (
@@ -121,7 +122,7 @@ func (ts *topicSubscription) close() error {
 // Node is beacon node
 type Node struct {
 	ctx   context.Context
-	clock utils.Clock
+	clock clock.Clock
 
 	config      *network.EthConfig
 	networkName string
@@ -159,10 +160,10 @@ type NodeParams struct {
 
 // NewNode creates beacon node
 func NewNode(params NodeParams) (*Node, error) {
-	return newNode(params, &utils.RealClock{})
+	return newNode(params, &clock.RealClock{})
 }
 
-func newNode(params NodeParams, clock utils.Clock) (*Node, error) {
+func newNode(params NodeParams, clock clock.Clock) (*Node, error) {
 	logCtx := log.WithField("connType", "beacon")
 
 	if err := initNetwork(params.NetworkName); err != nil {
@@ -252,14 +253,14 @@ func newNode(params NodeParams, clock utils.Clock) (*Node, error) {
 	n.host.Network().Notify(&libp2pNetwork.NotifyBundle{
 		ConnectedF: func(net libp2pNetwork.Network, conn libp2pNetwork.Conn) {
 			n.log.Tracef("peer %s connected", conn.RemoteMultiaddr())
-
+			isInbound := conn.Stat().Direction == libp2pNetwork.DirInbound
 			peer := n.peers.add(libp2pPeer.AddrInfo{
 				ID:    conn.RemotePeer(),
 				Addrs: []ma.Multiaddr{conn.RemoteMultiaddr()},
-			})
+			}, isInbound)
 			peerEndpoint := utils.MultiaddrToNodeEndoint(conn.RemoteMultiaddr(), n.networkName)
 
-			if conn.Stat().Direction == libp2pNetwork.DirInbound {
+			if isInbound {
 				if peer.connect() {
 					if err := n.bridge.SendBlockchainConnectionStatus(blockchain.ConnectionStatus{
 						PeerEndpoint: peerEndpoint,
@@ -993,6 +994,7 @@ func (n *Node) bxStatusHandler() {
 				endpoint := utils.MultiaddrToNodeEndoint(peer.addrInfo.Load().Addrs[0], n.networkName)
 				endpoint.ConnectedAt = peer.connectedAt().Format(time.RFC3339)
 				endpoint.ID = peerID.String()
+				endpoint.Dynamic = peer.isDynamic.Load()
 				endpoints = append(endpoints, &endpoint)
 
 				return true

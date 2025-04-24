@@ -8,9 +8,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bloXroute-Labs/bxcommon-go/cert"
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
@@ -37,7 +40,7 @@ type SSLConn struct {
 	ip             string
 	port           int64
 	protocol       bxmessage.Protocol
-	sslCerts       *utils.SSLCerts
+	sslCerts       *cert.SSLCerts
 	connectionOpen bool
 	disabled       bool
 	// done is used to stop the sendLoop routine
@@ -51,14 +54,14 @@ type SSLConn struct {
 	extensions      utils.BxSSLProperties
 	packet          []byte
 	log             *log.Entry
-	clock           utils.Clock
+	clock           clock.Clock
 	connectedAt     time.Time
 
 	mu sync.RWMutex
 }
 
 // NewSSLConnection constructs a new SSL connection. If socket is not nil, then the connection was initiated by the remote.
-func NewSSLConnection(connect func() (Socket, error), sslCerts *utils.SSLCerts, ip string, port int64, protocol bxmessage.Protocol, usePQ bool, logMessages bool, sendChannelSize int, clock utils.Clock) *SSLConn {
+func NewSSLConnection(connect func() (Socket, error), sslCerts *cert.SSLCerts, ip string, port int64, protocol bxmessage.Protocol, usePQ bool, logMessages bool, sendChannelSize int, clock clock.Clock) *SSLConn {
 	conn := &SSLConn{
 		connect:         connect,
 		sslCerts:        sslCerts,
@@ -118,9 +121,9 @@ func (s *SSLConn) packAndWrite(msg bxmessage.Message) {
 	}
 
 	// these lines can be enabled for logging exactly when we send transactions to the relays
-	//if s.logMessages {
+	// if s.logMessages {
 	//	log.Tracef("sending %v to %v", msg, s)
-	//}
+	// }
 
 	_, err = s.writer.Write(buf)
 	if err != nil {
@@ -135,10 +138,10 @@ func (s *SSLConn) ID() Socket {
 }
 
 // GetConnectionType returns type of the connection
-func (s *SSLConn) GetConnectionType() utils.NodeType { return s.extensions.NodeType }
+func (s *SSLConn) GetConnectionType() bxtypes.NodeType { return s.extensions.NodeType }
 
 // GetNodeID return node ID
-func (s *SSLConn) GetNodeID() types.NodeID { return s.extensions.NodeID }
+func (s *SSLConn) GetNodeID() bxtypes.NodeID { return s.extensions.NodeID }
 
 // GetPeerIP return peer IP
 func (s *SSLConn) GetPeerIP() string { return s.ip }
@@ -153,7 +156,7 @@ func (s *SSLConn) GetLocalPort() int64 { return LocalInitiatedPort }
 func (s *SSLConn) GetConnectedAt() time.Time { return s.connectedAt }
 
 // GetAccountID return account ID
-func (s *SSLConn) GetAccountID() types.AccountID { return s.extensions.AccountID }
+func (s *SSLConn) GetAccountID() bxtypes.AccountID { return s.extensions.AccountID }
 
 // IsOpen indicates whether the socket connection is open
 func (s *SSLConn) IsOpen() bool {

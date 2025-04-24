@@ -3,7 +3,7 @@ package blockchain
 import (
 	"time"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 

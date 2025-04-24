@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/types"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
@@ -21,7 +21,7 @@ type Message interface {
 // BroadcastMessage is the base interface of all broadcast message sent on the wire
 type BroadcastMessage interface {
 	Message
-	GetNetworkNum() types.NetworkNum
+	GetNetworkNum() bxtypes.NetworkNum
 }
 
 // MessageBytes struct for msg with data

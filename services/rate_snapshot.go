@@ -3,6 +3,7 @@ package services
 import (
 	"time"
 
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
@@ -14,13 +15,13 @@ type RateSnapshot struct {
 }
 
 var emptySnapshot = RateSnapshot{
-	ts5m: utils.NewTimeSeriesCounter(utils.RealClock{}, 5*time.Minute, 30*time.Second),
-	ts1h: utils.NewTimeSeriesCounter(utils.RealClock{}, time.Hour, time.Minute),
-	ts1d: utils.NewTimeSeriesCounter(utils.RealClock{}, 24*time.Hour, time.Hour),
+	ts5m: utils.NewTimeSeriesCounter(clock.RealClock{}, 5*time.Minute, 30*time.Second),
+	ts1h: utils.NewTimeSeriesCounter(clock.RealClock{}, time.Hour, time.Minute),
+	ts1d: utils.NewTimeSeriesCounter(clock.RealClock{}, 24*time.Hour, time.Hour),
 }
 
 // NewRateSnapshot instantiate a new snapshot tracker with 5m, 1h, and 1d intervals
-func NewRateSnapshot(clock utils.Clock) RateSnapshot {
+func NewRateSnapshot(clock clock.Clock) RateSnapshot {
 	return RateSnapshot{
 		ts5m: utils.NewTimeSeriesCounter(clock, 5*time.Minute, 30*time.Second),
 		ts1h: utils.NewTimeSeriesCounter(clock, time.Hour, time.Minute),

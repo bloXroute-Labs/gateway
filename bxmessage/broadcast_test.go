@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"testing"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/bloXroute-Labs/gateway/v2/test"
@@ -12,7 +13,7 @@ import (
 )
 
 const (
-	networkNum = types.NetworkNum(5)
+	networkNum = bxtypes.NetworkNum(5)
 )
 
 func TestBroadcastPackUnpack(t *testing.T) {

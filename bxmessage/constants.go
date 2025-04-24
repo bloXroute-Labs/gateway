@@ -3,8 +3,9 @@ package bxmessage
 import (
 	"bytes"
 
+	bxclock "github.com/bloXroute-Labs/bxcommon-go/clock"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // StartingBytesLen is the byte length of the starting bytes of bloxroute messages
@@ -168,7 +169,7 @@ const ClientVersionLen = 100
 // NullByteAccountID is a null byte packed series, which represents an empty accountID
 var NullByteAccountID = bytes.Repeat([]byte("\x00"), AccountIDLen)
 
-var clock utils.Clock = utils.RealClock{}
+var clock bxclock.Clock = bxclock.RealClock{}
 
 // IsConnectedLen is the byte of IsConnectedLen byte
 const IsConnectedLen = 1

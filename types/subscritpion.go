@@ -1,6 +1,6 @@
-package sdnmessage
+package types
 
-import "github.com/bloXroute-Labs/gateway/v2/types"
+import "github.com/bloXroute-Labs/bxcommon-go/types"
 
 // SubscriptionNotificationType represents the available feed subscription notification types
 type SubscriptionNotificationType string
@@ -26,7 +26,7 @@ type SubscriptionModel struct {
 	NodeID         string           `json:"node_id"`
 	AccountID      types.AccountID  `json:"account_id"`
 	NetworkNum     types.NetworkNum `json:"blockchain_network_num"`
-	FeedType       types.FeedType   `json:"feed_type"`
+	FeedType       FeedType         `json:"feed_type"`
 }
 
 // SubscriptionPermissionMessage represents SDN response to subscription request

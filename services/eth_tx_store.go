@@ -10,11 +10,12 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 )
 
 // TODO : move ethtxstore and related tests outside of bxgateway package
@@ -31,7 +32,7 @@ type EthTxStore struct {
 }
 
 // NewEthTxStore returns new manager for Ethereum transactions
-func NewEthTxStore(clock utils.Clock, cleanupInterval time.Duration,
+func NewEthTxStore(clock clock.Clock, cleanupInterval time.Duration,
 	noSIDAge time.Duration, assigner ShortIDAssigner, hashHistory HashHistory, cleanedShortIDsChannel chan types.ShortIDsByNetwork,
 	networkConfig sdnmessage.BlockchainNetworks, bloom BloomFilter, blobCompressorStorage BlobCompressorStorage,
 	blobsCleanerEnabled bool,
@@ -45,7 +46,7 @@ func NewEthTxStore(clock utils.Clock, cleanupInterval time.Duration,
 
 // Add validates an Ethereum transaction and checks that its nonce has not been seen before
 func (t *EthTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID types.ShortID,
-	network types.NetworkNum, validate bool, flags types.TxFlags, timestamp time.Time, networkChainID int64,
+	network bxtypes.NetworkNum, validate bool, flags types.TxFlags, timestamp time.Time, networkChainID int64,
 	sender types.Sender,
 ) types.TransactionResult {
 	result := t.add(hash, content, shortID, network, validate, flags, timestamp, networkChainID, sender)
@@ -63,7 +64,7 @@ func (t *EthTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID
 
 // Add validates an Ethereum transaction and checks that its nonce has not been seen before
 func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID types.ShortID,
-	network types.NetworkNum, validate bool, flags types.TxFlags, timestamp time.Time, networkChainID int64, sender types.Sender,
+	network bxtypes.NetworkNum, validate bool, flags types.TxFlags, timestamp time.Time, networkChainID int64, sender types.Sender,
 ) types.TransactionResult {
 	transaction := types.NewBxTransaction(hash, network, flags, timestamp)
 	var blockchainTx types.BlockchainTransaction
@@ -184,7 +185,7 @@ type trackedTx struct {
 }
 
 type nonceTracker struct {
-	clock            utils.Clock
+	clock            clock.Clock
 	addressNonceToTx *syncmap.SyncMap[string, trackedTx]
 	cleanInterval    time.Duration
 	networkConfig    sdnmessage.BlockchainNetworks
@@ -199,7 +200,7 @@ func fromNonceKey(from *common.Address, nonce uint64) string {
 	return b.String()
 }
 
-func newNonceTracker(clock utils.Clock, networkConfig sdnmessage.BlockchainNetworks, cleanInterval time.Duration) nonceTracker {
+func newNonceTracker(clock clock.Clock, networkConfig sdnmessage.BlockchainNetworks, cleanInterval time.Duration) nonceTracker {
 	nt := nonceTracker{
 		clock:            clock,
 		networkConfig:    networkConfig,
@@ -221,7 +222,7 @@ func (nt *nonceTracker) getTransaction(from *common.Address, nonce uint64) (*tra
 	return &tx, ok
 }
 
-func (nt *nonceTracker) setTransaction(tx *types.EthTransaction, from *common.Address, network types.NetworkNum) {
+func (nt *nonceTracker) setTransaction(tx *types.EthTransaction, from *common.Address, network bxtypes.NetworkNum) {
 	reuseNonceGasChange := new(big.Float).SetFloat64(nt.networkConfig[network].AllowGasPriceChangeReuseSenderNonce)
 	reuseNonceDelay := time.Duration(nt.networkConfig[network].AllowTimeReuseSenderNonce) * time.Second
 
@@ -248,13 +249,13 @@ func (nt *nonceTracker) setTransaction(tx *types.EthTransaction, from *common.Ad
 }
 
 // isReuseNonceActive returns whether reuse nonce tracking is active
-func (nt nonceTracker) isReuseNonceActive(networkNum types.NetworkNum) bool {
+func (nt nonceTracker) isReuseNonceActive(networkNum bxtypes.NetworkNum) bool {
 	config := nt.networkConfig[networkNum]
 	return config != nil && config.EnableCheckSenderNonce
 }
 
 // track returns whether the tx is the newest from its address, and if it should be considered a duplicate
-func (nt *nonceTracker) track(tx *types.EthTransaction, network types.NetworkNum) (bool, *types.SHA256Hash, error) {
+func (nt *nonceTracker) track(tx *types.EthTransaction, network bxtypes.NetworkNum) (bool, *types.SHA256Hash, error) {
 	from, err := tx.From()
 	if err != nil {
 		return false, nil, err

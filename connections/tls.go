@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
@@ -30,9 +30,9 @@ type MockTLS struct {
 	ip           string
 	netIP        net.IP
 	port         int
-	nodeID       types.NodeID
-	nodeType     utils.NodeType
-	accountID    types.AccountID
+	nodeID       bxtypes.NodeID
+	nodeType     bxtypes.NodeType
+	accountID    bxtypes.AccountID
 	queuedBytes  chan MockBytes
 	sendingBytes chan []byte
 	buf          bytes.Buffer
@@ -41,7 +41,7 @@ type MockTLS struct {
 }
 
 // NewMockTLS constructs a new mock for testing
-func NewMockTLS(ip string, port int64, nodeID types.NodeID, nodeType utils.NodeType, accountID types.AccountID) *MockTLS {
+func NewMockTLS(ip string, port int64, nodeID bxtypes.NodeID, nodeType bxtypes.NodeType, accountID bxtypes.AccountID) *MockTLS {
 	split := strings.Split(ip, ".")
 	ipBytes := make([]byte, len(split))
 	for i, part := range split {

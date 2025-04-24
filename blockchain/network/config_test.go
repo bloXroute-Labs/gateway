@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/bloXroute-Labs/gateway/v2"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 var (
@@ -21,7 +22,7 @@ var (
 func TestMultiEthWSURIParse(t *testing.T) {
 	input, enodes := generateMultiEthWSURIInput(3)
 	config := EthConfig{}
-	err := config.parseMultiNode(input, bxgateway.Mainnet)
+	err := config.parseMultiNode(input, bxtypes.Mainnet)
 	assert.NoError(t, err)
 	peerInfo := config.StaticPeers
 	assert.Equal(t, len(peerInfo), 3)
@@ -93,7 +94,7 @@ func TestMultiNode(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			config := EthConfig{}
-			err := config.parseMultiNode(tc.Multinode, bxgateway.Mainnet)
+			err := config.parseMultiNode(tc.Multinode, bxtypes.Mainnet)
 			peerInfo := config.StaticPeers
 			if tc.ErrorContains != "" {
 				assert.ErrorContains(t, err, tc.ErrorContains)

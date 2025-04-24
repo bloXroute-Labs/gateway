@@ -9,13 +9,14 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/bloXroute-Labs/gateway/v2"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	pbbase "github.com/bloXroute-Labs/gateway/v2/protobuf"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 )
 
 const (
@@ -27,7 +28,7 @@ const (
 
 // BxTxStore represents the storage of transaction info for a given node
 type BxTxStore struct {
-	clock         utils.Clock
+	clock         clock.Clock
 	networkConfig sdnmessage.BlockchainNetworks
 
 	hashToContent              *syncmap.SyncMap[string, *types.BxTransaction]
@@ -53,10 +54,10 @@ func NewBxTxStore(cleanupFreq time.Duration, networkConfig sdnmessage.Blockchain
 	timeToAvoidReEntry time.Duration, bloom BloomFilter, blobCompressorStorage BlobCompressorStorage,
 	blobsCleanerEnabled bool,
 ) BxTxStore {
-	return newBxTxStore(utils.RealClock{}, networkConfig, cleanupFreq, noSIDAge, assigner, seenTxs, cleanedShortIDsChannel, timeToAvoidReEntry, bloom, blobCompressorStorage, blobsCleanerEnabled)
+	return newBxTxStore(clock.RealClock{}, networkConfig, cleanupFreq, noSIDAge, assigner, seenTxs, cleanedShortIDsChannel, timeToAvoidReEntry, bloom, blobCompressorStorage, blobsCleanerEnabled)
 }
 
-func newBxTxStore(clock utils.Clock, networkConfig sdnmessage.BlockchainNetworks, cleanupFreq time.Duration,
+func newBxTxStore(clock clock.Clock, networkConfig sdnmessage.BlockchainNetworks, cleanupFreq time.Duration,
 	noSIDAge time.Duration, assigner ShortIDAssigner, seenTxs HashHistory, cleanedShortIDsChannel chan types.ShortIDsByNetwork,
 	timeToAvoidReEntry time.Duration, bloom BloomFilter, blobCompressorStorage BlobCompressorStorage,
 	blobsCleanerEnabled bool,
@@ -234,7 +235,7 @@ func (t *BxTxStore) Iter() (iter <-chan *types.BxTransaction) {
 }
 
 // Add adds a new transaction to BxTxStore
-func (t *BxTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID types.ShortID, networkNum types.NetworkNum,
+func (t *BxTxStore) Add(hash types.SHA256Hash, content types.TxContent, shortID types.ShortID, networkNum bxtypes.NetworkNum,
 	_ bool, flags types.TxFlags, timestamp time.Time, _ int64, sender types.Sender,
 ) types.TransactionResult {
 	if shortID == types.ShortIDEmpty && len(content) == 0 {
@@ -301,7 +302,7 @@ type networkData struct {
 func (t *BxTxStore) clean() (cleaned int, cleanedShortIDs types.ShortIDsByNetwork) {
 	currTime := t.clock.Now()
 
-	networks := make(map[types.NetworkNum]*networkData)
+	networks := make(map[bxtypes.NetworkNum]*networkData)
 	cleanedShortIDs = make(types.ShortIDsByNetwork)
 
 	t.hashToContent.Range(func(key string, bxTransaction *types.BxTransaction) bool {
@@ -425,7 +426,7 @@ func (t *BxTxStore) HasContent(hash types.SHA256Hash) bool {
 
 // Summarize returns some info about the tx service
 func (t *BxTxStore) Summarize() *pbbase.TxStoreReply {
-	networks := make(map[types.NetworkNum]*pbbase.TxStoreNetworkData)
+	networks := make(map[bxtypes.NetworkNum]*pbbase.TxStoreNetworkData)
 	res := pbbase.TxStoreReply{
 		TxCount:      uint64(t.hashToContent.Size()),
 		ShortIdCount: uint64(t.shortIDToHash.Size()),
@@ -464,7 +465,7 @@ func (t *BxTxStore) Summarize() *pbbase.TxStoreReply {
 	return &res
 }
 
-func (t *BxTxStore) getBlobTxCleaner(networkNum types.NetworkNum) *TxSizeCleaner {
+func (t *BxTxStore) getBlobTxCleaner(networkNum bxtypes.NetworkNum) *TxSizeCleaner {
 	cleaner, _ := t.blobTxSizeCleanerByNetwork.LoadOrStore(uint32(networkNum), NewTxSizeCleaner(fmt.Sprintf("blobs cleaner %d network", networkNum), t.totalMaxBlobTxSize(networkNum), blobTxCleanCoef, func(hashes *types.SHA256HashList) {
 		shortIDs := t.RemoveHashes(hashes, FullReEntryProtection, "blob storage out of space")
 
@@ -476,7 +477,7 @@ func (t *BxTxStore) getBlobTxCleaner(networkNum types.NetworkNum) *TxSizeCleaner
 	return cleaner
 }
 
-func (t *BxTxStore) totalMaxBlobTxSize(networkNum types.NetworkNum) uint64 {
+func (t *BxTxStore) totalMaxBlobTxSize(networkNum bxtypes.NetworkNum) uint64 {
 	network, ok := t.networkConfig[networkNum]
 	if !ok {
 		return defaultMaxTotalBlobTxSizeBytes
@@ -497,7 +498,7 @@ func (t *BxTxStore) refreshSeenTx(hash types.SHA256Hash) bool {
 	return false
 }
 
-func (t *BxTxStore) maxTxAge(networkNum types.NetworkNum) time.Duration {
+func (t *BxTxStore) maxTxAge(networkNum bxtypes.NetworkNum) time.Duration {
 	config := t.networkConfig[networkNum]
 	if config == nil || config.MaxTxAgeSeconds == 0 {
 		return defaultMaxTxAge

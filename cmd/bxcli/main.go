@@ -14,17 +14,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bloXroute-Labs/bxcommon-go/cert"
+	bxcli "github.com/bloXroute-Labs/bxcommon-go/cli"
+	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/urfave/cli/v2"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
 	"github.com/bloXroute-Labs/gateway/v2/config"
-	"github.com/bloXroute-Labs/gateway/v2/connections"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/rpc"
-	"github.com/bloXroute-Labs/gateway/v2/sdnmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
@@ -389,11 +391,11 @@ func extractHeaderFromCerts() (string, error) {
 	gatewayEnv.DataDir = path.Join(gatewayEnv.DataDir, env, port)
 
 	privateCertDir := path.Join(gatewayEnv.DataDir, "ssl")
-	privateCertFile, privateKeyFile, registrationOnlyCertFile, registrationOnlyKeyFile := utils.GetCertDir(gatewayEnv.RegistrationCertDir, privateCertDir, nodeType)
-	sslCerts := utils.NewSSLCertsFromFiles(privateCertFile, privateKeyFile, registrationOnlyCertFile, registrationOnlyKeyFile)
+	privateCertFile, privateKeyFile, registrationOnlyCertFile, registrationOnlyKeyFile := cert.GetCertDir(gatewayEnv.RegistrationCertDir, privateCertDir, nodeType)
+	sslCerts := cert.NewSSLCertsFromFiles(privateCertFile, privateKeyFile, registrationOnlyCertFile, registrationOnlyKeyFile)
 
 	// IP is set to dummy because we don't care about nodeModel, and we want to avoid the call to determine it
-	sdn := connections.NewSDNHTTP(&sslCerts, gatewayEnv.SDNURL, sdnmessage.NodeModel{ExternalIP: "dummy"}, gatewayEnv.DataDir)
+	sdn := sdnsdk.NewSDNHTTP(&sslCerts, gatewayEnv.SDNURL, sdnmessage.NodeModel{ExternalIP: "dummy"}, gatewayEnv.DataDir)
 
 	accountID, err := sslCerts.GetAccountID()
 	if err != nil {
@@ -434,7 +436,7 @@ func readGatewayArgs() (map[string]string, error) {
 		return nil, fmt.Errorf("no gateway processes are running")
 	}
 
-	return utils.ExtractArgsToMap(lines[0]), nil
+	return bxcli.ExtractArgsToMap(lines[0]), nil
 }
 
 func removeEmptyLines(s []string) []string {

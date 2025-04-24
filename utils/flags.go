@@ -412,11 +412,6 @@ var (
 		Usage:    "Database DSN string <username:password@tcp(dns:port)/schema>",
 		Required: true,
 	}
-	ELKFlag = &cli.StringFlag{
-		Name:     "elk",
-		Usage:    "elk <url,username,password>",
-		Required: true,
-	}
 	BloxrouteAccountsFlag = &cli.StringFlag{
 		Name:  "bloxroute-accounts",
 		Usage: "enable detailed bundle trace response for these accounts",

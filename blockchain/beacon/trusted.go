@@ -5,7 +5,7 @@ import (
 	"os"
 	"sync"
 
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/libp2p/go-libp2p/core/network"
 	libp2pPeer "github.com/libp2p/go-libp2p/core/peer"

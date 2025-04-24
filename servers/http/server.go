@@ -10,12 +10,14 @@ import (
 
 	"github.com/sourcegraph/jsonrpc2"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 var errSubmitBundleInvalidPayload = errors.New("params is missing in the request")
@@ -23,14 +25,14 @@ var errSubmitBundleInvalidPayload = errors.New("params is missing in the request
 // Server handler http calls
 type Server struct {
 	server      *http.Server
-	sdn         connections.SDNHTTP
+	sdn         sdnsdk.SDNHTTP
 	node        connections.BxListener
 	feedManager *feed.Manager
 	port        int
 }
 
 // NewServer creates and returns a new websocket server managed by feedManager
-func NewServer(node connections.BxListener, feedManager *feed.Manager, port int, sdn connections.SDNHTTP) *Server {
+func NewServer(node connections.BxListener, feedManager *feed.Manager, port int, sdn sdnsdk.SDNHTTP) *Server {
 	return &Server{
 		port:        port,
 		node:        node,
@@ -135,7 +137,7 @@ func (s *Server) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRPCBundleSubmission(w http.ResponseWriter, r *http.Request, rpcRequest jsonrpc2.Request, payload jsonrpc.RPCBundleSubmissionPayload) {
-	ws := connections.NewRPCConn(s.sdn.AccountModel().AccountID, r.RemoteAddr, s.sdn.NetworkNum(), utils.Websocket)
+	ws := connections.NewRPCConn(s.sdn.AccountModel().AccountID, r.RemoteAddr, s.sdn.NetworkNum(), bxtypes.Websocket)
 	result, errCode, err := handler.HandleMEVBundle(s.node, ws, s.sdn.AccountModel(), &payload)
 	if err != nil {
 		if errors.Is(err, handler.ErrBundleAccountTierTooLow) {

@@ -10,19 +10,21 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rlp"
 
-	"github.com/bloXroute-Labs/gateway/v2"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
+
 	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/bloXroute-Labs/gateway/v2/utils/syncmap"
 )
 
 // UpgradeStatusMsg is a message overloaded in eth/66
@@ -56,7 +58,7 @@ type Peer struct {
 	version  uint
 	chainID  uint64
 	endpoint types.NodeEndpoint
-	clock    utils.Clock
+	clock    clock.Clock
 	ctx      context.Context
 	cancel   context.CancelFunc
 	log      *log.Entry
@@ -79,10 +81,10 @@ type Peer struct {
 
 // NewPeer returns a wrapped Ethereum peer
 func NewPeer(ctx context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version uint, chainID uint64) *Peer {
-	return newPeer(ctx, p, rw, version, utils.RealClock{}, chainID)
+	return newPeer(ctx, p, rw, version, clock.RealClock{}, chainID)
 }
 
-func newPeer(parent context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version uint, clock utils.Clock, chainID uint64) *Peer {
+func newPeer(parent context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version uint, clock clock.Clock, chainID uint64) *Peer {
 	ctx, cancel := context.WithCancel(parent)
 	peer := &Peer{
 		p:                    p,
@@ -707,7 +709,7 @@ func (ep *Peer) RequestBlockHeaderRaw(origin eth.HashOrNumber, amount, skip uint
 
 func (ep *Peer) sendNewBlock(packet *NewBlockPacket) error {
 	// For BSC, the timestamp in block header is an expected time provided by the validator, but sometimes it arrives at BDN before the timestamp provided
-	if ep.chainID == bxgateway.BSCChainID {
+	if ep.chainID == bxtypes.BSCChainID {
 		// delay if the header timestamp is later than the system timestamp
 		blockHeaderTimestamp := int64(packet.Block.Time()) * time.Second.Nanoseconds()
 		currentTimestamp := ep.clock.Now().UnixNano()

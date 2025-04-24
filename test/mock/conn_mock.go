@@ -5,6 +5,7 @@
 //
 //	mockgen -destination ../test/mock/conn_mock.go -package mock . Conn
 //
+
 // Package mock is a generated GoMock package.
 package mock
 
@@ -12,11 +13,11 @@ import (
 	reflect "reflect"
 	time "time"
 
+	logger "github.com/bloXroute-Labs/bxcommon-go/logger"
+	types "github.com/bloXroute-Labs/bxcommon-go/types"
 	bxmessage "github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	connections "github.com/bloXroute-Labs/gateway/v2/connections"
-	logger "github.com/bloXroute-Labs/gateway/v2/logger"
-	types "github.com/bloXroute-Labs/gateway/v2/types"
-	utils "github.com/bloXroute-Labs/gateway/v2/utils"
+	types0 "github.com/bloXroute-Labs/gateway/v2/types"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -98,10 +99,10 @@ func (mr *MockConnMockRecorder) GetAccountID() *gomock.Call {
 }
 
 // GetCapabilities mocks base method.
-func (m *MockConn) GetCapabilities() types.CapabilityFlags {
+func (m *MockConn) GetCapabilities() types0.CapabilityFlags {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetCapabilities")
-	ret0, _ := ret[0].(types.CapabilityFlags)
+	ret0, _ := ret[0].(types0.CapabilityFlags)
 	return ret0
 }
 
@@ -140,10 +141,10 @@ func (mr *MockConnMockRecorder) GetConnectionState() *gomock.Call {
 }
 
 // GetConnectionType mocks base method.
-func (m *MockConn) GetConnectionType() utils.NodeType {
+func (m *MockConn) GetConnectionType() types.NodeType {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetConnectionType")
-	ret0, _ := ret[0].(utils.NodeType)
+	ret0, _ := ret[0].(types.NodeType)
 	return ret0
 }
 

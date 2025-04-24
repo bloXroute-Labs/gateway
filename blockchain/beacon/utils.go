@@ -17,11 +17,11 @@ import (
 	"github.com/prysmaticlabs/prysm/v5/network/forks"
 	"github.com/prysmaticlabs/prysm/v5/time/slots"
 
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	"github.com/bloXroute-Labs/bxcommon-go/logger"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
-	"github.com/bloXroute-Labs/gateway/v2/logger"
-	log "github.com/bloXroute-Labs/gateway/v2/logger"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 const confirmationDelay = 4 * time.Second
@@ -45,7 +45,7 @@ func (b *WrappedReadOnlySignedBeaconBlock) HashTreeRoot() (common.Hash, error) {
 	if b.hash == nil {
 		rawHash, err := b.Block.Block().HashTreeRoot()
 		if err != nil {
-			log.Errorf("error extracting block hash from block: %v", err)
+			logger.Errorf("error extracting block hash from block: %v", err)
 			return common.Hash{}, err
 		}
 		blockHash := common.Hash(rawHash)
@@ -56,7 +56,7 @@ func (b *WrappedReadOnlySignedBeaconBlock) HashTreeRoot() (common.Hash, error) {
 
 // SendBlockToBDN converts block to BxBlock, sends it to the bridge and starts a timer to send a confirmation after 4-seconds
 // confirmation is needed to clean up the hash history.
-func SendBlockToBDN(clock utils.Clock, log *logger.Entry, block WrappedReadOnlySignedBeaconBlock, bridge blockchain.Bridge, endpoint types.NodeEndpoint) error {
+func SendBlockToBDN(clock clock.Clock, log *logger.Entry, block WrappedReadOnlySignedBeaconBlock, bridge blockchain.Bridge, endpoint types.NodeEndpoint) error {
 	bdnBeaconBlock, err := bridge.BlockBlockchainToBDN(block)
 	if err != nil {
 		return fmt.Errorf("could not convert beacon block: %v", err)
