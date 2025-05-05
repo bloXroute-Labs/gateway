@@ -4,8 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 func TestPackUnpackTimeStamp(t *testing.T) {
@@ -27,7 +28,6 @@ func TestPackUnpackTimeStamp(t *testing.T) {
 	err = syncTxs2.Unpack(buf, CurrentProtocol)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(syncTxs2.ContentShortIds))
-	//log.Info(syncTxs2.ContentShortIds[0].Timestamp().Second())
 	assert.Equal(t, tx1.AddTime().Second(), syncTxs2.ContentShortIds[0].Timestamp().Second())
 	assert.Equal(t, time.Unix(0, 0).Second(), syncTxs2.ContentShortIds[1].Timestamp().Second())
 

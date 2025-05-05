@@ -6,11 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/test"
-	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/bloXroute-Labs/gateway/v2/test"
+	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
 )
 
 func ethTransaction(hashString string, txString string) (SHA256Hash, EthTransaction, *BxTransaction, error) {
@@ -34,6 +35,7 @@ func ethTransaction(hashString string, txString string) (SHA256Hash, EthTransact
 
 	return hash, *blockchainTx.(*EthTransaction), tx, nil
 }
+
 func TestBigValueTransacrtion(t *testing.T) {
 	hash, ethTx, _, err := ethTransaction(fixtures.BigValueTransactionHashBSC, fixtures.BigValueTransactionBSC)
 	assert.NoError(t, err)

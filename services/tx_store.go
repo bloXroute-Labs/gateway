@@ -4,6 +4,7 @@ import (
 	"time"
 
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	pbbase "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )

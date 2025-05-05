@@ -236,7 +236,7 @@ func (h *handlerObj) handleEthSubscribeFeed(ctx context.Context, feedType string
 	}
 }
 
-// sendTxNotificationEthSubscribeFormat - build a response according to client request and notify client
+// sendTxNotificationEthFormat builds a response according to client request and notifies the client
 func (h *handlerObj) sendTxNotificationEthFormat(ctx context.Context, subscriptionID string, clientReq *ClientReq, conn *jsonrpc2.Conn, tx *types.NewTransactionNotification) error {
 	result := filterAndIncludeTx(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
 	if result == nil {
@@ -256,7 +256,7 @@ func (h *handlerObj) sendTxNotificationEthFormat(ctx context.Context, subscripti
 	return nil
 }
 
-// sendTxNotificationEthSubscribeFormat - build a response according to client request and notify client
+// sendEthSubscribeNotification builds a response according to client request and notifies the client
 func (h *handlerObj) sendEthSubscribeNotification(ctx context.Context, subscriptionID string, conn *jsonrpc2.Conn, payload interface{}) error {
 	response := EthSubscribeFeedResponse{
 		Subscription: subscriptionID,

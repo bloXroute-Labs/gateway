@@ -1,13 +1,15 @@
 package eth
 
 import (
+	"errors"
 	"fmt"
 	"math"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
+
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 )
 
 func handleGetBlockHeaders(backend Backend, msg Decoder, peer *Peer) error {
@@ -17,7 +19,7 @@ func handleGetBlockHeaders(backend Backend, msg Decoder, peer *Peer) error {
 	}
 
 	headers, err := answerGetBlockHeaders(backend, &query, peer)
-	if err == ErrAncientHeaders {
+	if errors.Is(err, ErrAncientHeaders) {
 		go func() {
 			peer.Log().Debugf("requested (id: %v) ancient headers, fetching result from blockchain node: %v", query.RequestId, query)
 			headerCh := make(chan eth.Packet)
@@ -56,9 +58,9 @@ func answerGetBlockHeaders(backend Backend, query *eth.GetBlockHeadersPacket, pe
 	headers, err := backend.GetHeaders(query.Origin, int(query.Amount), int(query.Skip), query.Reverse)
 
 	switch {
-	case err == ErrInvalidRequest || err == ErrAncientHeaders:
+	case errors.Is(err, ErrInvalidRequest) || errors.Is(err, ErrAncientHeaders):
 		return nil, err
-	case err == ErrFutureHeaders:
+	case errors.Is(err, ErrFutureHeaders):
 		return []*ethtypes.Header{}, nil
 	case err != nil:
 		peer.Log().Warnf("could not retrieve all %v headers starting at %v, err: %v", int(query.Amount), query.Origin, err)
@@ -84,7 +86,7 @@ func handleGetBlockBodies(backend Backend, msg Decoder, peer *Peer) error {
 
 func answerGetBlockBodies(backend Backend, query eth.GetBlockBodiesPacket) ([]*BlockBody, error) {
 	bodies, err := backend.GetBodies(query.GetBlockBodiesRequest)
-	if err == ErrBodyNotFound {
+	if errors.Is(err, ErrBodyNotFound) {
 		log.Debugf("could not find all block bodies: %v", query)
 		return []*BlockBody{}, nil
 	} else if err != nil {

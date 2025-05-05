@@ -5,8 +5,9 @@ import (
 	"time"
 
 	"github.com/bloXroute-Labs/bxcommon-go/clock"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 func TestBlockHistory_Set_Get(t *testing.T) {

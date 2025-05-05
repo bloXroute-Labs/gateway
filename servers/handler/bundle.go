@@ -10,7 +10,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/sourcegraph/jsonrpc2"
 	"golang.org/x/crypto/sha3"
 
@@ -21,6 +20,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/ofac"
 )
@@ -112,7 +112,12 @@ func ParseRawTransactionGroup(transactions []string, trimTxHashPrefix bool, chai
 			return nil, fmt.Errorf("unable to parse %d transaction error: %v", i, err)
 		}
 
-		_, err = ethtypes.NewPragueSigner(big.NewInt(chainID)).Sender(transaction)
+		signer, err := types.NewPragueSigner(big.NewInt(chainID))
+		if err != nil {
+			return nil, err
+		}
+
+		_, err = signer.Sender(transaction)
 		if err != nil {
 			return nil, err
 		}

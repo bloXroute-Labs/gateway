@@ -68,7 +68,7 @@ func (s *wsSuite) TestBlxrTxRequestDynamicFeeTx() {
 	msg := s.writeMsgToWsAndReadResponse([]byte(reqPayload), nil)
 	clientRes := s.getClientResponse(msg)
 	res := s.parseBlxrTxResult(clientRes.Result)
-	s.Assert().Equal(fixtures.DynamicFeeTransactionHash[2:], res.TxHash)
+	s.Assert().Equal(fixtures.DynamicFeeTransactionForRPCInterfaceHash[2:], res.TxHash)
 }
 
 func (s *wsSuite) TestBlxrTxRequestTxWithPrefix() {
@@ -76,7 +76,7 @@ func (s *wsSuite) TestBlxrTxRequestTxWithPrefix() {
 	msg := s.writeMsgToWsAndReadResponse([]byte(reqPayload), nil)
 	clientRes := s.getClientResponse(msg)
 	res := s.parseBlxrTxResult(clientRes.Result)
-	s.Assert().Equal(fixtures.DynamicFeeTransactionHash[2:], res.TxHash)
+	s.Assert().Equal(fixtures.DynamicFeeTransactionForRPCInterfaceHash[2:], res.TxHash)
 }
 
 func (s *wsSuite) TestBlxrTxRequestWithNextValidator() {

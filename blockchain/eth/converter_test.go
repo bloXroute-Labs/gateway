@@ -5,11 +5,11 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v6/consensus-types/interfaces"
+	eth "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 	"github.com/stretchr/testify/require"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bdn"
@@ -19,14 +19,11 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
-var (
-	BSCBlobSidecars    bxethcommon.BlobSidecars
-	BSCBlobSidecarsRLP []byte
-)
+var BSCBlobSidecars bxethcommon.BlobSidecars
 
 func init() {
 	var err error
-	BSCBlobSidecarsRLP, BSCBlobSidecars, err = bxethcommon.ReadMockBSCBlobSidecars()
+	BSCBlobSidecars, err = bxethcommon.ReadMockBSCBlobSidecars()
 	if err != nil {
 		log.Fatalf("Failed to read BSC blob sidecars: %v", err)
 	}

@@ -52,6 +52,10 @@ func TestMultiNode(t *testing.T) {
 			Multinode: "multiaddr:/ip4/44.200.181.201/tcp/13000/p2p/16Uiu2HAm9VsYAuES1krVUZFQG8JmokMhxeRzvN1wMhB9jWeUouT8+prysm://1.1.1.1:1000",
 		},
 		{
+			Name:      "valid QUIC multiaddr",
+			Multinode: "multiaddr:/ip4/172.18.0.2/udp/13000/quic-v1/p2p/16Uiu2HAm9VsYAuES1krVUZFQG8JmokMhxeRzvN1wMhB9jWeUouT8",
+		},
+		{
 			Name:      "valid DNS multiaddr",
 			Multinode: "multiaddr:/dns/localhost/tcp/13000/p2p/16Uiu2HAm9VsYAuES1krVUZFQG8JmokMhxeRzvN1wMhB9jWeUouT8+prysm://1.1.1.1:1000",
 		},
@@ -68,11 +72,6 @@ func TestMultiNode(t *testing.T) {
 			Name:          "duplicated beacon api endpoints",
 			Multinode:     "beacon-api://127.0.0.1:8080,beacon-api://127.0.0.1:8080",
 			ErrorContains: "duplicated beacon-api argument after 1 comma",
-		},
-		{
-			Name:          "reject multiaddr without TCP",
-			Multinode:     "multiaddr:/ip4/44.200.181.201/udp/13000/p2p/16Uiu2HAm9VsYAuES1krVUZFQG8JmokMhxeRzvN1wMhB9jWeUouT8",
-			ErrorContains: "invalid multiaddr argument after 0",
 		},
 		{
 			Name:          "reject unknown scheme",

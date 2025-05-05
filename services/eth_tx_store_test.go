@@ -18,6 +18,7 @@ import (
 
 	"github.com/bloXroute-Labs/bxcommon-go/clock"
 	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
@@ -387,8 +388,13 @@ func newEthTransaction(nonce uint64, gasFee, gasTip int64) (*types.EthTransactio
 		AccessList: nil,
 	})
 
+	signer, err := types.NewPragueSigner(rawTx.ChainId())
+	if err != nil {
+		return nil, err
+	}
+
 	// Sign the transaction with same private key
-	signedTx, err := ethtypes.SignTx(rawTx, ethtypes.NewPragueSigner(rawTx.ChainId()), privateKey)
+	signedTx, err := ethtypes.SignTx(rawTx, signer, privateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -415,8 +421,13 @@ func newBlobTypeTransaction(nonce uint64, gasFee, gasTip, blobFeeCap uint64) (*t
 		},
 	})
 
+	signer, err := types.NewPragueSigner(rawTx.ChainId())
+	if err != nil {
+		return nil, err
+	}
+
 	// Sign the transaction with same private key
-	signedTx, err := ethtypes.SignTx(rawTx, ethtypes.NewPragueSigner(rawTx.ChainId()), privateKey)
+	signedTx, err := ethtypes.SignTx(rawTx, signer, privateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -453,8 +464,13 @@ func newSetCodeTransaction(nonce uint64, gasFee, gasTip uint64) (*types.EthTrans
 		AuthList:  []ethtypes.SetCodeAuthorization{auth},
 	})
 
+	signer, err := types.NewPragueSigner(rawTx.ChainId())
+	if err != nil {
+		return nil, err
+	}
+
 	// Sign the transaction with same private key
-	signedTx, err := ethtypes.SignTx(rawTx, ethtypes.NewPragueSigner(rawTx.ChainId()), privateKey)
+	signedTx, err := ethtypes.SignTx(rawTx, signer, privateKey)
 	if err != nil {
 		return nil, err
 	}

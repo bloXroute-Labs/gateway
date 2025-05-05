@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/bloXroute-Labs/gateway/v2/test"
 )
 
 var txReceiptMap = map[string]interface{}{

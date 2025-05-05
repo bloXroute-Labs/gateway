@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/bloXroute-Labs/bxcommon-go/clock"
+
 	"github.com/bloXroute-Labs/gateway/v2/test"
 )
 
@@ -139,7 +140,7 @@ func TestBloomFilter_maybeSwitchFilters(t *testing.T) {
 	newCapacity := int(cap) + overflow
 	hashes := generateHashes(newCapacity)
 	workers := 10
-	part := int(newCapacity / workers)
+	part := newCapacity / workers
 
 	wg := &sync.WaitGroup{}
 	for i := 0; i < workers; i++ {

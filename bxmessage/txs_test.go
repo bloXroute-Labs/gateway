@@ -4,10 +4,11 @@ import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestTxs_PackUnpack(t *testing.T) {

@@ -66,7 +66,7 @@ func newEthereumMainnetConfig() EthConfig {
 		IgnoreBlockTimeout:      150 * time.Second,
 		IgnoreSlotCount:         10,
 		BootstrapNodes:          bootNodes,
-		ProgramName:             "Geth/v1.10.21-stable-67109427/linux-amd64/go1.18.4",
+		ProgramName:             "Geth/v1.15.5-stable-4263936/linux-amd64/go1.24.1",
 	}
 }
 
@@ -174,7 +174,7 @@ func newHoleskyConfig() EthConfig {
 		IgnoreBlockTimeout:      30 * time.Second,
 		BootstrapNodes:          bootNodes,
 		IgnoreSlotCount:         10,
-		ProgramName:             "Geth/v1.13.11-stable-8f7eb9cc/linux-amd64/go1.21.0",
+		ProgramName:             "Geth/v1.15.5-stable-4263936/linux-amd64/go1.24.1",
 	}
 }
 

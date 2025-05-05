@@ -15,6 +15,7 @@ import (
 	uuid "github.com/satori/go.uuid"
 
 	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 

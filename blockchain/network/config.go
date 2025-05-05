@@ -13,14 +13,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/multiformats/go-multiaddr"
-	"github.com/urfave/cli/v2"
-
+	ecdsaprysm "github.com/OffchainLabs/prysm/v6/crypto/ecdsa"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	libp2pPeer "github.com/libp2p/go-libp2p/core/peer"
-	ecdsaprysm "github.com/prysmaticlabs/prysm/v5/crypto/ecdsa"
+	"github.com/multiformats/go-multiaddr"
+	"github.com/urfave/cli/v2"
 
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
@@ -41,7 +40,6 @@ type EthConfig struct {
 	StaticPeers    StaticPeers
 	BootstrapNodes []*enode.Node
 	PrivateKey     *ecdsa.PrivateKey
-	Port           int
 
 	ProgramName             string
 	Network                 uint64
@@ -131,7 +129,7 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 				}
 
 				peer.Multiaddr = &multiAddr
-				peer.Endpoint = utils.MultiaddrToNodeEndoint(multiAddr, blockchainNetwork)
+				peer.Endpoint = utils.MultiaddrToNodeEndpoint(multiAddr, blockchainNetwork)
 			} else if ctx.IsSet(utils.BeaconMultiaddrFlag.Name) {
 				multiAddr, err := multiaddrFromStr(ctx.String(utils.BeaconMultiaddrFlag.Name))
 				if err != nil {
@@ -139,7 +137,7 @@ func NewPresetEthConfigFromCLI(ctx *cli.Context, dataDir string) (*EthConfig, st
 				}
 
 				peer.Multiaddr = &multiAddr
-				peer.Endpoint = utils.MultiaddrToNodeEndoint(multiAddr, blockchainNetwork)
+				peer.Endpoint = utils.MultiaddrToNodeEndpoint(multiAddr, blockchainNetwork)
 			}
 
 			preset.StaticPeers = append(preset.StaticPeers, peer)
@@ -273,7 +271,7 @@ func (ec *EthConfig) parseMultiNode(multiNodeStr string, blockchainNetwork strin
 
 				ec.StaticPeers = append(ec.StaticPeers, PeerInfo{
 					Multiaddr: &multiaddr,
-					Endpoint:  utils.MultiaddrToNodeEndoint(multiaddr, blockchainNetwork),
+					Endpoint:  utils.MultiaddrToNodeEndpoint(multiaddr, blockchainNetwork),
 				})
 			case "multiaddr":
 				if combinedPeer != nil {
@@ -287,7 +285,7 @@ func (ec *EthConfig) parseMultiNode(multiNodeStr string, blockchainNetwork strin
 
 				ec.StaticPeers = append(ec.StaticPeers, PeerInfo{
 					Multiaddr: &multiaddr,
-					Endpoint:  utils.MultiaddrToNodeEndoint(multiaddr, blockchainNetwork),
+					Endpoint:  utils.MultiaddrToNodeEndpoint(multiaddr, blockchainNetwork),
 				})
 			case "enode":
 				if combinedPeer != nil {
@@ -456,11 +454,13 @@ func validateMultiaddr(multiAddr multiaddr.Multiaddr) error {
 		case multiaddr.P_DNS:
 			dns = c.Value()
 			return true
-		case multiaddr.P_TCP:
+		case multiaddr.P_TCP, multiaddr.P_UDP:
 			port = c.Value()
 			return true
 		case multiaddr.P_P2P:
 			pubKey = c.Value()
+			return true
+		case multiaddr.P_QUIC, multiaddr.P_QUIC_V1:
 			return true
 		}
 
@@ -479,7 +479,7 @@ func validateMultiaddr(multiAddr multiaddr.Multiaddr) error {
 	}
 
 	if port == "" {
-		return errors.New("TCP port is missing")
+		return errors.New("TCP or UDP port is missing")
 	}
 
 	if pubKey == "" {

@@ -33,9 +33,11 @@ You can choose either to either run locally or [Docker] (recommended). Refer to
 
 ## Building the source
 
-Building gateway requires a Go (version 1.15 or later). You can install them using your favourite package manager. Once the dependencies are installed, run
+Building gateway requires a Go (version 1.24 or later). Once the Go environment is set up, you can build the gateway by running:
 
+```bash
 make gateway
+```
 
 ## Contributing
 
@@ -52,7 +54,7 @@ Contact us at [our Discord] for further questions.
 
 
 [white paper]: https://bloxroute.com/wp-content/uploads/2019/01/whitepaper-V1.1-1.pdf
-[docker]: https://www.docker.com
+[Docker]: https://www.docker.com
 [install]: https://docs.bloxroute.com/gateway
 [documentation]: https://docs.bloxroute.com/
 [our Discord]: https://discord.gg/jHgpN8b

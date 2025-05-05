@@ -6,8 +6,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	ethpb "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
 	libp2pPeer "github.com/libp2p/go-libp2p/core/peer"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
 
 type peers struct {

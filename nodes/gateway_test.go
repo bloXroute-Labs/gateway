@@ -45,8 +45,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/test/mock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/bloXroute-Labs/gateway/v2/utils/utilmock"
 )
 
 var (
@@ -61,7 +59,6 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 		BlockchainNetworkNum: networkNum,
 		ExternalIP:           "172.0.0.1",
 	}
-	utils.IPResolverHolder = &utilmock.MockIPResolver{IP: "11.111.111.111"}
 	ctl := gomock.NewController(t)
 	sdn := mock.NewMockSDNHTTP(ctl)
 	sdn.EXPECT().NodeID().Return(bxtypes.NodeID("node_id")).AnyTimes()
@@ -111,7 +108,6 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 			false),
 		beacon.NewBlobSidecarCacheManager(1606824023),
 		blockchainPeers,
-		blockchainPeersInfo,
 		make(map[string]struct{}),
 		"",
 		sdn,
@@ -151,7 +147,7 @@ func addRelayConn(g *gateway) (*connections.MockTLS, *handler.Relay) {
 		func() (connections.Socket, error) {
 			return mockTLS, nil
 		},
-		&cert.SSLCerts{}, "1.1.1.1", 1800, "", bxtypes.RelayProxy, true, g.sdn.Networks(), true, true, connections.LocalInitiatedPort, clock.RealClock{},
+		&cert.SSLCerts{}, "1.1.1.1", 1800, "", bxtypes.RelayProxy, g.sdn.Networks(), true, true, connections.LocalInitiatedPort, clock.RealClock{},
 		false)
 
 	// set connection as established and ready for broadcast
@@ -1234,7 +1230,8 @@ func TestGateway_Status(t *testing.T) {
 	for _, endpoint := range endpoints {
 		g.bdnStats.NodeStats()[endpoint.IPPort()] = stats[endpoint.IPPort()]
 	}
-	err = g.bridge.SubscribeStatus(false).SendBlockchainStatusResponse(endpoints)
+	bxStatus := blockchain.BxStatus{Endpoints: endpoints}
+	err = g.bridge.SubscribeStatus(false).SendBlockchainStatusResponse(bxStatus)
 	assert.NoError(t, err)
 
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")

@@ -53,7 +53,6 @@ func main() {
 			utils.TxTraceEnabledFlag,
 			utils.TxTraceMaxFileSizeFlag,
 			utils.TxTraceMaxBackupFilesFlag,
-			utils.AvoidPrioritySendingFlag,
 			utils.RelayHostsFlag,
 			utils.DataDirFlag,
 			utils.GRPCFlag,
@@ -99,6 +98,7 @@ func main() {
 			utils.TxIncludeSenderInFeed,
 			utils.BeaconTrustedPeersFileFlag,
 			utils.BeaconPort,
+			utils.EnableQuicFlag,
 		},
 		Action:         runGateway,
 		Before:         config.BeforeFunc,
@@ -211,6 +211,8 @@ func runGateway(c *cli.Context) error {
 			GenesisFilePath:      localGenesisFile,
 			Bridge:               bridge,
 			Port:                 c.Int(utils.BeaconPort.Name),
+			ExternalIP:           sdn.NodeModel().ExternalIP,
+			EnableQUIC:           c.Bool(utils.EnableQuicFlag.Name),
 			InboundLimit:         int(sdn.AccountModel().InboundNodeConnections.MsgQuota.Limit),
 		})
 		if err != nil {
@@ -252,7 +254,6 @@ func runGateway(c *cli.Context) error {
 		wsManager,
 		blobsManager,
 		blockchainPeers,
-		ethConfig.StaticPeers,
 		recommendedPeers,
 		gatewayPublicKey,
 		sdn,

@@ -10,7 +10,6 @@ import (
 
 // BlobCompressorStorage is an interface for storing and retrieving KzgCommitment to TxHash mappings
 type BlobCompressorStorage interface {
-	// AddKzgCommitmentToTxHash adds a mapping from KzgCommitment to TxHash
 	StoreKzgCommitmentToTxHashRecords(eth *ethtypes.Transaction)
 	KzgCommitmentToTxHash(kzgCommitment string) (string, bool)
 	Clear()

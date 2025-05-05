@@ -5,8 +5,9 @@ import (
 	"encoding/hex"
 	"testing"
 
-	utils2 "github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
 	"github.com/stretchr/testify/assert"
+
+	utils2 "github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
 )
 
 func TestSHA256(t *testing.T) {

@@ -61,11 +61,11 @@ type BxConn struct {
 // NewBxConn constructs a connection to a bloxroute node.
 func NewBxConn(node connections.BxListener, connect func() (connections.Socket, error), handler connections.ConnHandler,
 	sslCerts *cert.SSLCerts, ip string, port int64, nodeID bxtypes.NodeID, connectionType bxtypes.NodeType,
-	usePQ bool, logMessages bool, localGEO bool, privateNetwork bool, localPort int64, clock clock.Clock,
+	logMessages bool, localGEO bool, privateNetwork bool, localPort int64, clock clock.Clock,
 	sameRegion bool,
 ) *BxConn {
 	bc := &BxConn{
-		Conn:           connections.NewSSLConnection(connect, sslCerts, ip, port, bxmessage.CurrentProtocol, usePQ, logMessages, bxgateway.MaxConnectionBacklog, clock),
+		Conn:           connections.NewSSLConnection(connect, sslCerts, ip, port, bxmessage.CurrentProtocol, logMessages, bxgateway.MaxConnectionBacklog, clock),
 		Node:           node,
 		Handler:        handler,
 		nodeID:         nodeID,

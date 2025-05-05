@@ -1,10 +1,8 @@
 package concurrent
 
 import (
-	"hash/maphash"
 	"runtime"
 	"time"
-	"unsafe"
 
 	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
 )
@@ -32,25 +30,6 @@ type BatchExecutor[Request comparable, Result any] struct {
 	batchSize      int
 	flushDuration  time.Duration
 	cleanDur       time.Duration
-}
-
-// NewStringBatchExecutor creates a new instance of BatchExecutor with string requests.
-func NewStringBatchExecutor[Result any](executeFunc ExecuteFunc[string, Result], batchSize int, flushDuration time.Duration, cleanDur time.Duration) *BatchExecutor[string, Result] {
-	return NewBatchExecutor(executeFunc, syncmap.StringHasher, batchSize, flushDuration, cleanDur)
-}
-
-// NewIntegerBatchExecutor creates a new instance of BatchExecutor with integer requests.
-func NewIntegerBatchExecutor[Request ~int | ~int8 | ~int16 | ~int32 | ~int64 | ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~uintptr, Result any](processFunc ExecuteFunc[Request, Result], batchSize int, flushDuration time.Duration, ttl time.Duration) *BatchExecutor[Request, Result] {
-	return NewBatchExecutor(processFunc, func(seed maphash.Seed, r Request) uint64 {
-		// TODO: put it somewhere
-		n := uint64(r)
-		// Java's Long standard hash function.
-		n = n ^ (n >> 32)
-		nseed := *(*uint64)(unsafe.Pointer(&seed))
-		// 64-bit variation of boost's hash_combine.
-		nseed ^= n + 0x9e3779b97f4a7c15 + (nseed << 12) + (nseed >> 4)
-		return nseed
-	}, batchSize, flushDuration, ttl)
 }
 
 // NewBatchExecutor creates a new instance of BatchExecutor with the specified

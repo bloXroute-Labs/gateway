@@ -3,8 +3,9 @@ package nodes
 import (
 	"fmt"
 
-	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/urfave/cli/v2"
+
+	"github.com/bloXroute-Labs/gateway/v2/services"
 )
 
 // Node represents the basic node interface

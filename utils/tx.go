@@ -12,21 +12,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
-// ParseRawTransaction parses a raw Ethereum transaction
-func ParseRawTransaction(txBytes []byte) (*ethtypes.Transaction, error) {
-	var ethTx ethtypes.Transaction
-	if err := ethTx.UnmarshalBinary(txBytes); err != nil {
-		// If UnmarshalBinary failed, we will try RLP in case user made mistake
-		e := rlp.DecodeBytes(txBytes, &ethTx)
-		if e != nil {
-			return nil, fmt.Errorf("could not decode Ethereum transaction: %v", err)
-		}
-		log.Warnf("Ethereum transaction was in RLP format instead of binary," +
-			" transaction has been processed anyway, but it'd be best to use the Ethereum binary standard encoding")
-	}
-	return &ethTx, nil
-}
-
 // ParseStringTransaction is a helper function used by blxr_tx and blxr_batch_tx for processing a rawTransaction
 // here it is used with the blxr_submit_bundle method on gateway
 func ParseStringTransaction(tx string) (*ethtypes.Transaction, error) {

@@ -105,129 +105,6 @@ func (g *server) Status(ctx context.Context, req *pb.StatusRequest) (*pb.StatusR
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
 
-	bdnConn := func() map[string]*pb.BDNConnStatus {
-		mp := g.params.connector.Relays()
-
-		if len(mp) == 0 {
-			// set "BDN: NOT_CONNECTED" in case of missing connections to any relay
-			return map[string]*pb.BDNConnStatus{bdn: {Status: connectionStatusNotConnected}}
-		}
-
-		relays := make(map[string]*pb.BDNConnStatus)
-		for ip, relayStatus := range mp {
-			connStatus := &pb.BDNConnStatus{
-				Status:      relayStatus.Status,
-				ConnectedAt: relayStatus.ConnectedAt,
-			}
-			if relayStatus.Latency != nil {
-				connStatus.Latency = &pb.ConnectionLatency{
-					MinMsFromPeer:    relayStatus.Latency.MinMsFromPeer,
-					MinMsToPeer:      relayStatus.Latency.MinMsToPeer,
-					SlowTrafficCount: relayStatus.Latency.SlowTrafficCount,
-					MinMsRoundTrip:   relayStatus.Latency.MinMsRoundTrip,
-				}
-			}
-			relays[ip] = connStatus
-		}
-
-		return relays
-	}
-
-	nodeConn := func() map[string]*pb.NodeConnStatus {
-		if err := g.params.bridge.SendBlockchainStatusRequest(); err != nil {
-			g.log.Errorf("failed to send blockchain status request: %v", err)
-			return nil
-		}
-
-		wsProviders := g.params.wsManager.Providers()
-
-		status, err := g.params.bridge.ReceiveBlockchainStatusResponse()
-		if err != nil {
-			g.log.Errorf("failed to receive blockchain status response: %v", err)
-			return nil
-		}
-
-		mp := make(map[string]*pb.NodeConnStatus)
-		nodeStats := g.params.bdnStats.NodeStats()
-		for _, peer := range status {
-			connStatus := &pb.NodeConnStatus{
-				Dynamic: peer.IsDynamic(),
-				Version: int64(peer.Version),
-				Name:    peer.Name,
-			}
-
-			nstat, ok := nodeStats[peer.IPPort()]
-			if ok {
-				connStatus.IsConnected = nstat.IsConnected
-				connStatus.ConnectedAt = peer.ConnectedAt
-				if peer.IsBeacon {
-					connStatus.PeerId = peer.ID
-				}
-				connStatus.NodePerformance = &pb.NodePerformance{
-					Since:                                   g.params.bdnStats.StartTime().Format(time.RFC3339),
-					NewBlocksReceivedFromBlockchainNode:     uint32(nstat.NewBlocksReceivedFromBlockchainNode),
-					NewBlocksReceivedFromBdn:                uint32(nstat.NewBlocksReceivedFromBdn),
-					NewBlocksSeen:                           nstat.NewBlocksSeen,
-					NewBlockMessagesFromBlockchainNode:      nstat.NewBlockMessagesFromBlockchainNode,
-					NewBlockAnnouncementsFromBlockchainNode: nstat.NewBlockAnnouncementsFromBlockchainNode,
-					NewTxReceivedFromBlockchainNode:         nstat.NewTxReceivedFromBlockchainNode,
-					NewTxReceivedFromBdn:                    nstat.NewTxReceivedFromBdn,
-					TxSentToNode:                            nstat.TxSentToNode,
-					DuplicateTxFromNode:                     nstat.DuplicateTxFromNode,
-				}
-			}
-
-			mp[ipport(peer.IP, peer.Port)] = connStatus
-
-			wsPeer, ok := wsProviders[peer.IPPort()]
-			if !ok {
-				continue
-			}
-
-			connStatus.WsConnection = &pb.WsConnStatus{
-				Addr: wsPeer.Addr(),
-				ConnStatus: func() string {
-					if wsPeer.IsOpen() {
-						return connectionStatusConnected
-					}
-					return connectionStatusNotConnected
-				}(),
-				SyncStatus: strings.ToLower(string(wsPeer.SyncStatus())),
-			}
-		}
-
-		// If a node was disconnected through the interval then they are not connected.
-		// Let state this explicitly.
-		for key, peer := range nodeStats {
-			ipPort := strings.ReplaceAll(key, " ", ":")
-			if _, ok := mp[ipPort]; !ok {
-				mp[ipPort] = &pb.NodeConnStatus{
-					IsConnected: peer.IsConnected,
-					Dynamic:     peer.Dynamic,
-					NodePerformance: &pb.NodePerformance{
-						Since:                                   g.params.bdnStats.StartTime().Format(time.RFC3339),
-						NewBlocksReceivedFromBlockchainNode:     uint32(peer.NewBlocksReceivedFromBlockchainNode),
-						NewBlocksReceivedFromBdn:                uint32(peer.NewBlocksReceivedFromBdn),
-						NewBlocksSeen:                           peer.NewBlocksSeen,
-						NewBlockMessagesFromBlockchainNode:      peer.NewBlockMessagesFromBlockchainNode,
-						NewBlockAnnouncementsFromBlockchainNode: peer.NewBlockAnnouncementsFromBlockchainNode,
-						NewTxReceivedFromBlockchainNode:         peer.NewTxReceivedFromBlockchainNode,
-						NewTxReceivedFromBdn:                    peer.NewTxReceivedFromBdn,
-						TxSentToNode:                            peer.TxSentToNode,
-						DuplicateTxFromNode:                     peer.DuplicateTxFromNode,
-					},
-				}
-			}
-		}
-
-		return mp
-	}
-
-	var (
-		nodeModel    = g.params.sdn.NodeModel()
-		accountModel = g.params.sdn.AccountModel()
-	)
-
 	if err = g.params.bridge.SendTrustedPeerRequest(); err != nil {
 		g.log.Errorf("failed to send trusted peer request: %v", err)
 		return nil, err
@@ -238,6 +115,21 @@ func (g *server) Status(ctx context.Context, req *pb.StatusRequest) (*pb.StatusR
 		g.log.Errorf("failed to receive trusted peer response: %v", err)
 		return nil, err
 	}
+
+	if err = g.params.bridge.SendBlockchainStatusRequest(); err != nil {
+		g.log.Errorf("failed to send blockchain status request: %v", err)
+		return nil, err
+	}
+
+	bchStatus, err := g.params.bridge.ReceiveBlockchainStatusResponse()
+	if err != nil {
+		g.log.Errorf("failed to receive blockchain status response: %v", err)
+		return nil, err
+	}
+
+	nodeModel := g.params.sdn.NodeModel()
+	accountModel := g.params.sdn.AccountModel()
+
 	trustedPeersStr := make([]string, 0, len(trustedPeers))
 	for _, peer := range trustedPeers {
 		trustedPeersStr = append(trustedPeersStr, peer.String())
@@ -255,9 +147,10 @@ func (g *server) Status(ctx context.Context, req *pb.StatusRequest) (*pb.StatusR
 			StartupParams:    strings.Join(os.Args[1:], " "),
 			GatewayPublicKey: g.params.gatewayPublicKey,
 			TrustedPeers:     trustedPeersStr,
+			P2PServers:       bchStatus.ServerAddresses,
 		},
-		Nodes:  nodeConn(),
-		Relays: bdnConn(),
+		Nodes:  g.nodes(bchStatus.Endpoints),
+		Relays: g.relays(),
 		AccountInfo: &pb.AccountInfo{
 			AccountId:  string(accountModel.AccountID),
 			ExpireDate: accountModel.ExpireDate,
@@ -309,6 +202,115 @@ func (g *server) ShortIDs(ctx context.Context, req *pb.ShortIDsRequest) (*pb.Sho
 	}
 
 	return g.shortIDs(req)
+}
+
+func (g *server) relays() map[string]*pb.BDNConnStatus {
+	mp := g.params.connector.Relays()
+
+	if len(mp) == 0 {
+		// set "BDN: NOT_CONNECTED" in case of missing connections to any relay
+		return map[string]*pb.BDNConnStatus{bdn: {Status: connectionStatusNotConnected}}
+	}
+
+	relays := make(map[string]*pb.BDNConnStatus)
+	for ip, relayStatus := range mp {
+		connStatus := &pb.BDNConnStatus{
+			Status:      relayStatus.Status,
+			ConnectedAt: relayStatus.ConnectedAt,
+		}
+		if relayStatus.Latency != nil {
+			connStatus.Latency = &pb.ConnectionLatency{
+				MinMsFromPeer:    relayStatus.Latency.MinMsFromPeer,
+				MinMsToPeer:      relayStatus.Latency.MinMsToPeer,
+				SlowTrafficCount: relayStatus.Latency.SlowTrafficCount,
+				MinMsRoundTrip:   relayStatus.Latency.MinMsRoundTrip,
+			}
+		}
+		relays[ip] = connStatus
+	}
+
+	return relays
+}
+
+func (g *server) nodes(endpoints []*types.NodeEndpoint) map[string]*pb.NodeConnStatus {
+	wsProviders := g.params.wsManager.Providers()
+
+	mp := make(map[string]*pb.NodeConnStatus)
+	nodeStats := g.params.bdnStats.NodeStats()
+
+	for _, peer := range endpoints {
+		connStatus := &pb.NodeConnStatus{
+			Dynamic: peer.IsDynamic(),
+			Version: int64(peer.Version),
+			Name:    peer.Name,
+		}
+
+		nstat, ok := nodeStats[peer.IPPort()]
+		if ok {
+			connStatus.IsConnected = nstat.IsConnected
+			connStatus.ConnectedAt = peer.ConnectedAt
+			connStatus.ConnectionType = peer.ConnectionType
+			if peer.IsBeacon {
+				connStatus.PeerId = peer.ID
+			}
+			connStatus.NodePerformance = &pb.NodePerformance{
+				Since:                                   g.params.bdnStats.StartTime().Format(time.RFC3339),
+				NewBlocksReceivedFromBlockchainNode:     uint32(nstat.NewBlocksReceivedFromBlockchainNode),
+				NewBlocksReceivedFromBdn:                uint32(nstat.NewBlocksReceivedFromBdn),
+				NewBlocksSeen:                           nstat.NewBlocksSeen,
+				NewBlockMessagesFromBlockchainNode:      nstat.NewBlockMessagesFromBlockchainNode,
+				NewBlockAnnouncementsFromBlockchainNode: nstat.NewBlockAnnouncementsFromBlockchainNode,
+				NewTxReceivedFromBlockchainNode:         nstat.NewTxReceivedFromBlockchainNode,
+				NewTxReceivedFromBdn:                    nstat.NewTxReceivedFromBdn,
+				TxSentToNode:                            nstat.TxSentToNode,
+				DuplicateTxFromNode:                     nstat.DuplicateTxFromNode,
+			}
+		}
+
+		mp[ipport(peer.IP, peer.Port)] = connStatus
+
+		wsPeer, ok := wsProviders[peer.IPPort()]
+		if !ok {
+			continue
+		}
+
+		connStatus.WsConnection = &pb.WsConnStatus{
+			Addr: wsPeer.Addr(),
+			ConnStatus: func() string {
+				if wsPeer.IsOpen() {
+					return connectionStatusConnected
+				}
+				return connectionStatusNotConnected
+			}(),
+			SyncStatus: strings.ToLower(string(wsPeer.SyncStatus())),
+		}
+	}
+
+	// If a node was disconnected through the interval then they are not connected.
+	// Let state this explicitly.
+	for key, peer := range nodeStats {
+		ipPort := strings.ReplaceAll(key, " ", ":")
+		if _, ok := mp[ipPort]; !ok {
+			mp[ipPort] = &pb.NodeConnStatus{
+				IsConnected: peer.IsConnected,
+				Dynamic:     peer.Dynamic,
+				NodePerformance: &pb.NodePerformance{
+					Since:                                   g.params.bdnStats.StartTime().Format(time.RFC3339),
+					NewBlocksReceivedFromBlockchainNode:     uint32(peer.NewBlocksReceivedFromBlockchainNode),
+					NewBlocksReceivedFromBdn:                uint32(peer.NewBlocksReceivedFromBdn),
+					NewBlocksSeen:                           peer.NewBlocksSeen,
+					NewBlockMessagesFromBlockchainNode:      peer.NewBlockMessagesFromBlockchainNode,
+					NewBlockAnnouncementsFromBlockchainNode: peer.NewBlockAnnouncementsFromBlockchainNode,
+					NewTxReceivedFromBlockchainNode:         peer.NewTxReceivedFromBlockchainNode,
+					NewTxReceivedFromBdn:                    peer.NewTxReceivedFromBdn,
+					TxSentToNode:                            peer.TxSentToNode,
+					DuplicateTxFromNode:                     peer.DuplicateTxFromNode,
+				},
+			}
+		}
+	}
+
+	return mp
 }
 
 func (g *server) validateAuthHeader(authHeader string, isRequiredForExternalGateway, allowAccessByOtherAccounts bool, ip string) (*sdnmessage.Account, error) {

@@ -56,6 +56,6 @@ func sslConn(backlog int) (*MockTLS, *SSLConn) {
 		func() (Socket, error) {
 			return tls, nil
 		},
-		&certs, ip, port, bxmessage.CurrentProtocol, false, false, backlog, clock.RealClock{})
+		&certs, ip, port, bxmessage.CurrentProtocol, false, backlog, clock.RealClock{})
 	return tls, s
 }

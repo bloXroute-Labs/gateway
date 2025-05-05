@@ -4,9 +4,11 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/common"
+
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // ValidatorUpdates is the bloxroute message struct that carries validator online and offline updates

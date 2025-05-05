@@ -20,7 +20,6 @@ import (
 const (
 	messageSizeLimit = 15 * 1024 * 1024
 	msgCHanSize      = 1000
-	writeTimeout     = 30 * time.Second
 )
 
 // DialOptions represents Dial's options.

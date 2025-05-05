@@ -3,9 +3,10 @@ package bxmessage
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestBeaconMessagePackUnpack(t *testing.T) {

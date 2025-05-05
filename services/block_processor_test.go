@@ -5,12 +5,13 @@ import (
 	"testing"
 	"time"
 
-	bxclock "github.com/bloXroute-Labs/bxcommon-go/clock"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	bxclock "github.com/bloXroute-Labs/bxcommon-go/clock"
 
 	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
@@ -20,14 +21,11 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
-var (
-	BSCBlobSidecars    bxethcommon.BlobSidecars
-	BSCBlobSidecarsRLP []byte
-)
+var BSCBlobSidecars bxethcommon.BlobSidecars
 
 func init() {
 	var err error
-	BSCBlobSidecarsRLP, BSCBlobSidecars, err = bxethcommon.ReadMockBSCBlobSidecars()
+	BSCBlobSidecars, err = bxethcommon.ReadMockBSCBlobSidecars()
 	if err != nil {
 		panic(err)
 	}

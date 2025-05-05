@@ -18,19 +18,19 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	"github.com/OffchainLabs/prysm/v6/consensus-types/interfaces"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
 	"github.com/sourcegraph/jsonrpc2"
-	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/bloXroute-Labs/bxcommon-go/cert"
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
 	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
@@ -133,7 +133,6 @@ type gateway struct {
 	mevBundleDispatcher *bundle.Dispatcher
 
 	bscTxClient      *http.Client
-	gatewayPeers     string
 	gatewayPublicKey string
 
 	staticEnodesCount            int
@@ -191,7 +190,6 @@ func NewGateway(parent context.Context,
 	wsManager blockchain.WSManager,
 	blobsManager *beacon.BlobSidecarCacheManager,
 	blockchainPeers []types.NodeEndpoint,
-	peersInfo []network.PeerInfo,
 	recommendedPeers map[string]struct{},
 	gatewayPublicKeyStr string,
 	sdn sdnsdk.SDNHTTP,
@@ -222,7 +220,6 @@ func NewGateway(parent context.Context,
 		seenBeaconMessages:           services.NewHashHistory("beaconMessages", 30*time.Minute),
 		clock:                        clock,
 		timeStarted:                  clock.Now(),
-		gatewayPeers:                 GeneratePeers(peersInfo),
 		gatewayPublicKey:             gatewayPublicKeyStr,
 		staticEnodesCount:            staticEnodesCount,
 		transactionSlotStartDuration: transactionSlotStartDuration,
@@ -576,7 +573,7 @@ func (g *gateway) disconnectRelay(relayIP string) error {
 
 func (g *gateway) tryToConnectToAutoRelay(instruction sdnsdk.RelayInstruction, sslCerts cert.SSLCerts, networkNum bxtypes.NetworkNum, relayInstructions chan sdnsdk.RelayInstruction) bool {
 	relay := handler.NewOutboundRelay(g, &sslCerts, instruction.IP, instruction.Port, g.sdn.NodeID(), bxtypes.RelayProxy,
-		g.BxConfig.PrioritySending, g.sdn.Networks(), true, false, clock.RealClock{}, false)
+		g.sdn.Networks(), true, false, clock.RealClock{}, false)
 	relay.SetNetworkNum(networkNum)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -599,7 +596,7 @@ func (g *gateway) tryToConnectToAutoRelay(instruction sdnsdk.RelayInstruction, s
 
 func (g *gateway) connectRelay(instruction sdnsdk.RelayInstruction, sslCerts cert.SSLCerts, networkNum bxtypes.NetworkNum, relayInstructions chan sdnsdk.RelayInstruction) {
 	relay := handler.NewOutboundRelay(g, &sslCerts, instruction.IP, instruction.Port, g.sdn.NodeID(), bxtypes.RelayProxy,
-		g.BxConfig.PrioritySending, g.sdn.Networks(), true, false, clock.RealClock{}, false)
+		g.sdn.Networks(), true, false, clock.RealClock{}, false)
 	relay.SetNetworkNum(networkNum)
 
 	ctx := g.context

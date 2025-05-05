@@ -4,8 +4,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // special error constant types

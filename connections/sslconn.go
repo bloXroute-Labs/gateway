@@ -13,6 +13,7 @@ import (
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
@@ -23,9 +24,6 @@ const (
 
 	// LocalInitiatedPort is a special constant used to indicate connections initiated locally
 	LocalInitiatedPort = 0
-
-	// PriorityQueueInterval represents the minimum amount of time that must be elapsed between non highest priority messages intended to sent along the connection
-	PriorityQueueInterval = 500 * time.Microsecond
 
 	packetSize = 20 * 1024
 )
@@ -48,8 +46,6 @@ type SSLConn struct {
 	sendMessages    chan bxmessage.Message
 	sendChannelSize int
 	buf             bytes.Buffer
-	usePQ           bool
-	pq              *bxmessage.MsgPriorityQueue
 	logMessages     bool
 	extensions      utils.BxSSLProperties
 	packet          []byte
@@ -61,7 +57,7 @@ type SSLConn struct {
 }
 
 // NewSSLConnection constructs a new SSL connection. If socket is not nil, then the connection was initiated by the remote.
-func NewSSLConnection(connect func() (Socket, error), sslCerts *cert.SSLCerts, ip string, port int64, protocol bxmessage.Protocol, usePQ bool, logMessages bool, sendChannelSize int, clock clock.Clock) *SSLConn {
+func NewSSLConnection(connect func() (Socket, error), sslCerts *cert.SSLCerts, ip string, port int64, protocol bxmessage.Protocol, logMessages bool, sendChannelSize int, clock clock.Clock) *SSLConn {
 	conn := &SSLConn{
 		connect:         connect,
 		sslCerts:        sslCerts,
@@ -69,7 +65,6 @@ func NewSSLConnection(connect func() (Socket, error), sslCerts *cert.SSLCerts, i
 		port:            port,
 		protocol:        protocol,
 		buf:             bytes.Buffer{},
-		usePQ:           usePQ,
 		logMessages:     logMessages,
 		sendChannelSize: sendChannelSize,
 		packet:          make([]byte, packetSize),
@@ -200,7 +195,6 @@ func (s *SSLConn) Connect() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.pq = bxmessage.NewMsgPriorityQueue(s.queueToMessageChan, PriorityQueueInterval)
 	s.buf.Reset()
 
 	var err error
@@ -286,15 +280,9 @@ func (s *SSLConn) Send(msg bxmessage.Message) error {
 		s.Log().Debug(err)
 		return err
 	}
-	// in order not to overload the python code - use priority queue and a gap of 0.5ms between sends
-	// this should be removed once relay/gw are in GOLANG
-	// Note: as of BX-2912 the priority queue mechanism is disabled without an option to activate it
-	// TODO: remove PQ from code base
-	if true || !s.usePQ || msg.GetPriority() == bxmessage.HighestPriority {
-		s.queueToMessageChan(msg)
-	} else {
-		s.pq.Push(msg)
-	}
+
+	s.queueToMessageChan(msg)
+
 	return nil
 }
 
