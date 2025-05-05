@@ -9,6 +9,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/forkid"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/eth/protocols/eth"
+	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
@@ -19,15 +29,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/forkid"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/eth/protocols/eth"
-	"github.com/ethereum/go-ethereum/p2p"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -119,14 +120,13 @@ func TestHandler_TxChainID(t *testing.T) {
 	peer, _, _ := testPeer(-1, 1)
 
 	txs := []*ethtypes.Transaction{
-		bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey, big.NewInt(0)),
+		bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey, big.NewInt(network.BSCTestnetChainID)),
 		bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 2, privateKey, big.NewInt(network.EthMainnetChainID)),
 		bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 3, privateKey, big.NewInt(network.BSCMainnetChainID)),
 	}
-	assert.True(t, handler.isChainIDMatch(txs[0].ChainId().Uint64()))
+	assert.False(t, handler.isChainIDMatch(txs[0].ChainId().Uint64()))
 	assert.False(t, handler.isChainIDMatch(txs[1].ChainId().Uint64()))
 	assert.True(t, handler.isChainIDMatch(txs[2].ChainId().Uint64()))
-	tx1Hash := txs[0].Hash().String()
 	tx3Hash := txs[2].Hash().String()
 
 	txsPacket := eth.TransactionsPacket(txs)
@@ -135,10 +135,8 @@ func TestHandler_TxChainID(t *testing.T) {
 	assert.Nil(t, err)
 
 	bxTxs := <-bridge.ReceiveNodeTransactions()
-	// because 1 tx is with different chainID, we expect only 2 txs
-	assert.Equal(t, 2, len(bxTxs.Transactions))
-	assert.Equal(t, "0x"+bxTxs.Transactions[0].Hash().String(), tx1Hash)
-	assert.Equal(t, "0x"+bxTxs.Transactions[1].Hash().String(), tx3Hash)
+	assert.Equal(t, 1, len(bxTxs.Transactions), "two txs are with different chainIDs, we expect only one tx")
+	assert.Equal(t, "0x"+bxTxs.Transactions[0].Hash().String(), tx3Hash)
 }
 
 func TestHandler_HandleTransactionsFromNode(t *testing.T) {

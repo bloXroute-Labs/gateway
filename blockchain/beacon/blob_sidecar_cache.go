@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
+	prysmTypes "github.com/OffchainLabs/prysm/v6/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
 	gethparams "github.com/ethereum/go-ethereum/params"
-	prysmTypes "github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/bxcommon-go/syncmap"

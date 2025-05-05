@@ -27,7 +27,7 @@ const TxFlagsLen = 2
 // WalletIDLen represents the bytes length of the wallet id
 const WalletIDLen = 42
 
-// NodeEndpoint - represent the node endpoint struct sent in BdnPerformanceStats
+// NodeEndpoint - represent the node endpoint struct sent in BxStatus
 type NodeEndpoint struct {
 	IP                string
 	DNS               string
@@ -40,6 +40,7 @@ type NodeEndpoint struct {
 	Version           int
 	Name              string
 	ConnectedAt       string
+	ConnectionType    string
 }
 
 // String returns string representation of NodeEndpoint
@@ -117,15 +118,6 @@ const ErrorNotificationCodeLen = 4
 
 // UUIDv4Len is the byte length of UUID V4
 const UUIDv4Len = 16
-
-// ETHAddressLen is the byte length of ETH Address
-const ETHAddressLen = 20
-
-// Keccak256HashLen is the byte length of Keccak256Hash
-const Keccak256HashLen = 32
-
-// ECDSASignatureLen is the byte length of ECDSASignature in Ethereum ecosystem
-const ECDSASignatureLen = 65
 
 // RelayMonitorInterval is interval for relay monitor
 const RelayMonitorInterval = time.Minute

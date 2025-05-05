@@ -10,11 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sourcegraph/jsonrpc2"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
-	"github.com/sourcegraph/jsonrpc2"
-	"github.com/stretchr/testify/assert"
 )
 
 var (

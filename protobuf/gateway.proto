@@ -403,6 +403,7 @@ message NodeConnStatus {
   string Name = 8;
   string ConnectedAt = 9;
   string PeerId = 10;
+  string connection_type = 11;
 }
 
 message BDNConnStatus {
@@ -429,6 +430,7 @@ message GatewayInfo {
   string startup_params = 7;
   string gateway_public_key = 9;
   repeated string trusted_peers = 10;
+  repeated string p2p_servers = 11;
 }
 
 message StatusResponse {

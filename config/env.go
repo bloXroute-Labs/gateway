@@ -5,8 +5,9 @@ import (
 	"path"
 	"strconv"
 
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/urfave/cli/v2"
+
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // Env represents configuration pertaining to a specific development environment

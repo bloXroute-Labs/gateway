@@ -1,13 +1,14 @@
 package beacon
 
 import (
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/libp2p/go-libp2p/core/control"
 	"github.com/libp2p/go-libp2p/core/network"
-
 	libp2pPeer "github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
+
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+
+	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // InterceptPeerDial tests whether we're permitted to Dial the specified peer.

@@ -3,8 +3,9 @@ package utils
 import (
 	"testing"
 
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 var ipPortBytes = []byte("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\x7f6\x03\x01@\x1f")

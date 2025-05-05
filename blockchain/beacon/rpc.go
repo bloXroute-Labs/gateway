@@ -4,17 +4,17 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/prysmaticlabs/go-bitfield"
-
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/OffchainLabs/prysm/v6/beacon-chain/p2p"
+	prysmTypes "github.com/OffchainLabs/prysm/v6/beacon-chain/p2p/types"
+	types "github.com/OffchainLabs/prysm/v6/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v6/consensus-types/wrapper"
+	ethpb "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
 	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	ssz "github.com/prysmaticlabs/fastssz"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	prysmTypes "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/types"
-	types "github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/wrapper"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
+	"github.com/prysmaticlabs/go-bitfield"
+
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 )
 
 func (n *Node) subscribeRPC(topic string, handler libp2pNetwork.StreamHandler) {
@@ -67,7 +67,7 @@ func (n *Node) goodbyeRPCHandler(stream libp2pNetwork.Stream) {
 		}
 	}
 
-	n.log.Tracef("peer %v sent goodbye reason: %v", stream.Conn().RemotePeer(), reason)
+	n.log.Tracef("peer %v sent goodbye, reason: %v", stream.Conn().RemotePeer(), reason)
 
 	peer := n.peers.get(stream.Conn().RemotePeer())
 	if err := n.host.Network().ClosePeer(stream.Conn().RemotePeer()); err != nil {

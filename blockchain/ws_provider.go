@@ -4,6 +4,7 @@ import (
 	"time"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 

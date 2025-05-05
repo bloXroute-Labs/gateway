@@ -24,6 +24,7 @@ import (
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/rpc"
@@ -890,9 +891,16 @@ func cmdBlxrBatchTX(ctx *cli.Context) error {
 			}
 		}
 
-		ethSender, err := ethtypes.Sender(ethtypes.NewPragueSigner(ethTx.ChainId()), &ethTx)
+		signer, err := types.NewPragueSigner(ethTx.ChainId())
+		if err != nil {
+			fmt.Printf("Error - failed to create signer for the transaction %v: %v. continue..", transaction, err)
+			continue
+		}
+
+		ethSender, err := ethtypes.Sender(signer, &ethTx)
 		if err != nil {
 			fmt.Printf("Error - failed to get sender from the transaction %v: %v. continue..", transaction, err)
+			continue
 		}
 		txsAndSenders = append(txsAndSenders, &pb.TxAndSender{Transaction: transaction, Sender: ethSender.Bytes()})
 

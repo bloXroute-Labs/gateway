@@ -5,9 +5,10 @@ import (
 	"time"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/ethereum/go-ethereum/rpc"
 )
 
 var textBlockMap = map[string]interface{}{

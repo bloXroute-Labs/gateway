@@ -11,6 +11,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v6/beacon-chain/p2p"
+	"github.com/OffchainLabs/prysm/v6/beacon-chain/p2p/encoder"
+	"github.com/OffchainLabs/prysm/v6/beacon-chain/p2p/types"
+	"github.com/OffchainLabs/prysm/v6/beacon-chain/state"
+	state_native "github.com/OffchainLabs/prysm/v6/beacon-chain/state/state-native"
+	beaconParams "github.com/OffchainLabs/prysm/v6/config/params"
+	"github.com/OffchainLabs/prysm/v6/consensus-types/interfaces"
+	prysmTypes "github.com/OffchainLabs/prysm/v6/consensus-types/primitives"
+	ecdsaprysm "github.com/OffchainLabs/prysm/v6/crypto/ecdsa"
+	"github.com/OffchainLabs/prysm/v6/network/forks"
+	ethpb "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v6/time/slots"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/libp2p/go-libp2p"
 	mplex "github.com/libp2p/go-libp2p-mplex"
@@ -21,26 +33,16 @@ import (
 	libp2pPeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/net/swarm"
+	quic "github.com/libp2p/go-libp2p/p2p/transport/quic"
 	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
 	ma "github.com/multiformats/go-multiaddr"
 	fastssz "github.com/prysmaticlabs/fastssz"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/encoder"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/types"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	beaconParams "github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	prysmTypes "github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	ecdsaprysm "github.com/prysmaticlabs/prysm/v5/crypto/ecdsa"
-	"github.com/prysmaticlabs/prysm/v5/network/forks"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/bloXroute-Labs/bxcommon-go/clock"
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	bxTypes "github.com/bloXroute-Labs/gateway/v2/types"
@@ -138,6 +140,9 @@ type Node struct {
 	enableAnyIncomingConnection bool
 	topicMap                    *syncmap.SyncMap[string, *topicSubscription]
 	inboundLimit                int
+	port                        int
+	externalIP                  string
+	enableQUIC                  bool
 
 	encoding encoder.NetworkEncoding
 
@@ -155,6 +160,8 @@ type NodeParams struct {
 	GenesisFilePath      string
 	Bridge               blockchain.Bridge
 	Port                 int
+	ExternalIP           string
+	EnableQUIC           bool
 	InboundLimit         int
 }
 
@@ -221,13 +228,16 @@ func newNode(params NodeParams, clock clock.Clock) (*Node, error) {
 		encoding:                    encoder.SszNetworkEncoder{},
 		cancel:                      cancel,
 		log:                         logCtx,
+		port:                        params.Port,
+		externalIP:                  params.ExternalIP,
+		enableQUIC:                  params.EnableQUIC,
 	}
 
 	if params.TrustedPeersFilePath != "" {
 		n.reloadTrustedPeers(params.TrustedPeersFilePath)
 	}
 
-	opts, err := n.hostOptions(params.Port)
+	opts, err := n.hostOptions(params.Port, params.EnableQUIC)
 	if err != nil {
 		return nil, fmt.Errorf("could not create host options: %v", err)
 	}
@@ -258,7 +268,7 @@ func newNode(params NodeParams, clock clock.Clock) (*Node, error) {
 				ID:    conn.RemotePeer(),
 				Addrs: []ma.Multiaddr{conn.RemoteMultiaddr()},
 			}, isInbound)
-			peerEndpoint := utils.MultiaddrToNodeEndoint(conn.RemoteMultiaddr(), n.networkName)
+			peerEndpoint := utils.MultiaddrToNodeEndpoint(conn.RemoteMultiaddr(), n.networkName)
 
 			if isInbound {
 				if peer.connect() {
@@ -309,7 +319,7 @@ func newNode(params NodeParams, clock clock.Clock) (*Node, error) {
 
 			if peer := n.peers.get(conn.RemotePeer()); peer != nil && peer.disconnect() {
 				if err := n.bridge.SendBlockchainConnectionStatus(blockchain.ConnectionStatus{
-					PeerEndpoint: utils.MultiaddrToNodeEndoint(conn.RemoteMultiaddr(), n.networkName),
+					PeerEndpoint: utils.MultiaddrToNodeEndpoint(conn.RemoteMultiaddr(), n.networkName),
 					IsConnected:  false,
 				}); err != nil {
 					n.log.Errorf("could not send blockchain connection status: %v", err)
@@ -322,7 +332,6 @@ func newNode(params NodeParams, clock clock.Clock) (*Node, error) {
 	n.subscribeRPC(p2p.RPCStatusTopicV1, n.statusRPCHandler)
 	n.subscribeRPC(p2p.RPCGoodByeTopicV1, n.goodbyeRPCHandler)
 	n.subscribeRPC(p2p.RPCPingTopicV1, n.pingRPCHandler)
-
 	n.subscribeRPC(p2p.RPCMetaDataTopicV2, n.metadataRPCHandler)
 
 	n.subscribeRPC(p2p.RPCBlobSidecarsByRangeTopicV1, func(stream libp2pNetwork.Stream) {
@@ -424,6 +433,14 @@ func (n *Node) scheduleElectraForkUpdate() error {
 // Start starts beacon node
 func (n *Node) Start() error {
 	n.log.Infof("Starting P2P beacon node peer ID: p2p/%v", n.host.ID())
+
+	internalAddresses, externalAddresses := n.serverAddresses()
+	for _, addr := range internalAddresses {
+		n.log.Infof("Node started p2p server: %s", addr)
+	}
+	for _, addr := range externalAddresses {
+		n.log.Infof("Node started external p2p server: %s", addr)
+	}
 
 	go n.ensurePeerConnections()
 	go n.sendStatusRequests()
@@ -743,6 +760,10 @@ func (n *Node) subscribe(topic string, handler func(msg *pubsub.Message)) error 
 			default:
 				msg, err := sub.Next(n.ctx)
 				if err != nil {
+					if errors.Is(err, context.Canceled) {
+						return
+					}
+
 					n.log.Errorf("could not get message: %v", err)
 					continue
 				}
@@ -832,7 +853,7 @@ func (n *Node) loadNodeEndpointFromPeerID(peerID libp2pPeer.ID) (*bxTypes.NodeEn
 		return nil, fmt.Errorf("no connection to peer %v", peerID)
 	}
 
-	multiaddr := utils.MultiaddrToNodeEndoint(conns[0].RemoteMultiaddr(), n.networkName)
+	multiaddr := utils.MultiaddrToNodeEndpoint(conns[0].RemoteMultiaddr(), n.networkName)
 
 	return &multiaddr, nil
 }
@@ -874,23 +895,25 @@ func (n *Node) ensurePeerConnections() {
 					continue
 				}
 
-				ctx, cancel := context.WithTimeout(n.ctx, peerConnectionTimeout)
-				defer cancel()
-
-				if err := n.host.Connect(ctx, peer); err != nil {
-					// Try to reconnect as fast as possible again
-					// https://github.com/libp2p/go-libp2p/blob/ddfb6f9240679b840d3663021e8b4433f51379a7/examples/relay/main.go#L90
-					n.host.Network().(*swarm.Swarm).Backoff().Clear(peer.ID)
-
-					if err := n.host.Network().ClosePeer(peer.ID); err != nil {
-						n.log.Errorf("could not close peer %s: %v", peer, err)
-					}
-
-					n.log.Warnf("could not connect peer %s: %v", peer, err)
-				}
-
-				continue
+				n.reconnectOrClose(peer)
 			}
+		}
+	}
+}
+
+func (n *Node) reconnectOrClose(peer libp2pPeer.AddrInfo) {
+	ctx, cancel := context.WithTimeout(n.ctx, peerConnectionTimeout)
+	defer cancel()
+
+	if err := n.host.Connect(ctx, peer); err != nil {
+		n.log.Warnf("could not connect peer %s: %v", peer, err)
+
+		// Try to reconnect as fast as possible again
+		// https://github.com/libp2p/go-libp2p/blob/ddfb6f9240679b840d3663021e8b4433f51379a7/examples/relay/main.go#L90
+		n.host.Network().(*swarm.Swarm).Backoff().Clear(peer.ID)
+
+		if err = n.host.Network().ClosePeer(peer.ID); err != nil {
+			n.log.Errorf("could not close peer %s: %v", peer, err)
 		}
 	}
 }
@@ -930,21 +953,22 @@ func (n *Node) handshake(peer *peer, conn libp2pNetwork.Conn) error {
 }
 
 func (n *Node) closeStream(stream libp2pNetwork.Stream) {
-	if err := stream.Close(); err != nil {
-		n.log.Errorf("could not close peer %v stream: %v", stream.Conn().RemotePeer(), err)
+	if err := stream.Close(); err != nil && !strings.Contains(err.Error(), "close called for canceled stream") {
+		n.log.Errorf("could not close peer %v stream for topic '%s': %v", stream.Conn().RemotePeer(), stream.Protocol(), err)
 	}
 }
 
-func (n *Node) hostOptions(port int) ([]libp2p.Option, error) {
+func (n *Node) hostOptions(port int, enableQUIC bool) ([]libp2p.Option, error) {
 	ifaceKey, err := ecdsaprysm.ConvertToInterfacePrivkey(n.config.PrivateKey)
 	if err != nil {
 		return nil, err
 	}
 
 	opts := []libp2p.Option{
-		libp2p.UserAgent("Prysm/5.0.0/b7b017f5b607f04d4e9056a1ec8a6851a9c7da29"),
+		libp2p.UserAgent("Prysm/5.3.1/863eee7b40618e3af4cfff955a78b3cc66d63f9e"),
 		libp2p.Identity(ifaceKey),
 		libp2p.Transport(tcp.NewTCPTransport),
+		libp2p.Transport(quic.NewTransport),
 		libp2p.Muxer("/mplex/6.7.0", mplex.DefaultTransport),
 		libp2p.DefaultMuxers,
 	}
@@ -954,6 +978,11 @@ func (n *Node) hostOptions(port int) ([]libp2p.Option, error) {
 			libp2p.ListenAddrStrings(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port)),
 			libp2p.ConnectionGater(n),
 		)
+		if enableQUIC {
+			opts = append(opts,
+				libp2p.ListenAddrStrings(fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic-v1", port)),
+			)
+		}
 	}
 
 	return opts, nil
@@ -969,7 +998,7 @@ func (n *Node) pubsubOptions() []pubsub.Option {
 		}),
 		pubsub.WithSubscriptionFilter(n),
 		pubsub.WithPeerOutboundQueueSize(pubsubQueueSize),
-		pubsub.WithMaxMessageSize(int(beaconParams.BeaconConfig().GossipMaxSize)),
+		pubsub.WithMaxMessageSize(int(beaconParams.BeaconConfig().MaxPayloadSize)), //nolint
 		pubsub.WithValidateQueueSize(pubsubQueueSize),
 		pubsub.WithGossipSubParams(pubsubGossipParam()),
 	}
@@ -991,7 +1020,7 @@ func (n *Node) bxStatusHandler() {
 					return true
 				}
 
-				endpoint := utils.MultiaddrToNodeEndoint(peer.addrInfo.Load().Addrs[0], n.networkName)
+				endpoint := utils.MultiaddrToNodeEndpoint(peer.addrInfo.Load().Addrs[0], n.networkName)
 				endpoint.ConnectedAt = peer.connectedAt().Format(time.RFC3339)
 				endpoint.ID = peerID.String()
 				endpoint.Dynamic = peer.isDynamic.Load()
@@ -1000,7 +1029,14 @@ func (n *Node) bxStatusHandler() {
 				return true
 			})
 
-			if err := statusBridge.SendBlockchainStatusResponse(endpoints); err != nil {
+			internalAddresses, externalAddresses := n.serverAddresses()
+
+			status := blockchain.BxStatus{
+				Endpoints:       endpoints,
+				ServerAddresses: append(internalAddresses, externalAddresses...),
+			}
+
+			if err := statusBridge.SendBlockchainStatusResponse(status); err != nil {
 				n.log.Errorf("could not send blockchain status response: %v", err)
 			}
 		case <-statusBridge.ReceiveTrustedPeerRequest():
@@ -1009,6 +1045,19 @@ func (n *Node) bxStatusHandler() {
 			}
 		}
 	}
+}
+
+func (n *Node) serverAddresses() (internalAddresses, externalAddresses []string) {
+	hostID := n.host.ID().String()
+
+	internalAddresses = n.internalNetworkAddrs()
+
+	externalAddresses = append(externalAddresses, fmt.Sprintf("/ip4/%s/tcp/%d/p2p/%s", n.externalIP, n.port, hostID))
+	if n.enableQUIC {
+		externalAddresses = append(externalAddresses, fmt.Sprintf("/ip4/%s/udp/%d/quic-v1/p2p/%s", n.externalIP, n.port, hostID))
+	}
+
+	return
 }
 
 // creates a custom gossipsub parameter set.
@@ -1020,4 +1069,20 @@ func pubsubGossipParam() pubsub.GossipSubParams {
 	gParams.HistoryLength = gossipSubMcacheLen
 	gParams.HistoryGossip = gossipSubMcacheGossip
 	return gParams
+}
+
+func (n *Node) internalNetworkAddrs() []string {
+	hostID := n.host.ID().String()
+	addrs := n.host.Network().ListenAddresses()
+	res := make([]string, 0, len(addrs))
+
+	for i := range addrs {
+		if !(strings.Contains(addrs[i].String(), "/ip4/") || strings.Contains(addrs[i].String(), "/ip6/")) {
+			continue
+		}
+
+		res = append(res, fmt.Sprintf("%s/p2p/%s", addrs[i].String(), hostID))
+	}
+
+	return res
 }

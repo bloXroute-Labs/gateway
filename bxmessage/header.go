@@ -57,22 +57,22 @@ func (h *Header) SetProcessingStats(waitDuration time.Duration, channelPosition 
 }
 
 // WaitDuration total waiting duration
-func (h Header) WaitDuration() time.Duration {
+func (h *Header) WaitDuration() time.Duration {
 	return h.processingQueueWaitDuration + h.receiveQueueWaitingDuration
 }
 
 // ReceiveTime return receiveTime
-func (h Header) ReceiveTime() time.Time {
+func (h *Header) ReceiveTime() time.Time {
 	return h.receiveTime
 }
 
 // NetworkChannelPosition return receiveQueuePos
-func (h Header) NetworkChannelPosition() int {
+func (h *Header) NetworkChannelPosition() int {
 	return h.receiveQueuePos
 }
 
 // ProcessChannelPosition return processingQueuePos
-func (h Header) ProcessChannelPosition() int {
+func (h *Header) ProcessChannelPosition() int {
 	return h.processingQueuePos
 }
 

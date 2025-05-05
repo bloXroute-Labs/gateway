@@ -120,13 +120,6 @@ var (
 		Usage: "directory for storing various persistent files (e.g. private SSL certs)",
 		Value: "datadir",
 	}
-	// TBD: remove priority queue and priority from code base. Left here for backward competability but hidden
-	AvoidPrioritySendingFlag = &cli.BoolFlag{
-		Name:   "avoid-priority-sending",
-		Usage:  "avoid sending via priority queue",
-		Value:  true,
-		Hidden: true,
-	}
 	LogLevelFlag = &cli.StringFlag{
 		Name:    "log-level",
 		Usage:   "log level for stdout",

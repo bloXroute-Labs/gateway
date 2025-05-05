@@ -10,16 +10,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bloXroute-Labs/bxcommon-go/clock"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rlp"
 
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 
 	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
@@ -33,7 +33,6 @@ const UpgradeStatusMsg = 0x0b
 
 const (
 	maxMessageSize                  = 10 * 1024 * 1024
-	responseQueueSize               = 10
 	responseTimeout                 = 5 * time.Minute
 	fastBlockConfirmationInterval   = 200 * time.Millisecond
 	fastBlockConfirmationAttempts   = 5
@@ -361,7 +360,7 @@ func (ep *Peer) Handshake(version uint32, networkChain uint64, td *big.Int, head
 		// Relevant only for BSC
 		switch networkChain {
 		case network.BSCMainnetChainID, network.BSCTestnetChainID:
-			_, err = ep.upgradeStatus(peerStatus.ProtocolVersion)
+			_, err = ep.upgradeStatus()
 			if err != nil {
 				ep.Log().Errorf("failed to upgrade status: %v", err)
 			}
@@ -444,7 +443,7 @@ func (p *UpgradeStatusPacket) GetExtension() (*UpgradeStatusExtension, error) {
 	return extension, nil
 }
 
-func (ep *Peer) upgradeStatus(version uint32) (*UpgradeStatusExtension, error) {
+func (ep *Peer) upgradeStatus() (*UpgradeStatusExtension, error) {
 	upgradeStatus, err := ep.readUpgradeStatus()
 	if err != nil {
 		return nil, err

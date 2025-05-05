@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -20,6 +19,7 @@ import (
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
@@ -416,7 +416,7 @@ func (h *Handler) processBlockchainStatusRequest() {
 		nodes = append(nodes, &endpoint)
 	}
 
-	err := h.statusBridge.SendBlockchainStatusResponse(nodes)
+	err := h.statusBridge.SendBlockchainStatusResponse(blockchain.BxStatus{Endpoints: nodes})
 	if err != nil {
 		log.Errorf("send blockchain status response: %v", err)
 	}
@@ -463,11 +463,11 @@ func (h *Handler) awaitBlockResponse(peer *Peer, blockHash ethcommon.Hash, heade
 			return
 		}
 
-		if err == ErrInvalidPacketType {
-			// message is already logged
-		} else if err == ErrResponseTimeout {
-			peer.Log().Errorf("did not receive block header and body for block %v before timeout", blockHash)
-		} else {
+		switch {
+		case errors.Is(err, ErrResponseTimeout):
+			peer.Log().Errorf("did not receive block header and body for block %v before timeout", blockHash.String())
+		case errors.Is(err, ErrInvalidPacketType):
+		default:
 			peer.Log().Errorf("could not fetch block header and body for block %v: %v", blockHash.String(), err)
 		}
 		peer.Disconnect(p2p.DiscUselessPeer)
@@ -654,7 +654,7 @@ func (h *Handler) broadcastBlockAnnouncement(block *bxcommoneth.Block) {
 
 func (h *Handler) isChainIDMatch(txChainID uint64) bool {
 	// if chainID is 0 its legacy tx,so we want to propagate it,if it's not 0,we need to check if its match to gw chain id
-	if txChainID == 0 || txChainID == h.config.Network {
+	if txChainID == h.config.Network {
 		return true
 	}
 	return false
@@ -685,8 +685,7 @@ func (h *Handler) processTransactions(peer *Peer, txs []*ethtypes.Transaction) e
 		bdnTxs = append(bdnTxs, bdnTx)
 	}
 	err := h.bridge.SendTransactionsToBDN(bdnTxs, peer.IPEndpoint())
-
-	if err == blockchain.ErrChannelFull {
+	if errors.Is(err, blockchain.ErrChannelFull) {
 		log.Warnf("transaction channel for sending to the BDN is full; dropping %v transactions...", len(txs))
 		return nil
 	}
@@ -701,8 +700,7 @@ func (h *Handler) processTransactionHashes(peer *Peer, txHashes []ethcommon.Hash
 	}
 
 	err := h.bridge.AnnounceTransactionHashes(peer.ID(), sha256Hashes, peer.endpoint)
-
-	if err == blockchain.ErrChannelFull {
+	if errors.Is(err, blockchain.ErrChannelFull) {
 		log.Warnf("transaction announcement channel for sending to the BDN is full; dropping %v hashes...", len(txHashes))
 		return nil
 	}
@@ -722,7 +720,7 @@ func (h *Handler) processBlock(peer *Peer, blockInfo *BlockInfo) error {
 	}
 
 	if err := h.chain.ValidateBlock(block); err != nil {
-		if err == ErrAlreadySeen {
+		if errors.Is(err, ErrAlreadySeen) {
 			peer.Log().Debugf("skipping block %v (height %v): %v", blockHash.String(), blockHeight, err)
 		} else {
 			peer.Log().Warnf("skipping block %v (height %v): %v", blockHash.String(), blockHeight, err)
@@ -873,7 +871,7 @@ func (h *Handler) checkInitialBlockchainLiveliness(initialLivelinessCheckDelay t
 	time.Sleep(initialLivelinessCheckDelay)
 	if len(h.peers.getAll()) == 0 {
 		err := h.bridge.SendNoActiveBlockchainPeersAlert()
-		if err == blockchain.ErrChannelFull {
+		if errors.Is(err, blockchain.ErrChannelFull) {
 			log.Warnf("no active blockchain peers alert channel is full")
 		}
 	}

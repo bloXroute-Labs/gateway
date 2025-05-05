@@ -10,9 +10,6 @@ import (
 	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
 )
 
-// Global map to track processed IDs.
-var processedIDs sync.Map
-
 // Pre-generate a large pool of unique IDs to ensure each goroutine has enough to choose from.
 const totalUniqueIDs = 100000
 

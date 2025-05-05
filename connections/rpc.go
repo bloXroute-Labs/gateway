@@ -6,6 +6,7 @@ import (
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 )
 

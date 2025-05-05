@@ -3,6 +3,7 @@ package ofac
 import (
 	"strings"
 
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -154,7 +155,12 @@ var sanctionList = map[string]bool{
 
 // ShouldBlockTransaction checks the sanction list to see if 'from' or 'to' are on block list and returns any blocked addresses for stats
 func ShouldBlockTransaction(transaction *ethtypes.Transaction) ([]string, bool) {
-	sender, err := ethtypes.NewPragueSigner(transaction.ChainId()).Sender(transaction)
+	signer, err := types.NewPragueSigner(transaction.ChainId())
+	if err != nil {
+		return nil, false
+	}
+
+	sender, err := signer.Sender(transaction)
 	if err != nil {
 		return nil, false
 	}

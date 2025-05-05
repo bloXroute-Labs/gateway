@@ -11,6 +11,7 @@ import (
 	"github.com/zhouzhuojie/conditions"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 )

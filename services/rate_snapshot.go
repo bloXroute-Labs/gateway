@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/bloXroute-Labs/bxcommon-go/clock"
+
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 

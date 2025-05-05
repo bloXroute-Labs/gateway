@@ -13,6 +13,9 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
+// ErrChannelFull is a special error for identifying overflowing channel buffers
+var ErrChannelFull = errors.New("channel full") // ErrChannelFull is a special error for identifying overflowing channel buffers
+
 // NoActiveBlockchainPeersAlert is used to send an alert to the gateway on initial liveliness check if no active blockchain peers
 type NoActiveBlockchainPeersAlert struct{}
 
@@ -82,7 +85,7 @@ type Converter interface {
 // StatusBridge defines an interface for handling blockchain status requests
 type StatusBridge interface {
 	SendBlockchainStatusRequest() error
-	ReceiveBlockchainStatusResponse() ([]*types.NodeEndpoint, error)
+	ReceiveBlockchainStatusResponse() (*BxStatus, error)
 	SubscribeStatus(shouldCheckTrustedPeers bool) StatusSubscription
 	SendTrustedPeerRequest() error
 	ReceiveTrustedPeerResponse() ([]peer.ID, error)
@@ -91,7 +94,7 @@ type StatusBridge interface {
 // StatusSubscription defines an interface for handling blockchain status requests
 type StatusSubscription interface {
 	ReceiveBlockchainStatusRequest() <-chan struct{}
-	SendBlockchainStatusResponse([]*types.NodeEndpoint) error
+	SendBlockchainStatusResponse(BxStatus) error
 	ReceiveTrustedPeerRequest() <-chan struct{}
 	SendTrustedPeerResponse([]peer.ID) error
 }
@@ -158,11 +161,6 @@ type Bridge interface {
 	SendDisconnectEvent(endpoint types.NodeEndpoint) error
 	ReceiveDisconnectEvent() <-chan types.NodeEndpoint
 }
-
-// Errors
-var (
-	ErrChannelFull = errors.New("channel full") // ErrChannelFull is a special error for identifying overflowing channel buffers
-)
 
 // BxBridge is a channel based implementation of the Bridge interface
 type BxBridge struct {
@@ -236,7 +234,7 @@ func (b *BxBridge) UpdateNetworkConfig(config network.EthConfig) error {
 }
 
 // AnnounceTransactionHashes pushes a series of transaction announcements onto the announcements channel
-func (b BxBridge) AnnounceTransactionHashes(peerID string, hashes types.SHA256HashList, endpoint types.NodeEndpoint) error {
+func (b *BxBridge) AnnounceTransactionHashes(peerID string, hashes types.SHA256HashList, endpoint types.NodeEndpoint) error {
 	select {
 	case b.transactionHashesFromNode <- TransactionAnnouncement{Hashes: hashes, PeerID: peerID, PeerEndpoint: endpoint}:
 		return nil
@@ -246,7 +244,7 @@ func (b BxBridge) AnnounceTransactionHashes(peerID string, hashes types.SHA256Ha
 }
 
 // RequestTransactionsFromNode requests a series of transactions that a peer node has announced
-func (b BxBridge) RequestTransactionsFromNode(peerID string, hashes types.SHA256HashList) error {
+func (b *BxBridge) RequestTransactionsFromNode(peerID string, hashes types.SHA256HashList) error {
 	select {
 	case b.transactionHashesRequests <- TransactionAnnouncement{Hashes: hashes, PeerID: peerID}:
 		return nil
@@ -256,7 +254,7 @@ func (b BxBridge) RequestTransactionsFromNode(peerID string, hashes types.SHA256
 }
 
 // RequestTransactionsFromBDN requests a series of transactions from the BDN
-func (b BxBridge) RequestTransactionsFromBDN(requestID string, hashes types.SHA256HashList) error {
+func (b *BxBridge) RequestTransactionsFromBDN(requestID string, hashes types.SHA256HashList) error {
 	select {
 	case b.transactionHashesRequestsFromBDN <- TransactionsRequest{Hashes: hashes, RequestID: requestID}:
 		return nil
@@ -266,12 +264,12 @@ func (b BxBridge) RequestTransactionsFromBDN(requestID string, hashes types.SHA2
 }
 
 // ReceiveTransactionHashesRequestFromNode provides a channel that pushes requests for transaction hashes from a node
-func (b BxBridge) ReceiveTransactionHashesRequestFromNode() <-chan TransactionsRequest {
+func (b *BxBridge) ReceiveTransactionHashesRequestFromNode() <-chan TransactionsRequest {
 	return b.transactionHashesRequestsFromBDN
 }
 
 // SendRequestedTransactionsToNode sends a set of requested transaction to the node
-func (b BxBridge) SendRequestedTransactionsToNode(requestID string, transactions []*types.BxTransaction) error {
+func (b *BxBridge) SendRequestedTransactionsToNode(requestID string, transactions []*types.BxTransaction) error {
 	select {
 	case b.requestedTransactions <- TransactionsResponse{Transactions: transactions, RequestID: requestID}:
 		return nil
@@ -281,12 +279,12 @@ func (b BxBridge) SendRequestedTransactionsToNode(requestID string, transactions
 }
 
 // ReceiveRequestedTransactionsFromBDN provides a channel that pushes requested transactions from the BDN
-func (b BxBridge) ReceiveRequestedTransactionsFromBDN() <-chan TransactionsResponse {
+func (b *BxBridge) ReceiveRequestedTransactionsFromBDN() <-chan TransactionsResponse {
 	return b.requestedTransactions
 }
 
 // SendTransactionsFromBDN sends a set of transactions from the BDN for distribution to nodes
-func (b BxBridge) SendTransactionsFromBDN(transactions Transactions) error {
+func (b *BxBridge) SendTransactionsFromBDN(transactions Transactions) error {
 	select {
 	case b.transactionsFromBDN <- transactions:
 		return nil
@@ -296,7 +294,7 @@ func (b BxBridge) SendTransactionsFromBDN(transactions Transactions) error {
 }
 
 // SendTransactionsToBDN sends a set of transactions from a node to the BDN for propagation
-func (b BxBridge) SendTransactionsToBDN(txs []*types.BxTransaction, peerEndpoint types.NodeEndpoint) error {
+func (b *BxBridge) SendTransactionsToBDN(txs []*types.BxTransaction, peerEndpoint types.NodeEndpoint) error {
 	select {
 	case b.transactionsFromNode <- Transactions{Transactions: txs, PeerEndpoint: peerEndpoint}:
 		return nil
@@ -306,7 +304,7 @@ func (b BxBridge) SendTransactionsToBDN(txs []*types.BxTransaction, peerEndpoint
 }
 
 // SendConfirmedBlockToGateway sends a SHA256 of the block to be included in blockConfirm message
-func (b BxBridge) SendConfirmedBlockToGateway(block *types.BxBlock, peerEndpoint types.NodeEndpoint) error {
+func (b *BxBridge) SendConfirmedBlockToGateway(block *types.BxBlock, peerEndpoint types.NodeEndpoint) error {
 	select {
 	case b.confirmedBlockFromNode <- BlockFromNode{Block: block, PeerEndpoint: peerEndpoint}:
 		return nil
@@ -316,27 +314,27 @@ func (b BxBridge) SendConfirmedBlockToGateway(block *types.BxBlock, peerEndpoint
 }
 
 // ReceiveNodeTransactions provides a channel that pushes transactions as they come in from nodes
-func (b BxBridge) ReceiveNodeTransactions() <-chan Transactions {
+func (b *BxBridge) ReceiveNodeTransactions() <-chan Transactions {
 	return b.transactionsFromNode
 }
 
 // ReceiveBDNTransactions provides a channel that pushes transactions as they arrive from the BDN
-func (b BxBridge) ReceiveBDNTransactions() <-chan Transactions {
+func (b *BxBridge) ReceiveBDNTransactions() <-chan Transactions {
 	return b.transactionsFromBDN
 }
 
 // ReceiveTransactionHashesAnnouncement provides a channel that pushes announcements as nodes announce them
-func (b BxBridge) ReceiveTransactionHashesAnnouncement() <-chan TransactionAnnouncement {
+func (b *BxBridge) ReceiveTransactionHashesAnnouncement() <-chan TransactionAnnouncement {
 	return b.transactionHashesFromNode
 }
 
 // ReceiveTransactionHashesRequest provides a channel that pushes requests for transaction hashes from the BDN
-func (b BxBridge) ReceiveTransactionHashesRequest() <-chan TransactionAnnouncement {
+func (b *BxBridge) ReceiveTransactionHashesRequest() <-chan TransactionAnnouncement {
 	return b.transactionHashesRequests
 }
 
 // SendBlockToBDN sends a block from a node to the BDN
-func (b BxBridge) SendBlockToBDN(block *types.BxBlock, peerEndpoint types.NodeEndpoint) error {
+func (b *BxBridge) SendBlockToBDN(block *types.BxBlock, peerEndpoint types.NodeEndpoint) error {
 	select {
 	case b.blocksFromNode <- BlockFromNode{Block: block, PeerEndpoint: peerEndpoint}:
 		return nil
@@ -346,7 +344,7 @@ func (b BxBridge) SendBlockToBDN(block *types.BxBlock, peerEndpoint types.NodeEn
 }
 
 // SendBlockToNode sends a block from the BDN for distribution to nodes
-func (b BxBridge) SendBlockToNode(block *types.BxBlock) error {
+func (b *BxBridge) SendBlockToNode(block *types.BxBlock) error {
 	switch block.Type {
 	case types.BxBlockTypeEth:
 		select {
@@ -373,27 +371,27 @@ func (b BxBridge) SendBlockToNode(block *types.BxBlock) error {
 }
 
 // ReceiveBlockFromNode provides a channel that pushes blocks as they come in from nodes
-func (b BxBridge) ReceiveBlockFromNode() <-chan BlockFromNode {
+func (b *BxBridge) ReceiveBlockFromNode() <-chan BlockFromNode {
 	return b.blocksFromNode
 }
 
 // ReceiveEthBlockFromBDN provides a channel that pushes new eth blocks from the BDN
-func (b BxBridge) ReceiveEthBlockFromBDN() <-chan *types.BxBlock {
+func (b *BxBridge) ReceiveEthBlockFromBDN() <-chan *types.BxBlock {
 	return b.ethBlocksFromBDN
 }
 
 // ReceiveBeaconBlockFromBDN provides a channel that pushes new beacon blocks from the BDN
-func (b BxBridge) ReceiveBeaconBlockFromBDN() <-chan *types.BxBlock {
+func (b *BxBridge) ReceiveBeaconBlockFromBDN() <-chan *types.BxBlock {
 	return b.beaconBlocksFromBDN
 }
 
 // ReceiveConfirmedBlockFromNode provides a channel that pushes confirmed blocks from nodes
-func (b BxBridge) ReceiveConfirmedBlockFromNode() <-chan BlockFromNode {
+func (b *BxBridge) ReceiveConfirmedBlockFromNode() <-chan BlockFromNode {
 	return b.confirmedBlockFromNode
 }
 
 // SendBeaconMessageToBDN sends a beacon message from a node to the BDN
-func (b BxBridge) SendBeaconMessageToBDN(msg *types.BxBeaconMessage, nodeEnpoint types.NodeEndpoint) error {
+func (b *BxBridge) SendBeaconMessageToBDN(msg *types.BxBeaconMessage, nodeEnpoint types.NodeEndpoint) error {
 	select {
 	case b.beaconMessageFromNode <- BeaconMessageFromNode{Message: msg, PeerEndpoint: nodeEnpoint}:
 		return nil
@@ -403,7 +401,7 @@ func (b BxBridge) SendBeaconMessageToBDN(msg *types.BxBeaconMessage, nodeEnpoint
 }
 
 // SendBeaconMessageToBlockchain sends a beacon message from the BDN to the blockchain node
-func (b BxBridge) SendBeaconMessageToBlockchain(msg *types.BxBeaconMessage) error {
+func (b *BxBridge) SendBeaconMessageToBlockchain(msg *types.BxBeaconMessage) error {
 	// No listener, `b.withBeacon` is true if the gateway started with a beacon P2P node or Beacon API
 	if !b.withBeacon {
 		return nil
@@ -418,17 +416,17 @@ func (b BxBridge) SendBeaconMessageToBlockchain(msg *types.BxBeaconMessage) erro
 }
 
 // ReceiveBeaconMessageFromBDN provides a channel that pushes beacon messages from the BDN
-func (b BxBridge) ReceiveBeaconMessageFromBDN() <-chan *types.BxBeaconMessage {
+func (b *BxBridge) ReceiveBeaconMessageFromBDN() <-chan *types.BxBeaconMessage {
 	return b.beaconMessageFromBDN
 }
 
 // ReceiveBeaconMessageFromNode provides a channel that pushes beacon messages from nodes
-func (b BxBridge) ReceiveBeaconMessageFromNode() <-chan BeaconMessageFromNode {
+func (b *BxBridge) ReceiveBeaconMessageFromNode() <-chan BeaconMessageFromNode {
 	return b.beaconMessageFromNode
 }
 
 // SendNoActiveBlockchainPeersAlert sends alerts to the BDN when there is no active blockchain peer
-func (b BxBridge) SendNoActiveBlockchainPeersAlert() error {
+func (b *BxBridge) SendNoActiveBlockchainPeersAlert() error {
 	select {
 	case b.noActiveBlockchainPeers <- NoActiveBlockchainPeersAlert{}:
 		return nil
@@ -438,7 +436,7 @@ func (b BxBridge) SendNoActiveBlockchainPeersAlert() error {
 }
 
 // ReceiveNoActiveBlockchainPeersAlert provides a channel that pushes no active blockchain peer alerts
-func (b BxBridge) ReceiveNoActiveBlockchainPeersAlert() <-chan NoActiveBlockchainPeersAlert {
+func (b *BxBridge) ReceiveNoActiveBlockchainPeersAlert() <-chan NoActiveBlockchainPeersAlert {
 	return b.noActiveBlockchainPeers
 }
 
@@ -449,7 +447,7 @@ type BxStatusBridge struct {
 }
 
 // SendBlockchainStatusRequest sends a blockchain connection status request signal to a blockchain backend
-func (b BxStatusBridge) SendBlockchainStatusRequest() error {
+func (b *BxStatusBridge) SendBlockchainStatusRequest() error {
 	b.lock.RLock()
 	subscriptions := b.subscriptions
 	b.lock.RUnlock()
@@ -466,7 +464,7 @@ func (b BxStatusBridge) SendBlockchainStatusRequest() error {
 }
 
 // SendTrustedPeerRequest sends trusted peers signal
-func (b BxStatusBridge) SendTrustedPeerRequest() error {
+func (b *BxStatusBridge) SendTrustedPeerRequest() error {
 	b.lock.RLock()
 	subscriptions := b.subscriptions
 	b.lock.RUnlock()
@@ -485,9 +483,11 @@ func (b BxStatusBridge) SendTrustedPeerRequest() error {
 }
 
 // ReceiveBlockchainStatusResponse handles blockchain connection status response from backend
-func (b BxStatusBridge) ReceiveBlockchainStatusResponse() ([]*types.NodeEndpoint, error) {
-	t := time.NewTimer(1 * time.Second)
-	result := make([]*types.NodeEndpoint, 0)
+func (b *BxStatusBridge) ReceiveBlockchainStatusResponse() (*BxStatus, error) {
+	result := &BxStatus{
+		Endpoints:       make([]*types.NodeEndpoint, 0),
+		ServerAddresses: make([]string, 0),
+	}
 
 	b.lock.RLock()
 	subscriptions := b.subscriptions
@@ -497,8 +497,9 @@ func (b BxStatusBridge) ReceiveBlockchainStatusResponse() ([]*types.NodeEndpoint
 		ch := subscriptions[i].blockchainStatusResponse
 		select {
 		case status := <-ch:
-			result = append(result, status...)
-		case <-t.C:
+			result.Endpoints = append(result.Endpoints, status.Endpoints...)
+			result.ServerAddresses = append(result.ServerAddresses, status.ServerAddresses...)
+		case <-time.After(time.Second):
 			return nil, errors.New("timeout")
 		}
 	}
@@ -507,7 +508,7 @@ func (b BxStatusBridge) ReceiveBlockchainStatusResponse() ([]*types.NodeEndpoint
 }
 
 // ReceiveTrustedPeerResponse handles trusted peers response
-func (b BxStatusBridge) ReceiveTrustedPeerResponse() ([]peer.ID, error) {
+func (b *BxStatusBridge) ReceiveTrustedPeerResponse() ([]peer.ID, error) {
 	t := time.NewTimer(1 * time.Second)
 	result := make([]peer.ID, 0)
 
@@ -534,7 +535,7 @@ func (b BxStatusBridge) ReceiveTrustedPeerResponse() ([]peer.ID, error) {
 func (b *BxStatusBridge) SubscribeStatus(shouldCheckTrustedPeers bool) StatusSubscription {
 	subscription := &BxStatusSubscription{
 		blockchainStatusRequest:  make(chan struct{}, 1),
-		blockchainStatusResponse: make(chan []*types.NodeEndpoint, 1),
+		blockchainStatusResponse: make(chan BxStatus, 1),
 		shouldCheckTrustedPeers:  shouldCheckTrustedPeers,
 	}
 	if shouldCheckTrustedPeers {
@@ -552,10 +553,16 @@ func (b *BxStatusBridge) SubscribeStatus(shouldCheckTrustedPeers bool) StatusSub
 // BxStatusSubscription is a channel based implementation of the StatusSubscription interface
 type BxStatusSubscription struct {
 	blockchainStatusRequest  chan struct{}
-	blockchainStatusResponse chan []*types.NodeEndpoint
+	blockchainStatusResponse chan BxStatus
 	trustedPeersRequest      chan struct{}
 	trustedPeersResponse     chan []peer.ID
 	shouldCheckTrustedPeers  bool
+}
+
+// BxStatus holds the response for blockchain connection status
+type BxStatus struct {
+	Endpoints       []*types.NodeEndpoint
+	ServerAddresses []string
 }
 
 // ReceiveBlockchainStatusRequest handles SendBlockchainStatusRequest signal
@@ -569,9 +576,9 @@ func (b BxStatusSubscription) ReceiveTrustedPeerRequest() <-chan struct{} {
 }
 
 // SendBlockchainStatusResponse sends a response for blockchain connection status request
-func (b BxStatusSubscription) SendBlockchainStatusResponse(endpoints []*types.NodeEndpoint) error {
+func (b BxStatusSubscription) SendBlockchainStatusResponse(status BxStatus) error {
 	select {
-	case b.blockchainStatusResponse <- endpoints:
+	case b.blockchainStatusResponse <- status:
 		return nil
 	default:
 		return ErrChannelFull
@@ -589,7 +596,7 @@ func (b BxStatusSubscription) SendTrustedPeerResponse(trustedPeers []peer.ID) er
 }
 
 // SendNodeConnectionCheckRequest sends a request for node connection check request
-func (b BxBridge) SendNodeConnectionCheckRequest() error {
+func (b *BxBridge) SendNodeConnectionCheckRequest() error {
 	select {
 	case b.nodeConnectionCheckRequest <- struct{}{}:
 		return nil
@@ -599,12 +606,12 @@ func (b BxBridge) SendNodeConnectionCheckRequest() error {
 }
 
 // ReceiveNodeConnectionCheckRequest handles node connection check request from backend
-func (b BxBridge) ReceiveNodeConnectionCheckRequest() <-chan struct{} {
+func (b *BxBridge) ReceiveNodeConnectionCheckRequest() <-chan struct{} {
 	return b.nodeConnectionCheckRequest
 }
 
 // SendNodeConnectionCheckResponse sends a response for node connection check request
-func (b BxBridge) SendNodeConnectionCheckResponse(endpoints types.NodeEndpoint) error {
+func (b *BxBridge) SendNodeConnectionCheckResponse(endpoints types.NodeEndpoint) error {
 	select {
 	case b.nodeConnectionCheckResponse <- endpoints:
 		return nil
@@ -614,12 +621,12 @@ func (b BxBridge) SendNodeConnectionCheckResponse(endpoints types.NodeEndpoint) 
 }
 
 // ReceiveNodeConnectionCheckResponse handles node connection check response from backend
-func (b BxBridge) ReceiveNodeConnectionCheckResponse() <-chan types.NodeEndpoint {
+func (b *BxBridge) ReceiveNodeConnectionCheckResponse() <-chan types.NodeEndpoint {
 	return b.nodeConnectionCheckResponse
 }
 
 // SendBlockchainConnectionStatus sends blockchain connection status
-func (b BxBridge) SendBlockchainConnectionStatus(connStatus ConnectionStatus) error {
+func (b *BxBridge) SendBlockchainConnectionStatus(connStatus ConnectionStatus) error {
 	select {
 	case b.blockchainConnectionStatus <- connStatus:
 		return nil
@@ -629,12 +636,12 @@ func (b BxBridge) SendBlockchainConnectionStatus(connStatus ConnectionStatus) er
 }
 
 // ReceiveBlockchainConnectionStatus handles blockchain connection status
-func (b BxBridge) ReceiveBlockchainConnectionStatus() <-chan ConnectionStatus {
+func (b *BxBridge) ReceiveBlockchainConnectionStatus() <-chan ConnectionStatus {
 	return b.blockchainConnectionStatus
 }
 
 // SendDisconnectEvent send disconnect event
-func (b BxBridge) SendDisconnectEvent(endpoint types.NodeEndpoint) error {
+func (b *BxBridge) SendDisconnectEvent(endpoint types.NodeEndpoint) error {
 	select {
 	case b.disconnectEvent <- endpoint:
 		return nil
@@ -644,6 +651,6 @@ func (b BxBridge) SendDisconnectEvent(endpoint types.NodeEndpoint) error {
 }
 
 // ReceiveDisconnectEvent handles disconnect event
-func (b BxBridge) ReceiveDisconnectEvent() <-chan types.NodeEndpoint {
+func (b *BxBridge) ReceiveDisconnectEvent() <-chan types.NodeEndpoint {
 	return b.disconnectEvent
 }

@@ -53,7 +53,7 @@ func (b *BroadcastHeader) SourceID() (sourceID bxtypes.NodeID) {
 func (b *BroadcastHeader) SetSourceID(sourceID bxtypes.NodeID) error {
 	sourceIDBytes, err := uuid.FromString(string(sourceID))
 	if err != nil {
-		return fmt.Errorf("Failed to set source id, source id: %v", sourceIDBytes)
+		return fmt.Errorf("failed to set source id, source id: %v", sourceIDBytes)
 	}
 
 	copy(b.sourceID[:], sourceIDBytes[:])

@@ -1,8 +1,8 @@
 package types
 
 import (
+	ethpb "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
 	ssz "github.com/prysmaticlabs/fastssz"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
 
 // CompressedEthBlobSidecar is a struct that contains same data as ethpb.BlobSidecar

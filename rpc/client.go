@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/bloXroute-Labs/gateway/v2/config"
-	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/bloXroute-Labs/gateway/v2/config"
+	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 
 	"google.golang.org/grpc"
 )

@@ -31,7 +31,6 @@ type Bx struct {
 	ExternalIP         string
 	ExternalPort       int64
 	BlockchainNetwork  string
-	PrioritySending    bool
 	NodeType           bxtypes.NodeType
 	LogNetworkContent  bool
 	FluentDEnabled     bool
@@ -104,7 +103,6 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		ExternalIP:         ctx.String(utils.ExternalIPFlag.Name),
 		ExternalPort:       ctx.Int64(utils.PortFlag.Name),
 		BlockchainNetwork:  ctx.String(utils.BlockchainNetworkFlag.Name),
-		PrioritySending:    !ctx.Bool(utils.AvoidPrioritySendingFlag.Name),
 		Relays:             ctx.String(utils.RelayHostsFlag.Name),
 		NodeType:           nodeType,
 		LogNetworkContent:  ctx.Bool(utils.LogNetworkContentFlag.Name),

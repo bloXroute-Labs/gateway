@@ -6,11 +6,11 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/bloXroute-Labs/bxcommon-go/clock"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 
+	"github.com/bloXroute-Labs/bxcommon-go/clock"
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
@@ -307,7 +307,7 @@ func (bp *blockProcessor) newBxBlockFromSSZBroadcast(broadcast *bxmessage.Broadc
 
 	blockSize := len(sszBlock.Block) + txsBytes
 
-	return types.NewRawBxBlock(broadcast.Hash(), broadcast.BeaconHash(), broadcast.BlockType(), nil, txs, sszBlock.Block, nil, big.NewInt(int64(sszBlock.Number)), int(blockSize), nil), nil
+	return types.NewRawBxBlock(broadcast.Hash(), broadcast.BeaconHash(), broadcast.BlockType(), nil, txs, sszBlock.Block, nil, big.NewInt(0).SetUint64(sszBlock.Number), blockSize, nil), nil
 }
 
 func calcBeaconTransactionLength(rawTx []byte) int {
@@ -332,13 +332,13 @@ func calcBeaconTransactionLength(rawTx []byte) int {
 		if rawTx[0] == 0x80 {
 			txLen -= 2
 		} else if rawTx[0] > 0x80 {
-			// Arbitery amount of bytes encoding length
+			// Arbitrary amount of bytes encoding length
 			// Decoding BigEndian number from byte
 			minus := int(new(big.Int).Sub(
 				new(big.Int).SetBytes([]byte{rawTx[0]}),
 				new(big.Int).SetBytes([]byte{0xb7}),
 			).Uint64())
-			txLen -= (minus + 1)
+			txLen -= minus + 1
 		}
 	}
 

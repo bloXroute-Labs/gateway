@@ -26,6 +26,11 @@ var (
 		Name:  "beacon-port",
 		Usage: "specify the port for the beacon chain",
 	}
+	EnableQuicFlag = &cli.BoolFlag{
+		Name:  "enable-quic",
+		Usage: "enable QUIC protocol for the beacon chain",
+		Value: false,
+	}
 	PrivateKeyFlag = &cli.StringFlag{
 		Name:     "private-key",
 		Usage:    "private key for encrypted communication with Ethereum node",

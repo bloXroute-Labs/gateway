@@ -120,7 +120,12 @@ func (et *EthTransaction) From() (*common.Address, error) {
 		return et.from, nil
 	}
 
-	from, err := ethtypes.Sender(ethtypes.NewPragueSigner(et.tx.ChainId()), et.tx)
+	signer, err := NewPragueSigner(et.tx.ChainId())
+	if err != nil {
+		return nil, err
+	}
+
+	from, err := ethtypes.Sender(signer, et.tx)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse Ethereum transaction from: %v", err)
 	}
@@ -395,7 +400,7 @@ func (et *EthTransaction) rawTx() ([]byte, error) {
 // AddressAsString converts address to string
 func AddressAsString(addr *common.Address) string {
 	if addr == nil {
-		return string([]byte("0x"))
+		return "0x"
 	}
 	return fmt.Sprintf("0x%s", hex.EncodeToString(addr.Bytes()))
 }
@@ -424,5 +429,5 @@ func BigIntAsString(bi *big.Int) string {
 	t := bi.Text(16)
 
 	b.WriteString(negative + "0x" + t)
-	return string(b.String())
+	return b.String()
 }

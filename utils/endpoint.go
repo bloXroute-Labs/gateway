@@ -6,10 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/multiformats/go-multiaddr"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 // EnodeToNodeEndpoint converts an enode to a NodeEndpoint
@@ -24,9 +25,9 @@ func EnodeToNodeEndpoint(node *enode.Node, blockchainNetwork string) types.NodeE
 	}
 }
 
-// MultiaddrToNodeEndoint converts a multiaddr to a NodeEndpoint
-func MultiaddrToNodeEndoint(ma multiaddr.Multiaddr, blockchainNetwork string) types.NodeEndpoint {
-	var ip, dns, port, pubKey string
+// MultiaddrToNodeEndpoint converts a multiaddr to a NodeEndpoint
+func MultiaddrToNodeEndpoint(ma multiaddr.Multiaddr, blockchainNetwork string) types.NodeEndpoint {
+	var ip, dns, port, pubKey, connType string
 	multiaddr.ForEach(ma, func(c multiaddr.Component) bool {
 		switch c.Protocol().Code {
 		case multiaddr.P_IP6:
@@ -40,9 +41,17 @@ func MultiaddrToNodeEndoint(ma multiaddr.Multiaddr, blockchainNetwork string) ty
 			return true
 		case multiaddr.P_TCP:
 			port = c.Value()
+			connType = "tcp"
+			return true
+		case multiaddr.P_UDP:
+			port = c.Value()
+			connType = "udp"
 			return true
 		case multiaddr.P_P2P:
 			pubKey = c.Value()
+			return true
+		case multiaddr.P_QUIC, multiaddr.P_QUIC_V1:
+			connType = "quic"
 			return true
 		}
 
@@ -59,6 +68,7 @@ func MultiaddrToNodeEndoint(ma multiaddr.Multiaddr, blockchainNetwork string) ty
 		PublicKey:         pubKey,
 		IsBeacon:          true,
 		BlockchainNetwork: blockchainNetwork,
+		ConnectionType:    connType,
 	}
 }
 
@@ -70,7 +80,7 @@ func CreatePrysmEndpoint(prysmAddr, blockchainNetwork string) (types.NodeEndpoin
 	}
 	prysmPort, err := strconv.Atoi(parts[1])
 	if err != nil {
-		return types.NodeEndpoint{}, fmt.Errorf("error getting port from prysm addr %v err %v", prysmAddr, err)
+		return types.NodeEndpoint{}, fmt.Errorf("error getting port from prysm addr %v: %v", prysmAddr, err)
 	}
 	return types.NodeEndpoint{
 		IP:                parts[0],

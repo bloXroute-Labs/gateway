@@ -12,12 +12,7 @@ import (
 
 const publicIPResolver = "http://checkip.dyndns.org/"
 
-var ipRegex, _ = regexp.Compile("[0-9]+(?:\\.[0-9]+){3}")
-
-// IPResolverHolder
-var (
-	IPResolverHolder IPResolver
-)
+var ipRegex = regexp.MustCompile(`[0-9]+(?:\.[0-9]+){3}`)
 
 // IPResolver represents an interface
 type IPResolver interface {

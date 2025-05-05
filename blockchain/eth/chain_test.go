@@ -3,17 +3,26 @@ package eth
 import (
 	"context"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
-	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
-	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+
+	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
+	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 )
+
+func TestMain(m *testing.M) {
+	log.SetLevel(log.ErrorLevel)
+	os.Exit(m.Run())
+}
 
 func TestChain_AddBlock(t *testing.T) {
 	c := newChain(context.Background(), 10, 5, 5, time.Hour, 1000)

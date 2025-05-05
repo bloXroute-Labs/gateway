@@ -36,7 +36,6 @@ const (
 	networkNum                bxtypes.NetworkNum = 5
 	testGatewayAccountID                         = "user"
 	testGatewaySecretHash                        = "password"
-	testTierName                                 = sdnmessage.ATierUltra
 	testGatewayUserAuthHeader                    = "dXNlcjpwYXNzd29yZA==" // encoded testGatewayAccountID and testGatewaySecretHash
 	testGatewayAccountID2                        = "user2"
 	testGatewaySecretHash2                       = "password2"

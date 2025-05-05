@@ -18,28 +18,28 @@ func ResolvePath(relPath string) string {
 }
 
 // ReadMockBSCBlobSidecars reads the RLP file and decodes its content.
-func ReadMockBSCBlobSidecars() ([]byte, BlobSidecars, error) {
+func ReadMockBSCBlobSidecars() (BlobSidecars, error) {
 	filePath := ResolvePath("./common/test/bsc_blob_sidecars_len_1.rlp")
 
 	file, err := os.Open(filePath)
 	if err != nil {
 		log.Fatalf("Failed to open file: %v", err)
-		return nil, BlobSidecars{}, err
+		return BlobSidecars{}, err
 	}
 	defer file.Close()
 
 	rlpData, err := io.ReadAll(file)
 	if err != nil {
 		log.Fatalf("Failed to read file: %v", err)
-		return nil, BlobSidecars{}, err
+		return BlobSidecars{}, err
 	}
 
 	var sidecars BlobSidecars
 	err = rlp.DecodeBytes(rlpData, &sidecars)
 	if err != nil {
 		log.Fatalf("Failed to decode RLP data: %v", err)
-		return nil, BlobSidecars{}, err
+		return BlobSidecars{}, err
 	}
 
-	return rlpData, sidecars, nil
+	return sidecars, nil
 }

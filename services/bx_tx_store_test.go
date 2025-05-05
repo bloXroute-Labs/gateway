@@ -5,14 +5,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -161,7 +162,7 @@ func TestBxTxStore_clean(t *testing.T) {
 }
 
 func TestBxTxStore_clean256K(t *testing.T) {
-	zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	log.SetLevel(log.WarnLevel)
 	otherNetworkTxs := 20
 	extra := 10
 	clock := clock.MockClock{}

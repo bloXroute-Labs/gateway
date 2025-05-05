@@ -9,9 +9,11 @@ import (
 	"testing"
 	"time"
 
-	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/struCoder/pidusage"
+
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 type TestManager struct {

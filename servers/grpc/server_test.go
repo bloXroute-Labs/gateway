@@ -10,6 +10,7 @@ import (
 
 	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )

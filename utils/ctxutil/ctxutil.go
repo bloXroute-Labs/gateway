@@ -16,14 +16,6 @@ type BaseCtxSwitcher struct {
 	cancel context.CancelFunc
 }
 
-// NewCtxSwitcher creates a new CtxSwitcher
-func NewCtxSwitcher(ctx context.Context) *BaseCtxSwitcher {
-	cs := new(BaseCtxSwitcher)
-	cs.parent = ctx
-	cs.ctx, cs.cancel = context.WithCancel(ctx)
-	return cs
-}
-
 // Context returns current context
 func (cs *BaseCtxSwitcher) Context() context.Context { return cs.ctx }
 

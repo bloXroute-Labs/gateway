@@ -106,7 +106,7 @@ func validateTxFromExternalSource(validatorsManager *validator.Manager, transact
 	accountID := source.GetAccountID()
 
 	if ethTx.ChainId().Int64() != 0 && gatewayChainID != 0 && bxtypes.NetworkID(ethTx.ChainId().Int64()) != gatewayChainID {
-		log.Debugf("chainID mismatch for hash %v - tx chainID %v , gateway networkNum %v networkChainID %v", ethTx.Hash().String(), ethTx.ChainId().Int64(), networkNum, gatewayChainID)
+		log.Debugf("chainID mismatch for hash %v - tx chainID %v, gateway networkNum %v networkChainID %v", ethTx.Hash().String(), ethTx.ChainId().Int64(), networkNum, gatewayChainID)
 		return nil, false, fmt.Errorf("chainID mismatch for hash %v, expect %v got %v, make sure the tx is sent with the right blockchain network", ethTx.Hash().String(), gatewayChainID, ethTx.ChainId().Int64())
 	}
 

@@ -4,9 +4,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v6/config/params"
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/libp2p/go-libp2p/core/network"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
 )
 
 var defaultReadDuration = params.BeaconConfig().TtfbTimeoutDuration()  // TTFB_TIMEOUT

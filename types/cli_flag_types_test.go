@@ -5,8 +5,9 @@ import (
 	"reflect"
 	"testing"
 
-	gateway "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/stretchr/testify/require"
+
+	gateway "github.com/bloXroute-Labs/gateway/v2/protobuf"
 )
 
 func TestCallParamSliceFlagSet(t *testing.T) {

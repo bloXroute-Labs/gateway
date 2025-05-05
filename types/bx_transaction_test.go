@@ -5,8 +5,10 @@ import (
 	"testing"
 	"time"
 
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 )
 
 // example of real tx
@@ -19,35 +21,34 @@ var testNetworkNum = bxtypes.NetworkNum(5)
 
 func TestValidContentParsing(t *testing.T) {
 	var hash SHA256Hash
-	hashRes, _ := hex.DecodeString("ed2b4580a766bc9d81c73c35a8496f0461e9c261621cb9f4565ae52ade56056d")
+	hashRes, _ := hex.DecodeString("620e581229b29042720613415fd5dceef0a94980118927e93855b80232c7ccc4")
 	copy(hash[:], hashRes)
 
-	content, _ := hex.DecodeString("f8708301b7f8851bf08eb0008301388094b877c7e556d50b0027053336b90f36becf67b3dd88050b32f902486000801ca0aa803263146bda76a58ebf9f54be589280e920616bc57e7bd68248821f46fd0ca040266f84a2ecd4719057b0633cc80e3e0b3666f6f6ec1890a920239634ec6531")
+	content, _ := hex.DecodeString("f8708301b7f8851bf08eb0008301388094b877c7e556d50b0027053336b90f36becf67b3dd88050b32f902486000802da06441659feba08d7d13bf097ed896b0f5d0f4ece350086c1417e28c236f350edfa03aa7ac259f3e39328cb2c7f605d239ed41b81d743604105fc21ef93cba636fd3")
 
 	tx := NewBxTransaction(hash, testNetworkNum, TFPaidTx, time.Now())
 	tx.SetContent(content)
 	blockchainTx, err := tx.BlockchainTransaction(EmptySender)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	ethTx, ok := blockchainTx.(*EthTransaction)
-	assert.True(t, ok)
+	require.True(t, ok)
 
 	fields := ethTx.Fields(AllFieldsWithFrom)
 
 	assert.Equal(t, "0x0", fields["type"])
 	assert.Nil(t, fields["AccessList"])
 	assert.Equal(t, "0xb877c7e556d50b0027053336b90f36becf67b3dd", fields["to"])
-	assert.Equal(t, "0x40266f84a2ecd4719057b0633cc80e3e0b3666f6f6ec1890a920239634ec6531", fields["s"])
-	assert.Equal(t, "0xaa803263146bda76a58ebf9f54be589280e920616bc57e7bd68248821f46fd0c", fields["r"])
-	assert.Equal(t, "0x1c", fields["v"])
+	assert.Equal(t, "0x3aa7ac259f3e39328cb2c7f605d239ed41b81d743604105fc21ef93cba636fd3", fields["s"])
+	assert.Equal(t, "0x6441659feba08d7d13bf097ed896b0f5d0f4ece350086c1417e28c236f350edf", fields["r"])
+	assert.Equal(t, "0x2d", fields["v"])
 	assert.Equal(t, "0x50b32f902486000", fields["value"])
 	assert.Equal(t, uint64(0x1b7f8), ethTx.Nonce())
 	assert.Equal(t, "0x", fields["input"])
-	assert.Equal(t, "0xed2b4580a766bc9d81c73c35a8496f0461e9c261621cb9f4565ae52ade56056d", fields["hash"])
-	assert.Equal(t, "0x832f166799a407275500430b61b622f0058f15d6", fields["from"])
+	assert.Equal(t, "0x620e581229b29042720613415fd5dceef0a94980118927e93855b80232c7ccc4", fields["hash"])
+	assert.Equal(t, "0x6b37a3e540bb4091b35719ead4ce07954a22eb95", fields["from"])
 	assert.Equal(t, "0x1bf08eb000", fields["gasPrice"])
 	assert.Equal(t, "0x13880", fields["gas"])
-
 }
 
 // func TestValidContentParsingType1Tx(t *testing.T) {

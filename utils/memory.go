@@ -24,7 +24,7 @@ func getRss() (int64, error) {
 
 	fields := strings.Split(string(buf), " ")
 	if len(fields) < 2 {
-		return 0, errors.New("Cannot parse statm")
+		return 0, errors.New("cannot parse statm")
 	}
 
 	rss, err := strconv.ParseInt(fields[1], 10, 64)

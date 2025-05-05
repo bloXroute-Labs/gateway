@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-
-	"github.com/ethereum/go-ethereum/crypto"
 )
 
 // EmptyHash is the empty SHA256 hash
@@ -39,14 +37,6 @@ func NewSHA256HashFromString(hashStr string) (SHA256Hash, error) {
 	}
 
 	return NewSHA256Hash(hashBytes)
-}
-
-// NewSHA256FromKeccak derives an SHA256Hash object using keccak hash on the provided byte array
-func NewSHA256FromKeccak(b []byte) SHA256Hash {
-	keccakHash := crypto.Keccak256(b)
-	var hash SHA256Hash
-	copy(hash[:], keccakHash)
-	return hash
 }
 
 // GenerateSHA256Hash randomly generates a new SHA256Hash object

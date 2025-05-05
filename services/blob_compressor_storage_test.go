@@ -4,13 +4,14 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
+
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 )
 
 func newBlobTypeTx(commitments []kzg4844.Commitment, blobs []kzg4844.Blob) *ethtypes.Transaction {

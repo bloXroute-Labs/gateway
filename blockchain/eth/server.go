@@ -3,18 +3,19 @@ package eth
 import (
 	"context"
 	"crypto/ecdsa"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"path"
 
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/nat"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/p2p"
 )
 
 // Server wraps the Ethereum p2p server, for use with the BDN
@@ -36,7 +37,8 @@ func NewServer(parent context.Context, port int, externalIP net.IP, config *netw
 		privateKeyPath := path.Join(dataDir, ".gatewaykey")
 		privateKeyFromFile, generated, err := network.LoadOrGeneratePrivateKey(privateKeyPath)
 		if err != nil {
-			keyWriteErr, ok := err.(keyWriteError)
+			var keyWriteErr keyWriteError
+			ok := errors.As(err, &keyWriteErr)
 			if ok {
 				logger.Warn("could not write private key", "err", keyWriteErr)
 			} else {
@@ -145,12 +147,15 @@ func (s *Server) AddEthLoggerFileHandler(path string) error {
 	glogger := log.NewGlogHandler(handler)
 
 	if s.dynamicPeerDisabled {
-		glogger.Verbosity(log.LvlTrace)
+		glogger.Verbosity(log.LevelTrace)
+		err = glogger.Vmodule("p2p=5")
 	} else {
-		glogger.Verbosity(log.LvlInfo)
+		glogger.Verbosity(log.LevelInfo)
+		err = glogger.Vmodule("p2p=3")
 	}
-
-	glogger.Vmodule("p2p")
+	if err != nil {
+		return fmt.Errorf("failed to set glog verbosity pattern: %w", err)
+	}
 
 	log.SetDefault(log.NewLogger(glogger))
 

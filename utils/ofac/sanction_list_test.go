@@ -3,10 +3,11 @@ package ofac
 import (
 	"testing"
 
-	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
-	types "github.com/bloXroute-Labs/gateway/v2/types"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 func createTransaction(rawTx string) (*ethtypes.Transaction, error) {

@@ -5,14 +5,15 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	ethpb "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rlp"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
 
 // BlobProcessor is responsible for processing blob sidecars from BDN and to BDN
