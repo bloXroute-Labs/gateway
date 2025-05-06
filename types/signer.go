@@ -1,17 +1,16 @@
 package types
 
 import (
-	"fmt"
 	"math/big"
 
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
-// NewPragueSigner creates a new signer for the Prague network.
-func NewPragueSigner(chainID *big.Int) (ethtypes.Signer, error) {
-	if chainID == nil || chainID.Sign() <= 0 {
-		return nil, fmt.Errorf("invalid chainID %v", chainID)
+// LatestSignerForChainID creates a new signer for the latest network version.
+func LatestSignerForChainID(chainID *big.Int) ethtypes.Signer {
+	if chainID != nil && chainID.Sign() <= 0 {
+		chainID = nil
 	}
 
-	return ethtypes.NewPragueSigner(chainID), nil
+	return ethtypes.LatestSignerForChainID(chainID)
 }

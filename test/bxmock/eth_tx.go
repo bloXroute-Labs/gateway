@@ -49,10 +49,7 @@ func NewSignedEthTx(txType uint8, nonce uint64, privateKey *ecdsa.PrivateKey, ch
 		panic("provided tx type does not exist")
 	}
 
-	signer, err := types.NewPragueSigner(chainID)
-	if err != nil {
-		panic(err)
-	}
+	signer := types.LatestSignerForChainID(chainID)
 	hash := signer.Hash(unsignedTx)
 	signature, _ := crypto.Sign(hash.Bytes(), privateKey)
 
@@ -92,10 +89,7 @@ func NewSignedEthBlobTxWithSidecar(nonce uint64, privateKey *ecdsa.PrivateKey, c
 		S:          &uint256.Int{},
 	})
 
-	signer, err := types.NewPragueSigner(chainID)
-	if err != nil {
-		panic(err)
-	}
+	signer := types.LatestSignerForChainID(chainID)
 	hash := signer.Hash(unsignedTx)
 	signature, _ := crypto.Sign(hash.Bytes(), privateKey)
 

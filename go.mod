@@ -4,7 +4,7 @@ go 1.24.2
 
 require (
 	github.com/DataDog/datadog-go/v5 v5.6.0
-	github.com/OffchainLabs/prysm/v6 v6.0.1-rc.0
+	github.com/OffchainLabs/prysm/v6 v6.0.1
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
 	github.com/bloXroute-Labs/bxcommon-go v1.1.0
 	github.com/ethereum/go-ethereum v1.15.10
