@@ -112,12 +112,7 @@ func ParseRawTransactionGroup(transactions []string, trimTxHashPrefix bool, chai
 			return nil, fmt.Errorf("unable to parse %d transaction error: %v", i, err)
 		}
 
-		signer, err := types.NewPragueSigner(big.NewInt(chainID))
-		if err != nil {
-			return nil, err
-		}
-
-		_, err = signer.Sender(transaction)
+		_, err = types.LatestSignerForChainID(big.NewInt(chainID)).Sender(transaction)
 		if err != nil {
 			return nil, err
 		}

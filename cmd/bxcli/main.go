@@ -891,13 +891,7 @@ func cmdBlxrBatchTX(ctx *cli.Context) error {
 			}
 		}
 
-		signer, err := types.NewPragueSigner(ethTx.ChainId())
-		if err != nil {
-			fmt.Printf("Error - failed to create signer for the transaction %v: %v. continue..", transaction, err)
-			continue
-		}
-
-		ethSender, err := ethtypes.Sender(signer, &ethTx)
+		ethSender, err := ethtypes.Sender(types.LatestSignerForChainID(ethTx.ChainId()), &ethTx)
 		if err != nil {
 			fmt.Printf("Error - failed to get sender from the transaction %v: %v. continue..", transaction, err)
 			continue

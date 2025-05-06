@@ -123,10 +123,12 @@ func TestHandler_TxChainID(t *testing.T) {
 		bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, privateKey, big.NewInt(network.BSCTestnetChainID)),
 		bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 2, privateKey, big.NewInt(network.EthMainnetChainID)),
 		bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 3, privateKey, big.NewInt(network.BSCMainnetChainID)),
+		bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 4, privateKey, big.NewInt(-1)),
 	}
 	assert.False(t, handler.isChainIDMatch(txs[0].ChainId().Uint64()))
 	assert.False(t, handler.isChainIDMatch(txs[1].ChainId().Uint64()))
 	assert.True(t, handler.isChainIDMatch(txs[2].ChainId().Uint64()))
+	assert.False(t, handler.isChainIDMatch(txs[3].ChainId().Uint64()))
 	tx3Hash := txs[2].Hash().String()
 
 	txsPacket := eth.TransactionsPacket(txs)

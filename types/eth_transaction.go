@@ -120,12 +120,7 @@ func (et *EthTransaction) From() (*common.Address, error) {
 		return et.from, nil
 	}
 
-	signer, err := NewPragueSigner(et.tx.ChainId())
-	if err != nil {
-		return nil, err
-	}
-
-	from, err := ethtypes.Sender(signer, et.tx)
+	from, err := ethtypes.Sender(LatestSignerForChainID(et.tx.ChainId()), et.tx)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse Ethereum transaction from: %v", err)
 	}
