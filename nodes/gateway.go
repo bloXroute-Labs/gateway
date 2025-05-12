@@ -58,7 +58,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	"github.com/bloXroute-Labs/gateway/v2/utils/bundle"
-	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
 	"github.com/bloXroute-Labs/gateway/v2/version"
 )
 
@@ -139,7 +138,6 @@ type gateway struct {
 	startupArgs                  string
 	validatorStatusMap           *syncmap.SyncMap[string, bool]           // validator addr -> online/offline
 	validatorListMap             *syncmap.SyncMap[uint64, validator.List] // block height -> list of validators with turn length
-	nextValidatorMap             *orderedmap.OrderedMap[uint64, string]   // next accessible validator
 	validatorListReady           bool
 	validatorInfoUpdateLock      sync.Mutex
 	latestValidatorInfo          []*types.FutureValidatorInfo
@@ -162,7 +160,6 @@ type gateway struct {
 	blobsManager   *beacon.BlobSidecarCacheManager
 	ignoredRelays  *syncmap.SyncMap[string, bxtypes.RelayInfo]
 	relaysToSwitch *syncmap.SyncMap[string, bool]
-
 }
 
 // GeneratePeers generate string peers separated by comma
@@ -237,10 +234,8 @@ func NewGateway(parent context.Context,
 	}
 	g.chainID = int64(bxtypes.NetworkNumToChainID[sdn.NetworkNum()])
 
-
 	if bxConfig.BlockchainNetwork == bxtypes.BSCMainnet {
 		g.validatorStatusMap = syncmap.NewStringMapOf[bool]()
-		g.nextValidatorMap = orderedmap.New[uint64, string]()
 	}
 
 	if bxConfig.BlockchainNetwork == bxtypes.BSCMainnet || bxConfig.BlockchainNetwork == bxtypes.BSCTestnet {
@@ -257,7 +252,7 @@ func NewGateway(parent context.Context,
 	}
 
 	if g.validatorStatusMap != nil {
-		g.validatorsManager = validator.NewManager(g.nextValidatorMap, g.validatorStatusMap, g.validatorListMap)
+		g.validatorsManager = validator.NewManager(g.validatorStatusMap, g.validatorListMap)
 	}
 
 	g.asyncMsgChannel = services.NewAsyncMsgChannel(g)
@@ -492,7 +487,7 @@ func (g *gateway) Run() error {
 
 	g.clientHandler = servers.NewClientHandler(&g.Bx, g.BxConfig, g, g.sdn, accService, g.bridge,
 		g.blockchainPeers, services.NewNoOpSubscriptionServices(), g.wsManager, g.bdnStats,
-		g.timeStarted, g.gatewayPublicKey, g.feedManager, g.validatorsManager,
+		g.timeStarted, g.gatewayPublicKey, g.feedManager,
 		g.stats, g.TxStore, txFromFieldIncludable, sslCert.PrivateCertFile(), sslCert.PrivateKeyFile(),
 	)
 
@@ -767,20 +762,6 @@ func (g *gateway) queryEpochBlock(height uint64) error {
 	return errors.New("failed to query blockchain node for previous epoch block")
 }
 
-func (g *gateway) cleanUpNextValidatorMap(currentHeight uint64) {
-	// remove all wallet address of existing blocks
-	toRemove := make([]uint64, 0)
-	for pair := g.nextValidatorMap.Oldest(); pair != nil; pair = pair.Next() {
-		if currentHeight >= pair.Key {
-			toRemove = append(toRemove, pair.Key)
-		}
-	}
-
-	for _, height := range toRemove {
-		g.nextValidatorMap.Delete(height)
-	}
-}
-
 func (g *gateway) generateBSCValidator(blockHeight uint64) []*types.FutureValidatorInfo {
 	vi := blockchain.DefaultValidatorInfo(blockHeight)
 
@@ -840,52 +821,10 @@ func (g *gateway) generateBSCValidator(blockHeight uint64) []*types.FutureValida
 			vi[i-1].WalletID = strings.ToLower(validatorAddr)
 		}
 
-		g.nextValidatorMap.Set(targetingBlockHeight, strings.ToLower(vi[i-1].WalletID)) // nextValidatorMap is simulating a queue with height as expiration key. Regardless of the accessible status, next walletID will be appended to the queue
-
 		vi[i-1].Accessible = true
 	}
 
-	g.cleanUpNextValidatorMap(blockHeight)
-	go g.reevaluatePendingBSCNextValidatorTx()
 	return vi
-}
-
-func (g *gateway) reevaluatePendingBSCNextValidatorTx() {
-	now := time.Now()
-	g.validatorsManager.Lock()
-	defer g.validatorsManager.Unlock()
-
-	pendingNextValidatorTxsMap := g.validatorsManager.GetPendingNextValidatorTxs()
-	for txHash, txInfo := range pendingNextValidatorTxsMap {
-		fallback := time.Duration(uint64(txInfo.Fallback) * bxgateway.MillisecondsToNanosecondsMultiplier)
-		// if fallback time is not reached or if fallback is 0 meaning we don't have fallback deadline
-		if fallbackTimeNotReached := now.Before(txInfo.TimeOfRequest.Add(fallback)); fallbackTimeNotReached || txInfo.Fallback == 0 {
-			timeSinceRequest := now.Sub(txInfo.TimeOfRequest)
-			adjustedFallback := fallback - timeSinceRequest
-
-			firstValidatorInaccessible, err := g.validatorsManager.ProcessNextValidatorTx(txInfo.Tx, uint16(adjustedFallback.Milliseconds()), txInfo.Tx.GetNetworkNum(), txInfo.Source)
-			delete(pendingNextValidatorTxsMap, txHash)
-			l := g.log.WithFields(log.Fields{"txHash": txHash})
-
-			if err != nil {
-				l.Errorf("failed to reevaluate next validator tx, err %v", err)
-			}
-
-			// send with adjusted fallback regardless of if validator is accessible
-			if firstValidatorInaccessible {
-				txInfo.Tx.RemoveFlags(types.TFNextValidator)
-				txInfo.Tx.SetFallback(0)
-			}
-			err = g.HandleMsg(txInfo.Tx, txInfo.Source, connections.RunForeground)
-			if err != nil {
-				l.Errorf("failed to process reevaluated next validator tx, err %v", err)
-			}
-			continue
-		} else {
-			// should have already been sent by gateway
-			delete(pendingNextValidatorTxsMap, txHash)
-		}
-	}
 }
 
 func bscExtractValidatorListFromBlock(b []byte) (validator.List, error) {
@@ -1143,7 +1082,7 @@ func (g *gateway) publishPendingTx(txHash types.SHA256Hash, bxTx *types.BxTransa
 	if ok {
 		flags := tx.Flags()
 
-		if flags.IsNextValidator() || flags.IsValidatorsOnly() {
+		if flags.IsValidatorsOnly() {
 			return
 		}
 	}
@@ -1362,7 +1301,7 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 			source.Log().WithField("hash", typedMsg.Hash().String()).Errorf("discarding tx: %s", err)
 		}
 	case *bxmessage.ValidatorUpdates:
-		g.processValidatorUpdate(typedMsg, source)
+		// accessible wallets are not supported anymore
 	case *bxmessage.Broadcast:
 		// handle in a go-routing so tx flow from relay will not be delayed
 		if !g.BxConfig.NoBlocks {
@@ -1389,32 +1328,6 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 		}
 	case *bxmessage.Hello:
 		source.Log().Tracef("received hello msg")
-		if connections.IsRelay(source.GetConnectionType()) && g.sdn.AccountModel().Miner {
-			// check if it has blockchain connection
-			go func() {
-				if g.BxConfig.ForwardTransactionEndpoint != "" {
-					g.sdn.SendNodeEvent(
-						sdnmessage.NewAddAccessibleGatewayEvent(g.sdn.NodeID(), fmt.Sprintf(
-							"gateway %v (%v) established connection with relay %v",
-							g.sdn.NodeModel().ExternalIP, g.accountID, source.GetPeerIP()), g.clock.Now().String()),
-						g.sdn.NodeID())
-				} else if g.gatewayHasBlockchainConnection() {
-					g.sdn.SendNodeEvent(
-						sdnmessage.NewAddAccessibleGatewayEvent(g.sdn.NodeID(), fmt.Sprintf(
-							"gateway %v (%v) established connection with relay %v:%v and connected to at least one node",
-							g.sdn.NodeModel().ExternalIP, g.accountID, source.GetPeerIP(), source.GetPeerPort(),
-						), g.clock.Now().String()),
-						g.sdn.NodeID())
-				} else {
-					g.sdn.SendNodeEvent(
-						sdnmessage.NewRemoveAccessibleGatewayEvent(g.sdn.NodeID(), fmt.Sprintf(
-							"gateway %v (%v) established connection with relay %v:%v but not connected to any node",
-							g.sdn.NodeModel().ExternalIP, g.accountID, source.GetPeerIP(), source.GetPeerPort(),
-						), g.clock.Now().String()),
-						g.sdn.NodeID())
-				}
-			}()
-		}
 	case *bxmessage.BlockConfirmation:
 		hashString := typedMsg.Hash().String()
 		if g.seenBlockConfirmation.SetIfAbsent(hashString, 30*time.Minute) {
@@ -1549,29 +1462,6 @@ func (g *gateway) processBlockchainNetworkUpdate(source connections.Conn) {
 	}
 }
 
-func (g *gateway) processValidatorUpdate(msg *bxmessage.ValidatorUpdates, source connections.Conn) {
-	if g.sdn.NetworkNum() != msg.GetNetworkNum() {
-		source.Log().Debugf("ignore validator update message for %v network number from relay, gateway is %v", msg.GetNetworkNum(), g.sdn.NetworkNum())
-		return
-	}
-	onlineList := msg.GetOnlineList()
-
-	var keysToRemove []string
-	for _, key := range g.validatorStatusMap.Keys() {
-		if !utils.Exists(key, onlineList) {
-			keysToRemove = append(keysToRemove, key)
-		}
-	}
-
-	for _, key := range keysToRemove {
-		g.validatorStatusMap.Delete(key)
-	}
-
-	for _, addr := range onlineList {
-		g.validatorStatusMap.Store(strings.ToLower(addr), true)
-	}
-}
-
 func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) {
 	var (
 		sentToBDN            bool
@@ -1621,7 +1511,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 	case txResult.NewContent || txResult.NewSID || txResult.Reprocess:
 		eventName = "TxProcessedByGatewayFromPeer"
 		if txResult.NewContent || txResult.Reprocess {
-			if txResult.NewContent && !tx.Flags().IsValidatorsOnly() && !tx.Flags().IsNextValidator() {
+			if txResult.NewContent && !tx.Flags().IsValidatorsOnly() {
 				newTxsNotification := types.CreateNewTransactionNotification(txResult.Transaction)
 				g.notify(newTxsNotification)
 				if !sourceEndpoint.IsDynamic() {
@@ -1677,8 +1567,8 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 				}
 			}
 
-			// if this gateway is the associated validator or the tx was sent after the fallback time, need to send the transaction to the node
-			if tx.Flags().IsValidatorsOnly() || tx.Flags().IsNextValidator() || tx.Flags().IsNextValidatorRebroadcast() {
+			// if this gateway is the associated validator
+			if tx.Flags().IsValidatorsOnly() {
 				if g.sdn.AccountModel().Miner {
 					tx.AddFlags(types.TFDeliverToNode)
 				} else {
@@ -1687,9 +1577,9 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 			}
 
 			shouldSendTxFromNodeToOtherNodes := connectionType == bxtypes.Blockchain && len(g.blockchainPeers) > 1 && !g.BxConfig.NoTxsToBlockchain
-			shouldSendTxFromBDNToNodes := g.shouldSendTxFromBDNToNodes(connectionType, tx, tx.Flags().IsValidatorsOnly(), tx.Flags().IsNextValidator()) && !g.BxConfig.NoTxsToBlockchain
+			shouldSendTxFromBDNToNodes := g.shouldSendTxFromBDNToNodes(connectionType, tx, tx.Flags().IsValidatorsOnly()) && !g.BxConfig.NoTxsToBlockchain
 
-			if source.GetNetworkNum() == bxtypes.BSCMainnetNum && (tx.Flags().IsValidatorsOnly() || tx.Flags().IsNextValidator()) {
+			if source.GetNetworkNum() == bxtypes.BSCMainnetNum && (tx.Flags().IsValidatorsOnly()) {
 				rawBytesString, err := getRawBytesStringFromTXMsg(tx)
 				if err != nil {
 					l.WithFields(log.Fields{
@@ -1706,7 +1596,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 				}
 
 				// Check for front run protection, if tx arrive too earlier, we send it with delay, if arrive too late, do not send to node
-				if !tx.Flags().IsNextValidatorRebroadcast() && tx.Flags().IsFrontRunningProtection() && tx.Flags().IsNextValidator() {
+				if tx.Flags().IsFrontRunningProtection() {
 					now := time.Now()
 					deadline := g.nextBlockTime.Add(-time.Millisecond * time.Duration(g.transactionSlotEndDuration))
 					slotBegin := g.nextBlockTime.Add(-time.Millisecond * time.Duration(g.transactionSlotStartDuration))
@@ -1728,7 +1618,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 					}
 
 					time.AfterFunc(frontRunProtectionDelay, func() {
-						if source.GetNetworkNum() == bxtypes.BSCMainnetNum && (tx.Flags().IsNextValidator() || tx.Flags().IsValidatorsOnly()) {
+						if source.GetNetworkNum() == bxtypes.BSCMainnetNum && tx.Flags().IsValidatorsOnly() {
 							l.Debug("not sending tx to p2p node for bsc semiprivate tx")
 							return
 						}
@@ -1801,9 +1691,6 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 		"sender":                  txSender,
 		"networkDuration":         tx.ReceiveTime().Sub(tx.Timestamp()).Microseconds(),
 		"statsDuration":           statsDuration,
-		"nextValidatorEnabled":    tx.Flags().IsNextValidator(),
-		"fallbackDuration":        tx.Fallback(),
-		"nextValidatorFallback":   tx.Flags().IsNextValidatorRebroadcast(),
 		"frontRunProtectionDelay": frontRunProtectionDelay,
 		"waitingDuration":         tx.WaitDuration(),
 		"txsInNetworkChannel":     tx.NetworkChannelPosition(),
@@ -1813,7 +1700,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 }
 
 // shouldSendTxFromBDNToNodes send to node if all are true
-func (g *gateway) shouldSendTxFromBDNToNodes(connectionType bxtypes.NodeType, tx *bxmessage.Tx, validatorsOnly bool, nextValidatorTx bool) (send bool) {
+func (g *gateway) shouldSendTxFromBDNToNodes(connectionType bxtypes.NodeType, tx *bxmessage.Tx, validatorsOnly bool) (send bool) {
 	if connectionType == bxtypes.Blockchain {
 		return // Transaction is from blockchain node (transaction is not from Relay or RPC)
 	}
@@ -1823,7 +1710,7 @@ func (g *gateway) shouldSendTxFromBDNToNodes(connectionType bxtypes.NodeType, tx
 	}
 
 	if (!g.BxConfig.BlocksOnly && tx.Flags().ShouldDeliverToNode()) || // (Gateway didn't start with blocks only mode and DeliverToNode flag is on) OR
-		(g.BxConfig.AllTransactions && !validatorsOnly && !nextValidatorTx) { // (Gateway started with a flag to send all transactions, and this is not validator only nor next validator tx
+		(g.BxConfig.AllTransactions && !validatorsOnly) { // (Gateway started with a flag to send all transactions, and this is not validator only
 		send = true
 	}
 
@@ -1987,7 +1874,6 @@ func (g *gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source c
 	g.stats.AddGatewayBundleEvent(event, source, start, mevBundle.BundleHash, mevBundle.GetNetworkNum(), mevBundle.Names(), mevBundle.UUID, blockNumber, mevBundle.MinTimestamp, mevBundle.MaxTimestamp)
 }
 
-
 func (g *gateway) getHeaderFromGateway() string {
 	accountID := g.sdn.AccountModel().AccountID
 	secretHash := g.sdn.AccountModel().SecretHash
@@ -2072,32 +1958,6 @@ func (g *gateway) handleBlockchainConnectionStatusUpdate() {
 				),
 				g.sdn.NodeID(),
 			)
-			// check if gateway has relay connection
-			if !g.sdn.AccountModel().Miner {
-				continue
-			}
-			var isConnectedRelay bool
-			for _, conn := range g.Connections {
-				if connections.IsRelay(conn.GetConnectionType()) {
-					isConnectedRelay = true
-				}
-			}
-			if isConnectedRelay {
-				g.sdn.SendNodeEvent(
-					sdnmessage.NewAddAccessibleGatewayEvent(g.sdn.NodeID(), fmt.Sprintf(
-						"gateway %v (%v) from account %v established connection with node %v:%v",
-						g.sdn.NodeModel().ExternalIP, g.sdn.NodeID(), g.accountID, blockchainIP, int64(blockchainPort),
-					), g.clock.Now().String()),
-					g.sdn.NodeID())
-			} else {
-				g.sdn.SendNodeEvent(
-					sdnmessage.NewRemoveAccessibleGatewayEvent(g.sdn.NodeID(), fmt.Sprintf(
-						"gateway %v (%v) from account %v established connection with node %v:%v but not connected to any relay",
-						g.sdn.NodeModel().ExternalIP, g.sdn.NodeID(), g.accountID, blockchainIP, int64(blockchainPort),
-					), g.clock.Now().String()),
-					g.sdn.NodeID())
-			}
-
 			continue
 		}
 
@@ -2105,17 +1965,6 @@ func (g *gateway) handleBlockchainConnectionStatusUpdate() {
 			sdnmessage.NewBlockchainNodeConnError(g.sdn.NodeID(), blockchainIP, blockchainPort, g.clock.Now().String()),
 			g.sdn.NodeID(),
 		)
-		if g.sdn.AccountModel().Miner && !g.gatewayHasBlockchainConnection() {
-			go func() {
-				// check if gateway doesn't have any other node connections
-				g.sdn.SendNodeEvent(
-					sdnmessage.NewRemoveAccessibleGatewayEvent(g.sdn.NodeID(), fmt.Sprintf(
-						"gateway %v (%v) from account %v is not connected to any node",
-						g.sdn.NodeModel().ExternalIP, g.sdn.NodeID(), g.accountID,
-					), g.clock.Now().String()),
-					g.sdn.NodeID())
-			}()
-		}
 	}
 }
 

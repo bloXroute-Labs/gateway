@@ -324,8 +324,8 @@ message TxAndSender {
 message BlxrBatchTXRequest {
   repeated TxAndSender transactions_and_senders = 1;
   bool nonce_monitoring = 2;
-  bool next_validator = 3;
-  int32 fallback = 4;
+  bool next_validator = 3 [deprecated = true];
+  int32 fallback = 4 [deprecated = true];
   bool validators_only = 5;
   bool node_validation = 6;
   int64 sending_time = 7;
@@ -336,10 +336,10 @@ message BlxrBatchTXRequest {
 message BlxrTxRequest {
   string transaction = 1;
   bool nonce_monitoring = 2;
-  bool next_validator = 3;
+  bool next_validator = 3 [deprecated = true];
   string auth_header = 4 [deprecated = true];
   bool validators_only = 5;
-  int32 fallback = 6;
+  int32 fallback = 6 [deprecated = true];
   bool node_validation = 7;
   bool frontrunning_protection = 8;
 }

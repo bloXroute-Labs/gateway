@@ -24,7 +24,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/services/account"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
-	"github.com/bloXroute-Labs/gateway/v2/services/validator"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
@@ -46,7 +45,6 @@ type Server struct {
 	node                  connections.BxListener
 	feedManager           *feed.Manager
 	nodeWSManager         blockchain.WSManager
-	validatorsManager     *validator.Manager
 	log                   *log.Entry
 	networkNum            bxtypes.NetworkNum
 	stats                 statistics.Stats
@@ -64,7 +62,6 @@ func NewWSServer(
 	accService account.Accounter,
 	feedManager *feed.Manager,
 	nodeWSManager blockchain.WSManager,
-	validatorsManager *validator.Manager,
 	stats statistics.Stats,
 	txFromFieldIncludable bool) *Server {
 
@@ -81,7 +78,6 @@ func NewWSServer(
 		chainID:               chainID,
 		feedManager:           feedManager,
 		nodeWSManager:         nodeWSManager,
-		validatorsManager:     validatorsManager,
 		log:                   log.WithField("component", "gatewayWs"),
 		networkNum:            networkNum,
 		stats:                 stats,
@@ -214,7 +210,6 @@ func (s *Server) wsHandler(w http.ResponseWriter, r *http.Request) {
 		node:                     s.node,
 		feedManager:              s.feedManager,
 		nodeWSManager:            s.nodeWSManager,
-		validatorsManager:        s.validatorsManager,
 		log:                      logger,
 		networkNum:               s.networkNum,
 		stats:                    s.stats,

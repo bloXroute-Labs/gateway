@@ -16,8 +16,8 @@ const (
 	TFDeliverToNode
 	TFValidatorsOnly
 	TFReusedNonce
-	TFNextValidator
-	TFNextValidatorRebroadcast
+	_ //  Deprecated: TFNextValidator used for semi private tx
+	_ // Deprecated: TFNextValidatorRebroadcast  used for semi private tx
 	TFFrontRunningProtection
 	TFWithSidecar
 	_ // [NOTICE] last flag
@@ -37,9 +37,7 @@ func (f TxFlags) ShouldDeliverToNode() bool {
 }
 
 // IsValidatorsOnly indicates whether the transaction should be forwarded to miner gateways only
-func (f TxFlags) IsValidatorsOnly() bool {
-	return f&TFValidatorsOnly != 0
-}
+func (f TxFlags) IsValidatorsOnly() bool { return f&TFValidatorsOnly != 0 }
 
 // IsReuseSenderNonce indicates whether the transaction is reusing an existing nonce
 func (f TxFlags) IsReuseSenderNonce() bool {
@@ -54,16 +52,6 @@ func (f TxFlags) IsPaidTx() bool {
 // IsDeliverToNode return true if transaction marked to deliver to node
 func (f TxFlags) IsDeliverToNode() bool {
 	return f&TFDeliverToNode != 0
-}
-
-// IsNextValidator return true if transaction marked for next validator
-func (f TxFlags) IsNextValidator() bool {
-	return f&TFNextValidator != 0
-}
-
-// IsNextValidatorRebroadcast return true if transaction is fallback tx of next validator tx
-func (f TxFlags) IsNextValidatorRebroadcast() bool {
-	return f&TFNextValidatorRebroadcast != 0
 }
 
 // IsFrontRunningProtection return true if transaction is enabled with front runnig protection

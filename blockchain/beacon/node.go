@@ -455,8 +455,7 @@ func (n *Node) Start() error {
 		return fmt.Errorf("could not get current fork digest: %v", err)
 	}
 
-	epoch := slots.ToEpoch(slots.CurrentSlot(n.genesisState.GenesisTime()))
-	isElectra := beaconParams.BeaconConfig().DenebForkEpoch <= epoch && epoch < beaconParams.BeaconConfig().ElectraForkEpoch
+	isElectra := slots.ToEpoch(slots.CurrentSlot(n.genesisState.GenesisTime())) >= beaconParams.BeaconConfig().ElectraForkEpoch
 
 	return n.subscribeAll(currentForkDigest, isElectra)
 }
@@ -865,7 +864,7 @@ func (n *Node) broadcast(topic string, msg proto.Message) error {
 	}
 
 	if len(pbTopic.topic.ListPeers()) == 0 {
-		return errors.New("no peers to broadcast")
+		return fmt.Errorf("no peers found to broadcast for topic %v", topic)
 	}
 
 	castMsg, ok := msg.(fastssz.Marshaler)

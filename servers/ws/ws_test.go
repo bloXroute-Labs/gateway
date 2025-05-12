@@ -19,7 +19,6 @@ import (
 
 	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
 	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
-	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 
 	"github.com/bloXroute-Labs/gateway/v2"
@@ -34,7 +33,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/test/mock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
 )
 
 var (
@@ -159,20 +157,7 @@ func (s *wsSuite) setupSuit(networkNum bxtypes.NetworkNum) {
 	p3 := providers[blockchainPeers[2].IPPort()]
 	s.Assert().NotNil(p3)
 
-	var validatorManager *validator.Manager
-	if networkNum == bxtypes.BSCMainnetNum {
-		nextValidatorMap := orderedmap.New[uint64, string]()
-		validatorStatusMap := syncmap.NewStringMapOf[bool]()
-		validatorListMap := syncmap.NewIntegerMapOf[uint64, validator.List]()
-
-		nextValidatorMap.Set(uint64(100), "1234")
-
-		validatorManager = validator.NewManager(nextValidatorMap, validatorStatusMap, validatorListMap)
-		s.validatorManager = validatorManager
-	}
-
-	s.server = NewWSServer(cfg, "", "", s.sdn, g, as, s.feedManager, s.nodeWSManager,
-		validatorManager, stats, true)
+	s.server = NewWSServer(cfg, "", "", s.sdn, g, as, s.feedManager, s.nodeWSManager, stats, true)
 	// set a shorted delay for tests
 	s.server.wsConnDelayOnErr = 10 * time.Millisecond
 

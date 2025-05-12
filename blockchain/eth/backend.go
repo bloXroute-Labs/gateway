@@ -351,8 +351,8 @@ func (h *Handler) processBDNTransactions(bdnTxs blockchain.Transactions) {
 			continue
 		}
 
-		// allow sending tx to inbound node only if it's paid tx or marked as deliver to node, but it cannot be next_validator tx or validators only
-		p.Add(ethTx, (bdnTx.Flags().IsPaidTx() || bdnTx.Flags().IsDeliverToNode()) && !bdnTx.Flags().IsNextValidator() && !bdnTx.Flags().IsValidatorsOnly())
+		// allow sending tx to inbound node only if it's paid tx or marked as deliver to node, but it cannot be validators only
+		p.Add(ethTx, (bdnTx.Flags().IsPaidTx() || bdnTx.Flags().IsDeliverToNode()) && !bdnTx.Flags().IsValidatorsOnly())
 	}
 
 	h.broadcastTransactions(p, bdnTxs.PeerEndpoint, bdnTxs.ConnectionType)
@@ -653,8 +653,9 @@ func (h *Handler) broadcastBlockAnnouncement(block *bxcommoneth.Block) {
 }
 
 func (h *Handler) isChainIDMatch(txChainID uint64) bool {
-	// if chainID is 0 its legacy tx,so we want to propagate it,if it's not 0,we need to check if its match to gw chain id
-	if txChainID == h.config.Network {
+	// if chainID is 0 its legacy tx, so we want to propagate it;
+	// if it's not 0, we need to check if its match to gw chain id
+	if txChainID == 0 || txChainID == h.config.Network {
 		return true
 	}
 	return false

@@ -24,7 +24,6 @@ import (
 	bxrpc "github.com/bloXroute-Labs/gateway/v2/rpc"
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/services/account"
-	"github.com/bloXroute-Labs/gateway/v2/services/validator"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/version"
 )
@@ -45,21 +44,20 @@ type server struct {
 
 // grpcParams server params
 type grpcParams struct {
-	node                           connections.BxListener
-	sdn                            sdnsdk.SDNHTTP
-	accService                     account.Accounter
-	bridge                         blockchain.Bridge
-	blockchainPeers                []types.NodeEndpoint
-	wsManager                      blockchain.WSManager
-	bdnStats                       *bxmessage.BdnPerformanceStats
-	timeStarted                    time.Time
-	gatewayPublicKey               string
-	connector                      Connector
-	validatorsManager              *validator.Manager
-	txFromFieldIncludable          bool
-	feedManager                    feedManager
-	txStore                        services.TxStore
-	chainID                        bxtypes.NetworkID
+	node                  connections.BxListener
+	sdn                   sdnsdk.SDNHTTP
+	accService            account.Accounter
+	bridge                blockchain.Bridge
+	blockchainPeers       []types.NodeEndpoint
+	wsManager             blockchain.WSManager
+	bdnStats              *bxmessage.BdnPerformanceStats
+	timeStarted           time.Time
+	gatewayPublicKey      string
+	connector             Connector
+	txFromFieldIncludable bool
+	feedManager           feedManager
+	txStore               services.TxStore
+	chainID               bxtypes.NetworkID
 }
 
 // newServer return new server object

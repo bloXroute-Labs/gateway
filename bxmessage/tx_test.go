@@ -8,8 +8,6 @@ import (
 	bxclock "github.com/bloXroute-Labs/bxcommon-go/clock"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/stretchr/testify/assert"
-
-	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 var nullByteAccountID = bytes.Repeat([]byte("\x00"), 36)
@@ -104,37 +102,4 @@ func TestTx_TimeStamp(t *testing.T) {
 	mockClock.SetTime(time.Unix(0, 0x16dd83ffffffffff)) // 2022-03-18 10:42:54.22
 	_ = tx3.Unpack(b, MinProtocol)
 	assert.Equal(t, packTime.UnixNano()>>10, tx3.Timestamp().UnixNano()>>10)
-}
-
-func TestTx_NextValidator(t *testing.T) {
-	var flags types.TxFlags
-	flags |= types.TFNextValidator
-
-	tx1 := Tx{
-		walletIDs: []string{"0x8b6c8fd93d6f4cea42bbb345dbc6f0dfdb5bec73", "0xe9ae3261a475a27bb1028f140bc2a7c843318afd"},
-		fallback:  10,
-		flags:     flags,
-		sender:    types.Sender{1},
-		content:   []byte{123},
-	}
-
-	b, _ := tx1.Pack(NextValidatorMultipleProtocol)
-	txMsg3 := Tx{}
-	_ = txMsg3.Unpack(b, NextValidatorMultipleProtocol)
-	assert.Equal(t, 10, int(txMsg3.fallback))
-	assert.Equal(t, "0x8b6c8fd93d6f4cea42bbb345dbc6f0dfdb5bec73", txMsg3.walletIDs[0])
-	assert.Equal(t, "0xe9ae3261a475a27bb1028f140bc2a7c843318afd", txMsg3.walletIDs[1])
-	assert.Equal(t, types.Sender{1}, txMsg3.sender)
-
-	flags = 0
-	tx2 := Tx{
-		walletIDs: []string{"0x8b6c8fd93d6f4cea42bbb345dbc6f0dfdb5bec73"},
-		fallback:  10,
-		flags:     flags,
-	}
-	b, _ = tx2.Pack(MinProtocol)
-	txMsg2 := Tx{}
-	_ = txMsg2.Unpack(b, MinProtocol)
-	assert.Equal(t, 0, int(txMsg2.fallback))
-	assert.Nil(t, txMsg2.walletIDs)
 }

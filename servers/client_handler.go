@@ -20,7 +20,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/services/account"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
-	"github.com/bloXroute-Labs/gateway/v2/services/validator"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
@@ -53,7 +52,6 @@ func NewClientHandler(
 	timeStarted time.Time,
 	gatewayPublicKey string,
 	feedManager *feed.Manager,
-	validatorsManager *validator.Manager,
 	stats statistics.Stats,
 	txStore services.TxStore,
 	txFromFieldIncludable bool,
@@ -66,14 +64,13 @@ func NewClientHandler(
 
 	if config.WebsocketEnabled || config.WebsocketTLSEnabled {
 		websocketServer = ws.NewWSServer(config, certFile, keyFile,
-			sdn, node, accService, feedManager, nodeWSManager, validatorsManager,
-			stats, txFromFieldIncludable)
+			sdn, node, accService, feedManager, nodeWSManager, stats, txFromFieldIncludable)
 	}
 
 	if config.GRPC.Enabled {
 		gRPCServer = grpc.NewGRPCServer(config, stats, node, sdn, accService,
 			bridge, blockchainPeers, nodeWSManager, bdnStats, timeStarted,
-			gatewayPublicKey, bx, validatorsManager, feedManager, txStore,
+			gatewayPublicKey, bx, feedManager, txStore,
 		)
 	}
 

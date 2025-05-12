@@ -11,11 +11,9 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 
-	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
-	"github.com/bloXroute-Labs/gateway/v2/services/validator"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
@@ -23,15 +21,12 @@ import (
 func HandleSingleTransaction(
 	node connections.BxListener,
 	nodeWSManager blockchain.WSManager,
-	validatorsManager *validator.Manager,
 	transaction string,
 	txSender []byte,
 	conn connections.Conn,
 	validatorsOnly,
-	nextValidator,
 	nodeValidationRequested,
 	frontRunningProtection bool,
-	fallback uint16,
 	gatewayChainID bxtypes.NetworkID,
 ) (string, bool, error) {
 
@@ -39,7 +34,7 @@ func HandleSingleTransaction(
 	if err != nil {
 		return "", false, err
 	}
-	tx, pendingReevaluation, err := validateTxFromExternalSource(validatorsManager, transaction, txContent, validatorsOnly, gatewayChainID, nextValidator, fallback, nodeValidationRequested, nodeWSManager, conn, frontRunningProtection)
+	tx, pendingReevaluation, err := validateTxFromExternalSource(transaction, txContent, validatorsOnly, gatewayChainID, nodeValidationRequested, nodeWSManager, conn, frontRunningProtection)
 	if err != nil {
 		return "", false, err
 	}
@@ -59,35 +54,13 @@ func HandleSingleTransaction(
 			log.Errorf("failed to handle single transaction: %v", err)
 			return "", false, nil
 		}
-	} else if fallback != 0 {
-		// BSC first validator was not accessible and fallback > BSCBlockTime
-		// in case fallback time is up before next validator is evaluated, send tx as normal tx at fallback time
-		// (tx with fallback less than BSCBlockTime are not marked as pending)
-		time.AfterFunc(time.Duration(uint64(fallback)*bxgateway.MillisecondsToNanosecondsMultiplier), func() {
-			validatorsManager.Lock()
-			defer validatorsManager.Unlock()
-
-			pendingNextValidatorTxsMap := validatorsManager.GetPendingNextValidatorTxs()
-
-			if _, exists := pendingNextValidatorTxsMap[tx.Hash().String()]; exists {
-				delete(pendingNextValidatorTxsMap, tx.Hash().String())
-				log.Infof("sending next validator tx %v because fallback time reached", tx.Hash().String())
-
-				tx.RemoveFlags(types.TFNextValidator)
-				tx.SetFallback(0)
-				err = node.HandleMsg(tx, conn, connections.RunForeground)
-				if err != nil {
-					log.Errorf("failed to send pending next validator tx %v at fallback time: %v", tx.Hash().String(), err)
-				}
-			}
-		})
 	}
 
 	return tx.Hash().String(), true, nil
 }
 
 // validateTxFromExternalSource validate transaction from external source (ws / grpc), return bool indicates if tx is pending reevaluation
-func validateTxFromExternalSource(validatorsManager *validator.Manager, transaction string, txBytes []byte, validatorsOnly bool, gatewayChainID bxtypes.NetworkID, nextValidator bool, fallback uint16, nodeValidationRequested bool, wsManager blockchain.WSManager, source connections.Conn, frontRunningProtection bool) (*bxmessage.Tx, bool, error) {
+func validateTxFromExternalSource(transaction string, txBytes []byte, validatorsOnly bool, gatewayChainID bxtypes.NetworkID, nodeValidationRequested bool, wsManager blockchain.WSManager, source connections.Conn, frontRunningProtection bool) (*bxmessage.Tx, bool, error) {
 	// Ethereum's transactions encoding for RPC interfaces is slightly different from the RLP encoded format, so decode + re-encode the transaction for consistency.
 	// Specifically, note `UnmarshalBinary` should be used for RPC interfaces, and rlp.DecodeBytes should be used for the wire protocol.
 	var ethTx ethtypes.Transaction
@@ -120,8 +93,6 @@ func validateTxFromExternalSource(validatorsManager *validator.Manager, transact
 	switch {
 	case validatorsOnly:
 		txFlags |= types.TFValidatorsOnly
-	case nextValidator:
-		txFlags |= types.TFNextValidator
 	default:
 		txFlags |= types.TFDeliverToNode
 	}
@@ -135,17 +106,8 @@ func validateTxFromExternalSource(validatorsManager *validator.Manager, transact
 
 	// should set the account of the sender, not the account of the gateway itself
 	tx := bxmessage.NewTx(hash, txContent, networkNum, txFlags, accountID)
-	if nextValidator {
-		txPendingReevaluation, err := validatorsManager.ProcessNextValidatorTx(tx, fallback, networkNum, source)
-		if err != nil {
-			return nil, false, err
-		}
-		if txPendingReevaluation {
-			return tx, true, nil
-		}
-	}
 
-	if nodeValidationRequested && !tx.Flags().IsNextValidator() && !tx.Flags().IsValidatorsOnly() {
+	if nodeValidationRequested && !tx.Flags().IsValidatorsOnly() {
 		syncedWS, ok := wsManager.SyncedProvider()
 		if ok {
 			_, err := syncedWS.SendTransaction(

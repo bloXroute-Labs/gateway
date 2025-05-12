@@ -20,7 +20,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
-	"github.com/bloXroute-Labs/gateway/v2/services/validator"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
@@ -35,7 +34,6 @@ type handlerObj struct {
 	feedManager              *feed.Manager
 	chainID                  bxtypes.NetworkID
 	nodeWSManager            blockchain.WSManager
-	validatorsManager        *validator.Manager
 	log                      *log.Entry
 	networkNum               bxtypes.NetworkNum
 	remoteAddress            string

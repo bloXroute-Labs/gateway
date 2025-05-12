@@ -29,7 +29,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/services/account"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
-	"github.com/bloXroute-Labs/gateway/v2/services/validator"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
@@ -87,25 +86,23 @@ func NewGRPCServer(
 	timeStarted time.Time,
 	gatewayPublicKey string,
 	connector Connector,
-	validatorsManager *validator.Manager,
 	feedManager feedManager,
 	txStore services.TxStore,
 ) *Server {
 	params := grpcParams{
-		node:                           node,
-		sdn:                            sdn,
-		accService:                     accService,
-		bridge:                         bridge,
-		blockchainPeers:                blockchainPeers,
-		wsManager:                      wsManager,
-		bdnStats:                       bdnStats,
-		timeStarted:                    timeStarted,
-		gatewayPublicKey:               gatewayPublicKey,
-		connector:                      connector,
-		validatorsManager:              validatorsManager,
-		feedManager:                    feedManager,
-		txStore:                        txStore,
-		chainID:                        bxtypes.NetworkNumToChainID[sdn.NetworkNum()],
+		node:             node,
+		sdn:              sdn,
+		accService:       accService,
+		bridge:           bridge,
+		blockchainPeers:  blockchainPeers,
+		wsManager:        wsManager,
+		bdnStats:         bdnStats,
+		timeStarted:      timeStarted,
+		gatewayPublicKey: gatewayPublicKey,
+		connector:        connector,
+		feedManager:      feedManager,
+		txStore:          txStore,
+		chainID:          bxtypes.NetworkNumToChainID[sdn.NetworkNum()],
 	}
 
 	grpcHostPort := fmt.Sprintf("%v:%v", config.Host, config.Port)
