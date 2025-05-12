@@ -262,7 +262,7 @@ func (bt *BxTransaction) Update(result *TransactionResult, flags TxFlags, shortI
 	// note that assigner.Next() provides ShortIDEmpty if we are not assigning
 	// also, shortID is not assigned if transaction is validators_only
 	// if we assigned shortID, result.AssignedShortID hold non ShortIDEmpty value
-	if result.NewTx && shortID == ShortIDEmpty && !bt.flags.IsValidatorsOnly() && !bt.flags.IsNextValidator() {
+	if result.NewTx && shortID == ShortIDEmpty && !bt.flags.IsValidatorsOnly() {
 		shortID = nextID()
 		result.AssignedShortID = shortID
 	}

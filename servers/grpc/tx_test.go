@@ -17,7 +17,6 @@ import (
 	"go.uber.org/mock/gomock"
 
 	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
-	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
 
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
@@ -26,12 +25,10 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/services/account"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
-	"github.com/bloXroute-Labs/gateway/v2/services/validator"
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/test/mock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
 )
 
 func TestNewTxs(t *testing.T) {
@@ -236,84 +233,6 @@ func TestBlxrTx(t *testing.T) {
 				ValidatorsOnly: true,
 			},
 			generateTxAndHash: generateDynamicFeeTxAndHash,
-		},
-		{
-			description:   "Send transaction with next validator",
-			changeNetwork: swapChainID,
-			setupSdnFunc: func(s *server) {
-				ctl := gomock.NewController(t)
-				sdn := mock.NewMockSDNHTTP(ctl)
-				sdn.EXPECT().AccountModel().Return(testAccountModel).AnyTimes()
-				sdn.EXPECT().NetworkNum().Return(bxtypes.BSCMainnetNum).AnyTimes()
-				s.params.sdn = sdn
-			},
-			setupValidatorFunc: func(g *server) {
-				validatorStatusMap := syncmap.NewStringMapOf[bool]()
-				validatorStatusMap.Store(testWalletID, true)
-				validatorStatusMap.Store(testWalletID2, true)
-				nextValidatorMap := orderedmap.New[uint64, string]()
-				nextValidatorMap.Set(1, testWalletID)
-				nextValidatorMap.Set(2, testWalletID2)
-
-				g.params.validatorsManager = validator.NewManager(nextValidatorMap, validatorStatusMap, nil)
-			},
-			request: &pb.BlxrTxRequest{
-				NextValidator: true,
-			},
-			generateTxAndHash: generateDynamicFeeTxAndHash,
-		},
-		{
-			description:   "Wrong network on next validator",
-			changeNetwork: swapChainID,
-			setupValidatorFunc: func(g *server) {
-				g.params.validatorsManager = nil
-			},
-			request: &pb.BlxrTxRequest{
-				NextValidator: true,
-			},
-			generateTxAndHash: generateDynamicFeeTxAndHash,
-			expectedErrSubStr: "currently next_validator is only supported on BSC network",
-		},
-		{
-			description:   "Nil validator map on next validator",
-			changeNetwork: swapChainID,
-			setupSdnFunc: func(s *server) {
-				ctl := gomock.NewController(t)
-				sdn := mock.NewMockSDNHTTP(ctl)
-				sdn.EXPECT().AccountModel().Return(testAccountModel).AnyTimes()
-				sdn.EXPECT().NetworkNum().Return(bxtypes.BSCMainnetNum).AnyTimes()
-				s.params.sdn = sdn
-			},
-			setupValidatorFunc: func(g *server) {
-				g.params.validatorsManager = nil
-			},
-			request: &pb.BlxrTxRequest{
-				NextValidator: true,
-			},
-			generateTxAndHash: generateDynamicFeeTxAndHash,
-			expectedErrSubStr: "failed to send next validator tx",
-		},
-		{
-			description:   "Empty validator map on next validator",
-			changeNetwork: swapChainID,
-			setupSdnFunc: func(s *server) {
-				ctl := gomock.NewController(t)
-				sdn := mock.NewMockSDNHTTP(ctl)
-				sdn.EXPECT().AccountModel().Return(testAccountModel).AnyTimes()
-				sdn.EXPECT().NetworkNum().Return(bxtypes.BSCMainnetNum).AnyTimes()
-				s.params.sdn = sdn
-			},
-			setupValidatorFunc: func(g *server) {
-				validatorStatusMap := syncmap.NewStringMapOf[bool]()
-				nextValidatorMap := orderedmap.New[uint64, string]()
-
-				g.params.validatorsManager = validator.NewManager(nextValidatorMap, validatorStatusMap, nil)
-			},
-			request: &pb.BlxrTxRequest{
-				NextValidator: true,
-			},
-			generateTxAndHash: generateDynamicFeeTxAndHash,
-			expectedErrSubStr: "can't send tx with next_validator because the gateway encountered an issue fetching the epoch block",
 		},
 	}
 

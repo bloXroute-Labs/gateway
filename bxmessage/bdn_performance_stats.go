@@ -82,7 +82,7 @@ func (bs *BdnPerformanceStats) GetConnectionsCount() (int64, int64) {
 	return bs.dynamicConnections, bs.staticConnections
 }
 
-// CloseInterval sets the closing interval end time, starts new interval with cleared stats, and returns BdnPerformanceStats of closed interval
+// CloseInterval sets the closing interval end time, starts a new interval with cleared stats, and returns BdnPerformanceStats of a closed interval
 func (bs *BdnPerformanceStats) CloseInterval() *BdnPerformanceStats {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
@@ -101,7 +101,7 @@ func (bs *BdnPerformanceStats) CloseInterval() *BdnPerformanceStats {
 		}
 	}
 
-	// create BDNStats from closed interval for logging and sending
+	// create BDNStats from a closed interval for logging and sending
 	prevBDNStats := &BdnPerformanceStats{
 		intervalStartTime:              bs.intervalStartTime,
 		intervalEndTime:                bs.intervalEndTime,
@@ -113,14 +113,14 @@ func (bs *BdnPerformanceStats) CloseInterval() *BdnPerformanceStats {
 
 	bs.nodeStats = nodeStats
 
-	// start new interval
+	// start a new interval
 	bs.intervalStartTime = time.Now()
 
 	bs.memoryUtilizationMb = 0
 	return prevBDNStats
 }
 
-// SetMemoryUtilization sets the memory utilization field of message
+// SetMemoryUtilization sets the memory utilization field of a message
 func (bs *BdnPerformanceStats) SetMemoryUtilization(mb int) {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
@@ -140,7 +140,7 @@ func (bs *BdnPerformanceStats) LogNewBlockFromNode(node types.NodeEndpoint) {
 		}
 		stats.NewBlocksSeen++
 		if endpoint == node.IPPort() || (!stats.IsBeacon && node.BlockchainNetwork == bxtypes.Mainnet) { // if the stats is the source blockchain then counter already updated.
-			continue // Or if the stats is for execution layer then no need to update block counter
+			continue // Or if the stats are for execution layer then no need to update the block counter
 		}
 		stats.NewBlocksReceivedFromBdn++
 	}
@@ -151,7 +151,7 @@ func (bs *BdnPerformanceStats) LogNewBlockFromBDN(blockchainNetwork string) {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
 	for _, stats := range bs.nodeStats {
-		if !stats.IsBeacon && blockchainNetwork == bxtypes.Mainnet { // no need to update execution layer block counter
+		if !stats.IsBeacon && blockchainNetwork == bxtypes.Mainnet { // no need to update an execution layer block counter
 			continue
 		}
 		if stats.IsConnected {
@@ -161,11 +161,11 @@ func (bs *BdnPerformanceStats) LogNewBlockFromBDN(blockchainNetwork string) {
 	}
 }
 
-// LogNewBlockMessageFromNode logs a new block message from blockchain node in the stats for specified node
+// LogNewBlockMessageFromNode logs a new block message from a blockchain node in the stats for a specified node
 func (bs *BdnPerformanceStats) LogNewBlockMessageFromNode(node types.NodeEndpoint) {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
-	if node.BlockchainNetwork == bxtypes.Mainnet && !node.IsBeacon { // no need to update execution layer block counter
+	if node.BlockchainNetwork == bxtypes.Mainnet && !node.IsBeacon { // no need to update an execution layer block counter
 		return
 	}
 
@@ -173,7 +173,7 @@ func (bs *BdnPerformanceStats) LogNewBlockMessageFromNode(node types.NodeEndpoin
 	nodeStats.NewBlockMessagesFromBlockchainNode++
 }
 
-// LogNewBlockAnnouncementFromNode logs a new block announcement from blockchain node in the stats for specified node
+// LogNewBlockAnnouncementFromNode logs a new block announcement from a blockchain node in the stats for a specified node
 func (bs *BdnPerformanceStats) LogNewBlockAnnouncementFromNode(node types.NodeEndpoint) {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
@@ -181,7 +181,7 @@ func (bs *BdnPerformanceStats) LogNewBlockAnnouncementFromNode(node types.NodeEn
 	nodeStats.NewBlockAnnouncementsFromBlockchainNode++
 }
 
-// LogNewTxFromNode logs new tx from blockchain in stats for specified node, from BDN for other nodes
+// LogNewTxFromNode logs new tx from blockchain in stats for a specified node, from BDN for other nodes
 func (bs *BdnPerformanceStats) LogNewTxFromNode(node types.NodeEndpoint) {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
@@ -212,7 +212,7 @@ func (bs *BdnPerformanceStats) SetBlockchainConnectionStatus(status blockchain.C
 	}
 	nodeIPPort := status.PeerEndpoint.IPPort()
 
-	// if node is connected and does not exist in the peers, need to add it, else return with an error
+	// if the node is connected and does not exist in the peers, need to add it, else return with an error
 	if status.IsConnected {
 		stats := &BdnPerformanceStatsData{Dynamic: status.PeerEndpoint.Dynamic, IsConnected: true, IsBeacon: status.PeerEndpoint.IsBeacon, BlockchainNetwork: status.PeerEndpoint.BlockchainNetwork}
 		bs.nodeStats[nodeIPPort] = stats
@@ -231,7 +231,7 @@ func (bs *BdnPerformanceStats) LogNewTxFromBDN() {
 	}
 }
 
-// LogTxSentToAllNodesExceptSourceNode logs a tx sent to all blockchain nodes expect source if applicable
+// LogTxSentToAllNodesExceptSourceNode logs a tx sent to all blockchain nodes expect a source if applicable
 func (bs *BdnPerformanceStats) LogTxSentToAllNodesExceptSourceNode(sourceNode types.NodeEndpoint) {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
@@ -243,7 +243,7 @@ func (bs *BdnPerformanceStats) LogTxSentToAllNodesExceptSourceNode(sourceNode ty
 	}
 }
 
-// LogDuplicateTxFromNode logs a duplicate tx from blockchain node in the stats for specified node
+// LogDuplicateTxFromNode logs a duplicate tx from a blockchain node in the stats for a specified node
 func (bs *BdnPerformanceStats) LogDuplicateTxFromNode(node types.NodeEndpoint) {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
@@ -251,14 +251,14 @@ func (bs *BdnPerformanceStats) LogDuplicateTxFromNode(node types.NodeEndpoint) {
 	nodeStats.DuplicateTxFromNode++
 }
 
-// LogBurstLimitedTransactionsPaid logs a tx count exceeded limit paid transactions in the stats
+// LogBurstLimitedTransactionsPaid logs a tx count exceeded paid transactions limit in the stats
 func (bs *BdnPerformanceStats) LogBurstLimitedTransactionsPaid() {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
 	bs.burstLimitedTransactionsPaid++
 }
 
-// LogBurstLimitedTransactionsUnpaid logs a tx count exceeded limit paid transactions in the stats
+// LogBurstLimitedTransactionsUnpaid logs a tx count exceeded paid transactions limit in the stats
 func (bs *BdnPerformanceStats) LogBurstLimitedTransactionsUnpaid() {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
@@ -307,6 +307,15 @@ func (bs *BdnPerformanceStats) NodeStats() map[string]*BdnPerformanceStatsData {
 	return bs.nodeStats
 }
 
+// SetNodeStats sets the bdn stats data
+// NOTE: use only in the tests
+func (bs *BdnPerformanceStats) SetNodeStats(nodeIPPort string, stats *BdnPerformanceStatsData) {
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
+
+	bs.nodeStats[nodeIPPort] = stats
+}
+
 func (bs *BdnPerformanceStats) getNodeStats(node types.NodeEndpoint) (*BdnPerformanceStatsData, error) {
 	stats, ok := bs.nodeStats[node.IPPort()]
 	if ok {
@@ -330,11 +339,11 @@ func (bs *BdnPerformanceStats) getOrCreateNodeStats(node types.NodeEndpoint) *Bd
 }
 
 // Pack serializes a BdnPerformanceStats into a buffer for sending
-func (bs *BdnPerformanceStats) Pack(protocol Protocol) ([]byte, error) {
+func (bs *BdnPerformanceStats) Pack(_ Protocol) ([]byte, error) {
 	bs.lock.Lock()
 	defer bs.lock.Unlock()
 
-	bufLen := bs.size(protocol)
+	bufLen := bs.size()
 	buf := make([]byte, bufLen)
 	offset := uint32(HeaderLen)
 	binary.LittleEndian.PutUint64(buf[offset:], math.Float64bits(float64(bs.intervalStartTime.UnixNano())/float64(1e9)))
@@ -498,7 +507,7 @@ func (bs *BdnPerformanceStats) Log() {
 	}
 }
 
-func (bs *BdnPerformanceStats) size(protocol Protocol) uint32 {
+func (bs *BdnPerformanceStats) size() uint32 {
 	nodeStatsSize := utils.IPAddrSizeInBytes + (types.UInt32Len * 7) + (types.UInt16Len * 3) + IsBeaconLen + IsConnectedLen + IsDynamicLen
 	total := bs.Header.Size() + uint32((types.UInt64Len*2)+(types.UInt16Len*2)+(len(bs.nodeStats)*nodeStatsSize))
 	total += types.UInt16Len * 2

@@ -49,7 +49,7 @@ func TestManageServers(t *testing.T) {
 
 	clientHandler := NewClientHandler(nil, bxConfig, nil, sdn, nil, nil,
 		nil, services.NewNoOpSubscriptionServices(), wsManager, nil,
-		time.Now(), "", fm, nil,
+		time.Now(), "", fm,
 		statistics.NoStats{}, nil,
 		false, "", "",
 	)

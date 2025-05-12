@@ -1189,7 +1189,7 @@ func TestGateway_Status(t *testing.T) {
 	accService := account.NewService(g.sdn, g.log)
 	g.clientHandler = servers.NewClientHandler(&g.Bx, g.BxConfig, g, g.sdn, accService, g.bridge,
 		g.blockchainPeers, services.NewNoOpSubscriptionServices(), g.wsManager, g.bdnStats,
-		g.timeStarted, g.gatewayPublicKey, g.feedManager, g.validatorsManager,
+		g.timeStarted, g.gatewayPublicKey, g.feedManager,
 		g.stats, g.TxStore,
 		false, "", "",
 	)
@@ -1228,7 +1228,7 @@ func TestGateway_Status(t *testing.T) {
 	timeNodeConnected := time.Now().Format(time.RFC3339)
 	endpoints, stats := createPeerData(timeNodeConnected)
 	for _, endpoint := range endpoints {
-		g.bdnStats.NodeStats()[endpoint.IPPort()] = stats[endpoint.IPPort()]
+		g.bdnStats.SetNodeStats(endpoint.IPPort(), stats[endpoint.IPPort()])
 	}
 	bxStatus := blockchain.BxStatus{Endpoints: endpoints}
 	err = g.bridge.SubscribeStatus(false).SendBlockchainStatusResponse(bxStatus)
@@ -1293,7 +1293,6 @@ func TestGateway_ConnectionStatus(t *testing.T) {
 	wg.Wait()
 	require.True(t, g.bdnStats.NodeStats()["123.45.6.78 1234"].IsConnected)
 }
-
 
 func createPeerData(timeNodeConnected string) ([]*types.NodeEndpoint, map[string]*bxmessage.BdnPerformanceStatsData) {
 	endpoints := []*types.NodeEndpoint{

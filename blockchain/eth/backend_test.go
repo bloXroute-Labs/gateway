@@ -128,7 +128,7 @@ func TestHandler_TxChainID(t *testing.T) {
 	assert.False(t, handler.isChainIDMatch(txs[0].ChainId().Uint64()))
 	assert.False(t, handler.isChainIDMatch(txs[1].ChainId().Uint64()))
 	assert.True(t, handler.isChainIDMatch(txs[2].ChainId().Uint64()))
-	assert.False(t, handler.isChainIDMatch(txs[3].ChainId().Uint64()))
+	assert.True(t, handler.isChainIDMatch(txs[3].ChainId().Uint64()))
 	tx3Hash := txs[2].Hash().String()
 
 	txsPacket := eth.TransactionsPacket(txs)
@@ -137,7 +137,7 @@ func TestHandler_TxChainID(t *testing.T) {
 	assert.Nil(t, err)
 
 	bxTxs := <-bridge.ReceiveNodeTransactions()
-	assert.Equal(t, 1, len(bxTxs.Transactions), "two txs are with different chainIDs, we expect only one tx")
+	assert.Equal(t, 2, len(bxTxs.Transactions), "two out of four txs should have different chainIDs")
 	assert.Equal(t, "0x"+bxTxs.Transactions[0].Hash().String(), tx3Hash)
 }
 

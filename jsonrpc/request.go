@@ -54,8 +54,6 @@ type RPCTxPayload struct {
 	Transaction             string         `json:"transaction"`
 	MevBundleTx             bool           `json:"mev_bundle_tx"`
 	ValidatorsOnly          bool           `json:"validators_only"`
-	NextValidator           bool           `json:"next_validator"`
-	Fallback                uint16         `json:"fall_back"`
 	BlockchainNetwork       string         `json:"blockchain_network"`
 	OriginalSenderAccountID string         `json:"original_sender_account_id"`
 	OriginalRPCMethod       RPCRequestType `json:"original_rpc_method"`
@@ -76,7 +74,6 @@ type rpcTxJSON struct {
 	Transaction             string         `json:"transaction"`
 	MevBundleTx             bool           `json:"mev_bundle_tx"`
 	ValidatorsOnly          bool           `json:"validators_only"`
-	NextValidator           bool           `json:"next_validator"`
 	Fallback                uint16         `json:"fall_back"`
 	BlockchainNetwork       string         `json:"blockchain_network"`
 	OriginalSenderAccountID string         `json:"original_sender_account_id"`
@@ -109,8 +106,6 @@ func (p *RPCTxPayload) UnmarshalJSON(b []byte) error {
 	p.ValidatorsOnly = payload.ValidatorsOnly
 	p.BlockchainNetwork = payload.BlockchainNetwork
 	p.OriginalSenderAccountID = payload.OriginalSenderAccountID
-	p.NextValidator = payload.NextValidator
-	p.Fallback = payload.Fallback
 	p.OriginalRPCMethod = payload.OriginalRPCMethod
 	p.NodeValidation = payload.NodeValidation
 	p.FrontRunningProtection = payload.FrontRunningProtection

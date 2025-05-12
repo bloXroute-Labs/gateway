@@ -138,7 +138,6 @@ func testGRPCServer(t *testing.T, port int, user string, password string) (*Serv
 		time.Now(),
 		"",
 		bx,
-		nil,
 		feedMngr,
 		nil,
 	)

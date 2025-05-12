@@ -70,8 +70,7 @@ func TestAuthorization(t *testing.T) {
 
 	nodeWSManager := eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false)
 
-	server := NewWSServer(cfg, "", "", sdn, g, accService, feedManager, nodeWSManager,
-		nil, stats, true)
+	server := NewWSServer(cfg, "", "", sdn, g, accService, feedManager, nodeWSManager, stats, true)
 	server.wsConnDelayOnErr = 10 * time.Millisecond // set a shorted delay for tests
 
 	eg.Go(func() error {

@@ -21,8 +21,6 @@ type Tx struct {
 	BroadcastHeader
 	shortID   types.ShortID
 	flags     types.TxFlags
-	walletIDs []string
-	fallback  uint16
 	timestamp time.Time
 	accountID [AccountIDLen]byte
 	content   []byte
@@ -50,9 +48,6 @@ func NewTx(hash types.SHA256Hash, content []byte, networkNum bxtypes.NetworkNum,
 	tx.SetContent(content)
 	tx.SetHash(hash)
 	tx.SetTimestamp(clock.Now())
-	if flags.IsNextValidator() {
-		tx.walletIDs = make([]string, 2)
-	}
 	return tx
 }
 
@@ -69,23 +64,6 @@ func (m *Tx) Content() (content []byte) {
 // ShortID returns the assigned short ID of the transaction
 func (m *Tx) ShortID() (sid types.ShortID) {
 	return m.shortID
-}
-
-// Fallback returns the seconds they relay will broadcast the tx to all gateway if not zero
-func (m *Tx) Fallback() uint16 {
-	return m.fallback
-}
-
-// WalletIDs returns the wallet id for the next validator
-func (m *Tx) WalletIDs() []string {
-	var walletIDs []string
-	for _, walletID := range m.walletIDs {
-		if walletID == invalidWalletAddress {
-			walletID = "0x"
-		}
-		walletIDs = append(walletIDs, walletID)
-	}
-	return walletIDs
 }
 
 // Timestamp indicates when the TxMessage was sent.
@@ -121,23 +99,6 @@ func (m *Tx) SetTimestamp(timestamp time.Time) {
 	m.timestamp = timestamp
 }
 
-// SetFallback sets the seconds they relay will broadcast the tx to all gateway if not zero
-func (m *Tx) SetFallback(f uint16) {
-	m.fallback = f
-}
-
-// SetWalletID sets the wallet id for the next validator
-func (m *Tx) SetWalletID(index int, id string) {
-	// TODO, decide what to do in this case
-	if index >= 2 {
-		return
-	}
-	if m.walletIDs == nil {
-		m.walletIDs = make([]string, 2)
-	}
-	m.walletIDs[index] = id
-}
-
 // SetSender sets the sender
 func (m *Tx) SetSender(sender types.Sender) {
 	copy(m.sender[:], sender[:])
@@ -164,9 +125,6 @@ func (m *Tx) ClearInternalAttributes() {
 	// not reset timestamp. Gateways use it to see if transaction is old or not
 	m.sourceID = [SourceIDLen]byte{}
 	m.accountID = [AccountIDLen]byte{}
-	if m.flags.IsNextValidator() {
-		m.walletIDs = make([]string, 2)
-	}
 
 	m.flags &= ^types.TFEnterpriseSender
 	m.flags &= ^types.TFEliteSender
@@ -223,9 +181,6 @@ func (m *Tx) CleanClone() Tx {
 		quota:           m.quota,
 		sender:          m.sender,
 	}
-	if tx.flags.IsNextValidator() {
-		tx.walletIDs = make([]string, 2)
-	}
 	tx.ClearInternalAttributes()
 	return tx
 }
@@ -236,8 +191,6 @@ func (m Tx) Clone() *Tx {
 		m.BroadcastHeader,
 		m.shortID,
 		m.flags,
-		m.walletIDs,
-		m.fallback,
 		m.timestamp,
 		m.accountID,
 		m.content,
@@ -262,14 +215,6 @@ func (m Tx) Pack(protocol Protocol) ([]byte, error) {
 	timestamp := m.timestamp.UnixNano() >> 10
 	binary.LittleEndian.PutUint32(buf[offset:], uint32(timestamp))
 	offset += ShortTimestampLen
-	if m.flags.IsNextValidator() {
-		binary.LittleEndian.PutUint16(buf[offset:], m.fallback)
-		offset += types.UInt16Len
-		for _, walletID := range m.walletIDs {
-			copy(buf[offset:offset+types.WalletIDLen], walletID)
-			offset += types.WalletIDLen
-		}
-	}
 	copy(buf[offset:], m.accountID[:])
 	offset += AccountIDLen
 
@@ -309,19 +254,6 @@ func (m *Tx) Unpack(buf []byte, protocol Protocol) error {
 	offset += ShortTimestampLen
 	result := decodeTimestamp(timestamp)
 	m.timestamp = time.Unix(0, result)
-
-	if m.flags.IsNextValidator() {
-		m.walletIDs = make([]string, 2)
-		if err := checkBufSize(&buf, offset, types.UInt16Len+types.WalletIDLen+types.WalletIDLen); err != nil {
-			return err
-		}
-		m.fallback = binary.LittleEndian.Uint16(buf[offset:])
-		offset += types.UInt16Len
-		for i := 0; i < 2; i++ {
-			m.SetWalletID(i, string(buf[offset:offset+types.WalletIDLen]))
-			offset += types.WalletIDLen
-		}
-	}
 
 	switch {
 	case protocol < 22:
@@ -385,9 +317,6 @@ func (m *Tx) Size(protocol Protocol) uint32 {
 		contentSize += SenderLen
 	}
 
-	if m.flags.IsNextValidator() {
-		contentSize += types.WalletIDLen*2 + types.UInt16Len
-	}
 	return m.BroadcastHeader.Size() + types.ShortIDLen + types.TxFlagsLen + ShortTimestampLen + AccountIDLen + contentSize
 }
 

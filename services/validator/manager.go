@@ -1,13 +1,10 @@
 package validator
 
 import (
-	"errors"
 	"sync"
 	"time"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
@@ -38,62 +35,12 @@ type PendingNextValidatorTxInfo struct {
 }
 
 // NewManager creates a new Manager
-func NewManager(nextValidatorMap *orderedmap.OrderedMap[uint64, string], validatorStatusMap *syncmap.SyncMap[string, bool], validatorListMap *syncmap.SyncMap[uint64, List]) *Manager {
+func NewManager(validatorStatusMap *syncmap.SyncMap[string, bool], validatorListMap *syncmap.SyncMap[uint64, List]) *Manager {
 	return &Manager{
-		nextValidatorMap:                    nextValidatorMap,
 		validatorStatusMap:                  validatorStatusMap,
 		validatorListMap:                    validatorListMap,
 		pendingBSCNextValidatorTxHashToInfo: make(map[string]PendingNextValidatorTxInfo),
 	}
-}
-
-// ProcessNextValidatorTx - sets next validator wallets if accessible and returns bool indicating if tx is pending reevaluation due to inaccessible first validator for BSC
-func (m *Manager) ProcessNextValidatorTx(tx *bxmessage.Tx, fallback uint16, networkNum bxtypes.NetworkNum, source connections.Conn) (bool, error) {
-	if networkNum != bxtypes.BSCMainnetNum {
-		return false, errors.New("currently next_validator is only supported on BSC networks, please contact bloXroute support")
-	}
-
-	if m == nil {
-		log.Errorf("failed to process next validator tx, because next validator map is nil, tx %v", tx.Hash().String())
-		return false, errors.New("failed to send next validator tx, please contact bloXroute support")
-	}
-
-	tx.SetFallback(fallback)
-
-	// take the latest two blocks from the ordered map for updating txMsg walletID
-	n2Validator := m.nextValidatorMap.Newest()
-	if n2Validator == nil {
-		return false, errors.New("can't send tx with next_validator because the gateway encountered an issue fetching the epoch block, please try again later or contact bloXroute support")
-	}
-
-	n1Validator := n2Validator.Prev()
-	n1ValidatorAccessible := false
-	n1Wallet := ""
-	if n1Validator != nil {
-		n1Wallet = n1Validator.Value
-		accessible, exist := m.validatorStatusMap.Load(n1Wallet)
-		if exist {
-			n1ValidatorAccessible = accessible
-		}
-	}
-
-	if n1ValidatorAccessible {
-		tx.SetWalletID(0, n1Wallet)
-	} else {
-		blockIntervalBSC := bxtypes.NetworkToBlockDuration(bxtypes.BSCMainnet)
-		if fallback != 0 && int64(fallback) < blockIntervalBSC.Milliseconds() {
-			return false, nil
-		}
-		m.pendingBSCNextValidatorTxHashToInfo[tx.Hash().String()] = PendingNextValidatorTxInfo{
-			Tx:            tx,
-			Fallback:      fallback,
-			TimeOfRequest: time.Now(),
-			Source:        source,
-		}
-		return true, nil
-	}
-
-	return false, nil
 }
 
 // GetPendingNextValidatorTxs returns map of pending next validator transactions

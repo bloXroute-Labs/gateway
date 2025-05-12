@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/stretchr/testify/require"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
@@ -77,33 +76,6 @@ func (s *wsSuite) TestBlxrTxRequestTxWithPrefix() {
 	clientRes := s.getClientResponse(msg)
 	res := s.parseBlxrTxResult(clientRes.Result)
 	s.Assert().Equal(fixtures.DynamicFeeTransactionForRPCInterfaceHash[2:], res.TxHash)
-}
-
-func (s *wsSuite) TestBlxrTxRequestWithNextValidator() {
-	reqPayload := fmt.Sprintf(`{"id": "1", "method": "blxr_tx", "params": {"transaction": "%s", "next_validator":true}}}`, "0x"+fixtures.LegacyTransaction)
-	msg := s.writeMsgToWsAndReadResponse([]byte(reqPayload), nil)
-	clientRes := s.getClientResponse(msg)
-	s.Require().NotNil(clientRes.Error)
-	err, ok := clientRes.Error.(map[string]interface{})
-	s.Require().True(ok)
-	data, ok := err["data"].(string)
-	s.Require().True(ok)
-	s.Assert().Contains(data, "next_validator is only supported on BSC network")
-}
-
-func (s *wsSuite) TestBlxrBSCTxRequestWithNextValidator() {
-	s.TearDownSuite()                  // tear down the suit
-	s.setupSuit(bxtypes.BSCMainnetNum) // set up the suit with BSC
-
-	reqPayload := fmt.Sprintf(`{"id": "1", "method": "blxr_tx", "params": {"transaction": "%s", "next_validator":true}}}`, "0x"+fixtures.LegacyTransactionBSC)
-	msg := s.writeMsgToWsAndReadResponse([]byte(reqPayload), nil)
-	clientRes := s.getClientResponse(msg)
-	s.Require().Nil(clientRes.Error)
-	res := s.parseBlxrTxResult(clientRes.Result)
-	s.Assert().Equal(fixtures.LegacyTransactionBSCHash, res.TxHash)
-
-	s.TearDownSuite() // tear down the suit
-	s.SetupSuite()    // reset the suit
 }
 
 func (s *wsSuite) TestBlxrTxRequestRLPTx() {
