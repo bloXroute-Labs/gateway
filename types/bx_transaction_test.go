@@ -28,11 +28,8 @@ func TestValidContentParsing(t *testing.T) {
 
 	tx := NewBxTransaction(hash, testNetworkNum, TFPaidTx, time.Now())
 	tx.SetContent(content)
-	blockchainTx, err := tx.BlockchainTransaction(EmptySender)
+	ethTx, err := tx.MakeAndSetEthTransaction(EmptySender)
 	require.NoError(t, err)
-
-	ethTx, ok := blockchainTx.(*EthTransaction)
-	require.True(t, ok)
 
 	fields := ethTx.Fields(AllFieldsWithFrom)
 
@@ -59,7 +56,7 @@ func TestValidContentParsing(t *testing.T) {
 //	content, _ := hex.DecodeString("01f9022101829237853486ced000830285ee94653911da49db4cdb0b7c3e4d929cfb56024cd4e680b8a48201aa3f000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000000000000000000000000000000000000000000083a297567e20f8000000000000000000000000000d8775f648430679a709e98d2b0cb6250d2887ef000000000000000000000000000000000000000000000358c5ee87d374000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff90111f859940d8775f648430679a709e98d2b0cb6250d2887eff842a01d76467e21923adb4ee07bcae017030c6208bbccde21ff0a61518956ad9b152aa0ec5bfdd140da829800c64d740e802727fca06fadec8b5d82a7b406c811851b55f85994653911da49db4cdb0b7c3e4d929cfb56024cd4e6f842a02a9a57a342e03a2b55a8bef24e9c777df22a7442475b1641875a66dba65855f0a0d0bcf4df132c65dad73803c5e5e1c826f151a3342680034a8a4c8e5f8eb0c13ff85994c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2f842a01fc85b67921559ce4fef22a331ff00c886678cf8b163d395e45fe0543f8750bda047a365b3ae9dbfa1c60a2cd30347765e914a89b7dac828db3ac3bd3e775b1a9980a0a340fc367050387a1b295514210a48de3836ee7923d9739bf0104e6d79c37997a06e63c7801da3c72f1a53f9b809ae04a45637da673c2a9c47065a1b1cdeafef7d")
 //	tx := NewBxTransaction(hash, 5)
 //	tx.SetContent(content)
-//	blockchainTx, err := tx.BlockchainTransaction()
+//	blockchainTx, err := tx.EthTransaction()
 //	assert.NoError(t, err)
 //
 //	ethTx, ok := blockchainTx.(*Transaction)
@@ -91,7 +88,7 @@ func TestNotValidContentParsing(t *testing.T) {
 		networkNum: testNetworkNum,
 	}
 
-	blockchainTx, err := tx.BlockchainTransaction(EmptySender)
+	blockchainTx, err := tx.MakeAndSetEthTransaction(EmptySender)
 	assert.NotNil(t, err)
 	assert.Nil(t, blockchainTx)
 }

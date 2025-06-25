@@ -59,7 +59,7 @@ func NewBx(bxConfig *config.Bx, dataDir string, accountsFetcher AccountsFetcher)
 
 // OnConnEstablished - a callback function. Called when new connection is established
 func (bn *Bx) OnConnEstablished(conn connections.Conn) error {
-	conn.Log().Infof("connection established, gateway: %v,protocol version %v, network %v, on local port %v",
+	conn.Log().Infof("connection established, gateway: %v, protocol version %v, network %v, on local port %v",
 		connections.IsGateway(conn.GetConnectionType()), conn.Protocol(),
 		conn.GetNetworkNum(), conn.GetLocalPort())
 	bn.ConnectionsLock.Lock()

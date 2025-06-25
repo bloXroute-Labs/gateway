@@ -19,6 +19,7 @@ import (
 	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
 
 	"github.com/bloXroute-Labs/gateway/v2/config"
+	"github.com/bloXroute-Labs/gateway/v2/metrics"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/rpc"
 	"github.com/bloXroute-Labs/gateway/v2/services"
@@ -176,7 +177,7 @@ func TestBlxrTx(t *testing.T) {
 			description: "Wrong chainID",
 			setupFeedManagerFunc: func(g *server) {
 				g.params.feedManager = feed.NewManager(g.params.sdn, services.NewNoOpSubscriptionServices(),
-					g.params.sdn.AccountModel(), statistics.NoStats{}, networkNum, true)
+					g.params.sdn.AccountModel(), statistics.NoStats{}, networkNum, true, &metrics.NoOpExporter{})
 			},
 			request:           &pb.BlxrTxRequest{},
 			generateTxAndHash: generateLegacyTxAndHash,

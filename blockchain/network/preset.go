@@ -66,7 +66,7 @@ func newEthereumMainnetConfig() EthConfig {
 		IgnoreBlockTimeout:      150 * time.Second,
 		IgnoreSlotCount:         10,
 		BootstrapNodes:          bootNodes,
-		ProgramName:             "Geth/v1.15.5-stable-4263936/linux-amd64/go1.24.1",
+		ProgramName:             "Geth/v1.15.11/linux-amd64/go1.24.2",
 	}
 }
 
@@ -108,7 +108,7 @@ func newBSCMainnetConfig() EthConfig {
 		Genesis:                 common.HexToHash("0x0d21840abff46b96c84b2ac9e10e4f5cdaeb5693cb665db62a2f3b02d2d57b5b"),
 		IgnoreBlockTimeout:      30 * time.Second,
 		BootstrapNodes:          bootNodes,
-		ProgramName:             "Geth/v1.4.5/linux-amd64/go1.21.7",
+		ProgramName:             "Geth/v1.15.11/linux-amd64/go1.24.2",
 	}
 }
 
@@ -142,7 +142,7 @@ func newBSCTestnetConfig() EthConfig {
 		Genesis:                 common.HexToHash("6d3c66c5357ec91d5c43af47e234a939b22557cbb552dc45bebbceeed90fbe34"),
 		IgnoreBlockTimeout:      30 * time.Second,
 		BootstrapNodes:          bootNodes,
-		ProgramName:             "Geth/v1.4.5/linux-amd64/go1.21.7",
+		ProgramName:             "Geth/v1.15.11/linux-amd64/go1.24.2",
 	}
 }
 
@@ -174,7 +174,7 @@ func newHoleskyConfig() EthConfig {
 		IgnoreBlockTimeout:      30 * time.Second,
 		BootstrapNodes:          bootNodes,
 		IgnoreSlotCount:         10,
-		ProgramName:             "Geth/v1.15.5-stable-4263936/linux-amd64/go1.24.1",
+		ProgramName:             "Geth/v1.15.11/linux-amd64/go1.24.2",
 	}
 }
 

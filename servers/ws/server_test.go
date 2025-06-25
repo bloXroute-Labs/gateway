@@ -10,6 +10,7 @@ import (
 
 	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	"github.com/bloXroute-Labs/gateway/v2/metrics"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -52,7 +53,7 @@ func TestAuthorization(t *testing.T) {
 	stats := statistics.NoStats{}
 
 	feedManager := feed.NewManager(sdn, services.NewNoOpSubscriptionServices(),
-		accountIDToAccountModel["gw"], stats, bxtypes.NetworkNum(5), true)
+		accountIDToAccountModel["gw"], stats, bxtypes.NetworkNum(5), true, &metrics.NoOpExporter{})
 
 	accService := &mockAccountService{}
 
@@ -70,7 +71,7 @@ func TestAuthorization(t *testing.T) {
 
 	nodeWSManager := eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false)
 
-	server := NewWSServer(cfg, "", "", sdn, g, accService, feedManager, nodeWSManager, stats, true)
+	server := NewWSServer(cfg, "", "", sdn, g, accService, feedManager, nodeWSManager, stats, true, nil)
 	server.wsConnDelayOnErr = 10 * time.Millisecond // set a shorted delay for tests
 
 	eg.Go(func() error {

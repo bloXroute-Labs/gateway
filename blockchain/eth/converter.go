@@ -20,6 +20,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bdn"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
 	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/core"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
@@ -53,7 +54,7 @@ func (c Converter) TransactionBlockchainToBDN(i interface{}) (*types.BxTransacti
 // BlockBlockchainToBDN converts an Ethereum block to a BDN block
 func (c Converter) BlockBlockchainToBDN(i interface{}) (*types.BxBlock, error) {
 	switch b := i.(type) {
-	case *BlockInfo:
+	case *core.BlockInfo:
 		return c.ethBlockBlockchainToBDN(b)
 	case beacon.WrappedReadOnlySignedBeaconBlock:
 		return c.beaconBlockBlockchainToBDN(b)
@@ -70,7 +71,7 @@ func (c Converter) bscSidecarsBlockchainToBDN(block *bxcommoneth.Block) []*types
 	return bdnSidecars
 }
 
-func (c Converter) ethBlockBlockchainToBDN(blockInfo *BlockInfo) (*types.BxBlock, error) {
+func (c Converter) ethBlockBlockchainToBDN(blockInfo *core.BlockInfo) (*types.BxBlock, error) {
 	block := blockInfo.Block
 	hash := NewSHA256Hash(block.Hash())
 
@@ -250,7 +251,7 @@ func (c Converter) bscSidecarsBDNtoBlockchain(block *types.BxBlock) ([]*bxcommon
 	return sidecars, nil
 }
 
-func (c Converter) ethBlockBDNtoBlockchain(block *types.BxBlock) (*BlockInfo, error) {
+func (c Converter) ethBlockBDNtoBlockchain(block *types.BxBlock) (*core.BlockInfo, error) {
 	txs := make([]rlp.RawValue, 0, len(block.Txs))
 	for _, tx := range block.Txs {
 		txs = append(txs, tx.Content())
@@ -278,7 +279,7 @@ func (c Converter) ethBlockBDNtoBlockchain(block *types.BxBlock) (*BlockInfo, er
 		commonBlock.SetBlobSidecars(sidecars)
 	}
 
-	return NewBlockInfo(&commonBlock, block.TotalDifficulty), nil
+	return core.NewBlockInfo(&commonBlock, block.TotalDifficulty), nil
 }
 
 func (c Converter) beaconBlockBDNtoBlockchain(block *types.BxBlock) (interfaces.ReadOnlySignedBeaconBlock, error) {
@@ -487,4 +488,11 @@ func (c Converter) BeaconMessageBDNToBlockchain(msg *types.BxBeaconMessage) (int
 	default:
 		return nil, fmt.Errorf("could not convert beacon message %v", msg)
 	}
+}
+
+// NewSHA256Hash is a utility function for converting between Ethereum common hashes and bloxroute hashes
+func NewSHA256Hash(hash ethcommon.Hash) types.SHA256Hash {
+	var sha256Hash types.SHA256Hash
+	copy(sha256Hash[:], hash.Bytes())
+	return sha256Hash
 }

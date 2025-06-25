@@ -1,11 +1,15 @@
 package test
 
 import (
+	"errors"
 	"time"
 
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rlp"
 )
+
+// ErrReadTimeout is returned when the read operation times out
+var ErrReadTimeout = errors.New("read timeout")
 
 // MsgReadWriter is a test implementation of the RW connection interface on RLP peers
 type MsgReadWriter struct {
@@ -15,14 +19,17 @@ type MsgReadWriter struct {
 	// provide an alerting mechanism if write doesn't happen on main goroutine (writeChannelSize = -1 if this is not needed)
 	writeAlertCh   chan bool
 	writeToChannel bool
+
+	readTimeout time.Duration
 }
 
 // NewMsgReadWriter returns a test read writer with the provided channel buffer size
-func NewMsgReadWriter(readChannelSize, writeChannelSize int) *MsgReadWriter {
+func NewMsgReadWriter(readChannelSize, writeChannelSize int, readTimeout time.Duration) *MsgReadWriter {
 	rw := &MsgReadWriter{
 		ReadMessages:   make(chan p2p.Msg, readChannelSize),
 		WriteMessages:  make([]p2p.Msg, 0),
 		writeToChannel: writeChannelSize != -1,
+		readTimeout:    readTimeout,
 	}
 	if rw.writeToChannel {
 		rw.writeAlertCh = make(chan bool, writeChannelSize)
@@ -32,8 +39,17 @@ func NewMsgReadWriter(readChannelSize, writeChannelSize int) *MsgReadWriter {
 
 // ReadMsg pulls an encoded message off the read queue
 func (t *MsgReadWriter) ReadMsg() (p2p.Msg, error) {
-	msg := <-t.ReadMessages
-	return msg, nil
+	if t.readTimeout != 0 {
+		select {
+		case msg := <-t.ReadMessages:
+			return msg, nil
+		case <-time.After(t.readTimeout):
+			return p2p.Msg{}, ErrReadTimeout
+		}
+	} else {
+		msg := <-t.ReadMessages
+		return msg, nil
+	}
 }
 
 // WriteMsg tracks all messages that are supposedly written to the RW peer

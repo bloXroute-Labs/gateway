@@ -21,6 +21,7 @@ import (
 	ethtest "github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/config"
+	"github.com/bloXroute-Labs/gateway/v2/metrics"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/rpc"
 	"github.com/bloXroute-Labs/gateway/v2/services"
@@ -123,7 +124,7 @@ func testGRPCServer(t *testing.T, port int, user string, password string) (*Serv
 	bx := mock.NewMockConnector(ctl)
 
 	feedMngr := feed.NewManager(sdn, services.NewNoOpSubscriptionServices(),
-		accountIDToAccountModel["gw"], stats, bxtypes.NetworkNum(5), true)
+		accountIDToAccountModel["gw"], stats, bxtypes.NetworkNum(5), true, &metrics.NoOpExporter{})
 
 	grpcServer := NewGRPCServer(
 		cfg,
@@ -139,6 +140,8 @@ func testGRPCServer(t *testing.T, port int, user string, password string) (*Serv
 		"",
 		bx,
 		feedMngr,
+		nil,
+		false,
 		nil,
 	)
 

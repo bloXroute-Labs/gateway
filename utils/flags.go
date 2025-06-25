@@ -99,10 +99,9 @@ var (
 		Value:  false,
 		Hidden: true,
 	}
-	// TODO: this currently must be a file path in current code, not a URL
 	RegistrationCertDirFlag = &cli.StringFlag{
 		Name:   "registration-cert-dir",
-		Usage:  "base URL for retrieving SSL certificates",
+		Usage:  "base dir for retrieving SSL certificates",
 		Hidden: true,
 	}
 	DisableProfilingFlag = &cli.BoolFlag{
@@ -415,4 +414,17 @@ var (
 		Hidden: true,
 		Value:  false,
 	}
+	OFACEndpoint = &cli.StringFlag{
+		Name:   "ofac-endpoint",
+		Usage:  "ofac endpoint url",
+		Hidden: true,
+		Value:  "",
+	}
+	OFACBackupEndpoint = &cli.StringFlag{
+		Name:   "ofac-backup-endpoint",
+		Usage:  "ofac backup endpoint url",
+		Hidden: true,
+		Value:  "",
+	}
 )
+

@@ -562,7 +562,8 @@ func (peers *StaticPeers) Endpoints() []types.NodeEndpoint {
 	return endpoints
 }
 
-type keyWriteError struct {
+// KeyWriteError is an error type that indicates an issue with writing the private key to disk.
+type KeyWriteError struct {
 	error
 }
 
@@ -573,7 +574,7 @@ func LoadOrGeneratePrivateKey(keyPath string) (privateKey *ecdsa.PrivateKey, gen
 		if os.IsNotExist(err) {
 			dir, _ := path.Split(keyPath)
 			if err = os.MkdirAll(dir, 0o755); err != nil {
-				err = keyWriteError{err}
+				err = KeyWriteError{err}
 				return
 			}
 
@@ -582,7 +583,7 @@ func LoadOrGeneratePrivateKey(keyPath string) (privateKey *ecdsa.PrivateKey, gen
 			}
 
 			if err = crypto.SaveECDSA(keyPath, privateKey); err != nil {
-				err = keyWriteError{err}
+				err = KeyWriteError{err}
 				return
 			}
 

@@ -11,6 +11,7 @@ import (
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	eth2 "github.com/bloXroute-Labs/gateway/v2/blockchain/eth/protocols/eth"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
@@ -20,7 +21,7 @@ type WSProvider struct {
 	addr          string
 	open          bool
 	peerEndpoint  types.NodeEndpoint
-	peer          *Peer
+	peer          *eth2.Peer
 	client        *rpc.Client
 	log           *log.Entry
 	timeout       time.Duration
@@ -88,8 +89,8 @@ func (ws *WSProvider) Dial() {
 
 // SetBlockchainPeer sets the blockchain peer that corresponds to the ws client
 func (ws *WSProvider) SetBlockchainPeer(peer interface{}) {
-	ws.peer = peer.(*Peer)
-	ws.log.Debugf("set blockchain peer %v corresponding to ws client  process %v", peer.(*Peer).endpoint.IPPort(), utils.GetGID())
+	ws.peer = peer.(*eth2.Peer)
+	ws.log.Debugf("set blockchain peer %v corresponding to ws client  process %v", peer.(*eth2.Peer).IPEndpoint().IPPort(), utils.GetGID())
 }
 
 // UnsetBlockchainPeer unsets the blockchain peer that corresponds to the ws client

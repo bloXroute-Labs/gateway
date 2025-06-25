@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/bloXroute-Labs/gateway/v2/types"
+
 	"github.com/sourcegraph/jsonrpc2"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
@@ -29,15 +31,17 @@ type Server struct {
 	node        connections.BxListener
 	feedManager *feed.Manager
 	port        int
+	oFACList    *types.OFACMap
 }
 
 // NewServer creates and returns a new websocket server managed by feedManager
-func NewServer(node connections.BxListener, feedManager *feed.Manager, port int, sdn sdnsdk.SDNHTTP) *Server {
+func NewServer(node connections.BxListener, feedManager *feed.Manager, port int, sdn sdnsdk.SDNHTTP, oFACList *types.OFACMap) *Server {
 	return &Server{
 		port:        port,
 		node:        node,
 		feedManager: feedManager,
 		sdn:         sdn,
+		oFACList:    oFACList,
 	}
 }
 
@@ -121,7 +125,7 @@ func (s *Server) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 			DroppingHashes:          bundlePayload[0].DroppingTxHashes,
 		}
 
-		s.handleRPCBundleSubmission(w, r, rpcRequest, payload)
+		s.handleRPCBundleSubmission(w, r, rpcRequest, payload, s.oFACList)
 	case jsonrpc.RPCBundleSubmission:
 		var params jsonrpc.RPCBundleSubmissionPayload
 		if err = json.Unmarshal(*rpcRequest.Params, &params); err != nil {
@@ -129,16 +133,17 @@ func (s *Server) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		s.handleRPCBundleSubmission(w, r, rpcRequest, params)
+		s.handleRPCBundleSubmission(w, r, rpcRequest, params, s.oFACList)
 	default:
 		err := fmt.Errorf("got unsupported method name: %v", rpcRequest.Method)
 		writeErrorJSON(w, rpcRequest.ID, http.StatusNotFound, err)
 	}
 }
 
-func (s *Server) handleRPCBundleSubmission(w http.ResponseWriter, r *http.Request, rpcRequest jsonrpc2.Request, payload jsonrpc.RPCBundleSubmissionPayload) {
+func (s *Server) handleRPCBundleSubmission(w http.ResponseWriter, r *http.Request, rpcRequest jsonrpc2.Request, payload jsonrpc.RPCBundleSubmissionPayload,
+	oFACList *types.OFACMap) {
 	ws := connections.NewRPCConn(s.sdn.AccountModel().AccountID, r.RemoteAddr, s.sdn.NetworkNum(), bxtypes.Websocket)
-	result, errCode, err := handler.HandleMEVBundle(s.node, ws, s.sdn.AccountModel(), &payload)
+	result, errCode, err := handler.HandleMEVBundle(s.node, ws, s.sdn.AccountModel(), &payload, oFACList)
 	if err != nil {
 		if errors.Is(err, handler.ErrBundleAccountTierTooLow) {
 			writeErrorJSON(w, rpcRequest.ID, http.StatusForbidden, err)

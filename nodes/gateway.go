@@ -24,8 +24,6 @@ import (
 	"github.com/OffchainLabs/prysm/v6/consensus-types/interfaces"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/sourcegraph/jsonrpc2"
 	"golang.org/x/sync/errgroup"
 
@@ -41,12 +39,14 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
 	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/core"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/connections/handler"
+	"github.com/bloXroute-Labs/gateway/v2/metrics"
 	"github.com/bloXroute-Labs/gateway/v2/servers"
 	handler2 "github.com/bloXroute-Labs/gateway/v2/servers/handler"
 	"github.com/bloXroute-Labs/gateway/v2/services"
@@ -67,8 +67,8 @@ const (
 
 	bloomStoreInterval = time.Hour
 
-	bscBlocksPerEpochPreLorenz = 200
-	bscBlocksPerEpochLorentz   = 500
+	bscBlocksPerEpochPreMaxwell = 500
+	bscBlocksPerEpochMaxwell    = 1000
 
 	relayMapInterval     = 2 * time.Minute
 	fastestRelayInterval = 12 * time.Hour
@@ -83,15 +83,18 @@ const (
 	validatorBytesLength = addressLength + bLSPublicKeyLength
 	extraSealLength      = 65                                      // Fixed number of extra-data suffix bytes reserved for signer seal
 	extraDataLength      = extraVanityLength + extraSealLength + 1 // 32 + 65 + 1
+	oFACInterval         = 7 * 24 * time.Hour
 )
 
 var (
-	lorentzHardForkTime         = time.Date(2025, 4, 29, 5, 5, 0, 0, time.UTC)
-	lorentzSecondHardForkTime   = lorentzHardForkTime.Add(time.Millisecond * 1500 * 500) // 500 blocks * 1.5 seconds per block
-	errUnsupportedBlockType     = errors.New("block type is not supported")
-	errIgnored                  = errors.New("ignored request")
-	errExtraDataTooSmall        = errors.New("wrong extra data, too small")
-	errNotAlignedValidatorsList = errors.New("parse validators failed, validator list is not aligned")
+	maxwellHardForkTime              = time.Date(2025, 6, 30, 2, 30, 0, 0, time.UTC)
+	maxwellHardForkTimeTestnet       = time.Date(2025, 5, 26, 7, 5, 0, 0, time.UTC)
+	maxwellSecondHardForkTime        = maxwellHardForkTime.Add(time.Millisecond * 750 * 1000)        // 1000 blocks * 0.75 seconds per block
+	maxwellSecondHardForkTimeTestnet = maxwellHardForkTimeTestnet.Add(time.Millisecond * 750 * 1000) // 1000 blocks * 0.75 seconds per block
+	errUnsupportedBlockType          = errors.New("block type is not supported")
+	errIgnored                       = errors.New("ignored request")
+	errExtraDataTooSmall             = errors.New("wrong extra data, too small")
+	errNotAlignedValidatorsList      = errors.New("parse validators failed, validator list is not aligned")
 )
 
 type gateway struct {
@@ -147,6 +150,8 @@ type gateway struct {
 	nextBlockTime                time.Time
 	bloomFilter                  services.BloomFilter
 	txIncludeSenderInFeed        bool
+	ofacListEndpoint             string
+	ofacBackupListEndpoint       string
 
 	blockTime time.Duration
 
@@ -160,6 +165,74 @@ type gateway struct {
 	blobsManager   *beacon.BlobSidecarCacheManager
 	ignoredRelays  *syncmap.SyncMap[string, bxtypes.RelayInfo]
 	relaysToSwitch *syncmap.SyncMap[string, bool]
+	ofacMap        *types.OFACMap
+
+}
+
+func (g *gateway) startOFACUpdater() {
+	log.Info("starting OFAC updater")
+	for g.fetchOFACList() != nil {
+		log.Error("failed to load OFAC data, retrying in 30s...")
+		time.Sleep(30 * time.Second)
+	}
+	ticker := time.NewTicker(oFACInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			log.Info("Weekly OFAC update triggered")
+			// we don't care about the error, we can use an old/backup list
+			_ = g.fetchOFACList() //nolint:errcheck
+		case <-g.context.Done():
+			log.Info("OFAC updater stopped")
+			return
+		}
+	}
+}
+
+func (g *gateway) fetchOFACList() error {
+	ofac, err := tryFetchComplianceList(g.context, g.ofacListEndpoint)
+	if err == nil {
+		g.ofacMap = ofac
+		return nil
+	}
+	log.Errorf("failed to fetch ofac list from %v, err: %v", g.ofacListEndpoint, err)
+	ofac, err = tryFetchComplianceList(g.context, g.ofacBackupListEndpoint)
+	if err != nil {
+		log.Errorf("failed to fetch ofac list from %v, err: %v", g.ofacBackupListEndpoint, err)
+		return err
+	}
+	g.ofacMap = ofac
+	return nil
+}
+
+func tryFetchComplianceList(ctx context.Context, url string) (*types.OFACMap, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status: %s", resp.Status)
+	}
+
+	var raw map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("json decode: %w", err)
+	}
+
+	m := syncmap.NewStringMapOf[bool]()
+	for addr := range raw {
+		m.Store(addr, true)
+	}
+
+	return m, nil
 }
 
 // GeneratePeers generate string peers separated by comma
@@ -196,6 +269,8 @@ func NewGateway(parent context.Context,
 	transactionSlotEndDuration int,
 	enableBloomFilter bool,
 	txIncludeSenderInFeed bool,
+	oFACListEndpoint string,
+	oFACBackupListEndpoint string,
 ) (Node, error) {
 	clock := clock.RealClock{}
 	blockTime := bxtypes.NetworkToBlockDuration(bxConfig.BlockchainNetwork)
@@ -225,14 +300,18 @@ func NewGateway(parent context.Context,
 		sslCerts:                     sslCerts,
 		blockTime:                    blockTime,
 		txIncludeSenderInFeed:        txIncludeSenderInFeed,
+		ofacListEndpoint:             oFACListEndpoint,
+		ofacBackupListEndpoint:       oFACBackupListEndpoint,
 		ignoredRelays:                syncmap.NewStringMapOf[bxtypes.RelayInfo](),
 		relaysToSwitch:               syncmap.NewStringMapOf[bool](),
+		ofacMap:                      syncmap.NewStringMapOf[bool](),
 		log: log.WithFields(log.Fields{
 			"component": "gateway",
 		}),
 		blobsManager: blobsManager,
 	}
 	g.chainID = int64(bxtypes.NetworkNumToChainID[sdn.NetworkNum()])
+
 
 	if bxConfig.BlockchainNetwork == bxtypes.BSCMainnet {
 		g.validatorStatusMap = syncmap.NewStringMapOf[bool]()
@@ -471,10 +550,17 @@ func (g *gateway) Run() error {
 		g.stats,
 		g.sdn.NetworkNum(),
 		g.BxConfig.WebsocketEnabled || g.BxConfig.WebsocketTLSEnabled || g.BxConfig.GRPC.Enabled,
+		&metrics.NoOpExporter{},
 	)
 
 	txFromFieldIncludable := blockchainNetwork.EnableCheckSenderNonce || g.txIncludeSenderInFeed
 
+	if g.ofacListEndpoint != "" {
+		group.Go(func() error {
+			g.startOFACUpdater()
+			return nil
+		})
+	}
 	// start feed manager and servers if websocket or gRPC is enabled
 	if g.BxConfig.WebsocketEnabled || g.BxConfig.WebsocketTLSEnabled || g.BxConfig.GRPC.Enabled {
 		group.Go(func() error {
@@ -487,8 +573,8 @@ func (g *gateway) Run() error {
 
 	g.clientHandler = servers.NewClientHandler(&g.Bx, g.BxConfig, g, g.sdn, accService, g.bridge,
 		g.blockchainPeers, services.NewNoOpSubscriptionServices(), g.wsManager, g.bdnStats,
-		g.timeStarted, g.gatewayPublicKey, g.feedManager,
-		g.stats, g.TxStore, txFromFieldIncludable, sslCert.PrivateCertFile(), sslCert.PrivateKeyFile(),
+		g.timeStarted, g.gatewayPublicKey, g.feedManager, g.stats, g.TxStore,
+		txFromFieldIncludable, sslCert.PrivateCertFile(), sslCert.PrivateKeyFile(), g.ofacMap,
 	)
 
 	group.Go(func() error {
@@ -751,7 +837,7 @@ func (g *gateway) queryEpochBlock(height uint64) error {
 					return fmt.Errorf("failed to extract validator list from extraData: %v", err)
 				}
 
-				g.validatorListMap.Delete(height - bscBlocksPerEpoch()*2) // remove the validator list that doesn't need anymore
+				g.validatorListMap.Delete(height - g.bscBlocksPerEpoch()*2) // remove the validator list that doesn't need anymore
 				g.validatorListMap.Store(height, validatorList)
 
 				return nil
@@ -770,11 +856,19 @@ func (g *gateway) generateBSCValidator(blockHeight uint64) []*types.FutureValida
 	}
 
 	// currentEpochBlockHeight will be the most recent block height that can be module by amount of blocks in an epoch
-	blocksPerEpoch := bscBlocksPerEpoch()
+	blocksPerEpoch := g.bscBlocksPerEpoch()
 	currentEpochBlockHeight := blockHeight / blocksPerEpoch * blocksPerEpoch
 	previousEpochBlockHeight := currentEpochBlockHeight - blocksPerEpoch
-	if time.Now().After(lorentzHardForkTime) && time.Now().Before(lorentzSecondHardForkTime) {
-		previousEpochBlockHeight = currentEpochBlockHeight - bscBlocksPerEpochPreLorenz
+
+	var secondHardForkTime time.Time
+	if g.sdn.NetworkNum() == bxtypes.BSCMainnetNum {
+		secondHardForkTime = maxwellSecondHardForkTime
+	} else {
+		secondHardForkTime = maxwellSecondHardForkTimeTestnet
+	}
+
+	if time.Now().After(maxwellHardForkTime) && time.Now().Before(secondHardForkTime) {
+		previousEpochBlockHeight = currentEpochBlockHeight - bscBlocksPerEpochPreMaxwell
 	}
 	prevEpochValidatorList, exist := g.validatorListMap.Load(previousEpochBlockHeight)
 	if !exist { // we need previous epoch validator list to calculate
@@ -872,12 +966,12 @@ func bscExtractValidatorListFromBlock(b []byte) (validator.List, error) {
 	return validator.List{}, nil
 }
 
-func (g *gateway) generateFutureValidatorInfo(block *types.BxBlock, blockInfo *eth.BlockInfo) []*types.FutureValidatorInfo {
+func (g *gateway) generateFutureValidatorInfo(block *types.BxBlock, blockInfo *core.BlockInfo) []*types.FutureValidatorInfo {
 	g.validatorInfoUpdateLock.Lock()
 	defer g.validatorInfoUpdateLock.Unlock()
 
 	blockHeight := block.Number.Uint64()
-	blocksPerEpoch := bscBlocksPerEpoch()
+	blocksPerEpoch := g.bscBlocksPerEpoch()
 
 	if (g.sdn.NetworkNum() == bxtypes.BSCMainnetNum || g.sdn.NetworkNum() == bxtypes.BSCTestnetNum) && blockHeight%blocksPerEpoch == 0 {
 		validatorList, err := bscExtractValidatorListFromBlock(blockInfo.Block.Extra())
@@ -1026,7 +1120,7 @@ func (g *gateway) notifyBlockFeeds(bxBlock *types.BxBlock, nodeSource *connectio
 		if err := notifyEthBlockFeeds(ethBlock, nodeSource, info, isBlockchainBlock); err != nil {
 			return err
 		}
-	case *eth.BlockInfo:
+	case *core.BlockInfo:
 		addedBdnBlock = g.bdnBlocks.SetIfAbsent(bxBlock.Hash().String(), 15*time.Minute)
 		if isBlockchainBlock {
 			addedNewBlock = g.newBlocks.SetIfAbsent(bxBlock.Hash().String(), 15*time.Minute)
@@ -1077,16 +1171,6 @@ func (g *gateway) notifyTxReceiptsAndOnBlockFeeds(nodeSource *connections.Blockc
 }
 
 func (g *gateway) publishPendingTx(txHash types.SHA256Hash, bxTx *types.BxTransaction, fromNode bool) {
-	// check if this transaction was seen before and has validators_only / next_validator flag, don't publish it to pending txs
-	tx, ok := g.TxStore.Get(txHash)
-	if ok {
-		flags := tx.Flags()
-
-		if flags.IsValidatorsOnly() {
-			return
-		}
-	}
-
 	strTxHash := txHash.String()
 
 	if g.pendingTxs.Exists(strTxHash) {
@@ -1239,7 +1323,7 @@ func (g *gateway) handleBeaconMessageFromBlockchain(beaconMessageFromNode *block
 	startTime := g.clock.Now()
 	if !g.seenBeaconMessages.SetIfAbsent(beaconMessageFromNode.Message.Hash.String(), 30*time.Minute) {
 		g.log.Tracef("skipping beacon message %v, already seen", beaconMessageFromNode.Message.Hash.String())
-		return eth.ErrAlreadySeen
+		return core.ErrAlreadySeen
 	}
 
 	beaconMessage, err := g.blobProcessor.BxBeaconMessageToBeaconMessage(beaconMessageFromNode.Message, g.sdn.NetworkNum())
@@ -1511,7 +1595,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 	case txResult.NewContent || txResult.NewSID || txResult.Reprocess:
 		eventName = "TxProcessedByGatewayFromPeer"
 		if txResult.NewContent || txResult.Reprocess {
-			if txResult.NewContent && !tx.Flags().IsValidatorsOnly() {
+			if txResult.NewContent {
 				newTxsNotification := types.CreateNewTransactionNotification(txResult.Transaction)
 				g.notify(newTxsNotification)
 				if !sourceEndpoint.IsDynamic() {
@@ -1567,86 +1651,23 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 				}
 			}
 
-			// if this gateway is the associated validator
-			if tx.Flags().IsValidatorsOnly() {
-				if g.sdn.AccountModel().Miner {
-					tx.AddFlags(types.TFDeliverToNode)
-				} else {
-					tx.RemoveFlags(types.TFDeliverToNode)
-				}
-			}
-
 			shouldSendTxFromNodeToOtherNodes := connectionType == bxtypes.Blockchain && len(g.blockchainPeers) > 1 && !g.BxConfig.NoTxsToBlockchain
-			shouldSendTxFromBDNToNodes := g.shouldSendTxFromBDNToNodes(connectionType, tx, tx.Flags().IsValidatorsOnly()) && !g.BxConfig.NoTxsToBlockchain
+			shouldSendTxFromBDNToNodes := g.shouldSendTxFromBDNToNodes(connectionType, tx) && !g.BxConfig.NoTxsToBlockchain
 
-			if source.GetNetworkNum() == bxtypes.BSCMainnetNum && (tx.Flags().IsValidatorsOnly()) {
-				rawBytesString, err := getRawBytesStringFromTXMsg(tx)
-				if err != nil {
-					l.WithFields(log.Fields{
-						"to": g.BxConfig.ForwardTransactionEndpoint,
-					}).Errorf("failed to forward transaction, can't get the tx raw bytes, err %v", err)
-				} else {
-					go g.forwardBSCTx(g.bscTxClient, tx.Hash().String(), "0x"+rawBytesString, g.BxConfig.ForwardTransactionEndpoint, g.BxConfig.ForwardTransactionMethod)
-				}
-			} else if shouldSendTxFromNodeToOtherNodes || shouldSendTxFromBDNToNodes {
+			if shouldSendTxFromNodeToOtherNodes || shouldSendTxFromBDNToNodes {
 				txsToDeliverToNodes := blockchain.Transactions{
 					Transactions:   []*types.BxTransaction{txResult.Transaction},
 					PeerEndpoint:   sourceEndpoint,
 					ConnectionType: connectionType,
 				}
+				err := g.bridge.SendTransactionsFromBDN(txsToDeliverToNodes)
+				if err != nil {
+					l.Errorf("failed to send transaction from BDN to bridge: %v", err)
+				}
 
-				// Check for front run protection, if tx arrive too earlier, we send it with delay, if arrive too late, do not send to node
-				if tx.Flags().IsFrontRunningProtection() {
-					now := time.Now()
-					deadline := g.nextBlockTime.Add(-time.Millisecond * time.Duration(g.transactionSlotEndDuration))
-					slotBegin := g.nextBlockTime.Add(-time.Millisecond * time.Duration(g.transactionSlotStartDuration))
-					if now.Before(slotBegin) {
-						frontRunProtectionDelay = slotBegin.Sub(now)
-						sentToBlockchainNode = true
-						l.WithFields(log.Fields{
-							"slotStart":               slotBegin.String(),
-							"nextBlockTime":           g.nextBlockTime.String(),
-							"frontRunProtectionDelay": frontRunProtectionDelay.String(),
-						}).Debug("received next validator tx, wait to prevent front running")
-					} else if now.After(deadline) {
-						sentToBlockchainNode = false
-						l.WithFields(log.Fields{
-							"deadline":      deadline.String(),
-							"nextBlockTime": g.nextBlockTime.String(),
-						}).Error("received next validator tx after slot deadline, will not send the tx")
-						break
-					}
-
-					time.AfterFunc(frontRunProtectionDelay, func() {
-						if source.GetNetworkNum() == bxtypes.BSCMainnetNum && tx.Flags().IsValidatorsOnly() {
-							l.Debug("not sending tx to p2p node for bsc semiprivate tx")
-							return
-						}
-
-						err := g.bridge.SendTransactionsFromBDN(txsToDeliverToNodes)
-						if err != nil {
-							l.Errorf("failed to send transaction from BDN to bridge: %v", err)
-						}
-
-						if shouldSendTxFromNodeToOtherNodes {
-							g.bdnStats.LogTxSentToAllNodesExceptSourceNode(sourceEndpoint)
-						}
-
-						l.WithFields(log.Fields{
-							"flags":                   tx.Flags(),
-							"frontRunProtectionDelay": frontRunProtectionDelay.String(),
-						}).Debug("tx sent to blockchain with front run protection delay")
-					})
-				} else {
-					err := g.bridge.SendTransactionsFromBDN(txsToDeliverToNodes)
-					if err != nil {
-						l.Errorf("failed to send transaction from BDN to bridge: %v", err)
-					}
-
-					sentToBlockchainNode = true
-					if shouldSendTxFromNodeToOtherNodes {
-						g.bdnStats.LogTxSentToAllNodesExceptSourceNode(sourceEndpoint)
-					}
+				sentToBlockchainNode = true
+				if shouldSendTxFromNodeToOtherNodes {
+					g.bdnStats.LogTxSentToAllNodesExceptSourceNode(sourceEndpoint)
 				}
 			}
 
@@ -1700,7 +1721,7 @@ func (g *gateway) processTransaction(tx *bxmessage.Tx, source connections.Conn) 
 }
 
 // shouldSendTxFromBDNToNodes send to node if all are true
-func (g *gateway) shouldSendTxFromBDNToNodes(connectionType bxtypes.NodeType, tx *bxmessage.Tx, validatorsOnly bool) (send bool) {
+func (g *gateway) shouldSendTxFromBDNToNodes(connectionType bxtypes.NodeType, tx *bxmessage.Tx) (send bool) {
 	if connectionType == bxtypes.Blockchain {
 		return // Transaction is from blockchain node (transaction is not from Relay or RPC)
 	}
@@ -1710,26 +1731,11 @@ func (g *gateway) shouldSendTxFromBDNToNodes(connectionType bxtypes.NodeType, tx
 	}
 
 	if (!g.BxConfig.BlocksOnly && tx.Flags().ShouldDeliverToNode()) || // (Gateway didn't start with blocks only mode and DeliverToNode flag is on) OR
-		(g.BxConfig.AllTransactions && !validatorsOnly) { // (Gateway started with a flag to send all transactions, and this is not validator only
+		g.BxConfig.AllTransactions { // (Gateway started with a flag to send all transactions, and this is not validator only
 		send = true
 	}
 
 	return
-}
-
-func getRawBytesStringFromTXMsg(tx *bxmessage.Tx) (string, error) {
-	var ethTransaction ethtypes.Transaction
-	err := rlp.DecodeBytes(tx.Content(), &ethTransaction)
-	if err != nil {
-		return "", err
-	}
-
-	b, err := ethTransaction.MarshalBinary()
-	if err != nil {
-		return "", err
-	}
-
-	return hex.EncodeToString(b), nil
 }
 
 const maxBlockAgeSinceNow = time.Minute * 10
@@ -1776,7 +1782,7 @@ func (g *gateway) handleBlockFromBlockchain(blockchainBlock blockchain.BlockFrom
 			source.Log().Errorf("could not compress block: %v", err)
 		}
 	} else {
-		// if not synced avoid sending to bdn (low compression rate block)
+		// if not synced - avoid sending to bdn (low compression rate block)
 		if !g.isSyncWithRelay() {
 			source.Log().Debugf("TxSync not completed. Not sending block %v to the bdn", bxBlock.Hash())
 		} else {
@@ -1792,8 +1798,11 @@ func (g *gateway) handleBlockFromBlockchain(blockchainBlock blockchain.BlockFrom
 	}
 
 	validatorInfo := g.generateFutureValidatorInfo(bxBlock, blockInfo)
-	if err := g.publishBlock(bxBlock, &source, validatorInfo, !blockchainBlock.PeerEndpoint.IsDynamic()); err != nil {
-		source.Log().Errorf("Failed to publish block %v from blockchain node with %v", bxBlock, err)
+
+	source.Log().Debugf("generated validator info: %v", validatorInfo)
+
+	if err = g.publishBlock(bxBlock, &source, validatorInfo, !blockchainBlock.PeerEndpoint.IsDynamic()); err != nil {
+		source.Log().Errorf("failed to publish block %v from blockchain node: %v", bxBlock, err)
 	}
 }
 
@@ -1874,6 +1883,7 @@ func (g *gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source c
 	g.stats.AddGatewayBundleEvent(event, source, start, mevBundle.BundleHash, mevBundle.GetNetworkNum(), mevBundle.Names(), mevBundle.UUID, blockNumber, mevBundle.MinTimestamp, mevBundle.MaxTimestamp)
 }
 
+
 func (g *gateway) getHeaderFromGateway() string {
 	accountID := g.sdn.AccountModel().AccountID
 	secretHash := g.sdn.AccountModel().SecretHash
@@ -1881,7 +1891,7 @@ func (g *gateway) getHeaderFromGateway() string {
 	return base64.StdEncoding.EncodeToString([]byte(accountIDAndHash))
 }
 
-func (g *gateway) bxBlockToBlockInfo(bxBlock *types.BxBlock) (*eth.BlockInfo, error) {
+func (g *gateway) bxBlockToBlockInfo(bxBlock *types.BxBlock) (*core.BlockInfo, error) {
 	// We support only types.BxBlockTypeEth. That means BSC block
 	if bxBlock.Type != types.BxBlockTypeEth {
 		return nil, errUnsupportedBlockType
@@ -1892,7 +1902,7 @@ func (g *gateway) bxBlockToBlockInfo(bxBlock *types.BxBlock) (*eth.BlockInfo, er
 		return nil, fmt.Errorf("failed to convert BDN block (%s) to blockchain block: %w", bxBlock, err)
 	}
 
-	block, ok := blockSrc.(*eth.BlockInfo)
+	block, ok := blockSrc.(*core.BlockInfo)
 	if !ok {
 		return nil, fmt.Errorf("failed to convert BDN block (%v) to blockchain block: %v", bxBlock, err)
 	}
@@ -2028,11 +2038,14 @@ func (g *gateway) forwardBSCTx(conn *http.Client, txHash string, tx string, endp
 }
 
 // bscBlocksPerEpoch returns the number of blocks per epoch for BSC.
-// https://github.com/bnb-chain/BEPs/blob/master/BEPs/BEP-520.md
-func bscBlocksPerEpoch() uint64 {
-	if time.Now().After(lorentzHardForkTime) {
-		return bscBlocksPerEpochLorentz
+// https://github.com/bnb-chain/BEPs/blob/master/BEPs/BEP-524.md
+func (g *gateway) bscBlocksPerEpoch() uint64 {
+	if g.sdn.NetworkNum() == bxtypes.BSCMainnetNum && time.Now().After(maxwellHardForkTime) {
+		return bscBlocksPerEpochMaxwell
+
+	} else if g.sdn.NetworkNum() == bxtypes.BSCTestnetNum && time.Now().After(maxwellHardForkTimeTestnet) {
+		return bscBlocksPerEpochMaxwell
 	}
 
-	return bscBlocksPerEpochPreLorenz
+	return bscBlocksPerEpochPreMaxwell
 }

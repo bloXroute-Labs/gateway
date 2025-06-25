@@ -7,7 +7,8 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
-// sanctionList is a map of OFAC sanctioned addresses
+// sanctionList is a map of OFAC sanctioned addresses when the primary endpoints are unavailable.
+// It must remain read-only and should never be modified
 var sanctionList = map[string]bool{
 	"0x8576acc5c05d6ce88f4e49bf65bdf0c62f91353c": true,
 	"0x901bb9583b24d97e995513c6778dc6888ab6870e": true,
@@ -154,7 +155,7 @@ var sanctionList = map[string]bool{
 }
 
 // ShouldBlockTransaction checks the sanction list to see if 'from' or 'to' are on block list and returns any blocked addresses for stats
-func ShouldBlockTransaction(transaction *ethtypes.Transaction) ([]string, bool) {
+func ShouldBlockTransaction(transaction *ethtypes.Transaction, oFACList *types.OFACMap) ([]string, bool) {
 	sender, err := types.LatestSignerForChainID(transaction.ChainId()).Sender(transaction)
 	if err != nil {
 		return nil, false
@@ -168,10 +169,11 @@ func ShouldBlockTransaction(transaction *ethtypes.Transaction) ([]string, bool) 
 
 	blockedAddresses := make([]string, 0, 2)
 
-	if _, found := sanctionList[fromAddress]; found {
+	if isBlocked(fromAddress, oFACList) {
 		blockedAddresses = append(blockedAddresses, fromAddress)
 	}
-	if _, found := sanctionList[toAddress]; found && fromAddress != toAddress {
+
+	if toAddress != "" && fromAddress != toAddress && isBlocked(toAddress, oFACList) {
 		blockedAddresses = append(blockedAddresses, toAddress)
 	}
 
@@ -179,4 +181,15 @@ func ShouldBlockTransaction(transaction *ethtypes.Transaction) ([]string, bool) 
 		return nil, false
 	}
 	return blockedAddresses, true
+}
+
+func isBlocked(address string, oFACList *types.OFACMap) bool {
+	// try OFAC list first
+	if oFACList != nil && oFACList.Size() > 0 {
+		if _, found := oFACList.Load(address); found {
+			return true
+		}
+	}
+	_, found := sanctionList[address]
+	return found
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	"github.com/bloXroute-Labs/gateway/v2/metrics"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/sync/errgroup"
@@ -45,13 +46,13 @@ func TestManageServers(t *testing.T) {
 	wsManager := &mockNodeWSManager{
 		syncChan: make(chan blockchain.NodeSyncStatus, 1),
 	}
-	fm := feed.NewManager(sdn, nil, sdnmessage.Account{}, nil, 1, false)
+	fm := feed.NewManager(sdn, nil, sdnmessage.Account{}, nil, 1, false, &metrics.NoOpExporter{})
 
 	clientHandler := NewClientHandler(nil, bxConfig, nil, sdn, nil, nil,
 		nil, services.NewNoOpSubscriptionServices(), wsManager, nil,
 		time.Now(), "", fm,
 		statistics.NoStats{}, nil,
-		false, "", "",
+		false, "", "", nil,
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())

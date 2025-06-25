@@ -35,8 +35,6 @@ func TestBxTxStore_Add(t *testing.T) {
 	content2 := types.TxContent{2}
 	hash3 := types.SHA256Hash{3}
 	content3 := types.TxContent{3}
-	hash4 := types.SHA256Hash{4}
-	content4 := types.TxContent{4}
 
 	// add content first
 	result11 := store.Add(hash1, content1, types.ShortIDEmpty, testNetworkNum, false, 0, time.Now(), testChainID, types.EmptySender)
@@ -106,27 +104,6 @@ func TestBxTxStore_Add(t *testing.T) {
 	assert.True(t, result31.NewContent)
 	assert.True(t, result31.NewSID)
 	assert.False(t, result31.Reprocess)
-
-	// new validators_only transaction no shortID
-	result32 := store.Add(hash4, content4, types.ShortIDEmpty, testNetworkNum, false, types.TFValidatorsOnly, time.Now(), testChainID, types.EmptySender)
-	assert.True(t, result32.NewTx)
-	assert.True(t, result32.NewContent)
-	assert.False(t, result32.NewSID)
-	assert.False(t, result32.Reprocess)
-
-	// ignore validators_only transaction without validators_only
-	result33 := store.Add(hash4, content4, types.ShortIDEmpty, testNetworkNum, false, 0, time.Now(), testChainID, types.EmptySender)
-	assert.False(t, result33.NewTx)
-	assert.False(t, result33.NewContent)
-	assert.False(t, result33.NewSID)
-	assert.False(t, result33.Reprocess)
-
-	// ignore repeated validators_only transaction with validators_only
-	result34 := store.Add(hash4, content4, types.ShortIDEmpty, testNetworkNum, false, types.TFValidatorsOnly, time.Now(), testChainID, types.EmptySender)
-	assert.False(t, result34.NewTx)
-	assert.False(t, result34.NewContent)
-	assert.False(t, result34.NewSID)
-	assert.False(t, result34.Reprocess)
 }
 
 func TestBxTxStore_clean(t *testing.T) {

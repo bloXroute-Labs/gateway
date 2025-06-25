@@ -2,6 +2,7 @@ package beacon
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/OffchainLabs/prysm/v6/consensus-types/blocks"
@@ -49,8 +50,9 @@ func newPrysmClient(ctx context.Context, config *network.EthConfig, addr string,
 		bridge:   bridge,
 		endpoint: endpoint,
 		log: log.WithFields(log.Fields{
-			"connType":   "prysm",
-			"remoteAddr": addr,
+			"connType":     "prysm",
+			"connProtocol": "grpc",
+			"remoteAddr":   addr,
 		}),
 	}
 }
@@ -81,14 +83,18 @@ func (c *PrysmClient) run() {
 
 				stream, err := client.StreamBlocksAltair(c.ctx, &ethpb.StreamBlocksRequest{VerifiedOnly: true})
 				if err != nil {
-					c.log.Errorf("could not subscribe to Prysm: %v, retrying.", err)
+					if !errors.Is(err, context.Canceled) {
+						c.log.Errorf("could not subscribe to Prysm: %v, retrying.", err)
+					}
 					return
 				}
 
 				for {
 					res, err := stream.Recv()
 					if err != nil {
-						c.log.Errorf("connection to the prysm was broken because: %v, retrying.", err)
+						if !errors.Is(err, context.Canceled) {
+							c.log.Errorf("connection to the prysm was broken because: %v, retrying.", err)
+						}
 						return
 					}
 

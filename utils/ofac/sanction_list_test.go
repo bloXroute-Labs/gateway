@@ -1,46 +1,86 @@
 package ofac
 
 import (
+	"crypto/ecdsa"
+	"math/big"
 	"testing"
+
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
+	"github.com/ethereum/go-ethereum/crypto"
+
+	"github.com/ethereum/go-ethereum/common"
 
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/assert"
-
-	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
-func createTransaction(rawTx string) (*ethtypes.Transaction, error) {
-	txBytes, err := types.DecodeHex(rawTx)
-	if err != nil {
-		return nil, err
-	}
-	var ethTx ethtypes.Transaction
-	err = ethTx.UnmarshalBinary(txBytes)
+var (
+	testPrivateKey, _     = crypto.GenerateKey()
+	testBlockedAddress    = common.HexToAddress("0x1234567890123456789012345678901234567890")
+	testNonBlockedAddress = common.HexToAddress("0x9876543210987654321098765432109876543210")
+)
 
-	if err != nil {
-		return nil, err
+func createTestTransaction(privateKey *ecdsa.PrivateKey, to *common.Address) *ethtypes.Transaction {
+	nonce := uint64(0)
+	gasLimit := uint64(21000)
+	gasPrice := big.NewInt(20000000000)
+	value := big.NewInt(1000000000000000000)
+
+	txData := &ethtypes.LegacyTx{
+		Nonce:    nonce,
+		GasPrice: gasPrice,
+		Gas:      gasLimit,
+		To:       to,
+		Value:    value,
+		Data:     nil,
 	}
-	return &ethTx, nil
+
+	tx := ethtypes.NewTx(txData)
+	signer := ethtypes.LatestSignerForChainID(big.NewInt(1))
+	signedTx, _ := ethtypes.SignTx(tx, signer, privateKey)
+	return signedTx
 }
 
-func TestSanctionList_ShouldBlockTransaction_True(t *testing.T) {
+func TestSanctionList_ShouldBlockTransaction_True_WithNilOFACList(t *testing.T) {
 	blockedAddress := "0x8576acc5c05d6ce88f4e49bf65bdf0c62f91353c"
-	sanctionedTx := "f85d808080948576acc5c05d6ce88f4e49bf65bdf0c62f91353c808029a06c2bef8b42311b2a8da478a469fd2620278a2a1bcce9d9d4d768dec6bb90efaba0147b687755458d6d8ef964b8d3080b6abd89a9900f59f6446b5126d2349dfa1f"
 
-	tx, err := createTransaction(sanctionedTx)
-	assert.NoError(t, err)
+	ad := common.HexToAddress(blockedAddress)
+	tx := createTestTransaction(testPrivateKey, &ad)
 
-	addresses, shouldBlock := ShouldBlockTransaction(tx)
+	addresses, shouldBlock := ShouldBlockTransaction(tx, nil)
 	assert.Contains(t, addresses, blockedAddress)
 	assert.True(t, shouldBlock)
 }
 
-func TestSanctionList_ShouldBlockTransaction_False(t *testing.T) {
-	tx, err := createTransaction(fixtures.LegacyTransaction)
-	assert.NoError(t, err)
+func TestSanctionList_ShouldBlockTransaction_False_WithNilOFACList(t *testing.T) {
+	tx := createTestTransaction(testPrivateKey, &testNonBlockedAddress)
 
-	addresses, shouldBlock := ShouldBlockTransaction(tx)
+	addresses, shouldBlock := ShouldBlockTransaction(tx, nil)
 	assert.Empty(t, addresses)
 	assert.False(t, shouldBlock)
+}
+
+func TestShouldBlockTransaction_NoBlockedAddresses(t *testing.T) {
+	ofacList := syncmap.NewStringMapOf[bool]()
+
+	tx := createTestTransaction(testPrivateKey, &testNonBlockedAddress)
+
+	blockedAddresses, shouldBlock := ShouldBlockTransaction(tx, ofacList)
+
+	assert.False(t, shouldBlock)
+	assert.Nil(t, blockedAddresses)
+}
+
+func TestShouldBlockTransaction_FromAddressInOFAC(t *testing.T) {
+	ofacList := syncmap.NewStringMapOf[bool]()
+
+	// Add blocked address to OFAC list
+	ofacList.Store(testBlockedAddress.String(), true)
+
+	tx := createTestTransaction(testPrivateKey, &testBlockedAddress)
+	blockedAddresses, shouldBlock := ShouldBlockTransaction(tx, ofacList)
+
+	assert.True(t, shouldBlock)
+	assert.Len(t, blockedAddresses, 1)
+	assert.Contains(t, blockedAddresses, testBlockedAddress.String())
 }

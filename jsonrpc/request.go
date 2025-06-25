@@ -40,7 +40,6 @@ const (
 	RPCEthCallBundle          RPCRequestType = "eth_callBundle"
 	RPCEthCancelBundle        RPCRequestType = "eth_cancelBundle"
 	RPCEthSendExclusiveBundle RPCRequestType = "eth_sendExclusiveBundle"
-	RPCEthSendSnipeBundle     RPCRequestType = "eth_sendSnipeBundle"
 	RPCEthSendArbOnlyBundle   RPCRequestType = "eth_sendArbOnlyBundle"
 )
 

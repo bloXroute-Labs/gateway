@@ -44,20 +44,21 @@ type server struct {
 
 // grpcParams server params
 type grpcParams struct {
-	node                  connections.BxListener
-	sdn                   sdnsdk.SDNHTTP
-	accService            account.Accounter
-	bridge                blockchain.Bridge
-	blockchainPeers       []types.NodeEndpoint
-	wsManager             blockchain.WSManager
-	bdnStats              *bxmessage.BdnPerformanceStats
-	timeStarted           time.Time
-	gatewayPublicKey      string
-	connector             Connector
-	txFromFieldIncludable bool
-	feedManager           feedManager
-	txStore               services.TxStore
-	chainID               bxtypes.NetworkID
+	node                           connections.BxListener
+	sdn                            sdnsdk.SDNHTTP
+	accService                     account.Accounter
+	bridge                         blockchain.Bridge
+	blockchainPeers                []types.NodeEndpoint
+	wsManager                      blockchain.WSManager
+	bdnStats                       *bxmessage.BdnPerformanceStats
+	timeStarted                    time.Time
+	gatewayPublicKey               string
+	connector                      Connector
+	txFromFieldIncludable          bool
+	feedManager                    feedManager
+	txStore                        services.TxStore
+	chainID                        bxtypes.NetworkID
+	oFACList                       *types.OFACMap
 }
 
 // newServer return new server object

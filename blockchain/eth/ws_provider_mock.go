@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	eth2 "github.com/bloXroute-Labs/gateway/v2/blockchain/eth/protocols/eth"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
@@ -106,7 +107,7 @@ func (m *MockWSProvider) BlockchainPeerEndpoint() types.NodeEndpoint {
 
 // BlockchainPeer returns the blockchain peer that corresponds to the ws client
 func (m *MockWSProvider) BlockchainPeer() interface{} {
-	return &Peer{}
+	return &eth2.Peer{}
 }
 
 // Subscribe returns a dummy subscription

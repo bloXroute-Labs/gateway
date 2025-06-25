@@ -101,7 +101,7 @@ type StatusSubscription interface {
 
 // constants for transaction channel buffer sizes
 const (
-	transactionBacklog       = 2000
+	transactionBacklog       = 1000
 	transactionHashesBacklog = 1000
 	blockBacklog             = 100
 	statusBacklog            = 10

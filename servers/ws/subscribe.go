@@ -309,7 +309,7 @@ func shouldSendTx(clientReq *ClientReq, tx *types.NewTransactionNotification, re
 	txFilters := tx.Filters(filters)
 
 	// should be done after tx.Filters() to avoid nil pointer dereference
-	txType := tx.BlockchainTransaction.(*types.EthTransaction).Type()
+	txType := tx.EthTransaction.Type()
 
 	if !filter.IsFiltersSupportedByTxType(txType, filters) {
 		return false

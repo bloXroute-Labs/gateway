@@ -796,7 +796,10 @@ func (n *Node) blockSubscriber(msg *pubsub.Message) {
 		remoteAddr = fmt.Sprintf("%v:%v", endpoint.IP, endpoint.Port)
 	}
 
-	logCtx := n.log.WithField("remoteAddr", remoteAddr)
+	logCtx := n.log.WithFields(log.Fields{
+		"remoteAddr":   remoteAddr,
+		"connProtocol": endpoint.ConnectionType,
+	})
 
 	if msg.Data == nil {
 		logCtx.Errorf("msg is nil from peer: %v", msg.ReceivedFrom)
@@ -833,6 +836,8 @@ func (n *Node) blockSubscriber(msg *pubsub.Message) {
 	}
 	blockHashHex := ethcommon.BytesToHash(blockHash[:]).String()
 
+	logCtx.Tracef("received beacon block [slot=%d, hash=%s]", blk.Block().Slot(), blockHashHex)
+
 	if err := SendBlockToBDN(n.clock, n.log, wrappedBlock, n.bridge, *endpoint); err != nil {
 		logCtx.Errorf("could not process block[slot=%d,hash=%s]: %v", blk.Block().Slot(), blockHashHex, err)
 		return
@@ -842,8 +847,6 @@ func (n *Node) blockSubscriber(msg *pubsub.Message) {
 		logCtx.Errorf("could not update status: %v", err)
 		return
 	}
-
-	logCtx.Tracef("received beacon block[slot=%d,hash=%s]", blk.Block().Slot(), blockHashHex)
 }
 
 func (n *Node) loadNodeEndpointFromPeerID(peerID libp2pPeer.ID) (*bxTypes.NodeEndpoint, error) {
@@ -905,6 +908,10 @@ func (n *Node) reconnectOrClose(peer libp2pPeer.AddrInfo) {
 	defer cancel()
 
 	if err := n.host.Connect(ctx, peer); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return
+		}
+
 		n.log.Warnf("could not connect peer %s: %v", peer, err)
 
 		// Try to reconnect as fast as possible again
@@ -964,7 +971,7 @@ func (n *Node) hostOptions(port int, enableQUIC bool) ([]libp2p.Option, error) {
 	}
 
 	opts := []libp2p.Option{
-		libp2p.UserAgent("Prysm/5.3.1/863eee7b40618e3af4cfff955a78b3cc66d63f9e"),
+		libp2p.UserAgent("Prysm/6.0.2/2ec1ef53dcb114da22698e8ccd9bc1e3aa8e3870"),
 		libp2p.Identity(ifaceKey),
 		libp2p.Transport(tcp.NewTCPTransport),
 		libp2p.Transport(quic.NewTransport),

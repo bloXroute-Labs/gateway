@@ -1,4 +1,4 @@
-package eth
+package core
 
 import (
 	"context"
@@ -18,6 +18,16 @@ import (
 	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 )
+
+var BSCBlobSidecars bxethcommon.BlobSidecars
+
+func init() {
+	var err error
+	BSCBlobSidecars, err = bxethcommon.ReadMockBSCBlobSidecars()
+	if err != nil {
+		log.Fatalf("Failed to read BSC blob sidecars: %v", err)
+	}
+}
 
 func TestMain(m *testing.M) {
 	log.SetLevel(log.ErrorLevel)
@@ -349,9 +359,9 @@ func TestChain_InitializeStatus(t *testing.T) {
 	assert.Equal(t, 2, c.heightToBlockHeaders.Size())
 	assert.Equal(t, 1, len(c.chainState))
 
-	_, ok = c.getBlockDifficulty(initialHash1)
+	_, ok = c.BlockDifficulty(initialHash1)
 	assert.True(t, ok)
-	_, ok = c.getBlockDifficulty(initialHash2)
+	_, ok = c.BlockDifficulty(initialHash2)
 	assert.True(t, ok)
 
 	// after any cleanup call, initialized entries status will be ejected
@@ -359,9 +369,9 @@ func TestChain_InitializeStatus(t *testing.T) {
 	assert.Equal(t, 1, c.heightToBlockHeaders.Size())
 	assert.Equal(t, 1, len(c.chainState))
 
-	_, ok = c.getBlockDifficulty(initialHash1)
+	_, ok = c.BlockDifficulty(initialHash1)
 	assert.False(t, ok)
-	_, ok = c.getBlockDifficulty(initialHash2)
+	_, ok = c.BlockDifficulty(initialHash2)
 	assert.False(t, ok)
 }
 
@@ -578,6 +588,6 @@ func addBlockWithTD(c *Chain, block *bxethcommon.Block, td *big.Int) int {
 
 func assertChainState(t *testing.T, c *Chain, block *bxethcommon.Block, index int, length int) {
 	assert.Equal(t, length, len(c.chainState))
-	assert.Equal(t, block.NumberU64(), c.chainState[index].height)
-	assert.Equal(t, block.Hash(), c.chainState[index].hash)
+	assert.Equal(t, block.NumberU64(), c.chainState[index].Height)
+	assert.Equal(t, block.Hash(), c.chainState[index].Hash)
 }

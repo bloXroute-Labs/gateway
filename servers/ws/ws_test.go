@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bloXroute-Labs/gateway/v2/metrics"
 	"github.com/gorilla/websocket"
 	"github.com/sourcegraph/jsonrpc2"
 	"github.com/stretchr/testify/assert"
@@ -129,7 +130,7 @@ func (s *wsSuite) setupSuit(networkNum bxtypes.NetworkNum) {
 	stats := statistics.NoStats{}
 
 	s.feedManager = feed.NewManager(s.sdn, services.NewNoOpSubscriptionServices(),
-		accountIDToAccountModel["gw"], stats, networkNum, true)
+		accountIDToAccountModel["gw"], stats, networkNum, true, &metrics.NoOpExporter{})
 
 	as := &mockAccountService{}
 
@@ -157,7 +158,7 @@ func (s *wsSuite) setupSuit(networkNum bxtypes.NetworkNum) {
 	p3 := providers[blockchainPeers[2].IPPort()]
 	s.Assert().NotNil(p3)
 
-	s.server = NewWSServer(cfg, "", "", s.sdn, g, as, s.feedManager, s.nodeWSManager, stats, true)
+	s.server = NewWSServer(cfg, "", "", s.sdn, g, as, s.feedManager, s.nodeWSManager, stats, true, nil)
 	// set a shorted delay for tests
 	s.server.wsConnDelayOnErr = 10 * time.Millisecond
 

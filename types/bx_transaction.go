@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -24,6 +25,8 @@ type BxTransaction struct {
 	networkNum bxtypes.NetworkNum
 	sender     Sender
 	rawTx      string
+
+	tx *EthTransaction
 }
 
 // NewBxTransaction creates a new transaction to be stored. Transactions are not expected to be initialized with content or shortIDs; they should be added via AddShortID and SetContent.
@@ -188,28 +191,21 @@ func (bt *BxTransaction) setContent(content TxContent) bool {
 	return false
 }
 
-// BlockchainTransaction parses and returns a transaction for the given network number's spec
-func (bt *BxTransaction) BlockchainTransaction(sender Sender) (BlockchainTransaction, error) {
-	bt.m.RLock()
-	defer bt.m.RUnlock()
+// MakeAndSetEthTransaction parses and returns a transaction
+func (bt *BxTransaction) MakeAndSetEthTransaction(sender Sender) (*EthTransaction, error) {
+	bt.m.Lock()
+	defer bt.m.Unlock()
 
-	return bt.parseTransaction(sender)
-}
+	if bt.tx != nil {
+		log.Debugf("reusing existing EthTransaction for %s", bt.hash.Format(false))
 
-func (bt *BxTransaction) parseTransaction(sender Sender) (BlockchainTransaction, error) {
-	// TODO - add support for additional networks
+		return bt.tx, nil
+	}
 
-	// for now, since we only support Ethereum based transaction
-	// we are not checking but parsing as if the transaction is Ethereum based.
-	return ethTransactionFromBytes(bt.content, sender)
-	/*
-		switch bt.networkNum {
-		case EthereumNetworkNum:
-			return NewEthTransaction(bt.hash, bt.content)
-		default:
-			return nil, fmt.Errorf("no message converter found for network num %v", bt.networkNum)
-		}
-	*/
+	var err error
+	bt.tx, err = ethTransactionFromBytes(bt.content, sender)
+
+	return bt.tx, err
 }
 
 // Protobuf formats transaction info as a protobuf response struct
@@ -260,9 +256,8 @@ func (bt *BxTransaction) Update(result *TransactionResult, flags TxFlags, shortI
 
 	// if shortID was not provided, assign shortID (if we are running as assigner)
 	// note that assigner.Next() provides ShortIDEmpty if we are not assigning
-	// also, shortID is not assigned if transaction is validators_only
 	// if we assigned shortID, result.AssignedShortID hold non ShortIDEmpty value
-	if result.NewTx && shortID == ShortIDEmpty && !bt.flags.IsValidatorsOnly() {
+	if result.NewTx && shortID == ShortIDEmpty {
 		shortID = nextID()
 		result.AssignedShortID = shortID
 	}

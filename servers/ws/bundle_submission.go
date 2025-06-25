@@ -49,7 +49,7 @@ func (h *handlerObj) handleRPCBundleSubmission(ctx context.Context, conn *jsonrp
 		ws = connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.networkNum, bxtypes.Websocket)
 	}
 
-	result, errCode, err := handler.HandleMEVBundle(h.node, ws, h.connectionAccount, &params)
+	result, errCode, err := handler.HandleMEVBundle(h.node, ws, h.connectionAccount, &params, h.oFACList)
 	if err != nil {
 		sendErrorMsg(ctx, jsonrpc.RPCErrorCode(errCode), err.Error(), conn, req.ID)
 		return

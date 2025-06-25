@@ -10,6 +10,8 @@ import (
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/core"
 )
 
 func handleGetBlockHeaders(backend Backend, msg Decoder, peer *Peer) error {
@@ -19,7 +21,7 @@ func handleGetBlockHeaders(backend Backend, msg Decoder, peer *Peer) error {
 	}
 
 	headers, err := answerGetBlockHeaders(backend, &query, peer)
-	if errors.Is(err, ErrAncientHeaders) {
+	if errors.Is(err, core.ErrAncientHeaders) {
 		go func() {
 			peer.Log().Debugf("requested (id: %v) ancient headers, fetching result from blockchain node: %v", query.RequestId, query)
 			headerCh := make(chan eth.Packet)
@@ -55,12 +57,12 @@ func answerGetBlockHeaders(backend Backend, query *eth.GetBlockHeadersPacket, pe
 		peer.Log().Warnf("could not retrieve all %v headers, maximum query amount is %v", query.Amount, math.MaxInt32)
 		return []*ethtypes.Header{}, nil
 	}
-	headers, err := backend.GetHeaders(query.Origin, int(query.Amount), int(query.Skip), query.Reverse)
 
+	headers, err := backend.Chain().GetHeaders(query.Origin, int(query.Amount), int(query.Skip), query.Reverse) //nolint:gosec
 	switch {
-	case errors.Is(err, ErrInvalidRequest) || errors.Is(err, ErrAncientHeaders):
+	case errors.Is(err, core.ErrInvalidRequest) || errors.Is(err, core.ErrAncientHeaders):
 		return nil, err
-	case errors.Is(err, ErrFutureHeaders):
+	case errors.Is(err, core.ErrFutureHeaders):
 		return []*ethtypes.Header{}, nil
 	case err != nil:
 		peer.Log().Warnf("could not retrieve all %v headers starting at %v, err: %v", int(query.Amount), query.Origin, err)
@@ -85,8 +87,8 @@ func handleGetBlockBodies(backend Backend, msg Decoder, peer *Peer) error {
 }
 
 func answerGetBlockBodies(backend Backend, query eth.GetBlockBodiesPacket) ([]*BlockBody, error) {
-	bodies, err := backend.GetBodies(query.GetBlockBodiesRequest)
-	if errors.Is(err, ErrBodyNotFound) {
+	bodies, err := backend.Chain().GetBodies(query.GetBlockBodiesRequest)
+	if errors.Is(err, core.ErrBodyNotFound) {
 		log.Debugf("could not find all block bodies: %v", query)
 		return []*BlockBody{}, nil
 	} else if err != nil {
@@ -102,7 +104,7 @@ func answerGetBlockBodies(backend Backend, query eth.GetBlockBodiesPacket) ([]*B
 		blockBodies = append(blockBodies, blockBody)
 	}
 
-	sidecars, err := backend.GetBlobSidecars(query.GetBlockBodiesRequest)
+	sidecars, err := backend.Chain().GetBlobSidecars(query.GetBlockBodiesRequest)
 	if err == nil {
 		for idx, sidecar := range sidecars {
 			blockBodies[idx].Sidecars = sidecar
@@ -205,9 +207,8 @@ func handleBlockHeaders(backend Backend, msg Decoder, peer *Peer) error {
 		return fmt.Errorf("could not decode message: %v: %v", msg, err)
 	}
 
-	updatePeerHeadFromHeaders(blockHeaders, peer)
+	UpdatePeerHeadFromHeaders(blockHeaders, peer)
 	handled, err := peer.NotifyResponse(blockHeaders.RequestId, &blockHeaders.BlockHeadersRequest)
-
 	if err != nil {
 		return err
 	}
@@ -219,7 +220,7 @@ func handleBlockHeaders(backend Backend, msg Decoder, peer *Peer) error {
 	return backend.Handle(peer, &blockHeaders.BlockHeadersRequest)
 }
 
-func handleBlockBodies(backend Backend, msg Decoder, peer *Peer) error {
+func handleBlockBodies(_ Backend, msg Decoder, peer *Peer) error {
 	var blockBodies BlockBodiesPacket
 	if err := msg.Decode(&blockBodies); err != nil {
 		return fmt.Errorf("could not decode message: %v: %v", msg, err)
@@ -229,7 +230,8 @@ func handleBlockBodies(backend Backend, msg Decoder, peer *Peer) error {
 	return err
 }
 
-func updatePeerHeadFromHeaders(headersPacket eth.BlockHeadersPacket, peer *Peer) {
+// UpdatePeerHeadFromHeaders updates the peer's head based on the block headers received.
+func UpdatePeerHeadFromHeaders(headersPacket eth.BlockHeadersPacket, peer *Peer) {
 	headers := headersPacket.BlockHeadersRequest
 	if len(headers) > 0 {
 		maxHeight := headers[0].Number
@@ -260,6 +262,6 @@ func updatePeerHeadFromNewHashes(newBlocks eth.NewBlockHashesPacket, peer *Peer)
 	}
 }
 
-func handleUnimplemented(backend Backend, msg Decoder, peer *Peer) error {
+func handleUnimplemented(Backend, Decoder, *Peer) error {
 	return nil
 }

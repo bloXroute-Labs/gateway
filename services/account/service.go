@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/bloXroute-Labs/bxcommon-go/cache"
@@ -17,8 +18,9 @@ import (
 )
 
 const (
-	accountsCacheManagerExpDur   = 5 * time.Minute
-	accountsCacheManagerCleanDur = 30 * time.Minute
+	accountsCacheManagerExpDur      = 5 * time.Minute
+	accountsCacheManagerCleanDur    = 30 * time.Minute
+	timeToCleanAlreadyAuthorizedErr = time.Minute
 )
 
 var (
@@ -50,8 +52,23 @@ type Service struct {
 // Result is the result of fetching an account
 // It contains the account or an error if the account is not authorized
 type Result struct {
-	Account          sdnmessage.Account
-	NotAuthorizedErr error
+	Account                       sdnmessage.Account
+	NotAuthorizedErr              error
+	alreadyAuthorizedErr          atomic.Bool
+	timeSinceAlreadyAuthorizedErr atomic.Pointer[time.Time]
+}
+
+func (r *Result) shouldLogError() bool {
+	if !r.alreadyAuthorizedErr.Load() {
+		r.alreadyAuthorizedErr.Store(true)
+		now := time.Now()
+		r.timeSinceAlreadyAuthorizedErr.Store(&now)
+		return true
+	}
+	if time.Since(*r.timeSinceAlreadyAuthorizedErr.Load()) > timeToCleanAlreadyAuthorizedErr {
+		r.alreadyAuthorizedErr.Store(false)
+	}
+	return false
 }
 
 // NewService creates a new account service
@@ -79,6 +96,7 @@ func (g *Service) Authorize(accountID bxtypes.AccountID, secretHash string, allo
 		"requestedAccountID": accountID,
 		"ip":                 ip,
 	})
+	var accountResult *Result
 
 	if accountID != connectionAccountModel.AccountID {
 		if !allowAccessByOtherAccounts {
@@ -101,17 +119,22 @@ func (g *Service) Authorize(accountID bxtypes.AccountID, secretHash string, allo
 			return accountRes.Account, accountRes.NotAuthorizedErr
 		default:
 			connectionAccountModel = accountRes.Account
+			accountResult = accountRes
 		}
 
 		if !connectionAccountModel.TierName.IsEnterprise() {
-			l.Warnf("customer account %s must be enterprise / enterprise elite / ultra but it is %v",
-				connectionAccountModel.AccountID, connectionAccountModel.TierName)
+			if accountRes.shouldLogError() {
+				l.Warnf("customer account %s must be enterprise / enterprise elite / ultra but it is %v",
+					connectionAccountModel.AccountID, connectionAccountModel.TierName)
+			}
 			return connectionAccountModel, ErrTierTooLow
 		}
 	}
 
 	if secretHash != connectionAccountModel.SecretHash && secretHash != "" {
-		l.Error("account sent a different secret hash than set in the account model")
+		if accountResult == nil || accountResult.shouldLogError() {
+			l.Error("account sent a different secret hash than set in the account model")
+		}
 		return connectionAccountModel, ErrInvalidHeader
 	}
 

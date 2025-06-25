@@ -46,8 +46,7 @@ func (h *handlerObj) handleRPCBatchTx(ctx context.Context, conn *jsonrpc2.Conn, 
 	var txHashes []string
 
 	for _, transaction := range params.Transactions {
-		txHash, ok, err := handler.HandleSingleTransaction(h.node, h.nodeWSManager, transaction, nil, ws, params.ValidatorsOnly,
-			false, false, h.chainID)
+		txHash, ok, err := handler.HandleSingleTransaction(h.node, h.nodeWSManager, transaction, nil, ws, false, h.chainID)
 		if err != nil {
 			h.log.WithField("method", jsonrpc.RPCBatchTx).Errorf("failed to handle transaction: %v", err)
 		}
