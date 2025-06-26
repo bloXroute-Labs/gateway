@@ -57,6 +57,7 @@ func NewClientHandler(
 	txFromFieldIncludable bool,
 	certFile,
 	keyFile string,
+	oFACList *types.OFACMap,
 ) *ClientHandler {
 
 	var websocketServer *ws.Server
@@ -64,17 +65,16 @@ func NewClientHandler(
 
 	if config.WebsocketEnabled || config.WebsocketTLSEnabled {
 		websocketServer = ws.NewWSServer(config, certFile, keyFile,
-			sdn, node, accService, feedManager, nodeWSManager, stats, txFromFieldIncludable)
+			sdn, node, accService, feedManager, nodeWSManager, stats, txFromFieldIncludable, oFACList)
 	}
 
 	if config.GRPC.Enabled {
-		gRPCServer = grpc.NewGRPCServer(config, stats, node, sdn, accService,
-			bridge, blockchainPeers, nodeWSManager, bdnStats, timeStarted,
-			gatewayPublicKey, bx, feedManager, txStore,
+		gRPCServer = grpc.NewGRPCServer(config, stats, node, sdn, accService, bridge, blockchainPeers,
+			nodeWSManager, bdnStats, timeStarted, gatewayPublicKey, bx, feedManager, txStore, txFromFieldIncludable, oFACList,
 		)
 	}
 
-	httpServer := http2.NewServer(node, feedManager, config.HTTPPort, sdn)
+	httpServer := http2.NewServer(node, feedManager, config.HTTPPort, sdn, oFACList)
 
 	return &ClientHandler{
 		subscriptionServices: subscriptionServices,

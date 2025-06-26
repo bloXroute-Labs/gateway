@@ -15,6 +15,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bdn"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
 	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/core"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
@@ -60,14 +61,14 @@ func TestConverter_Block(t *testing.T) {
 	block := bxmock.NewEthBlock(10, common.Hash{})
 	td := big.NewInt(100)
 
-	bxBlock, err := c.BlockBlockchainToBDN(NewBlockInfo(block, td))
+	bxBlock, err := c.BlockBlockchainToBDN(core.NewBlockInfo(block, td))
 	require.NoError(t, err)
 	require.Equal(t, block.Hash().Bytes(), bxBlock.Hash().Bytes())
 
 	blockchainBlock, err := c.BlockBDNtoBlockchain(bxBlock)
 	require.NoError(t, err)
 
-	blockInfo := blockchainBlock.(*BlockInfo)
+	blockInfo := blockchainBlock.(*core.BlockInfo)
 
 	ethBlock := blockInfo.Block
 	require.Equal(t, block.Header(), ethBlock.Header())
@@ -96,14 +97,14 @@ func TestConverter_BSCBlockWithBlobs(t *testing.T) {
 	block = block.WithSidecars(BSCBlobSidecars)
 	block.Number().SetUint64(BSCBlobSidecars[0].BlockNumber.Uint64())
 
-	bxBlock, err := c.BlockBlockchainToBDN(NewBlockInfo(block, td))
+	bxBlock, err := c.BlockBlockchainToBDN(core.NewBlockInfo(block, td))
 	require.NoError(t, err)
 	require.Equal(t, block.Hash().Bytes(), bxBlock.Hash().Bytes())
 
 	blockchainBlock, err := c.BlockBDNtoBlockchain(bxBlock)
 	require.NoError(t, err)
 
-	blockInfo := blockchainBlock.(*BlockInfo)
+	blockInfo := blockchainBlock.(*core.BlockInfo)
 
 	ethBlock := blockInfo.Block
 	require.Equal(t, block.Header(), ethBlock.Header())

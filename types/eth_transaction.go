@@ -16,17 +16,8 @@ import (
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 )
 
-// EthTransaction represents the JSON encoding of an Ethereum transaction
-type EthTransaction struct {
-	tx *ethtypes.Transaction
-
-	// Lazy loaded and excluded from 'all' fields
-	from *common.Address
-
-	lock    *sync.Mutex
-	filters map[string]interface{}
-	fields  map[string]interface{}
-}
+// ErrEmptyTransaction is returned when the tx is not set
+var ErrEmptyTransaction = fmt.Errorf("empty transaction")
 
 var paramToName = map[string]string{
 	"tx_hash":                  "hash",
@@ -89,6 +80,21 @@ var EmptyFilteredTransactionMap = map[string]interface{}{
 	"blob_versioned_hashes":    []string{},
 }
 
+// EthTransaction represents the JSON encoding of an Ethereum transaction
+type EthTransaction struct {
+	tx *ethtypes.Transaction
+
+	// lazy loaded and excluded from 'all' fields
+	from *common.Address
+
+	// binary is the raw transaction bytes
+	binary []byte
+
+	lock    *sync.Mutex
+	filters map[string]interface{}
+	fields  map[string]interface{}
+}
+
 // NewEthTransaction converts a canonic Ethereum transaction to EthTransaction
 func NewEthTransaction(rawEthTx *ethtypes.Transaction, sender Sender) (*EthTransaction, error) {
 	ethTx := &EthTransaction{
@@ -101,6 +107,12 @@ func NewEthTransaction(rawEthTx *ethtypes.Transaction, sender Sender) (*EthTrans
 	if sender != EmptySender {
 		ethTx.from = (*common.Address)(sender[:])
 	}
+
+	binary, err := rawEthTx.MarshalBinary()
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal tx binary: %v", err)
+	}
+	ethTx.binary = binary
 
 	return ethTx, nil
 }
@@ -388,8 +400,9 @@ func (et *EthTransaction) Fields(fields []string) map[string]interface{} {
 	return transactionContent
 }
 
-func (et *EthTransaction) rawTx() ([]byte, error) {
-	return et.tx.MarshalBinary()
+// RawTx returns the raw transaction bytes
+func (et *EthTransaction) RawTx() []byte {
+	return et.binary
 }
 
 // AddressAsString converts address to string

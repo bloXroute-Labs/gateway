@@ -326,11 +326,11 @@ message BlxrBatchTXRequest {
   bool nonce_monitoring = 2;
   bool next_validator = 3 [deprecated = true];
   int32 fallback = 4 [deprecated = true];
-  bool validators_only = 5;
+  bool validators_only = 5 [deprecated = true];
   bool node_validation = 6;
   int64 sending_time = 7;
   string auth_header = 8 [deprecated = true];
-  bool frontrunning_protection = 9;
+  bool frontrunning_protection = 9 [deprecated = true];
 }
 
 message BlxrTxRequest {
@@ -338,10 +338,10 @@ message BlxrTxRequest {
   bool nonce_monitoring = 2;
   bool next_validator = 3 [deprecated = true];
   string auth_header = 4 [deprecated = true];
-  bool validators_only = 5;
+  bool validators_only = 5 [deprecated = true];
   int32 fallback = 6 [deprecated = true];
   bool node_validation = 7;
-  bool frontrunning_protection = 8;
+  bool frontrunning_protection = 8 [deprecated = true];
 }
 
 message BlxrTxReply {

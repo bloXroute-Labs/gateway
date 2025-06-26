@@ -28,12 +28,12 @@ func ethTransaction(hashString string, txString string) (SHA256Hash, EthTransact
 	tx := NewBxTransaction(hash, testNetworkNum, TFPaidTx, time.Now())
 	tx.SetContent(content)
 
-	blockchainTx, err := tx.BlockchainTransaction(EmptySender)
+	blockchainTx, err := tx.MakeAndSetEthTransaction(EmptySender)
 	if err != nil {
 		return hash, EthTransaction{}, tx, err
 	}
 
-	return hash, *blockchainTx.(*EthTransaction), tx, nil
+	return hash, *blockchainTx, tx, nil
 }
 
 func TestBigValueTransacrtion(t *testing.T) {

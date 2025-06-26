@@ -10,11 +10,10 @@ type PendingTransactionNotification struct {
 // CreatePendingTransactionNotification -  creates PendingTransactionNotification object which contains bxTransaction and local region
 func CreatePendingTransactionNotification(bxTx *BxTransaction) Notification {
 	return &PendingTransactionNotification{
-		NewTransactionNotification{
-			bxTx,
-			nil,
-			TxPendingValidation,
-			&sync.Mutex{},
+		NewTransactionNotification: NewTransactionNotification{
+			BxTransaction:    bxTx,
+			validationStatus: TxPendingValidation,
+			lock:             &sync.Mutex{},
 		},
 	}
 }

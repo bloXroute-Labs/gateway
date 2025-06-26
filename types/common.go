@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
+
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 )
 
@@ -121,3 +123,6 @@ const UUIDv4Len = 16
 
 // RelayMonitorInterval is interval for relay monitor
 const RelayMonitorInterval = time.Minute
+
+// OFACMap represent ofac map
+type OFACMap = syncmap.SyncMap[string, bool]

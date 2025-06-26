@@ -11,6 +11,7 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	eth2 "github.com/bloXroute-Labs/gateway/v2/blockchain/eth/protocols/eth"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
@@ -191,7 +192,7 @@ func (m *WSManager) Providers() map[string]blockchain.WSProvider {
 
 // SetBlockchainPeer sets the blockchain peer for corresponding ws provider
 func (m *WSManager) SetBlockchainPeer(peer interface{}) bool {
-	peerEndpoint := peer.(*Peer).endpoint.IPPort()
+	peerEndpoint := peer.(*eth2.Peer).IPEndpoint().IPPort()
 	m.log.Debugf("WSManager: SetBlockchainPeer %v  process %v", peerEndpoint, utils.GetGID())
 	for endpoint, ws := range m.wsProviders {
 		if endpoint == peerEndpoint {
@@ -268,7 +269,7 @@ func (m *WSManager) UpdateNodeSyncStatus(nodeEndpoint types.NodeEndpoint, syncSt
 	}
 	wsProvider.UpdateSyncStatus(syncStatus)
 
-	peer := wsProvider.BlockchainPeer().(*Peer)
+	peer := wsProvider.BlockchainPeer().(*eth2.Peer)
 	if peer != nil {
 		if wsProvider.SyncStatus() == blockchain.Synced {
 			peer.RequestConfirmations = false

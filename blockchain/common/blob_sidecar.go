@@ -7,8 +7,8 @@ import (
 	ethTypes "github.com/ethereum/go-ethereum/core/types"
 )
 
-//! This is BSC specific BlobSidecar implementation
-//! code taken from github.com/bnb-chain/bsc
+// This is a BSC-specific BlobSidecar implementation
+// https://github.com/bnb-chain/bsc/blob/256d8811f441c29cb0812943dc660ac13192829c/core/types/blob_sidecar.go#L33
 
 // BlobSidecars is a slice of BlobTxSidecars that can be encoded to an index
 type BlobSidecars []*BlobSidecar

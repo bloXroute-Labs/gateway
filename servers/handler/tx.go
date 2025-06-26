@@ -24,9 +24,7 @@ func HandleSingleTransaction(
 	transaction string,
 	txSender []byte,
 	conn connections.Conn,
-	validatorsOnly,
-	nodeValidationRequested,
-	frontRunningProtection bool,
+	nodeValidationRequested bool,
 	gatewayChainID bxtypes.NetworkID,
 ) (string, bool, error) {
 
@@ -34,7 +32,7 @@ func HandleSingleTransaction(
 	if err != nil {
 		return "", false, err
 	}
-	tx, pendingReevaluation, err := validateTxFromExternalSource(transaction, txContent, validatorsOnly, gatewayChainID, nodeValidationRequested, nodeWSManager, conn, frontRunningProtection)
+	tx, pendingReevaluation, err := validateTxFromExternalSource(transaction, txContent, gatewayChainID, nodeValidationRequested, nodeWSManager, conn)
 	if err != nil {
 		return "", false, err
 	}
@@ -60,7 +58,7 @@ func HandleSingleTransaction(
 }
 
 // validateTxFromExternalSource validate transaction from external source (ws / grpc), return bool indicates if tx is pending reevaluation
-func validateTxFromExternalSource(transaction string, txBytes []byte, validatorsOnly bool, gatewayChainID bxtypes.NetworkID, nodeValidationRequested bool, wsManager blockchain.WSManager, source connections.Conn, frontRunningProtection bool) (*bxmessage.Tx, bool, error) {
+func validateTxFromExternalSource(transaction string, txBytes []byte, gatewayChainID bxtypes.NetworkID, nodeValidationRequested bool, wsManager blockchain.WSManager, source connections.Conn) (*bxmessage.Tx, bool, error) {
 	// Ethereum's transactions encoding for RPC interfaces is slightly different from the RLP encoded format, so decode + re-encode the transaction for consistency.
 	// Specifically, note `UnmarshalBinary` should be used for RPC interfaces, and rlp.DecodeBytes should be used for the wire protocol.
 	var ethTx ethtypes.Transaction
@@ -89,17 +87,7 @@ func validateTxFromExternalSource(transaction string, txBytes []byte, validators
 		return nil, false, err
 	}
 
-	var txFlags = types.TFPaidTx | types.TFLocalRegion
-	switch {
-	case validatorsOnly:
-		txFlags |= types.TFValidatorsOnly
-	default:
-		txFlags |= types.TFDeliverToNode
-	}
-
-	if frontRunningProtection {
-		txFlags |= types.TFFrontRunningProtection
-	}
+	var txFlags = types.TFPaidTx | types.TFLocalRegion | types.TFDeliverToNode
 
 	var hash types.SHA256Hash
 	copy(hash[:], ethTx.Hash().Bytes())
@@ -107,7 +95,7 @@ func validateTxFromExternalSource(transaction string, txBytes []byte, validators
 	// should set the account of the sender, not the account of the gateway itself
 	tx := bxmessage.NewTx(hash, txContent, networkNum, txFlags, accountID)
 
-	if nodeValidationRequested && !tx.Flags().IsValidatorsOnly() {
+	if nodeValidationRequested {
 		syncedWS, ok := wsManager.SyncedProvider()
 		if ok {
 			_, err := syncedWS.SendTransaction(

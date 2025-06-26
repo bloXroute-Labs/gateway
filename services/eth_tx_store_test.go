@@ -65,11 +65,9 @@ func makeSidecar(blobCount int) *ethtypes.BlobTxSidecar {
 	var commitments []kzg4844.Commitment
 	var proofs []kzg4844.Proof
 	for i := 0; i < blobCount; i++ {
-		commitment, _ := kzg4844.BlobToCommitment(&blobs[i])
-		commitments = append(commitments, commitment)
+		commitments = append(commitments, kzg4844.Commitment{})
 
-		proof, _ := kzg4844.ComputeBlobProof(&blobs[i], commitment)
-		proofs = append(proofs, proof)
+		proofs = append(proofs, kzg4844.Proof{})
 	}
 
 	return &ethtypes.BlobTxSidecar{

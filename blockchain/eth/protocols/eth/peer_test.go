@@ -2,10 +2,10 @@ package eth
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"fmt"
 	"math/big"
-	"math/rand"
 	"testing"
 	"time"
 
@@ -14,44 +14,46 @@ import (
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/bloXroute-Labs/bxcommon-go/clock"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/core"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 )
 
-func testPeer(writeChannelSize int, peerCount int) (*Peer, *test.MsgReadWriter, *clock.MockClock) {
-	clock := &clock.MockClock{}
-	rw := test.NewMsgReadWriter(100, writeChannelSize)
-	peer := newPeer(context.Background(), p2p.NewPeerPipe(test.GenerateEnodeID(), fmt.Sprintf("test peer_%v", peerCount), []p2p.Cap{}, nil), rw, ETH66, clock, 1)
-	return peer, rw, clock
+func testPeer(writeChannelSize int, peerCount int) (*Peer, *test.MsgReadWriter) {
+	rw := test.NewMsgReadWriter(100, writeChannelSize, time.Second*5)
+	peer := newPeer(context.Background(), p2p.NewPeerPipe(test.GenerateEnodeID(), fmt.Sprintf("test peer_%v", peerCount), []p2p.Cap{}, nil), rw, ETH66, &clock.MockClock{}, 1)
+	return peer, rw
 }
 
-func genForkID() [4]byte {
+func genForkID(t *testing.T) [4]byte {
+	t.Helper()
+
 	forkID := make([]byte, 4)
-	rand.Read(forkID)
+	_, err := rand.Read(forkID)
+	require.NoError(t, err)
 
 	return *(*[4]byte)(forkID) // convert slice to array
 }
 
 func TestPeer_Handshake(t *testing.T) {
-	networkNum := 1
-
-	forkID1 := genForkID()
-	forkID2 := genForkID()
-	forkID3 := genForkID() // not in blockchain network
+	forkID1 := genForkID(t)
+	forkID2 := genForkID(t)
+	forkID3 := genForkID(t) // not in blockchain network
 
 	executionLayerForks := []string{
 		base64.StdEncoding.EncodeToString(forkID1[:]),
 		base64.StdEncoding.EncodeToString(forkID2[:]),
 	}
 
-	peer, rw, _ := testPeer(-1, 1)
+	peer, rw := testPeer(-1, 1)
 
 	peerStatus := eth.StatusPacket{
-		ProtocolVersion: 1,
+		ProtocolVersion: ETH66,
 		NetworkID:       1,
 		TD:              big.NewInt(10),
 		Head:            common.Hash{1, 2, 3},
@@ -61,32 +63,39 @@ func TestPeer_Handshake(t *testing.T) {
 
 	// matching parameters
 	rw.QueueIncomingMessage(eth.StatusMsg, peerStatus)
-	ps, err := peer.Handshake(1, uint64(networkNum), new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
-	assert.NoError(t, err)
+	ps, err := peer.Handshake(1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
+	require.NoError(t, err)
 	assert.Equal(t, peerStatus, *ps)
 
 	// outgoing status message enqueued
-	assert.Equal(t, 1, len(rw.WriteMessages))
+	assert.Equal(t, 2, len(rw.WriteMessages), "Status and NewPooledTransactionHashesMsg should be sent")
 	assert.Equal(t, uint64(eth.StatusMsg), rw.WriteMessages[0].Code)
+
+	peerStatus.ProtocolVersion = 1
 
 	// version mismatch
 	rw.QueueIncomingMessage(eth.StatusMsg, peerStatus)
-	_, err = peer.Handshake(0, uint64(networkNum), new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
+	_, err = peer.Handshake(0, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
 	assert.NotNil(t, err)
 
+	peerStatus.ProtocolVersion = ETH66
+
 	// network mismatch
+	peerStatus.NetworkID = 2
 	rw.QueueIncomingMessage(eth.StatusMsg, peerStatus)
-	_, err = peer.Handshake(1, 0, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
+	_, err = peer.Handshake(1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
 	assert.NotNil(t, err)
+
+	peerStatus.NetworkID = 1
 
 	// head mismatch is ok
 	rw.QueueIncomingMessage(eth.StatusMsg, peerStatus)
-	_, err = peer.Handshake(1, uint64(networkNum), new(big.Int), common.Hash{3, 4, 5}, common.Hash{2, 3, 4}, executionLayerForks)
+	_, err = peer.Handshake(1, new(big.Int), common.Hash{3, 4, 5}, common.Hash{2, 3, 4}, executionLayerForks)
 	assert.NoError(t, err)
 
 	// genesis mismatch
 	rw.QueueIncomingMessage(eth.StatusMsg, peerStatus)
-	_, err = peer.Handshake(1, uint64(networkNum), new(big.Int), common.Hash{1, 2, 3}, common.Hash{3, 3, 4}, executionLayerForks)
+	_, err = peer.Handshake(1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{3, 3, 4}, executionLayerForks)
 	assert.NotNil(t, err)
 
 	// forkID missmatch
@@ -98,16 +107,16 @@ func TestPeer_Handshake(t *testing.T) {
 		Genesis:         common.Hash{2, 3, 4},
 		ForkID:          forkid.ID{Hash: forkID3},
 	})
-	_, err = peer.Handshake(1, uint64(networkNum), new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
+	_, err = peer.Handshake(1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
 	assert.NotNil(t, err)
 
 	go rw.QueueIncomingMessageWithDelay(eth.StatusMsg, peerStatus, time.Second)
-	ps, err = peer.Handshake(1, uint64(networkNum), new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
+	ps, err = peer.Handshake(1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
 	assert.NoError(t, err)
 	assert.Equal(t, peerStatus, *ps)
 
 	go rw.QueueIncomingMessageWithDelay(eth.StatusMsg, peerStatus, time.Second*7)
-	_, err = peer.Handshake(1, uint64(networkNum), new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
+	_, err = peer.Handshake(1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
 	assert.Error(t, err)
 }
 
@@ -117,9 +126,9 @@ func TestPeer_SendNewBlock(t *testing.T) {
 		err error
 	)
 
-	peer, rw, _ := testPeer(1, 1)
-	maxWriteTimeout := time.Millisecond // to allow for blockLoop goroutine to write to buffer
-	clock := peer.clock.(*clock.MockClock)
+	peer, rw := testPeer(1, 1)
+	maxWriteTimeout := time.Millisecond * 10 // to allow for blockLoop goroutine to write to buffer
+	peerClock := peer.clock.(*clock.MockClock)
 	go peer.Start()
 
 	time.Sleep(15 * time.Millisecond)
@@ -133,7 +142,7 @@ func TestPeer_SendNewBlock(t *testing.T) {
 	block5a := bxmock.NewEthBlock(5, common.Hash{})
 	block5b := bxmock.NewEthBlock(5, block4.Hash())
 
-	peer.confirmedHead = blockRef{0, block1a.ParentHash()}
+	peer.ConfirmedHead.Store(core.BlockRef{Height: 0, Hash: block1a.ParentHash()})
 	peer.QueueNewBlock(block1a, big.NewInt(10))
 
 	// block 1a instantly sent (first block)
@@ -166,7 +175,7 @@ func TestPeer_SendNewBlock(t *testing.T) {
 
 	// block 2b instantly sent
 	assert.True(t, rw.ExpectWrite(maxWriteTimeout))
-	assert.Equal(t, 2, len(rw.WriteMessages))
+	require.Equal(t, 2, len(rw.WriteMessages))
 
 	var blockPacket2 NewBlockPacket
 	msg = rw.WriteMessages[1]
@@ -191,8 +200,8 @@ func TestPeer_SendNewBlock(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, block4.Hash(), blockPacket4.Block.Hash())
 
-	// next block will never be released without confirmation
-	clock.IncTime(100 * time.Second)
+	// the next block will never be released without confirmation
+	peerClock.IncTime(100 * time.Second)
 
 	// check that next block wasn't released and block headers were requested
 	assert.True(t, rw.ExpectWrite(maxWriteTimeout))
@@ -219,7 +228,7 @@ func TestPeer_SendNewBlock_HeadUpdates(t *testing.T) {
 		err error
 	)
 
-	peer, rw, _ := testPeer(1, 1)
+	peer, rw := testPeer(1, 1)
 	maxWriteTimeout := time.Millisecond // to allow for blockLoop goroutine to write to buffer
 	go peer.Start()
 
@@ -230,7 +239,7 @@ func TestPeer_SendNewBlock_HeadUpdates(t *testing.T) {
 	block4b := bxmock.NewEthBlock(4, block3.Hash())
 	block5b := bxmock.NewEthBlock(5, block4b.Hash())
 
-	peer.confirmedHead = blockRef{1, block1.Hash()}
+	peer.ConfirmedHead.Store(core.BlockRef{Height: 1, Hash: block1.Hash()})
 
 	peer.QueueNewBlock(block3, big.NewInt(30))
 	peer.QueueNewBlock(block4a, big.NewInt(41))
@@ -238,7 +247,7 @@ func TestPeer_SendNewBlock_HeadUpdates(t *testing.T) {
 	peer.QueueNewBlock(block5b, big.NewInt(52))
 
 	// process all queue entries first
-	time.Sleep(15 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	// queue before 5b should be cleared out
 	peer.UpdateHead(4, block4a.Hash())
@@ -266,7 +275,7 @@ func TestPeer_RequestBlockHeaderNonBlocking(t *testing.T) {
 		err error
 	)
 
-	peer, rw, _ := testPeer(-1, 1)
+	peer, rw := testPeer(-1, 1)
 
 	err = peer.RequestBlockHeader(common.Hash{})
 	assert.NoError(t, err)
@@ -291,14 +300,14 @@ func TestPeer_RequestBlockHeaderNonBlocking(t *testing.T) {
 }
 
 func TestPeer_BSC_SendFutureBlock_Pass(t *testing.T) {
-	peer, rw, _ := testPeer(1, 1)
+	peer, rw := testPeer(1, 1)
 	peer.chainID = bxtypes.BSCChainID
 	maxWriteTimeout := time.Millisecond // to allow for blockLoop goroutine to write to buffer
 	mockClock := peer.clock.(*clock.MockClock)
 	go peer.Start()
 
 	block1a := bxmock.NewEthBlock(1, common.Hash{})
-	peer.confirmedHead = blockRef{0, block1a.ParentHash()}
+	peer.ConfirmedHead.Store(core.BlockRef{Height: 0, Hash: block1a.ParentHash()})
 	// block 1a will be sent, within the range of limit
 	mockClock.SetTime(time.Unix(int64(block1a.Time()), 0))
 	peer.QueueNewBlock(block1a, big.NewInt(10))
@@ -309,15 +318,15 @@ func TestPeer_BSC_SendFutureBlock_Pass(t *testing.T) {
 }
 
 func TestPeer_BSC_SendFutureBlock_Delay(t *testing.T) {
-	peer, rw, _ := testPeer(1, 1)
+	peer, rw := testPeer(1, 1)
 	peer.chainID = bxtypes.BSCChainID
 	maxWriteTimeout := time.Millisecond // to allow for blockLoop goroutine to write to buffer
 	mockClock := peer.clock.(*clock.MockClock)
 	go peer.Start()
 
 	block1a := bxmock.NewEthBlock(1, common.Hash{})
-	peer.confirmedHead = blockRef{0, block1a.ParentHash()}
-	// block is in the future, send after delay
+	peer.ConfirmedHead.Store(core.BlockRef{Height: 0, Hash: block1a.ParentHash()})
+	// block is in the future, thus send it after delay
 	mockClock.SetTime(time.Unix(int64(block1a.Time())-int64(1), 0))
 	peer.QueueNewBlock(block1a, big.NewInt(10))
 

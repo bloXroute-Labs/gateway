@@ -296,13 +296,7 @@ func NewEthBlockNotification(hash ethcommon.Hash, block *bxethcommon.Block, info
 		}
 		ethTxs = append(ethTxs, fields)
 
-		rawTx, err := ethTx.rawTx()
-		if err != nil {
-			log.Errorf("failed to create raw transaction: %v", err)
-			rawTx = []byte{}
-		}
-
-		rawTransactions = append(rawTransactions, rawTx)
+		rawTransactions = append(rawTransactions, ethTx.RawTx())
 	}
 	ethUncles := make([]Header, 0, len(block.Uncles()))
 	for _, uncle := range block.Uncles() {

@@ -60,10 +60,11 @@ type GatewayBundleResponse struct {
 }
 
 // HandleMEVBundle handles the submission of a bundle and returns its hash, an error and the equivalent error code that we need to send in the response
-func HandleMEVBundle(node connections.BxListener, conn connections.Conn, connectionAccount sdnmessage.Account, params *jsonrpc.RPCBundleSubmissionPayload) (*GatewayBundleResponse, int, error) {
+func HandleMEVBundle(node connections.BxListener, conn connections.Conn, connectionAccount sdnmessage.Account, params *jsonrpc.RPCBundleSubmissionPayload,
+	oFACList *types.OFACMap) (*GatewayBundleResponse, int, error) {
 	networkNum := conn.GetNetworkNum()
 
-	mevBundle, bundleHash, err := mevBundleFromRequest(params, networkNum)
+	mevBundle, bundleHash, err := mevBundleFromRequest(params, networkNum, oFACList)
 	var result *GatewayBundleResponse
 	if params.UUID == "" {
 		result = &GatewayBundleResponse{BundleHash: bundleHash}
@@ -98,7 +99,7 @@ func HandleMEVBundle(node connections.BxListener, conn connections.Conn, connect
 }
 
 // ParseRawTransactionGroup is a helper function used to process a group of rawTransactions
-func ParseRawTransactionGroup(transactions []string, trimTxHashPrefix bool, chainID int64) (*RawTransactionGroupData, error) {
+func ParseRawTransactionGroup(transactions []string, trimTxHashPrefix bool, chainID int64, oFACList *types.OFACMap) (*RawTransactionGroupData, error) {
 	bundleHash := sha3.NewLegacyKeccak256()
 	rawTxs := make([]string, 0, len(transactions))
 	txHashes := make([]string, 0, len(transactions))
@@ -134,7 +135,7 @@ func ParseRawTransactionGroup(transactions []string, trimTxHashPrefix bool, chai
 
 		bundleHash.Write(transaction.Hash().Bytes())
 
-		if addresses, shouldBlock := ofac.ShouldBlockTransaction(transaction); shouldBlock {
+		if addresses, shouldBlock := ofac.ShouldBlockTransaction(transaction, oFACList); shouldBlock {
 			blockedTxHashes = append(blockedTxHashes, trimmedHash)
 			for _, address := range addresses {
 				if _, found := sanctionedAddressMap[address]; !found {
@@ -156,9 +157,9 @@ func ParseRawTransactionGroup(transactions []string, trimTxHashPrefix bool, chai
 
 // parseBundle is a function used by the blxr_submit_bundle handler on the gateway
 // includes OFAC checks
-func parseBundle(transactions []string, chainID int64) (*GatewayParsedBundle, error) {
+func parseBundle(transactions []string, chainID int64, oFACList *types.OFACMap) (*GatewayParsedBundle, error) {
 	parsedBundle := GatewayParsedBundle{}
-	txGroupData, err := ParseRawTransactionGroup(transactions, false, chainID)
+	txGroupData, err := ParseRawTransactionGroup(transactions, false, chainID, oFACList)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +183,7 @@ func trimZeroFromHEX(hex string) (string, error) {
 	return strings.ToLower(hexutil.EncodeUint64(value)), nil
 }
 
-func mevBundleFromRequest(payload *jsonrpc.RPCBundleSubmissionPayload, networkNum bxtypes.NetworkNum) (*bxmessage.MEVBundle, string, error) {
+func mevBundleFromRequest(payload *jsonrpc.RPCBundleSubmissionPayload, networkNum bxtypes.NetworkNum, oFACList *types.OFACMap) (*bxmessage.MEVBundle, string, error) {
 	if err := payload.Validate(); err != nil {
 		return nil, "", fmt.Errorf("%w: %v", errInvalidPayload, err)
 	}
@@ -191,7 +192,7 @@ func mevBundleFromRequest(payload *jsonrpc.RPCBundleSubmissionPayload, networkNu
 		return nil, "", fmt.Errorf("%w: %v", errInvalidNetwork, networkNum)
 	}
 
-	parsedBundle, err := parseBundle(payload.Transaction, int64(bxtypes.NetworkNumToChainID[networkNum]))
+	parsedBundle, err := parseBundle(payload.Transaction, int64(bxtypes.NetworkNumToChainID[networkNum]), oFACList)
 	if err != nil {
 		return nil, "", fmt.Errorf("%w: %v", errUnableToParseBundle, err)
 	}

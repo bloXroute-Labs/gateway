@@ -68,7 +68,7 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 	network bxtypes.NetworkNum, validate bool, flags types.TxFlags, timestamp time.Time, networkChainID int64, sender types.Sender,
 ) types.TransactionResult {
 	transaction := types.NewBxTransaction(hash, network, flags, timestamp)
-	var blockchainTx types.BlockchainTransaction
+	var ethTx *types.EthTransaction
 	var err error
 
 	if validate && !t.HasContent(hash) {
@@ -76,12 +76,10 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 		// If we don't know this hash, or we don't have its content we should validate
 		// it and extract the sender (so we pass EmptySender)
 		transaction.SetContent(content)
-		blockchainTx, err = transaction.BlockchainTransaction(types.EmptySender)
+		ethTx, err = transaction.MakeAndSetEthTransaction(types.EmptySender)
 		if err != nil {
 			return types.TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: err}
 		}
-
-		ethTx := blockchainTx.(*types.EthTransaction)
 
 		txChainID := ethTx.ChainID().Int64()
 		if networkChainID != 0 && txChainID != 0 && networkChainID != txChainID {
@@ -127,8 +125,8 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 	}
 
 	// sender should already be populated here (not EMPTY) so we will not extract it
-	if blockchainTx == nil {
-		blockchainTx, err = result.Transaction.BlockchainTransaction(sender)
+	if ethTx == nil {
+		ethTx, err = result.Transaction.MakeAndSetEthTransaction(sender)
 		if err != nil {
 			log.Errorf("unable to parse already validated transaction %v with content %v", result.Transaction.Hash(), result.Transaction.Content())
 			result.FailedValidation = true
@@ -136,7 +134,6 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 		}
 	}
 
-	ethTx := blockchainTx.(*types.EthTransaction)
 	result.Nonce = ethTx.Nonce()
 
 	if result.Transaction.Flags().IsWithSidecar() {

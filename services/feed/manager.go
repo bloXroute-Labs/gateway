@@ -8,12 +8,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/sourcegraph/jsonrpc2"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
 	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/metrics"
@@ -38,6 +38,7 @@ type Manager struct {
 	log                    *log.Entry
 	stats                  statistics.Stats
 	sendNotifications      bool
+	metricsExporter        metrics.Exporter
 }
 
 // NewManager - create a new feedManager
@@ -47,6 +48,7 @@ func NewManager(sdn sdnsdk.SDNHTTP,
 	stats statistics.Stats,
 	blockchainNum bxtypes.NetworkNum,
 	sendNotifications bool,
+	metricsExporter metrics.Exporter,
 ) *Manager {
 
 	logger := log.WithFields(log.Fields{
@@ -65,6 +67,7 @@ func NewManager(sdn sdnsdk.SDNHTTP,
 		stats:                  stats,
 		log:                    logger,
 		sendNotifications:      sendNotifications,
+		metricsExporter:        metricsExporter,
 	}
 
 	return newServer
@@ -72,6 +75,8 @@ func NewManager(sdn sdnsdk.SDNHTTP,
 
 // Start - start feed manager
 func (f *Manager) Start(ctx context.Context) {
+	f.log.Infof("feedManager is starting for network %v", f.networkNum)
+
 	wg := sync.WaitGroup{}
 	wg.Add(3)
 
@@ -91,6 +96,8 @@ func (f *Manager) Start(ctx context.Context) {
 	}()
 
 	wg.Wait()
+
+	f.log.Infof("feedManager stopped for network %v", f.networkNum)
 }
 
 // Notify sends a notification to the feed
@@ -99,7 +106,7 @@ func (f *Manager) Notify(notification types.Notification) {
 		return
 	}
 
-	metrics.IncrFeedNotification(uint32(f.networkNum), string(notification.NotificationType()), metrics.SdNotificationsCreated)
+	f.metricsExporter.PushIncrFeedNotificationCreated(uint32(f.networkNum), string(notification.NotificationType()))
 	select {
 	case f.feed <- notification:
 	default:
@@ -188,8 +195,9 @@ func (f *Manager) Unsubscribe(subscriptionID string, closeClientConnection bool,
 
 	clientSub, exists := f.idToClientSubscription[subscriptionID]
 	if !exists {
+		// nothing to do, subscription does not exist
 		f.lock.Unlock()
-		return fmt.Errorf("%w: %v", bxgateway.ErrSubscriptionNotFound, subscriptionID)
+		return nil
 	}
 	delete(f.idToClientSubscription, subscriptionID)
 	f.lock.Unlock()
@@ -235,12 +243,13 @@ func (f *Manager) Unsubscribe(subscriptionID string, closeClientConnection bool,
 		clientSub.AccountID,
 		sdnmessage.AccountTier(clientSub.Tier))
 	close(clientSub.feed)
+
 	if closeClientConnection && clientSub.connection != nil {
 		// TODO: need to unsubscribe all other subscriptions on this connection.
 		err := clientSub.connection.Close()
 		if err != nil && !errors.Is(err, jsonrpc2.ErrClosed) {
 			f.log.Warnf("failed to close connection for %v: %v", subscriptionID, err)
-			return fmt.Errorf("encountered error closing websocket connection with ID %v", subscriptionID)
+			return fmt.Errorf("failed to close connection for %v: %w", subscriptionID, err)
 		}
 	}
 
@@ -361,22 +370,18 @@ func (f *Manager) CloseAllClientConnections() {
 
 // notifySubscribers - getting feed notification and pass to client via common channel
 func (f *Manager) notifySubscribers(ctx context.Context) {
-	f.log.Infof("feedManager is starting for network %v", f.networkNum)
-
 	for {
 		select {
 		case <-ctx.Done():
-			f.log.Infof("feedManager stopped for network %v", f.networkNum)
 			return
 		case notification := <-f.feed:
-			metrics.IncrFeedNotification(uint32(f.networkNum), string(notification.NotificationType()), metrics.SdNotificationsProcessed)
-
+			f.metricsExporter.PushIncrFeedNotificationProcessed(uint32(f.networkNum), string(notification.NotificationType()))
 			f.lock.RLock()
 			for uid, clientSub := range f.idToClientSubscription {
 				if (clientSub.feedConnectionType == types.WebSocketFeed || clientSub.feedConnectionType == types.GRPCFeed) && clientSub.feedType == notification.NotificationType() {
 					select {
 					case clientSub.feed <- notification:
-						metrics.IncrFeedNotificationDelivered(uint32(f.networkNum), string(notification.NotificationType()), string(clientSub.AccountID))
+						f.metricsExporter.PushIncrFeedNotificationDelivered(uint32(f.networkNum), string(notification.NotificationType()), string(clientSub.AccountID))
 					default:
 						f.log.Errorf("can't send %v to channel %v without blocking. Ignored hash %v and unsubscribing", clientSub.feedType, uid, notification.GetHash())
 						go f.unsubscribeFromFeed(uid)
@@ -389,12 +394,9 @@ func (f *Manager) notifySubscribers(ctx context.Context) {
 }
 
 func (f *Manager) notifyErrors(ctx context.Context) {
-	f.log.Infof("feedManager error channel is starting for network %v", f.networkNum)
-
 	for {
 		select {
 		case <-ctx.Done():
-			f.log.Infof("feedManager error channel stopped for network %v", f.networkNum)
 			return
 		case errNotification := <-f.errFeed:
 			f.sendErrorMsgToClient(errNotification)
@@ -403,8 +405,6 @@ func (f *Manager) notifyErrors(ctx context.Context) {
 }
 
 func (f *Manager) midnightCleanup(ctx context.Context) {
-	f.log.Infof("midnight cleanup started for network %v", f.networkNum)
-
 	// variables needed for daily account expiration check
 	firstDailyCheckTriggered := true
 	now := time.Now().UTC()
@@ -486,7 +486,6 @@ func (f *Manager) unsubscribeFromFeed(subscriptionID string) {
 	if err := f.Unsubscribe(subscriptionID, true, ""); err != nil {
 		f.log.Debugf("unable to Unsubscribe %v - %v", subscriptionID, err)
 	}
-	// TODO: mark clientSub as "being closed" to prevent multiple Unsubscribe
 }
 
 func (f *Manager) checkForDuplicateFeed(clientSubscription *ClientSubscription, remoteAddress string) error {

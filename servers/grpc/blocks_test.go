@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
+	bdn2 "github.com/bloXroute-Labs/gateway/v2/blockchain/core"
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/rpc"
@@ -49,11 +49,11 @@ func TestNewBlocks(t *testing.T) {
 	}
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
-	bxBlock, err := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
+	bxBlock, err := bridge.BlockBlockchainToBDN(bdn2.NewBlockInfo(ethBlock, nil))
 	require.NoError(t, err)
 	block, err := bridge.BlockBDNtoBlockchain(bxBlock)
 	require.NoError(t, err)
-	blockNotification, err := types.NewEthBlockNotification(common.Hash(bxBlock.ExecutionHash()), block.(*eth.BlockInfo).Block, nil, false)
+	blockNotification, err := types.NewEthBlockNotification(common.Hash(bxBlock.ExecutionHash()), block.(*bdn2.BlockInfo).Block, nil, false)
 	require.NoError(t, err)
 	blockNotification.SetNotificationType(types.NewBlocksFeed)
 
@@ -97,11 +97,11 @@ func TestBdnBlocks(t *testing.T) {
 	}
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
-	bxBlock, err := bridge.BlockBlockchainToBDN(eth.NewBlockInfo(ethBlock, nil))
+	bxBlock, err := bridge.BlockBlockchainToBDN(bdn2.NewBlockInfo(ethBlock, nil))
 	require.NoError(t, err)
 	block, err := bridge.BlockBDNtoBlockchain(bxBlock)
 	require.NoError(t, err)
-	blockNotification, err := types.NewEthBlockNotification(common.Hash(bxBlock.ExecutionHash()), block.(*eth.BlockInfo).Block, nil, false)
+	blockNotification, err := types.NewEthBlockNotification(common.Hash(bxBlock.ExecutionHash()), block.(*bdn2.BlockInfo).Block, nil, false)
 	require.NoError(t, err)
 	blockNotification.SetNotificationType(types.BDNBlocksFeed)
 

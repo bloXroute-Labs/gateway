@@ -111,8 +111,6 @@ func (m *Tx) ClearProtectedAttributes() {
 	m.sourceID = [SourceIDLen]byte{}
 
 	m.flags &= ^types.TFDeliverToNode
-	m.flags &= ^types.TFEnterpriseSender
-	m.flags &= ^types.TFEliteSender
 
 	// account ID should only be set on paid txs
 	if !m.Flags().IsPaid() {
@@ -126,8 +124,6 @@ func (m *Tx) ClearInternalAttributes() {
 	m.sourceID = [SourceIDLen]byte{}
 	m.accountID = [AccountIDLen]byte{}
 
-	m.flags &= ^types.TFEnterpriseSender
-	m.flags &= ^types.TFEliteSender
 	m.flags &= ^types.TFPaidTx
 }
 

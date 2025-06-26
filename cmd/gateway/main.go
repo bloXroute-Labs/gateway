@@ -13,15 +13,16 @@ import (
 	"runtime/debug"
 	"time"
 
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/sync/errgroup"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/core"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/config"
@@ -96,6 +97,8 @@ func main() {
 			utils.NoStats,
 			utils.EnableBloomFilter,
 			utils.TxIncludeSenderInFeed,
+			utils.OFACEndpoint,
+			utils.OFACBackupEndpoint,
 			utils.BeaconTrustedPeersFileFlag,
 			utils.BeaconPort,
 			utils.EnableQuicFlag,
@@ -263,6 +266,8 @@ func runGateway(c *cli.Context) error {
 		c.Int(utils.TransactionPassedDueDuration.Name),
 		c.Bool(utils.EnableBloomFilter.Name),
 		c.Bool(utils.TxIncludeSenderInFeed.Name),
+		c.String(utils.OFACEndpoint.Name),
+		c.String(utils.OFACBackupEndpoint.Name),
 	)
 	if err != nil {
 		return err
@@ -271,7 +276,7 @@ func runGateway(c *cli.Context) error {
 	group.Go(gateway.Run)
 
 	// Required for beacon node and prysm to sync
-	ethChain := eth.NewChain(gCtx, ethConfig.IgnoreBlockTimeout)
+	ethChain := core.NewChain(gCtx, ethConfig.IgnoreBlockTimeout)
 
 	var blockchainServer *eth.Server
 	if startupBlockchainClient {

@@ -8,10 +8,11 @@ import (
 	"net/http"
 	"time"
 
+	jsoniter "github.com/json-iterator/go"
+
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/gorilla/websocket"
 	"github.com/sourcegraph/jsonrpc2"
-	websocketjsonrpc2 "github.com/sourcegraph/jsonrpc2/websocket"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
@@ -50,6 +51,7 @@ type Server struct {
 	stats                 statistics.Stats
 	wsConnDelayOnErr      time.Duration // wsConnDelayOnErr amount of time to sleep before closing a bad connection. This is configured by tests to a shorted value
 	txFromFieldIncludable bool
+	oFACList              *types.OFACMap
 }
 
 // NewWSServer creates and returns a new websocket server
@@ -63,7 +65,8 @@ func NewWSServer(
 	feedManager *feed.Manager,
 	nodeWSManager blockchain.WSManager,
 	stats statistics.Stats,
-	txFromFieldIncludable bool) *Server {
+	txFromFieldIncludable bool,
+	oFACList *types.OFACMap) *Server {
 
 	networkNum := sdn.NetworkNum()
 	chainID := bxtypes.NetworkNumToChainID[networkNum]
@@ -83,6 +86,7 @@ func NewWSServer(
 		stats:                 stats,
 		wsConnDelayOnErr:      10 * time.Second,
 		txFromFieldIncludable: txFromFieldIncludable,
+		oFACList:              oFACList,
 	}
 
 	return s
@@ -144,6 +148,34 @@ func (s *Server) Shutdown() {
 	if err != nil {
 		s.log.Errorf("encountered error shutting down websocket server %v: %v", s.server.Addr, err)
 	}
+}
+
+// fastJSONStream implements jsonrpc2.ObjectStream but uses json-iterator for WriteObject.
+type fastJSONStream struct {
+	Conn *websocket.Conn
+}
+
+func newFastJSONStream(conn *websocket.Conn) fastJSONStream {
+	return fastJSONStream{Conn: conn}
+}
+
+// ReadObject delegate to the normal ReadJSON
+func (s fastJSONStream) ReadObject(v interface{}) error {
+	return s.Conn.ReadJSON(v)
+}
+
+// WriteObject override it to use json-iterator
+func (s fastJSONStream) WriteObject(obj interface{}) error {
+	b, err := jsoniter.ConfigCompatibleWithStandardLibrary.Marshal(obj)
+	if err != nil {
+		return err
+	}
+	return s.Conn.WriteMessage(websocket.TextMessage, b)
+}
+
+// Close delegate to the normal Close
+func (s fastJSONStream) Close() error {
+	return s.Conn.Close()
 }
 
 func (s *Server) wsHandler(w http.ResponseWriter, r *http.Request) {
@@ -221,10 +253,11 @@ func (s *Server) wsHandler(w http.ResponseWriter, r *http.Request) {
 		enableBlockchainRPC:      s.cfg.EnableBlockchainRPC,
 		txFromFieldIncludable:    s.txFromFieldIncludable,
 		pendingTxsSourceFromNode: s.cfg.PendingTxsSourceFromNode,
+		oFACList:                 s.oFACList,
 	}
 
 	asyncHandler := jsonrpc2.AsyncHandler(handler)
-	_ = jsonrpc2.NewConn(r.Context(), websocketjsonrpc2.NewObjectStream(connection), asyncHandler)
+	_ = jsonrpc2.NewConn(r.Context(), newFastJSONStream(connection), asyncHandler)
 }
 
 func (s *Server) errorWithDelay(w http.ResponseWriter, r *http.Request, msg string) {

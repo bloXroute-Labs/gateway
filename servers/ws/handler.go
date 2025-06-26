@@ -45,6 +45,7 @@ type handlerObj struct {
 	pendingTxsSourceFromNode bool
 	enableBlockchainRPC      bool
 	txFromFieldIncludable    bool
+	oFACList                 *types.OFACMap
 }
 
 // Handle handling client requests

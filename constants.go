@@ -43,7 +43,7 @@ const ExpiredDate = "1970-01-01"
 const AsyncMsgChannelSize = 500
 
 // BxNotificationChannelSize - is the size of feed channels
-const BxNotificationChannelSize = 1000000
+const BxNotificationChannelSize = 1000
 
 // BxErrorNotificationChannelSize - size of error feed channel
 const BxErrorNotificationChannelSize = 10
@@ -104,6 +104,7 @@ const WSProviderTimeout = 10 * time.Second
 
 // SDNAccountRequestTimeout - duration after which SDN account requests are deleted if no response received
 const SDNAccountRequestTimeout = time.Minute * 2
+
 
 const (
 	// BloxrouteBuilderName - set bloxroute mev builder name

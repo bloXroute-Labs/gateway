@@ -9,6 +9,9 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
+// ErrInvalidTx is returned when the transaction is invalid
+var ErrInvalidTx = fmt.Errorf("invalid tx")
+
 // TxValidationStatus indicates the validation status of transaction notifications
 type TxValidationStatus int
 
@@ -22,7 +25,7 @@ const (
 // NewTransactionNotification - contains BxTransaction which contains the local region of the ethereum transaction and all its fields.
 type NewTransactionNotification struct {
 	*BxTransaction
-	BlockchainTransaction
+	*EthTransaction
 	validationStatus TxValidationStatus
 	// lock is used to prevent parallel extract of sender address
 	// while not locking the other unrelated go routines.
@@ -32,85 +35,93 @@ type NewTransactionNotification struct {
 // CreateNewTransactionNotification -  creates NewTransactionNotification object which contains bxTransaction and local region
 func CreateNewTransactionNotification(bxTx *BxTransaction) *NewTransactionNotification {
 	return &NewTransactionNotification{
-		bxTx,
-		nil,
-		TxPendingValidation,
-		&sync.Mutex{},
+		BxTransaction:    bxTx,
+		validationStatus: TxPendingValidation,
+		lock:             &sync.Mutex{},
 	}
 }
 
-// MakeBlockchainTransaction creates blockchain transaction
-func (newTransactionNotification *NewTransactionNotification) MakeBlockchainTransaction() error {
-	var err error
-	newTransactionNotification.lock.Lock()
-	defer newTransactionNotification.lock.Unlock()
-	if newTransactionNotification.validationStatus == TxPendingValidation {
-		newTransactionNotification.BlockchainTransaction, err =
-			newTransactionNotification.BxTransaction.BlockchainTransaction(newTransactionNotification.BxTransaction.sender)
+// MakeEthTransaction creates blockchain transaction
+func (n *NewTransactionNotification) MakeEthTransaction() error {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+
+	switch n.validationStatus {
+	case TxPendingValidation:
+		var err error
+		n.EthTransaction, err = n.BxTransaction.MakeAndSetEthTransaction(n.BxTransaction.sender)
 		if err != nil {
-			newTransactionNotification.validationStatus = TxInvalid
-			err = fmt.Errorf("invalid tx with hash %v. error %v", newTransactionNotification.BxTransaction.Hash(), err)
-			log.Errorf("failed in MakeBlockchainTransaction - %v", err)
+			n.validationStatus = TxInvalid
+			err = fmt.Errorf("invalid tx with hash %v: %v", n.BxTransaction.Hash(), err)
+			log.Errorf("failed in MakeEthTransaction: %v", err)
 			return err
 		}
-		newTransactionNotification.validationStatus = TxValid
+		n.validationStatus = TxValid
+
+		return nil
+	case TxInvalid:
+		return ErrInvalidTx
+	default:
+		return nil
 	}
-	if newTransactionNotification.validationStatus == TxInvalid {
-		return fmt.Errorf("invalid tx")
-	}
-	return nil
 }
 
-// Filters - creates BlockchainTransaction if needs and returns a map of requested fields and their value for evaluation
-func (newTransactionNotification *NewTransactionNotification) Filters(filters []string) map[string]interface{} {
-	err := newTransactionNotification.MakeBlockchainTransaction()
+// Filters - creates EthTransaction if needs and returns a map of requested fields and their value for evaluation
+func (n *NewTransactionNotification) Filters(filters []string) map[string]interface{} {
+	err := n.MakeEthTransaction()
 	if err != nil {
 		return nil
 	}
-	return newTransactionNotification.BlockchainTransaction.Filters(filters)
+
+	return n.EthTransaction.Filters(filters)
 }
 
-// Fields - creates BlockchainTransaction if needs and returns the value of requested fields of the transaction
-func (newTransactionNotification *NewTransactionNotification) Fields(fields []string) map[string]interface{} {
-	err := newTransactionNotification.MakeBlockchainTransaction()
+// Fields - creates EthTransaction if needs and returns the value of requested fields of the transaction
+func (n *NewTransactionNotification) Fields(fields []string) map[string]interface{} {
+	err := n.MakeEthTransaction()
 	if err != nil {
 		return nil
 	}
-	return newTransactionNotification.BlockchainTransaction.Fields(fields)
+
+	return n.EthTransaction.Fields(fields)
 }
 
-// WithFields - creates BlockchainTransaction if needs and returns the value of requested fields of the transaction
-func (newTransactionNotification *NewTransactionNotification) WithFields(fields []string) Notification {
+// WithFields - creates EthTransaction if needs and returns the value of requested fields of the transaction
+func (n *NewTransactionNotification) WithFields([]string) Notification {
 	return nil
 }
 
 // LocalRegion - returns the local region of the ethereum transaction
-func (newTransactionNotification *NewTransactionNotification) LocalRegion() bool {
-	return TFLocalRegion&newTransactionNotification.BxTransaction.Flags() != 0
+func (n *NewTransactionNotification) LocalRegion() bool {
+	return TFLocalRegion&n.BxTransaction.Flags() != 0
 }
 
-// GetHash - returns tha hash of BlockchainTransaction
-func (newTransactionNotification *NewTransactionNotification) GetHash() string {
-	return newTransactionNotification.BxTransaction.hash.Format(true)
+// GetHash - returns tha hash of EthTransaction
+func (n *NewTransactionNotification) GetHash() string {
+	return n.BxTransaction.hash.Format(true)
 }
 
 // RawTx - returns the tx raw content
 // the tx bytes returned can be used directly to submit to RPC endpoint
 // rlp.DecodeBytes is used for the wire protocol, while `MarshalBinary`/`UnmarshalBinary` is used for RPC interface
-func (newTransactionNotification *NewTransactionNotification) RawTx() []byte {
+func (n *NewTransactionNotification) RawTx() []byte {
+	if n.EthTransaction != nil {
+		return n.EthTransaction.RawTx()
+	}
+
 	var rawTx ethtypes.Transaction
-	err := rlp.DecodeBytes(newTransactionNotification.BxTransaction.content, &rawTx)
+	err := rlp.DecodeBytes(n.BxTransaction.content, &rawTx)
 	if err != nil {
-		log.Infof("invalid tx content %v with hash %v. error %v", newTransactionNotification.BxTransaction.content, newTransactionNotification.BxTransaction.Hash(), err)
+		log.Infof("invalid tx content %v with hash %v. error %v", n.BxTransaction.content, n.BxTransaction.Hash(), err)
 	}
 	marshalledTxBytes, err := rawTx.MarshalBinary()
 	if err != nil {
-		log.Infof("invalid raw eth tx %v error %v", newTransactionNotification.BxTransaction.Hash(), err)
+		log.Infof("invalid raw eth tx %v error %v", n.BxTransaction.Hash(), err)
 	}
 	return marshalledTxBytes
 }
 
 // NotificationType - returns the feed name notification
-func (newTransactionNotification *NewTransactionNotification) NotificationType() FeedType {
+func (n *NewTransactionNotification) NotificationType() FeedType {
 	return NewTxsFeed
 }

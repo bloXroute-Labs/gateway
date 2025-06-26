@@ -44,7 +44,7 @@ func (g *server) BlxrSubmitBundle(ctx context.Context, req *pb.BlxrSubmitBundleR
 	}
 
 	grpc := connections.NewRPCConn(*accountID, getPeerAddr(ctx), g.params.sdn.NetworkNum(), bxtypes.GRPC)
-	bundleSubmitResult, _, err := handler.HandleMEVBundle(g.params.node, grpc, *accountModel, mevBundleParams)
+	bundleSubmitResult, _, err := handler.HandleMEVBundle(g.params.node, grpc, *accountModel, mevBundleParams, g.params.oFACList)
 	if err != nil {
 		// TODO need to refactor errors returned from HandleMEVBundle and then map them to jsonrpc and gRPC codes accordingly
 		// TODO instead of returning protocol specific error codes

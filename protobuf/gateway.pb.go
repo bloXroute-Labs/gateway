@@ -2867,13 +2867,15 @@ type BlxrBatchTXRequest struct {
 	// Deprecated: Marked as deprecated in gateway.proto.
 	NextValidator bool `protobuf:"varint,3,opt,name=next_validator,json=nextValidator,proto3" json:"next_validator,omitempty"`
 	// Deprecated: Marked as deprecated in gateway.proto.
-	Fallback       int32 `protobuf:"varint,4,opt,name=fallback,proto3" json:"fallback,omitempty"`
+	Fallback int32 `protobuf:"varint,4,opt,name=fallback,proto3" json:"fallback,omitempty"`
+	// Deprecated: Marked as deprecated in gateway.proto.
 	ValidatorsOnly bool  `protobuf:"varint,5,opt,name=validators_only,json=validatorsOnly,proto3" json:"validators_only,omitempty"`
 	NodeValidation bool  `protobuf:"varint,6,opt,name=node_validation,json=nodeValidation,proto3" json:"node_validation,omitempty"`
 	SendingTime    int64 `protobuf:"varint,7,opt,name=sending_time,json=sendingTime,proto3" json:"sending_time,omitempty"`
 	// Deprecated: Marked as deprecated in gateway.proto.
-	AuthHeader             string `protobuf:"bytes,8,opt,name=auth_header,json=authHeader,proto3" json:"auth_header,omitempty"`
-	FrontrunningProtection bool   `protobuf:"varint,9,opt,name=frontrunning_protection,json=frontrunningProtection,proto3" json:"frontrunning_protection,omitempty"`
+	AuthHeader string `protobuf:"bytes,8,opt,name=auth_header,json=authHeader,proto3" json:"auth_header,omitempty"`
+	// Deprecated: Marked as deprecated in gateway.proto.
+	FrontrunningProtection bool `protobuf:"varint,9,opt,name=frontrunning_protection,json=frontrunningProtection,proto3" json:"frontrunning_protection,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -2938,6 +2940,7 @@ func (x *BlxrBatchTXRequest) GetFallback() int32 {
 	return 0
 }
 
+// Deprecated: Marked as deprecated in gateway.proto.
 func (x *BlxrBatchTXRequest) GetValidatorsOnly() bool {
 	if x != nil {
 		return x.ValidatorsOnly
@@ -2967,6 +2970,7 @@ func (x *BlxrBatchTXRequest) GetAuthHeader() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in gateway.proto.
 func (x *BlxrBatchTXRequest) GetFrontrunningProtection() bool {
 	if x != nil {
 		return x.FrontrunningProtection
@@ -2981,12 +2985,14 @@ type BlxrTxRequest struct {
 	// Deprecated: Marked as deprecated in gateway.proto.
 	NextValidator bool `protobuf:"varint,3,opt,name=next_validator,json=nextValidator,proto3" json:"next_validator,omitempty"`
 	// Deprecated: Marked as deprecated in gateway.proto.
-	AuthHeader     string `protobuf:"bytes,4,opt,name=auth_header,json=authHeader,proto3" json:"auth_header,omitempty"`
-	ValidatorsOnly bool   `protobuf:"varint,5,opt,name=validators_only,json=validatorsOnly,proto3" json:"validators_only,omitempty"`
+	AuthHeader string `protobuf:"bytes,4,opt,name=auth_header,json=authHeader,proto3" json:"auth_header,omitempty"`
 	// Deprecated: Marked as deprecated in gateway.proto.
-	Fallback               int32 `protobuf:"varint,6,opt,name=fallback,proto3" json:"fallback,omitempty"`
-	NodeValidation         bool  `protobuf:"varint,7,opt,name=node_validation,json=nodeValidation,proto3" json:"node_validation,omitempty"`
-	FrontrunningProtection bool  `protobuf:"varint,8,opt,name=frontrunning_protection,json=frontrunningProtection,proto3" json:"frontrunning_protection,omitempty"`
+	ValidatorsOnly bool `protobuf:"varint,5,opt,name=validators_only,json=validatorsOnly,proto3" json:"validators_only,omitempty"`
+	// Deprecated: Marked as deprecated in gateway.proto.
+	Fallback       int32 `protobuf:"varint,6,opt,name=fallback,proto3" json:"fallback,omitempty"`
+	NodeValidation bool  `protobuf:"varint,7,opt,name=node_validation,json=nodeValidation,proto3" json:"node_validation,omitempty"`
+	// Deprecated: Marked as deprecated in gateway.proto.
+	FrontrunningProtection bool `protobuf:"varint,8,opt,name=frontrunning_protection,json=frontrunningProtection,proto3" json:"frontrunning_protection,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -3051,6 +3057,7 @@ func (x *BlxrTxRequest) GetAuthHeader() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in gateway.proto.
 func (x *BlxrTxRequest) GetValidatorsOnly() bool {
 	if x != nil {
 		return x.ValidatorsOnly
@@ -3073,6 +3080,7 @@ func (x *BlxrTxRequest) GetNodeValidation() bool {
 	return false
 }
 
+// Deprecated: Marked as deprecated in gateway.proto.
 func (x *BlxrTxRequest) GetFrontrunningProtection() bool {
 	if x != nil {
 		return x.FrontrunningProtection
@@ -4934,28 +4942,28 @@ const file_gateway_proto_rawDesc = "" +
 	"\fnetwork_data\x18\x03 \x03(\v2\x1b.gateway.TxStoreNetworkDataR\vnetworkData\"G\n" +
 	"\vTxAndSender\x12 \n" +
 	"\vtransaction\x18\x01 \x01(\tR\vtransaction\x12\x16\n" +
-	"\x06sender\x18\x02 \x01(\fR\x06sender\"\xad\x03\n" +
+	"\x06sender\x18\x02 \x01(\fR\x06sender\"\xb5\x03\n" +
 	"\x12BlxrBatchTXRequest\x12N\n" +
 	"\x18transactions_and_senders\x18\x01 \x03(\v2\x14.gateway.TxAndSenderR\x16transactionsAndSenders\x12)\n" +
 	"\x10nonce_monitoring\x18\x02 \x01(\bR\x0fnonceMonitoring\x12)\n" +
 	"\x0enext_validator\x18\x03 \x01(\bB\x02\x18\x01R\rnextValidator\x12\x1e\n" +
-	"\bfallback\x18\x04 \x01(\x05B\x02\x18\x01R\bfallback\x12'\n" +
-	"\x0fvalidators_only\x18\x05 \x01(\bR\x0evalidatorsOnly\x12'\n" +
+	"\bfallback\x18\x04 \x01(\x05B\x02\x18\x01R\bfallback\x12+\n" +
+	"\x0fvalidators_only\x18\x05 \x01(\bB\x02\x18\x01R\x0evalidatorsOnly\x12'\n" +
 	"\x0fnode_validation\x18\x06 \x01(\bR\x0enodeValidation\x12!\n" +
 	"\fsending_time\x18\a \x01(\x03R\vsendingTime\x12#\n" +
 	"\vauth_header\x18\b \x01(\tB\x02\x18\x01R\n" +
-	"authHeader\x127\n" +
-	"\x17frontrunning_protection\x18\t \x01(\bR\x16frontrunningProtection\"\xd7\x02\n" +
+	"authHeader\x12;\n" +
+	"\x17frontrunning_protection\x18\t \x01(\bB\x02\x18\x01R\x16frontrunningProtection\"\xdf\x02\n" +
 	"\rBlxrTxRequest\x12 \n" +
 	"\vtransaction\x18\x01 \x01(\tR\vtransaction\x12)\n" +
 	"\x10nonce_monitoring\x18\x02 \x01(\bR\x0fnonceMonitoring\x12)\n" +
 	"\x0enext_validator\x18\x03 \x01(\bB\x02\x18\x01R\rnextValidator\x12#\n" +
 	"\vauth_header\x18\x04 \x01(\tB\x02\x18\x01R\n" +
-	"authHeader\x12'\n" +
-	"\x0fvalidators_only\x18\x05 \x01(\bR\x0evalidatorsOnly\x12\x1e\n" +
+	"authHeader\x12+\n" +
+	"\x0fvalidators_only\x18\x05 \x01(\bB\x02\x18\x01R\x0evalidatorsOnly\x12\x1e\n" +
 	"\bfallback\x18\x06 \x01(\x05B\x02\x18\x01R\bfallback\x12'\n" +
-	"\x0fnode_validation\x18\a \x01(\bR\x0enodeValidation\x127\n" +
-	"\x17frontrunning_protection\x18\b \x01(\bR\x16frontrunningProtection\"&\n" +
+	"\x0fnode_validation\x18\a \x01(\bR\x0enodeValidation\x12;\n" +
+	"\x17frontrunning_protection\x18\b \x01(\bB\x02\x18\x01R\x16frontrunningProtection\"&\n" +
 	"\vBlxrTxReply\x12\x17\n" +
 	"\atx_hash\x18\x01 \x01(\tR\x06txHash\"4\n" +
 	"\aTxIndex\x12\x10\n" +

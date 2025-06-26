@@ -15,6 +15,9 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/nat"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/core"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/protocols/bsc"
+	eth2 "github.com/bloXroute-Labs/gateway/v2/blockchain/eth/protocols/eth"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 )
 
@@ -26,7 +29,7 @@ type Server struct {
 }
 
 // NewServer return an Ethereum p2p server, configured with BDN friendly defaults
-func NewServer(parent context.Context, port int, externalIP net.IP, config *network.EthConfig, chain *Chain,
+func NewServer(parent context.Context, port int, externalIP net.IP, config *network.EthConfig, chain *core.Chain,
 	bridge blockchain.Bridge, dataDir string, logger log.Logger, ws blockchain.WSManager, dynamicPeers, dialRatio int, recommendedPeers map[string]struct{},
 ) (*Server, error) {
 	var privateKey *ecdsa.PrivateKey
@@ -37,7 +40,7 @@ func NewServer(parent context.Context, port int, externalIP net.IP, config *netw
 		privateKeyPath := path.Join(dataDir, ".gatewaykey")
 		privateKeyFromFile, generated, err := network.LoadOrGeneratePrivateKey(privateKeyPath)
 		if err != nil {
-			var keyWriteErr keyWriteError
+			var keyWriteErr network.KeyWriteError
 			ok := errors.As(err, &keyWriteErr)
 			if ok {
 				logger.Warn("could not write private key", "err", keyWriteErr)
@@ -53,7 +56,7 @@ func NewServer(parent context.Context, port int, externalIP net.IP, config *netw
 	}
 
 	ctx, cancel := context.WithCancel(parent)
-	backend := NewHandler(ctx, config, chain, bridge, ws, recommendedPeers)
+	backend := newHandler(ctx, config, chain, bridge, ws, recommendedPeers)
 
 	var (
 		discovery       = true
@@ -88,7 +91,7 @@ func NewServer(parent context.Context, port int, externalIP net.IP, config *netw
 			TrustedNodes:     nil,
 			NetRestrict:      nil,
 			NodeDatabase:     "",
-			Protocols:        MakeProtocols(ctx, backend),
+			Protocols:        makeProtocols(ctx, backend),
 			NAT:              nat.ExtIP(externalIP),
 			Dialer:           nil,
 			NoDial:           false,
@@ -110,9 +113,20 @@ func NewServer(parent context.Context, port int, externalIP net.IP, config *netw
 	return s, nil
 }
 
+func makeProtocols(ctx context.Context, handler *handler) []p2p.Protocol {
+	protos := eth2.MakeProtocols(ctx, (*ethHandler)(handler), handler.config.Network)
+
+	if handler.config.Network == network.BSCMainnetChainID || handler.config.Network == network.BSCTestnetChainID {
+		protos = append(protos, bsc.MakeProtocols(ctx, (*bscHandler)(handler))...)
+
+	}
+
+	return protos
+}
+
 // NewServerWithEthLogger returns the p2p server preconfigured with the default Ethereum logger
 func NewServerWithEthLogger(ctx context.Context, port int, externalIP net.IP, config *network.EthConfig,
-	chain *Chain, bridge blockchain.Bridge, dataDir string, ws blockchain.WSManager, dynamicPeers, dialRatio int, recommendedPeers map[string]struct{},
+	chain *core.Chain, bridge blockchain.Bridge, dataDir string, ws blockchain.WSManager, dynamicPeers, dialRatio int, recommendedPeers map[string]struct{},
 ) (*Server, error) {
 	l := log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stdout, log.LevelTrace, true))
 	log.SetDefault(l)

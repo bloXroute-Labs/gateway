@@ -25,7 +25,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
-const maxTxsInSingleResponse = 50
+const maxTxsInSingleResponse = 10
 
 var (
 	validTxReceiptParams = []string{"block_hash", "block_number", "contract_address",
@@ -48,7 +48,7 @@ func (g *server) BlxrTx(ctx context.Context, req *pb.BlxrTxRequest) (*pb.BlxrTxR
 
 	grpc := connections.NewRPCConn(*accountID, getPeerAddr(ctx), g.params.sdn.NetworkNum(), bxtypes.GRPC)
 	txHash, ok, err := handler.HandleSingleTransaction(g.params.node, g.params.wsManager, req.Transaction, nil, grpc,
-		req.ValidatorsOnly, req.NodeValidation, req.FrontrunningProtection, bxtypes.NetworkNumToChainID[g.params.sdn.NetworkNum()])
+		req.NodeValidation, bxtypes.NetworkNumToChainID[g.params.sdn.NetworkNum()])
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -89,8 +89,7 @@ func (g *server) BlxrBatchTX(ctx context.Context, req *pb.BlxrBatchTXRequest) (*
 
 	for idx, transactionsAndSender := range transactionsAndSenders {
 		tx := transactionsAndSender.GetTransaction()
-		txHash, ok, err := handler.HandleSingleTransaction(g.params.node, g.params.wsManager, tx, transactionsAndSender.GetSender(), grpc,
-			req.ValidatorsOnly, req.NodeValidation, req.FrontrunningProtection, g.params.chainID)
+		txHash, ok, err := handler.HandleSingleTransaction(g.params.node, g.params.wsManager, tx, transactionsAndSender.GetSender(), grpc, req.NodeValidation, g.params.chainID)
 		if err != nil {
 			txErrors = append(txErrors, &pb.ErrorIndex{Idx: int32(idx), Error: err.Error()})
 			continue
@@ -359,7 +358,7 @@ func shouldSendTx(clientReq *ws.ClientReq, tx *types.NewTransactionNotification,
 	txFilters := tx.Filters(filters)
 
 	// should be done after tx.Filters() to avoid nil pointer dereference
-	txType := tx.BlockchainTransaction.(*types.EthTransaction).Type()
+	txType := tx.EthTransaction.Type()
 
 	if !filter.IsFiltersSupportedByTxType(txType, filters) {
 		return false
@@ -384,13 +383,13 @@ func makeTransaction(transaction *types.NewTransactionNotification, txFromFieldI
 	}
 
 	if txFromFieldIncludable {
-		// Need to have entire transaction to get sender
-		if err := transaction.MakeBlockchainTransaction(); err != nil {
+		// need to have entire transaction to get sender
+		if err := transaction.MakeEthTransaction(); err != nil {
 			log.Errorf("error making blockchain transaction: %v", err)
 			return tx
 		}
 
-		sender, err := transaction.BlockchainTransaction.Sender()
+		sender, err := transaction.EthTransaction.Sender()
 		if err != nil {
 			log.Errorf("error getting sender from blockchain transaction: %v", err)
 		} else {
