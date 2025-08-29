@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/sourcegraph/jsonrpc2"
-
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 
@@ -15,7 +13,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler"
 )
 
-func (h *handlerObj) handleRPCBundleSubmission(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
+func (h *handlerObj) handleRPCBundleSubmission(ctx context.Context, conn *conn, req Request) {
 	if h.serverAccountID != h.connectionAccount.AccountID {
 		errDifferentAccAuth := fmt.Sprintf(errFDifferentAccAuth, jsonrpc.RPCBundleSubmission)
 		h.log.Errorf("%v. account auth: %v, node account: %v", errDifferentAccAuth, h.connectionAccount.AccountID, h.serverAccountID)

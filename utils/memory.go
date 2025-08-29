@@ -35,7 +35,7 @@ func getRss() (int64, error) {
 	return rss * int64(os.Getpagesize()), err
 }
 
-// Convert Byte to Mega-Byte
+// convert Byte to Mega-Byte
 func bToMb(b int64) int64 {
 	return b / 1024 / 1024
 }

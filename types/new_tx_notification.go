@@ -66,14 +66,14 @@ func (n *NewTransactionNotification) MakeEthTransaction() error {
 	}
 }
 
-// Filters - creates EthTransaction if needs and returns a map of requested fields and their value for evaluation
-func (n *NewTransactionNotification) Filters(filters []string) map[string]interface{} {
+// Filters - creates EthTransaction if needed and returns a map of requested fields and their value for evaluation
+func (n *NewTransactionNotification) Filters() map[string]interface{} {
 	err := n.MakeEthTransaction()
 	if err != nil {
 		return nil
 	}
 
-	return n.EthTransaction.Filters(filters)
+	return n.EthTransaction.Filters()
 }
 
 // Fields - creates EthTransaction if needs and returns the value of requested fields of the transaction

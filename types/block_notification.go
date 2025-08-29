@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/OffchainLabs/prysm/v6/consensus-types/interfaces"
 	ethpb "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
@@ -113,7 +114,7 @@ func (e *ElectraBlockNotification) WithFields(fields []string) Notification {
 }
 
 // Filters -
-func (e *ElectraBlockNotification) Filters([]string) map[string]interface{} {
+func (e *ElectraBlockNotification) Filters() map[string]interface{} {
 	return nil
 }
 
@@ -210,7 +211,7 @@ func (beaconBlockNotification *DenebBlockNotification) WithFields(fields []strin
 }
 
 // Filters converts filters as field value map
-func (beaconBlockNotification *DenebBlockNotification) Filters([]string) map[string]interface{} {
+func (beaconBlockNotification *DenebBlockNotification) Filters() map[string]interface{} {
 	return nil
 }
 
@@ -257,46 +258,24 @@ func (beaconBlockNotification *DenebBlockNotification) Clone() BlockNotification
 
 // EthBlockNotification - represents a single block
 type EthBlockNotification struct {
-	BlockHash        *ethcommon.Hash          `json:"hash,omitempty"`
+	BlockHash        *ethcommon.Hash `json:"hash,omitempty"`
+	block            *bxethcommon.Block
 	Header           *Header                  `json:"header,omitempty"`
 	Transactions     []map[string]interface{} `json:"transactions,omitempty"`
 	Uncles           []Header                 `json:"uncles,omitempty"`
 	ValidatorInfo    []*FutureValidatorInfo   `json:"future_validator_info,omitempty"`
 	Withdrawals      ethtypes.Withdrawals     `json:"withdrawals,omitempty"`
-	rawTransactions  [][]byte
+	RawTransactions  [][]byte                 `json:"raw_transactions,omitempty"`
 	notificationType FeedType
 	source           *NodeEndpoint
+	rawTxsMu         *sync.RWMutex
+	txsMu            *sync.RWMutex
 }
 
 // NewEthBlockNotification creates ETH block notification
-func NewEthBlockNotification(hash ethcommon.Hash, block *bxethcommon.Block, info []*FutureValidatorInfo, txIncludeSender bool) (*EthBlockNotification, error) {
+func NewEthBlockNotification(hash ethcommon.Hash, block *bxethcommon.Block, info []*FutureValidatorInfo) (*EthBlockNotification, error) {
 	if hash == (ethcommon.Hash{}) {
 		return nil, errors.New("empty block hash")
-	}
-
-	rawTransactions := [][]byte{}
-	ethTxs := make([]map[string]interface{}, 0)
-
-	for _, tx := range block.Transactions() {
-		ethTx, err := NewEthTransaction(tx, EmptySender)
-		if err != nil {
-			return nil, err
-		}
-
-		var fields map[string]interface{}
-		if txIncludeSender {
-			fields = ethTx.Fields(AllFieldsWithFrom)
-		} else {
-			fields = ethTx.Fields(AllFields)
-		}
-
-		// todo: calculate gasPrice for DynamicFeeTxType properly
-		if ethTx.Type() >= ethtypes.DynamicFeeTxType {
-			fields["gasPrice"] = fields["maxFeePerGas"]
-		}
-		ethTxs = append(ethTxs, fields)
-
-		rawTransactions = append(rawTransactions, ethTx.RawTx())
 	}
 	ethUncles := make([]Header, 0, len(block.Uncles()))
 	for _, uncle := range block.Uncles() {
@@ -304,14 +283,128 @@ func NewEthBlockNotification(hash ethcommon.Hash, block *bxethcommon.Block, info
 		ethUncles = append(ethUncles, *ethUncle)
 	}
 	return &EthBlockNotification{
-		BlockHash:       &hash,
-		Header:          ConvertEthHeaderToBlockNotificationHeader(block.Header()),
-		Transactions:    ethTxs,
-		Uncles:          ethUncles,
-		ValidatorInfo:   info,
-		Withdrawals:     block.Withdrawals(),
-		rawTransactions: rawTransactions,
+		BlockHash:     &hash,
+		block:         block,
+		Header:        ConvertEthHeaderToBlockNotificationHeader(block.Header()),
+		Uncles:        ethUncles,
+		ValidatorInfo: info,
+		Withdrawals:   block.Withdrawals(),
+		// to parse raw transactions and transactions separately, we need to lock the mutexes
+		rawTxsMu: &sync.RWMutex{},
+		txsMu:    &sync.RWMutex{},
 	}, nil
+}
+
+// GetTransactions returns a shallow copy of the transactions slice
+func (ethBlockNotification *EthBlockNotification) GetTransactions() []map[string]interface{} {
+	return ethBlockNotification.parseTransactions()
+}
+
+func (ethBlockNotification *EthBlockNotification) parseRawTransactions() [][]byte {
+	ethBlockNotification.rawTxsMu.Lock()
+	defer ethBlockNotification.rawTxsMu.Unlock()
+	if ethBlockNotification.RawTransactions != nil {
+		return ethBlockNotification.RawTransactions
+	}
+
+	rawTransactions := make([][]byte, 0)
+	if ethBlockNotification.block != nil {
+		for _, tx := range ethBlockNotification.block.Transactions() {
+			rawTx, err := tx.MarshalBinary()
+			if err != nil {
+				log.Errorf("failed to marshal transaction: %v", err)
+				return nil
+			}
+			rawTransactions = append(rawTransactions, rawTx)
+		}
+
+	} else {
+		log.Errorf("block is nil, cannot parse raw transactions for block hash: %s", ethBlockNotification.GetHash())
+	}
+
+	ethBlockNotification.RawTransactions = rawTransactions
+	return rawTransactions
+}
+
+// GetRawTransactions returns raw transactions
+func (ethBlockNotification *EthBlockNotification) GetRawTransactions() [][]byte {
+	ethBlockNotification.rawTxsMu.RLock()
+	defer ethBlockNotification.rawTxsMu.RUnlock()
+	return ethBlockNotification.RawTransactions
+}
+
+// GetParsedTransactions returns parsed transactions
+func (ethBlockNotification *EthBlockNotification) GetParsedTransactions() []map[string]interface{} {
+	ethBlockNotification.txsMu.RLock()
+	defer ethBlockNotification.txsMu.RUnlock()
+	return ethBlockNotification.Transactions
+}
+
+func (ethBlockNotification *EthBlockNotification) parseTransactions() []map[string]interface{} {
+	ethBlockNotification.txsMu.Lock()
+	defer ethBlockNotification.txsMu.Unlock()
+	if ethBlockNotification.Transactions != nil {
+		return ethBlockNotification.Transactions
+	}
+
+	if ethBlockNotification.block != nil {
+		ethTxs := make([]map[string]interface{}, 0)
+
+		for _, tx := range ethBlockNotification.block.Transactions() {
+			txFields, err := parseFieldsFromTx(tx)
+			if err != nil {
+				log.Errorf("failed to parse fields from txs: %v", err)
+				return nil
+			}
+			ethTxs = append(ethTxs, txFields)
+		}
+
+		ethBlockNotification.Transactions = ethTxs
+		return ethTxs
+	}
+
+	ethTxsFromRaw, err := ethBlockNotification.parseTransactionsFromRaw()
+	if err != nil {
+		log.Errorf("failed to parse transactions from raw: %v", err)
+		return nil
+	}
+
+	ethBlockNotification.Transactions = ethTxsFromRaw
+	return ethTxsFromRaw
+}
+
+func (ethBlockNotification *EthBlockNotification) parseTransactionsFromRaw() ([]map[string]any, error) {
+	rawTxs := ethBlockNotification.GetRawTransactions()
+	ethTxs := make([]map[string]any, 0)
+
+	for _, rawTx := range rawTxs {
+		var tx ethtypes.Transaction
+		err := tx.UnmarshalBinary(rawTx)
+		if err != nil {
+			return nil, err
+		}
+
+		ethTxFields, err := parseFieldsFromTx(&tx)
+		if err != nil {
+			return nil, err
+		}
+		ethTxs = append(ethTxs, ethTxFields)
+	}
+
+	return ethTxs, nil
+}
+
+func parseFieldsFromTx(tx *ethtypes.Transaction) (map[string]any, error) {
+	ethTx, err := NewEthTransaction(tx, EmptySender)
+	if err != nil {
+		return nil, err
+	}
+	fields := ethTx.Fields(AllFieldsWithFrom)
+	if ethTx.Type() >= ethtypes.DynamicFeeTxType {
+		fields["gasPrice"] = fields["maxFeePerGas"]
+	}
+
+	return fields, nil
 }
 
 // FutureValidatorInfo - represents information about the validator information of the second block after the current block
@@ -404,7 +497,7 @@ func ConvertEthHeaderToBlockNotificationHeader(ethHeader *ethtypes.Header) *Head
 
 // WithFields returns notification with specified fields
 func (ethBlockNotification *EthBlockNotification) WithFields(fields []string) Notification {
-	block := EthBlockNotification{}
+	block := EthBlockNotification{txsMu: ethBlockNotification.txsMu, rawTxsMu: ethBlockNotification.rawTxsMu, block: ethBlockNotification.block}
 
 	for _, param := range fields {
 		switch param {
@@ -413,8 +506,9 @@ func (ethBlockNotification *EthBlockNotification) WithFields(fields []string) No
 		case "header":
 			block.Header = ethBlockNotification.Header
 		case "transactions":
-			block.Transactions = ethBlockNotification.Transactions
-			block.rawTransactions = ethBlockNotification.rawTransactions
+			block.Transactions = ethBlockNotification.parseTransactions()
+		case "raw_transactions":
+			block.RawTransactions = ethBlockNotification.parseRawTransactions()
 		case "uncles":
 			block.Uncles = ethBlockNotification.Uncles
 		case "future_validator_info":
@@ -427,7 +521,7 @@ func (ethBlockNotification *EthBlockNotification) WithFields(fields []string) No
 }
 
 // Filters converts filters as field value map
-func (ethBlockNotification *EthBlockNotification) Filters(filters []string) map[string]interface{} {
+func (ethBlockNotification *EthBlockNotification) Filters() map[string]interface{} {
 	return nil
 }
 
@@ -474,10 +568,16 @@ func (ethBlockNotification *EthBlockNotification) Clone() BlockNotification {
 
 // GetRawTxByIndex return rawTransaction data by given index
 func (ethBlockNotification *EthBlockNotification) GetRawTxByIndex(index int) []byte {
-	if index > len(ethBlockNotification.rawTransactions) {
+	raws := ethBlockNotification.parseRawTransactions()
+	if index < 0 || index >= len(raws) {
 		log.Errorf("failed to find raw transaction by index: %d, block hash %s", index, ethBlockNotification.GetHash())
 		return []byte{}
 	}
+	return raws[index]
+}
 
-	return ethBlockNotification.rawTransactions[index]
+// SetLocks sets mutex locks for transactions and raw transactions
+func (ethBlockNotification *EthBlockNotification) SetLocks() {
+	ethBlockNotification.rawTxsMu = &sync.RWMutex{}
+	ethBlockNotification.txsMu = &sync.RWMutex{}
 }

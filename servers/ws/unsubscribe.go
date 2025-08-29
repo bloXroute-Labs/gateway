@@ -6,12 +6,11 @@ import (
 	"fmt"
 
 	"github.com/gorilla/websocket"
-	"github.com/sourcegraph/jsonrpc2"
 
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 )
 
-func (h *handlerObj) handleRPCUnsubscribe(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
+func (h *handlerObj) handleRPCUnsubscribe(ctx context.Context, conn *conn, req Request) {
 	if req.Params == nil {
 		sendErrorMsg(ctx, jsonrpc.InvalidParams, errParamsValueIsMissing, conn, req.ID)
 		return

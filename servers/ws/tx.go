@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
-	"github.com/sourcegraph/jsonrpc2"
 
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
@@ -18,7 +17,7 @@ type rpcTxResponse struct {
 	TxHash string `json:"txHash"`
 }
 
-func (h *handlerObj) handleRPCTx(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
+func (h *handlerObj) handleRPCTx(ctx context.Context, conn *conn, req Request) {
 	if h.serverAccountID != h.connectionAccount.AccountID {
 		errDifferentAccAuth := fmt.Sprintf(errFDifferentAccAuth, jsonrpc.RPCTx)
 		if h.serverAccountID == bxtypes.BloxrouteAccountID {

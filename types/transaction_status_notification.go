@@ -56,7 +56,7 @@ func (tn *TransactionStatusNotification) NotificationType() FeedType {
 }
 
 // Filters -
-func (tn *TransactionStatusNotification) Filters(filters []string) map[string]interface{} {
+func (tn *TransactionStatusNotification) Filters() map[string]interface{} {
 	return nil
 }
 

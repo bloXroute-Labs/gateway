@@ -5,10 +5,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 
-	"github.com/zhouzhuojie/conditions"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -240,10 +240,10 @@ func (g *server) txReceipts(req *pb.TxReceiptsRequest, stream pb.Gateway_TxRecei
 }
 
 func (g *server) handleTransactions(req *pb.TxsRequest, stream pb.Gateway_NewTxsServer, feedType types.FeedType, account sdnmessage.Account) error {
-	var expr conditions.Expr
+	var expr *filter.Expression
 	if req.GetFilters() != "" {
 		var err error
-		expr, err = filter.ValidateFilters(req.GetFilters(), g.params.txFromFieldIncludable)
+		expr, err = filter.NewDefaultExpression(req.GetFilters(), g.params.txFromFieldIncludable)
 		if err != nil {
 			return status.Error(codes.InvalidArgument, err.Error())
 		}
@@ -278,9 +278,11 @@ func (g *server) handleTransactions(req *pb.TxsRequest, stream pb.Gateway_NewTxs
 
 	clReq := &ws.ClientReq{Includes: includes, Expr: expr, Feed: feedType}
 
+	containsInclude := slices.Contains(includes, "tx_contents.from")
+
 	var txsResponse []*pb.Tx
 	for notification := range sub.FeedChan {
-		processTx(clReq, notification, &txsResponse, ci.RemoteAddress, account.AccountID, feedType, g.params.txFromFieldIncludable)
+		processTx(clReq, notification, &txsResponse, ci.RemoteAddress, account.AccountID, feedType, containsInclude)
 
 		if (len(sub.FeedChan) == 0 || len(txsResponse) == maxTxsInSingleResponse) && len(txsResponse) > 0 {
 			err = stream.Send(&pb.TxsReply{Tx: txsResponse})
@@ -354,18 +356,10 @@ func shouldSendTx(clientReq *ws.ClientReq, tx *types.NewTransactionNotification,
 		return true
 	}
 
-	filters := clientReq.Expr.Args()
-	txFilters := tx.Filters(filters)
+	txFilters := tx.Filters()
 
-	// should be done after tx.Filters() to avoid nil pointer dereference
-	txType := tx.EthTransaction.Type()
-
-	if !filter.IsFiltersSupportedByTxType(txType, filters) {
-		return false
-	}
-
-	// Evaluate if we should send the tx
-	shouldSend, err := conditions.Evaluate(clientReq.Expr, txFilters)
+	// evaluate if we should send the tx
+	shouldSend, err := clientReq.Expr.Evaluate(txFilters)
 	if err != nil {
 		log.Errorf("error evaluate Filters. Feed: %v. filters: %s. remote address: %v. account id: %v error - %v tx: %v",
 			clientReq.Feed, clientReq.Expr, remoteAddress, accountID, err.Error(), txFilters)

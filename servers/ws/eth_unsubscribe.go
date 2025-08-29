@@ -5,12 +5,11 @@ import (
 	"fmt"
 
 	"github.com/gorilla/websocket"
-	"github.com/sourcegraph/jsonrpc2"
 
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 )
 
-func (h *handlerObj) handleRPCEthUnsubscribe(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request, rpcParams []interface{}) {
+func (h *handlerObj) handleRPCEthUnsubscribe(ctx context.Context, conn *conn, req Request, rpcParams []interface{}) {
 	if len(rpcParams) != 1 {
 		err := fmt.Sprintf("unable to process %s RPC request: expected 1 param, got %v", jsonrpc.RPCEthUnsubscribe, len(rpcParams))
 		sendErrorMsg(ctx, jsonrpc.InvalidParams, err, conn, req.ID)

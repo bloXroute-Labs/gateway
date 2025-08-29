@@ -131,6 +131,7 @@ message TxsReply{
 message BlocksRequest{
   repeated string includes = 1;
   string auth_header = 2 [deprecated = true];
+  google.protobuf.BoolValue parsedTxs = 3;
 }
 
 message BlockHeader{

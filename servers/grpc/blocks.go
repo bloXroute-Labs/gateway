@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	"github.com/golang/protobuf/ptypes/wrappers"
 
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler"
@@ -37,6 +39,9 @@ func (g *server) NewBlocks(req *pb.BlocksRequest, stream pb.Gateway_NewBlocksSer
 	if err != nil {
 		return status.Error(codes.PermissionDenied, err.Error())
 	}
+	if req.GetParsedTxs() == nil {
+		req.ParsedTxs = &wrappers.BoolValue{Value: true}
+	}
 
 	return g.handleBlocks(req, stream, types.NewBlocksFeed, *accountModel)
 }
@@ -48,6 +53,9 @@ func (g *server) BdnBlocks(req *pb.BlocksRequest, stream pb.Gateway_BdnBlocksSer
 	accountModel, err := g.validateAuthHeader(authHeader, true, true, getPeerAddr(stream.Context()))
 	if err != nil {
 		return status.Error(codes.PermissionDenied, err.Error())
+	}
+	if req.GetParsedTxs() == nil {
+		req.ParsedTxs = &wrappers.BoolValue{Value: true}
 	}
 
 	return g.handleBlocks(req, stream, types.BDNBlocksFeed, *accountModel)
@@ -90,6 +98,11 @@ func (g *server) handleBlocks(req *pb.BlocksRequest, stream pb.Gateway_BdnBlocks
 	} else {
 		includes = req.GetIncludes()
 	}
+	if !req.GetParsedTxs().GetValue() {
+		if i := slices.Index(includes, "transactions"); i >= 0 {
+			includes = slices.Replace(includes, i, i+1, "raw_transactions")
+		}
+	}
 
 	for {
 		select {
@@ -99,7 +112,7 @@ func (g *server) handleBlocks(req *pb.BlocksRequest, stream pb.Gateway_BdnBlocks
 			}
 
 			blocks := notification.WithFields(includes).(*types.EthBlockNotification)
-			blocksReply := g.generateBlockReply(blocks)
+			blocksReply := g.generateBlockReply(blocks, req.GetParsedTxs().GetValue())
 
 			err = stream.Send(blocksReply)
 			if err != nil {
@@ -121,7 +134,7 @@ func generateEthOnBlockReply(n *types.OnBlockNotification) *pb.EthOnBlockReply {
 	}
 }
 
-func (g *server) generateBlockReply(n *types.EthBlockNotification) *pb.BlocksReply {
+func (g *server) generateBlockReply(n *types.EthBlockNotification, parsedTxs bool) *pb.BlocksReply {
 	blockReply := &pb.BlocksReply{}
 	if n.BlockHash != nil {
 		blockReply.Hash = n.BlockHash.String()
@@ -137,7 +150,34 @@ func (g *server) generateBlockReply(n *types.EthBlockNotification) *pb.BlocksRep
 		})
 	}
 
-	for index, tx := range n.Transactions {
+	if parsedTxs {
+		blockReply.Transaction = g.generateBlockReplyWithParsedTxs(n)
+	} else {
+		blockReply.Transaction = g.generateBlockReplyWithRawTxs(n)
+	}
+
+	for _, withdrawal := range n.Withdrawals {
+		blockReply.Withdrawals = append(blockReply.Withdrawals, &pb.Withdrawal{
+			Address:        withdrawal.Address.Hex(),
+			Amount:         hexutil.Uint64(withdrawal.Amount).String(),
+			Index:          hexutil.Uint64(withdrawal.Index).String(),
+			ValidatorIndex: hexutil.Uint64(withdrawal.Validator).String(),
+		})
+	}
+	return blockReply
+}
+
+func (g *server) generateBlockReplyWithRawTxs(n *types.EthBlockNotification) []*pb.Tx {
+	rawTxs := make([]*pb.Tx, 0)
+	for _, tx := range n.GetRawTransactions() {
+		rawTxs = append(rawTxs, &pb.Tx{RawTx: tx})
+	}
+	return rawTxs
+}
+
+func (g *server) generateBlockReplyWithParsedTxs(n *types.EthBlockNotification) []*pb.Tx {
+	parsedTxs := make([]*pb.Tx, 0)
+	for index, tx := range n.GetParsedTransactions() {
 		var from []byte
 		if f, ok := tx["from"]; ok {
 			from = g.decodeHex(f.(string))
@@ -148,17 +188,9 @@ func (g *server) generateBlockReply(n *types.EthBlockNotification) *pb.BlocksRep
 			RawTx: n.GetRawTxByIndex(index),
 		}
 
-		blockReply.Transaction = append(blockReply.Transaction, blockTx)
+		parsedTxs = append(parsedTxs, blockTx)
 	}
-	for _, withdrawal := range n.Withdrawals {
-		blockReply.Withdrawals = append(blockReply.Withdrawals, &pb.Withdrawal{
-			Address:        withdrawal.Address.Hex(),
-			Amount:         hexutil.Uint64(withdrawal.Amount).String(),
-			Index:          hexutil.Uint64(withdrawal.Index).String(),
-			ValidatorIndex: hexutil.Uint64(withdrawal.Validator).String(),
-		})
-	}
-	return blockReply
+	return parsedTxs
 }
 
 func (*server) decodeHex(data string) []byte {

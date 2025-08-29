@@ -1,239 +1,232 @@
 package filter
 
 import (
-	"strings"
+	"encoding/hex"
 	"testing"
+	"time"
 
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
-// pythonFiltersToGoFilters - contains available filters in python format and theirs go format filters
-var pythonFiltersToGoFilters = map[string]string{
-	// {value}
-	"value<=10000":   "({value} <= 10000)",
-	"value<= 10000":  "({value} <= 10000)",
-	"value!=10000":   "({value} != 10000)",
-	"value <= 10000": "({value} <= 10000)",
-	"value >= 10000": "({value} >= 10000)",
-	"value != 10000": "({value} != 10000)",
-	"value > 1000000000000000000 and value < 4000000000000000000":        "({value} > 1000000000000000000) and ({value} < 4000000000000000000)",
-	"( ( value > 1000000000000000000 ) and value < 4000000000000000000)": "((({value} > 1000000000000000000)) and ({value} < 4000000000000000000))",
-	"( (value > 1000000000000000000 ) and value < 4000000000000000000)":  "((({value} > 1000000000000000000)) and ({value} < 4000000000000000000))",
-	// {to}
-	"to = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2":                                                  "({to} == '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2')",
-	"from in [0x6671799F031059e017bBc9E9FCbE6721cc2Bd798, 0x09eDBC6ed492C6D4274810E257A690a11d71ce43]": "({from} in ['0x6671799F031059e017bBc9E9FCbE6721cc2Bd798','0x09eDBC6ed492C6D4274810E257A690a11d71ce43'])",
-	// {gas_price}
-	"gas_price > 183000000000": "({gas_price} > 183000000000)",
-	"gas_price> 100000000000":  "({gas_price} > 100000000000)",
-	// {method_id}
-	"method_id != aa":      "({method_id} != '0xaa')",
-	"method_id = a9059cbb": "({method_id} == '0xa9059cbb')",
-	"method_id= a9059cbb":  "({method_id} == '0xa9059cbb')",
-	// {chain_id}
-	"chain_id = 1": "({chain_id} == 1)",
-	// {max_fee_per_gas}
-	"max_fee_per_gas = 1": "({max_fee_per_gas} == 1)",
-	// {max_fee_per_gas}
-	"max_priority_fee_per_gas = 1": "({max_priority_fee_per_gas} == 1)",
-	// address list with or without white spaces
-	"from in[0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f]": "({from} in ['0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f'])",
-	"from in [0xaa, 0xbb,0xcc, 0xdd]":                     "({from} in ['0xaa','0xbb','0xcc','0xdd'])",
-	"to in [0xaa,0xbb,0xcc,0xdd]":                         "({to} in ['0xaa','0xbb','0xcc','0xdd'])",
-	"method_id in [aa, bb,cc, dd]":                        "({method_id} in ['0xaa','0xbb','0xcc','0xdd'])",
-	"method_id in [aa, bb, cc,dd]":                        "({method_id} in ['0xaa','0xbb','0xcc','0xdd'])",
-	"from in [0xaa, 0xbb,0xcc, 0xdd] and value < 4000000000000000000 and to in [0xaa,0xbb, 0xcc, 0xdd]": "({from} in ['0xaa','0xbb','0xcc','0xdd']) and ({value} < 4000000000000000000) and ({to} in ['0xaa','0xbb','0xcc','0xdd'])",
-	"from in [0xaa, 0xbb, 0xcc, 0xdd] and to in [0xaa, 0xbb, 0xcc, 0xdd]":                               "({from} in ['0xaa','0xbb','0xcc','0xdd']) and ({to} in ['0xaa','0xbb','0xcc','0xdd'])",
-	"from in [0xaa, 0xbb,0xcc, 0xdd] and to in [0xaa,0xbb, 0xcc, 0xdd]":                                 "({from} in ['0xaa','0xbb','0xcc','0xdd']) and ({to} in ['0xaa','0xbb','0xcc','0xdd'])",
-	// complex filters with different number of parenthesis
-	"from = 0xaa and ((value > 1000 or value < 500) and method_id in [aa, bb, cc] and (to = 0xabb or gas_price = 5))":                                                                                                         "({from} == '0xaa') and ((({value} > 1000) or ({value} < 500)) and ({method_id} in ['0xaa','0xbb','0xcc']) and (({to} == '0xabb') or ({gas_price} == 5)))",
-	"from = 0xaa and ((((value > 1000 or value < 500) and method_id in [aa, bb, cc] and (to = 0xabb or gas_price = 5))))":                                                                                                     "({from} == '0xaa') and ((((({value} > 1000) or ({value} < 500)) and ({method_id} in ['0xaa','0xbb','0xcc']) and (({to} == '0xabb') or ({gas_price} == 5)))))",
-	"from = 0xaa and value > 1000 or value < 500 and (method_id in [aa, bb, cc] and (to = 0xabb or gas_price = 5))":                                                                                                           "({from} == '0xaa') and ({value} > 1000) or ({value} < 500) and (({method_id} in ['0xaa','0xbb','0xcc']) and (({to} == '0xabb') or ({gas_price} == 5)))",
-	"to = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 and ((value > 1000000000000000000 and value < 4000000000000000000) or from in [0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f, 0x77e2b72689fc954c16b37fbcf1b0b1d395a0e288])": "({to} == '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2') and ((({value} > 1000000000000000000) and ({value} < 4000000000000000000)) or ({from} in ['0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f','0x77e2b72689fc954c16b37fbcf1b0b1d395a0e288']))",
-	"method_id = a9059cbb and from in [0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f,0x77e2b72689fc954c16b37fbcf1b0b1d395a0e288] and gas_price > 100000000000":                                                                   "({method_id} == '0xa9059cbb') and ({from} in ['0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f','0x77e2b72689fc954c16b37fbcf1b0b1d395a0e288']) and ({gas_price} > 100000000000)",
-	"method_id = a9059cbb and from in [0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f,   0x77e2b72689fc954c16b37fbcf1b0b1d395a0e288,0x77e2b7268911954c16b37fbcf1b0b1d395a0e288] and gas_price > 100000000000":                     "({method_id} == '0xa9059cbb') and ({from} in ['0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f','0x77e2b72689fc954c16b37fbcf1b0b1d395a0e288','0x77e2b7268911954c16b37fbcf1b0b1d395a0e288']) and ({gas_price} > 100000000000)",
-	"method_id = a9059cbb and from in [0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f] and gas_price > 100000000000":                                                                                                              "({method_id} == '0xa9059cbb') and ({from} in ['0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f']) and ({gas_price} > 100000000000)",
-}
-
-// invalidPythonFilters - invalid python format filters
-var invalidPythonFilters = []string{
-	"(from = (0xaa",
-	"(from = 0xaa",
-	"from = (0xaa and to = ) 1000",
-	"from = (0xaa and to = ) 1000)",
-	"value ! =  10000",
-	"value > = 10000",
-	"value < = 10000",
-	"value < = 10000 and gas_price != 1500",
-	"gas_price != 1500 and value < = 10000",
-	"gas_price => 100000000000",
-	"gas_price =< 100000000000",
-	"gas_price != 1500 and gas_price =< 100000000000",
-	"method_id = (a9059cbb and from in ([0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f,0x77e2b72689fc954c16b37fbcf1b0b1d395a0e288] and gas_price > 100000000000)",
-	"method_id != a9059cbb and from in [0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f,   0x77e2b72689fc954c16b37fbcf1b0b1d395a0e288,0x77e2b7268911954c16b37fbcf1b0b1d395a0e288] and gas_price => 100000000000",
-}
-
-func TestFilter(t *testing.T) {
-	for pythonFormat, expectedGoFormat := range pythonFiltersToGoFilters {
-		goFormatResult, exp, err := parseFilter(pythonFormat)
-		assert.Equal(t, strings.ToLower(expectedGoFormat), strings.ToLower(goFormatResult))
-		assert.NoError(t, err)
-		assert.Nil(t, evaluateFilters(exp))
+var (
+	pythonFilters = []string{
+		"value<=10000",
+		"value<= 10000",
+		"value!=10000",
+		"value <= 10000",
+		"value >= 10000",
+		"value != 10000",
+		"value > 1000000000000000000 and value < 4000000000000000000",
+		"value > 1000000000000000000 AND value < 4000000000000000000",
+		"( ( value > 1000000000000000000 ) and value < 4000000000000000000)",
+		"( (value > 1000000000000000000 ) and value < 4000000000000000000)",
+		"to = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+		"from in [0x6671799F031059e017bBc9E9FCbE6721cc2Bd798, 0x09eDBC6ed492C6D4274810E257A690a11d71ce43]",
+		"gas_price > 183000000000",
+		"gas_price> 100000000000",
+		"method_id != aa",
+		"method_id = a9059cbb",
+		"method_id= a9059cbb",
+		"chain_id = 1",
+		"max_fee_per_gas = 1",
+		"max_priority_fee_per_gas = 1",
+		"from in[0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f]",
+		"from in [0xaa, 0xbb,0xcc, 0xdd]",
+		"to in [0xaa,0xbb,0xcc,0xdd]",
+		"method_id in [aa, bb,cc, dd]",
+		"method_id in [aa, bb, cc,dd]",
+		"method_id IN [aa, bb, cc,dd]",
+		"method_id IN[aa, bb, cc,dd]",
+		"from in [0xaa, 0xbb,0xcc, 0xdd] and value < 4000000000000000000 and to in [0xaa,0xbb, 0xcc, 0xdd]",
+		"from in [0xaa, 0xbb, 0xcc, 0xdd] and to in [0xaa, 0xbb, 0xcc, 0xdd]",
+		"from in [0xaa, 0xbb,0xcc, 0xdd] and to in [0xaa,0xbb, 0xcc, 0xdd]",
+		"from = 0xaa and ((value > 1000 or value < 500) and method_id in [aa, bb, cc] and (to = 0xabb or gas_price = 5))",
+		"from = 0xaa and ((((value > 1000 or value < 500) and method_id in [aa, bb, cc] and (to = 0xabb or gas_price = 5))))",
+		"from = 0xaa and value > 1000 or value < 500 and (method_id in [aa, bb, cc] and (to = 0xabb or gas_price = 5))",
+		"to = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 and ((value > 1000000000000000000 and value < 4000000000000000000) or from in [0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f, 0x77e2b72689fc954c16b37fbcf1b0b1d395a0e288])",
+		"method_id = a9059cbb and from in [0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f,0x77e2b72689fc954c16b37fbcf1b0b1d395a0e288] and gas_price > 100000000000",
+		"method_id = a9059cbb and from in [0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f,   0x77e2b72689fc954c16b37fbcf1b0b1d395a0e288,0x77e2b7268911954c16b37fbcf1b0b1d395a0e288] and gas_price > 100000000000",
+		"method_id = a9059cbb and from in [0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f] and gas_price > 100000000000",
+		"from in [0xaa, 0xbb,0xcc, 0xdd] && (type == '0' && gas_price > 21000000000) || (type == '2' && max_priority_fee_per_gas > 21000000000)",
+		"from in [0xaa, 0xbb,0xcc, 0xdd] && (type == '3') || (type == '2' && max_priority_fee_per_gas > 21000000000)",
+		// max_priority_fee_per_gas used without the type, but it's || with the type
+		"from in [0xaa, 0xbb,0xcc, 0xdd] && (type == '3') || (max_priority_fee_per_gas > 21000000000)",
+		// gas_price used without the type, but it's || with the type
+		"from in [0xaa, 0xbb,0xcc, 0xdd] && (gas_price > 21000000000) || (type == '2' && max_priority_fee_per_gas > 21000000000)",
+		// max_priority_fee_per_gas used with the type, but it's || with the type
+		"from in [0xaa, 0xbb,0xcc, 0xdd] && (type == '0' && gas_price > 21000000000) || (max_priority_fee_per_gas > 21000000000)",
 	}
 
-	for _, invalidFilters := range invalidPythonFilters {
-		_, _, err := parseFilter(invalidFilters)
-		assert.NotNil(t, err)
+	goFiltersValues = []string{
+		"({value} <= 10000)",
+		"({value} <= 10000)",
+		"({value} != 10000)",
+		"({value} <= 10000)",
+		"({value} >= 10000)",
+		"({value} != 10000)",
+		"({value} > 1000000000000000000) and ({value} < 4000000000000000000)",
+		"((({value} > 1000000000000000000)) and ({value} < 4000000000000000000))",
+		"((({value} > 1000000000000000000)) and ({value} < 4000000000000000000))",
+		"({value} > 1000000000000000000) AND ({value} < 2000000000000000000)",
+		"({value} > 1000000000000000000)AND({value} < 2000000000000000000)",
+		"({to} == '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2')",
+		"({from} in ['0x6671799F031059e017bBc9E9FCbE6721cc2Bd798','0x09eDBC6ed492C6D4274810E257A690a11d71ce43'])",
+		"({gas_price} > 183000000000)",
+		"({gas_price} > 100000000000)",
+		"({method_id} != '0xaa')",
+		"({method_id} == '0xa9059cbb')",
+		"({method_id} == '0xa9059cbb')",
+		"({chain_id} == 1)",
+		"({max_fee_per_gas} == 1)",
+		"({max_priority_fee_per_gas} == 1)",
+		"({from} in ['0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f'])",
+		"({from} in ['0xaa','0xbb','0xcc','0xdd'])",
+		"({to} in ['0xaa','0xbb','0xcc','0xdd'])",
+		"({method_id} in ['0xaa','0xbb','0xcc','0xdd'])",
+		"({method_id} in ['0xaa','0xbb','0xcc','0xdd'])",
+		"({method_id} IN ['0xaa','0xbb','0xcc','0xdd'])",
+		"({from} in ['0xaa','0xbb','0xcc','0xdd']) and ({value} < 4000000000000000000) and ({to} in ['0xaa','0xbb','0xcc','0xdd'])",
+		"({from} in ['0xaa','0xbb','0xcc','0xdd']) and ({to} in ['0xaa','0xbb','0xcc','0xdd'])",
+		"({from} in ['0xaa','0xbb','0xcc','0xdd']) and ({to} in ['0xaa','0xbb','0xcc','0xdd'])",
+		"({from} == '0xaa') and ((({value} > 1000) or ({value} < 500)) and ({method_id} in ['0xaa','0xbb','0xcc']) and (({to} == '0xabb') or ({gas_price} == 5)))",
+		"({from} == '0xaa') and ((((({value} > 1000) or ({value} < 500)) and ({method_id} in ['0xaa','0xbb','0xcc']) and (({to} == '0xabb') or ({gas_price} == 5)))))",
+		"({from} == '0xaa') and ({value} > 1000) or ({value} < 500) and (({method_id} in ['0xaa','0xbb','0xcc']) and (({to} == '0xabb') or ({gas_price} == 5)))",
+		"({to} == '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2') and ((({value} > 1000000000000000000) and ({value} < 4000000000000000000)) or ({from} in ['0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f','0x77e2b72689fc954c16b37fbcf1b0b1d395a0e288']))",
+		"({method_id} == '0xa9059cbb') and ({from} in ['0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f','0x77e2b72689fc954c16b37fbcf1b0b1d395a0e288']) and ({gas_price} > 100000000000)",
+		"({method_id} == '0xa9059cbb') and ({from} in ['0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f','0x77e2b72689fc954c16b37fbcf1b0b1d395a0e288','0x77e2b7268911954c16b37fbcf1b0b1d395a0e288']) and ({gas_price} > 100000000000)",
+		"({method_id} == '0xa9059cbb') and ({from} in ['0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f']) and ({gas_price} > 100000000000)",
+	}
+
+	invalidFilters = []string{
+		"from",        // empty filter
+		"value in []", // empty array
+		"from in [0xaa, 0xbb,0xcc, 0xdd] and value < 4000000000000000000 and to in []", // empty array
+		"from value",
+		"hello = 1000",
+		"(from = (0xaa",
+		"(from = 0xaa",
+		"from = (0xaa and to = ) 1000",
+		"from = (0xaa and to = ) 1000)",
+		"value ! =  10000",
+		"value > = 10000",
+		"value < = 10000",
+		"value < = 10000 and gas_price != 1500",
+		"gas_price != 1500 and value < = 10000",
+		"gas_price => 100000000000",
+		"gas_price =< 100000000000",
+		"gas_price != 1500 and gas_price =< 100000000000",
+		"method_id = (a9059cbb and from in ([0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f,0x77e2b72689fc954c16b37fbcf1b0b1d395a0e288] and gas_price > 100000000000)",
+		"method_id != a9059cbb and from in [0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f,   0x77e2b72689fc954c16b37fbcf1b0b1d395a0e288,0x77e2b7268911954c16b37fbcf1b0b1d395a0e288] and gas_price => 100000000000",
+		// gas_price used with invalid type
+		"from in [0xaa, 0xbb,0xcc, 0xdd] && (type == '3' && gas_price > 21000000000) || (type == '2' && max_priority_fee_per_gas > 21000000000)",
+		// max_priority_fee_per_gas used with invalid type
+		"from in [0xaa, 0xbb,0xcc, 0xdd] && (type == '0' && gas_price > 21000000000) && (max_priority_fee_per_gas > 21000000000)",
+	}
+)
+
+func TestValidateFilters(t *testing.T) {
+	log.SetLevel(log.ErrorLevel)
+
+	for _, filter := range pythonFilters {
+		_, err := NewDefaultExpression(filter, true)
+		require.NoError(t, err, filter)
+	}
+	for _, filter := range goFiltersValues {
+		_, err := NewDefaultExpression(filter, true)
+		require.NoError(t, err, filter)
+	}
+	for _, filter := range invalidFilters {
+		_, err := NewDefaultExpression(filter, true)
+		require.Error(t, err, "expected error for filter: %s", filter)
 	}
 }
 
-func TestIsCorrectGasPriceFilters(t *testing.T) {
-	tests := []struct {
-		name     string
-		filters  []string
+func TestNoFilter(t *testing.T) {
+	log.SetLevel(log.ErrorLevel)
+
+	filter := "from = 0xaa"
+
+	expression, err := NewDefaultExpression(filter, true)
+	require.NoError(t, err, "failed to create and validate filter: %s", filter)
+
+	_, err = expression.Evaluate(nil)
+	require.Error(t, err)
+}
+
+func TestFilterTransaction(t *testing.T) {
+	log.SetLevel(log.ErrorLevel)
+
+	hashString := fixtures.LegacyTransactionHash
+	txString := fixtures.LegacyTransaction
+
+	hash, err := types.NewSHA256HashFromString(hashString)
+	require.NoError(t, err)
+
+	content, err := hex.DecodeString(txString)
+	require.NoError(t, err)
+
+	tx := types.NewBxTransaction(hash, bxtypes.NetworkNum(5), types.TFPaidTx, time.Now())
+	tx.SetContent(content)
+
+	blockchainTx, err := tx.MakeAndSetEthTransaction(types.EmptySender)
+	require.NoError(t, err)
+
+	filters := blockchainTx.Filters()
+
+	var testCases = []struct {
+		filter   string
 		expected bool
 	}{
 		{
-			name:     "gas_price and max_fee_per_gas exist, txType does not",
-			filters:  []string{"gas_price", "max_fee_per_gas"},
+			filter:   "from = 0xaa",
+			expected: false, // 'from' is not allowed in this context
+		},
+		{
+			filter:   "to = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+			expected: false, // 'to' does not match the transaction's 'to' field
+		},
+		{
+			filter:   "value > 100000000000",
+			expected: true, // 'value' matches the transaction's value
+		},
+		{
+			filter:   "type == '0' and gas_price > 21000000000",
+			expected: true, // 'type' and 'gas_price' match the transaction's filters
+		},
+		{
+			filter:   "value < 100000000000",
+			expected: false, // 'value' does not match the transaction's value
+		},
+		{
+			filter:   "({to} IN ['0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D','0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'])",
+			expected: true, // case-insensitive match for 'to' address
+		},
+		{
+			filter:   "({to} IN ['0x7a250d5630b4cf539739df2c5dacb4c659f2488d','0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'])",
+			expected: true, // case-insensitive match for 'to' address
+		},
+		{
+			filter:   "to IN [0x7a250d5630b4cf539739df2c5dacb4c659f2488d,0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48]",
+			expected: true, // case-insensitive match for 'to' address, non-go syntax
+		},
+		{
+			filter:   "to IN [0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48,0x8fdc5df186c58cdc2c22948beee12b1ae1406c6f]",
 			expected: false,
-		},
-		{
-			name:     "gas_price and max_priority_fee_per_gas exist, txType does not",
-			filters:  []string{"gas_price", "max_priority_fee_per_gas"},
-			expected: false,
-		},
-		{
-			name:     "gas_price and max_priority_fee_per_gas exist, txType does not",
-			filters:  []string{"gas_price", "max_priority_fee_per_gas", "type"},
-			expected: true,
-		},
-		{
-			name:     "gas_price exists, max_fee_per_gas and txType do not",
-			filters:  []string{"gas_price"},
-			expected: true,
-		},
-		{
-			name:     "gas_price exists, max_priority_fee_per_gas and txType do not",
-			filters:  []string{"gas_price"},
-			expected: true,
-		},
-		{
-			name:     "gas_price and txType exist, max_fee_per_gas does not",
-			filters:  []string{"gas_price", "type"},
-			expected: true,
-		},
-		{
-			name:     "gas_price and txType exist, max_priority_fee_per_gas does not",
-			filters:  []string{"gas_price", "type"},
-			expected: true,
-		},
-		{
-			name:     "no gas price filters",
-			filters:  []string{"type"},
-			expected: true,
-		},
-		{
-			name:     "empty filters",
-			filters:  []string{},
-			expected: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := IsCorrectGasPriceFilters(tt.filters); got != tt.expected {
-				t.Errorf("IsCorrectGasPriceFilters() = %v, expected %v", got, tt.expected)
-			}
-		})
-	}
-}
-
-func TestIsFiltersSupportedByTxType(t *testing.T) {
-	tests := []struct {
-		name     string
-		txType   uint8
-		filters  []string
-		expected bool
-	}{
-		{
-			name:     "DynamicFeeTxType with gas_price filter",
-			txType:   ethtypes.DynamicFeeTxType,
-			filters:  []string{"gas_price"},
-			expected: false,
-		},
-		{
-			name:     "DynamicFeeTxType with gas_price and max_fee_per_gas filters",
-			txType:   ethtypes.DynamicFeeTxType,
-			filters:  []string{"gas_price", "max_fee_per_gas"},
-			expected: true,
-		},
-		{
-			name:     "DynamicFeeTxType with gas_price and max_priority_fee_per_gas filters",
-			txType:   ethtypes.DynamicFeeTxType,
-			filters:  []string{"gas_price", "max_priority_fee_per_gas"},
-			expected: true,
-		},
-		{
-			name:     "DynamicFeeTxType with gas_price and max_priority_fee_per_gas filters",
-			txType:   ethtypes.DynamicFeeTxType,
-			filters:  []string{"gas_price", "max_fee_per_gas", "max_priority_fee_per_gas"},
-			expected: true,
-		},
-		{
-			name:     "BlobTxType with gas_price filter",
-			txType:   ethtypes.BlobTxType,
-			filters:  []string{"gas_price"},
-			expected: false,
-		},
-		{
-			name:     "BlobTxType with gas_price and max_fee_per_gas filters",
-			txType:   ethtypes.BlobTxType,
-			filters:  []string{"gas_price", "max_fee_per_gas"},
-			expected: true,
-		},
-		{
-			name:     "BlobTxType with gas_price and max_priority_fee_per_gas filters",
-			txType:   ethtypes.BlobTxType,
-			filters:  []string{"gas_price", "max_priority_fee_per_gas"},
-			expected: true,
-		},
-		{
-			name:     "BlobTxType with gas_price and max_priority_fee_per_gas filters",
-			txType:   ethtypes.BlobTxType,
-			filters:  []string{"gas_price", "max_fee_per_gas", "max_priority_fee_per_gas"},
-			expected: true,
-		},
-		{
-			name:     "Non-DynamicFeeTxType with max_fee_per_gas filter",
-			txType:   ethtypes.LegacyTxType,
-			filters:  []string{"max_fee_per_gas"},
-			expected: false,
-		},
-		{
-			name:     "Non-DynamicFeeTxType with max_priority_fee_per_gas filter",
-			txType:   ethtypes.LegacyTxType,
-			filters:  []string{"max_priority_fee_per_gas"},
-			expected: false,
-		},
-		{
-			name:     "Non-DynamicFeeTxType with no filters",
-			txType:   ethtypes.LegacyTxType,
-			filters:  []string{},
-			expected: true,
-		},
-		{
-			name:     "Non-DynamicFeeTxType with gasPrice",
-			txType:   ethtypes.LegacyTxType,
-			filters:  []string{"gas_price"},
-			expected: true,
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := IsFiltersSupportedByTxType(tt.txType, tt.filters); got != tt.expected {
-				t.Errorf("IsFiltersSupportedByTxType() = %v, expected %v", got, tt.expected)
-			}
-		})
+	for _, tc := range testCases {
+		expression, err := NewDefaultExpression(tc.filter, true)
+		require.NoError(t, err, "failed to create and validate filter: %s", tc.filter)
+
+		result, err := expression.Evaluate(filters)
+		require.NoError(t, err, "failed to evaluate expression: %s", tc.filter)
+		assert.Equal(t, tc.expected, result)
 	}
 }

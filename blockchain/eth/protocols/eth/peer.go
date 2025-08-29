@@ -626,7 +626,14 @@ func (p *Peer) send(msgCode uint64, data interface{}) error {
 	if p.IsDisconnected() {
 		return nil
 	}
-	return p2p.Send(p.rw, msgCode, data)
+
+	err := p2p.Send(p.rw, msgCode, data)
+	if err != nil && errors.Is(err, p2p.ErrShuttingDown) {
+		p.log.Warn("peer is shutting down, disconnecting")
+		p.Disconnect(p2p.DiscQuitting)
+	}
+
+	return err
 }
 
 // Handshake executes the Ethereum protocol Handshake. Unlike Geth, the gateway waits for the peer status message before sending its own, to replicate some peer status fields.

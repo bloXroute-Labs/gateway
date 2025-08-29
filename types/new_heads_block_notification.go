@@ -55,7 +55,7 @@ func (newHeadsBlock *NewHeadsBlock) WithFields(fields []string) Notification {
 }
 
 // Filters converts filters as field value map
-func (newHeadsBlock *NewHeadsBlock) Filters(filters []string) map[string]interface{} {
+func (newHeadsBlock *NewHeadsBlock) Filters() map[string]interface{} {
 	return nil
 }
 

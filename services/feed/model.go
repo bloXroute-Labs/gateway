@@ -1,10 +1,10 @@
 package feed
 
 import (
+	"io"
 	"time"
 
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
-	"github.com/sourcegraph/jsonrpc2"
 
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
@@ -16,7 +16,7 @@ type ClientSubscription struct {
 	feed               chan types.Notification
 	feedType           types.FeedType
 	feedConnectionType types.FeedConnectionType
-	connection         *jsonrpc2.Conn
+	connection         io.Closer
 	network            bxtypes.NetworkNum
 	timeOpenedFeed     time.Time
 	messagesSent       uint64

@@ -12,7 +12,6 @@ import (
 
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/gorilla/websocket"
-	"github.com/sourcegraph/jsonrpc2"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
@@ -256,8 +255,7 @@ func (s *Server) wsHandler(w http.ResponseWriter, r *http.Request) {
 		oFACList:                 s.oFACList,
 	}
 
-	asyncHandler := jsonrpc2.AsyncHandler(handler)
-	_ = jsonrpc2.NewConn(r.Context(), newFastJSONStream(connection), asyncHandler)
+	_ = newConn(r.Context(), connection, handler)
 }
 
 func (s *Server) errorWithDelay(w http.ResponseWriter, r *http.Request, msg string) {
@@ -282,12 +280,12 @@ func (s *Server) errorWithDelay(w http.ResponseWriter, r *http.Request, msg stri
 }
 
 // sendErrorMsg formats and sends an RPC error message back to the client
-func sendErrorMsg(ctx context.Context, code jsonrpc.RPCErrorCode, data string, conn *jsonrpc2.Conn, reqID jsonrpc2.ID) {
-	rpcError := &jsonrpc2.Error{
+func sendErrorMsg(ctx context.Context, code jsonrpc.RPCErrorCode, data string, conn *conn, reqID ID) {
+	rpcError := Error{
 		Code:    int64(code),
 		Message: jsonrpc.ErrorMsg[code],
+		Data:    data,
 	}
-	rpcError.SetError(data)
 	err := conn.ReplyWithError(ctx, reqID, rpcError)
 	if err != nil {
 		// TODO: move this to caller and add identifying information

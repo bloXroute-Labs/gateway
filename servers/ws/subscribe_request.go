@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sourcegraph/jsonrpc2"
-	"github.com/zhouzhuojie/conditions"
-
 	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
 
 	"github.com/bloXroute-Labs/gateway/v2"
@@ -32,7 +29,7 @@ func init() {
 	}
 }
 
-func (h *handlerObj) createClientReq(req *jsonrpc2.Request, feed types.FeedType, rpcParams json.RawMessage) (*ClientReq, error) {
+func (h *handlerObj) createClientReq(req Request, feed types.FeedType, rpcParams json.RawMessage) (*ClientReq, error) {
 	request := subscriptionRequest{
 		feed: feed,
 	}
@@ -40,6 +37,12 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request, feed types.FeedType,
 	err := json.Unmarshal(rpcParams, &request.options)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal options: %w", err)
+	}
+
+	// Set default value for ParsedTxs if not provided
+	if request.options.ParsedTxs == nil {
+		defaultParsedTxs := true
+		request.options.ParsedTxs = &defaultParsedTxs
 	}
 	if request.options.Include == nil {
 		h.log.Debugf("invalid param from request id: %v. method: %v. params: %s. remote address: %v account id: %v.",
@@ -54,9 +57,9 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request, feed types.FeedType,
 
 	request.options.Include = requestedFields
 
-	var expr conditions.Expr
+	var expr *filter.Expression
 	if request.options.Filters != "" {
-		expr, err = filter.ValidateFilters(request.options.Filters, h.txFromFieldIncludable)
+		expr, err = filter.NewDefaultExpression(request.options.Filters, h.txFromFieldIncludable)
 		if err != nil {
 			h.log.Debugf("error when creating filters. request id: %v. method: %v. params: %s. remote address: %v account id: %v error - %v",
 				req.ID, req.Method, *req.Params, h.remoteAddress, h.connectionAccount.AccountID, err.Error())
@@ -84,7 +87,7 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request, feed types.FeedType,
 		feedStreaming = h.connectionAccount.TransactionReceiptFeed
 	}
 
-	err = h.validateFeed(request.feed, feedStreaming, request.options.Include, filters)
+	err = h.validateFeed(request.feed, feedStreaming, request.options.Include, len(filters) > 0)
 	if err != nil {
 		return nil, err
 	}
@@ -103,15 +106,16 @@ func (h *handlerObj) createClientReq(req *jsonrpc2.Request, feed types.FeedType,
 	}
 
 	return &ClientReq{
-		Includes: request.options.Include,
-		Feed:     request.feed,
-		Expr:     expr,
-		calls:    &calls,
-		MultiTxs: request.options.MultiTxs,
+		Includes:  request.options.Include,
+		Feed:      request.feed,
+		Expr:      expr,
+		calls:     &calls,
+		MultiTxs:  request.options.MultiTxs,
+		ParsedTxs: *request.options.ParsedTxs,
 	}, nil
 }
 
-func (h *handlerObj) parseSubscriptionRequest(req *jsonrpc2.Request) (types.FeedType, json.RawMessage, error) {
+func (h *handlerObj) parseSubscriptionRequest(req Request) (types.FeedType, json.RawMessage, error) {
 	if req.Params == nil {
 		return "", nil, errors.New(errParamsValueIsMissing)
 	}
@@ -149,7 +153,7 @@ func (h *handlerObj) parseSubscriptionRequest(req *jsonrpc2.Request) (types.Feed
 	return feed, rpcParams[1], nil
 }
 
-func (h *handlerObj) validateFeed(feedName types.FeedType, feedStreaming sdnmessage.BDNFeedService, includes, filters []string) error {
+func (h *handlerObj) validateFeed(feedName types.FeedType, feedStreaming sdnmessage.BDNFeedService, includes []string, hasFilters bool) error {
 	expireDateTime, err := time.Parse(bxgateway.TimeDateLayoutISO, feedStreaming.ExpireDate)
 	if err != nil {
 		return fmt.Errorf("failed to parse expire date %v: %w", feedStreaming.ExpireDate, err)
@@ -165,7 +169,7 @@ func (h *handlerObj) validateFeed(feedName types.FeedType, feedStreaming sdnmess
 			return fmt.Errorf("including %v field in %v is not allowed", include, feedName)
 		}
 	}
-	if !feedStreaming.Feed.AllowFiltering && len(filters) > 0 {
+	if !feedStreaming.Feed.AllowFiltering && hasFilters {
 		return fmt.Errorf("filtering in %v is not allowed", feedName)
 	}
 

@@ -57,10 +57,6 @@ func ValidateIncludeParam(feed types.FeedType, include []string, txFromFieldIncl
 			requestedFields = validBeaconBlockParams
 		case types.NewTxsFeed, types.PendingTxsFeed:
 			requestedFields = defaultTxParams
-
-			if txFromFieldIncludable {
-				requestedFields = append(requestedFields, txFromField)
-			}
 		case types.OnBlockFeed:
 			requestedFields = validOnBlockParams
 		case types.TxReceiptsFeed:

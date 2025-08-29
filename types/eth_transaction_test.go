@@ -97,14 +97,7 @@ func TestLegacyTransaction(t *testing.T) {
 	assert.False(t, test.Contains(jsonMap, "chainID"))
 
 	// check Filters
-	filteredTx := ethTx.Filters([]string{
-		"type",
-		"from",
-		"chain_id",
-		"gas_price",
-		"max_fee_per_gas",
-		"max_priority_fee_per_gas",
-	})
+	filteredTx := ethTx.Filters()
 	assert.NoError(t, err)
 	assert.True(t, test.Contains(filteredTx, "type"))
 	assert.Equal(t, fixtures.LegacyFromAddress, filteredTx["from"])
@@ -153,14 +146,7 @@ func TestAccessListTransaction(t *testing.T) {
 	assert.False(t, test.Contains(jsonMap, "maxPriorityFeePerGas"))
 
 	// check Filters
-	filteredTx := ethTx.Filters([]string{
-		"from",
-		"chain_id",
-		"gas_price",
-		"max_fee_per_gas",
-		"max_priority_fee_per_gas",
-		"type",
-	})
+	filteredTx := ethTx.Filters()
 	assert.NoError(t, err)
 	assert.Equal(t, "1", filteredTx["type"])
 	assert.Equal(t, fixtures.AccessListFromAddress, filteredTx["from"])
@@ -224,13 +210,7 @@ func TestDynamicFeeTransaction(t *testing.T) {
 	assert.Equal(t, nil, jsonMapWithoutType["gasPrice"])
 
 	// check Filters
-	filteredTx := ethTx.Filters([]string{
-		"from",
-		"chain_id",
-		"gas_price",
-		"max_fee_per_gas",
-		"max_priority_fee_per_gas",
-	})
+	filteredTx := ethTx.Filters()
 	assert.NoError(t, err)
 	assert.Equal(t, fixtures.DynamicFeeFromAddress, filteredTx["from"])
 	assert.Equal(t, fixtures.DynamicFeeChainID, filteredTx["chain_id"])
@@ -242,7 +222,7 @@ func TestContractCreationTx(t *testing.T) {
 	hash, ethTx, _, err := ethTransaction(fixtures.ContractCreationTxHash, fixtures.ContractCreationTx)
 	assert.NoError(t, err)
 	ethTx.Fields([]string{})
-	filters := ethTx.Filters([]string{"to"})
+	filters := ethTx.Filters()
 	assert.Equal(t, "0x0", filters["to"])
 
 	assert.Equal(t, "0x"+hash.String(), ethTx.fields["hash"])

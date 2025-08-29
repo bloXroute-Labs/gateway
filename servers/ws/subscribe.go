@@ -10,22 +10,19 @@ import (
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/gorilla/websocket"
-	"github.com/sourcegraph/jsonrpc2"
-	"github.com/zhouzhuojie/conditions"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler"
-	"github.com/bloXroute-Labs/gateway/v2/servers/handler/filter"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 var errReadingNotification = errors.New("error when reading new notification")
 
-func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
+func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *conn, req Request) {
 	if req.Params == nil {
 		sendErrorMsg(ctx, jsonrpc.InvalidParams, errParamsValueIsMissing, conn, req.ID)
 		return
@@ -102,8 +99,8 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *jsonrpc2.Conn
 	h.handleRPCSubscribeNotify(ctx, conn, req.ID, sub, subscriptionID, feed, request)
 }
 
-func (h *handlerObj) handleRPCSubscribeNotify(ctx context.Context, conn *jsonrpc2.Conn,
-	reqID jsonrpc2.ID, sub *feed.ClientSubscriptionHandlingInfo, subscriptionID string, feedName types.FeedType, request *ClientReq) {
+func (h *handlerObj) handleRPCSubscribeNotify(ctx context.Context, conn *conn,
+	reqID ID, sub *feed.ClientSubscriptionHandlingInfo, subscriptionID string, feedName types.FeedType, request *ClientReq) {
 
 	for {
 		select {
@@ -177,7 +174,7 @@ func (h *handlerObj) createClientInfoAndRequestOpts(request *ClientReq) (types.C
 }
 
 // sendTxNotification - build a response according to client request and notify client
-func (h *handlerObj) sendTxNotification(ctx context.Context, subscriptionID string, clientReq *ClientReq, conn *jsonrpc2.Conn, tx *types.NewTransactionNotification) error {
+func (h *handlerObj) sendTxNotification(ctx context.Context, subscriptionID string, clientReq *ClientReq, conn *conn, tx *types.NewTransactionNotification) error {
 	result := filterAndIncludeTx(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
 	if result == nil {
 		return nil
@@ -189,7 +186,7 @@ func (h *handlerObj) sendTxNotification(ctx context.Context, subscriptionID stri
 
 	err := conn.Notify(ctx, "subscribe", response)
 	if err != nil {
-		if !errors.Is(err, jsonrpc2.ErrClosed) {
+		if !errors.Is(err, ErrClosed) {
 			h.log.Errorf("error notifying subscriptionID %v: %v", subscriptionID, err)
 		}
 		return err
@@ -198,7 +195,7 @@ func (h *handlerObj) sendTxNotification(ctx context.Context, subscriptionID stri
 	return nil
 }
 
-func (h *handlerObj) sendTxReceiptNotification(ctx context.Context, subscriptionID string, clientReq *ClientReq, conn *jsonrpc2.Conn, notification types.Notification) error {
+func (h *handlerObj) sendTxReceiptNotification(ctx context.Context, subscriptionID string, clientReq *ClientReq, conn *conn, notification types.Notification) error {
 	response := txReceiptResponse{
 		Subscription: subscriptionID,
 	}
@@ -207,7 +204,7 @@ func (h *handlerObj) sendTxReceiptNotification(ctx context.Context, subscription
 		response.Result = receipt
 		err := conn.Notify(ctx, "subscribe", response)
 		if err != nil {
-			if !errors.Is(err, jsonrpc2.ErrClosed) {
+			if !errors.Is(err, ErrClosed) {
 				h.log.Errorf("error reply to subscriptionID %v: %v", subscriptionID, err.Error())
 			}
 			return err
@@ -217,7 +214,7 @@ func (h *handlerObj) sendTxReceiptNotification(ctx context.Context, subscription
 	return nil
 }
 
-func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan types.Notification, subscriptionID string, clientReq *ClientReq, conn *jsonrpc2.Conn, req *jsonrpc2.Request, feedName types.FeedType) error {
+func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan types.Notification, subscriptionID string, clientReq *ClientReq, conn *conn, req Request, feedName types.FeedType) error {
 	for {
 		select {
 		case <-conn.DisconnectNotify():
@@ -282,7 +279,7 @@ func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan types.
 			if len(multiTxsResponse.Result) > 0 {
 				err := conn.Notify(ctx, "subscribe", multiTxsResponse)
 				if err != nil {
-					if !errors.Is(err, jsonrpc2.ErrClosed) {
+					if !errors.Is(err, ErrClosed) {
 						h.log.Errorf("error notifying subscriptionID %v: %v", subscriptionID, err)
 					}
 					return err
@@ -305,18 +302,10 @@ func shouldSendTx(clientReq *ClientReq, tx *types.NewTransactionNotification, re
 		return true
 	}
 
-	filters := clientReq.Expr.Args()
-	txFilters := tx.Filters(filters)
+	txFilters := tx.Filters()
 
-	// should be done after tx.Filters() to avoid nil pointer dereference
-	txType := tx.EthTransaction.Type()
-
-	if !filter.IsFiltersSupportedByTxType(txType, filters) {
-		return false
-	}
-
-	// Evaluate if we should send the tx
-	shouldSend, err := conditions.Evaluate(clientReq.Expr, txFilters)
+	// evaluate if we should send the tx
+	shouldSend, err := clientReq.Expr.Evaluate(txFilters)
 	if err != nil {
 		log.Errorf("error evaluate Filters. Feed: %v. filters: %s. remote address: %v. account id: %v error - %v tx: %v",
 			clientReq.Feed, clientReq.Expr, remoteAddress, accountID, err.Error(), txFilters)

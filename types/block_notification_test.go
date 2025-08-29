@@ -2,14 +2,16 @@ package types
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 
+	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestEthBlock(t *testing.T) {
-	block := EthBlockNotification{}
+	block := EthBlockNotification{txsMu: &sync.RWMutex{}, rawTxsMu: &sync.RWMutex{}, block: &bxethcommon.Block{}}
 	_ = block.WithFields([]string{"hash", "header", "transactions", "uncles"})
 	// TODO add test checking the header values
 }

@@ -181,9 +181,15 @@ func (h *ethHandler) processBlockAnnouncement(peer *eth2.Peer, newBlocks eth.New
 		if !h.chain.HasBlock(block.Hash) {
 			p, ok := h.peers.get(peer.ID())
 			if ok && p.bscExt != nil && p.bscExt.Version() == bsc.Bsc2 {
-				go h.requestBlock(p, block.Hash, block.Number)
+				if err := h.requestBlock(p, block.Hash, block.Number); err != nil {
+					peer.Log().Errorf("error requesting block %v (height %v): %v", block.Hash, block.Number, err)
+					return err
+				}
 			} else {
-				go h.requestHeadersAndBodies(peer, block.Hash)
+				if err := h.requestHeadersAndBodies(peer, block.Hash); err != nil {
+					peer.Log().Errorf("error requesting block %v (height %v): %v", block.Hash, block.Number, err)
+					return err
+				}
 			}
 		} else {
 			h.confirmBlock(block.Hash, peer.IPEndpoint())
@@ -193,43 +199,32 @@ func (h *ethHandler) processBlockAnnouncement(peer *eth2.Peer, newBlocks eth.New
 	return nil
 }
 
-func (h *ethHandler) requestHeadersAndBodies(peer *eth2.Peer, blockHash common.Hash) {
+func (h *ethHandler) requestHeadersAndBodies(peer *eth2.Peer, blockHash common.Hash) error {
 	headersCh := make(chan eth.Packet)
 	bodiesCh := make(chan eth.Packet)
 
 	err := peer.RequestBlock(blockHash, headersCh, bodiesCh)
 	if err != nil {
-		peer.Log().Errorf("could not request block %v: %v", blockHash.String(), err)
-
 		h.disconnectPeer(peer.ID())
-
-		return
+		return fmt.Errorf("could not request block %v: %v", blockHash.String(), err)
 	}
 
-	err = h.awaitBlockResponse(peer, blockHash, headersCh, bodiesCh)
-	if err != nil {
-		h.disconnectPeer(peer.ID())
-
-		return
-	}
+	go h.awaitBlockResponse(peer, blockHash, headersCh, bodiesCh)
+	return nil
 }
 
-func (h *ethHandler) requestBlock(peer *ethPeer, blockHash common.Hash, blockHeight uint64) {
+func (h *ethHandler) requestBlock(peer *ethPeer, blockHash common.Hash, blockHeight uint64) error {
 	peer.Log().Debugf("requesting block %v (height %v) from BSC extension", blockHash.String(), blockHeight)
 
 	res, err := peer.bscExt.RequestBlocksByRange(blockHeight, blockHash, 1)
 	if err != nil {
-		peer.Log().Errorf("could not request block %v: %v", blockHash, err)
-
 		h.disconnectPeer(peer.ID())
 
-		return
+		return fmt.Errorf("could not request block %v: %v", blockHash.String(), err)
 	}
 
 	if len(res) != 1 {
-		peer.Log().Errorf("expected 1 block in response to request for block %v, got %d", blockHash, len(res))
-
-		return
+		return fmt.Errorf("could not request block %v: got %d blocks", blockHash.String(), len(res))
 	}
 
 	header := res[0].Header
@@ -241,8 +236,9 @@ func (h *ethHandler) requestBlock(peer *ethPeer, blockHash common.Hash, blockHei
 	}
 
 	if err = h.processBlockComponents(peer.Peer, header, body); err != nil {
-		log.Errorf("error processing block components for hash %v: %v", blockHash.String(), err)
+		return fmt.Errorf("could not process block components for hash %v: %v", blockHash.String(), err)
 	}
+	return nil
 }
 
 func (h *ethHandler) processBlockHeaders(peer *eth2.Peer, blockHeaders eth.BlockHeadersRequest) error {
@@ -341,13 +337,13 @@ func (h *ethHandler) broadcastBlock(block *bxcommoneth.Block, totalDifficulty *b
 	}
 }
 
-func (h *ethHandler) awaitBlockResponse(peer *eth2.Peer, blockHash common.Hash, headersCh chan eth.Packet, bodiesCh chan eth.Packet) error {
+func (h *ethHandler) awaitBlockResponse(peer *eth2.Peer, blockHash common.Hash, headersCh chan eth.Packet, bodiesCh chan eth.Packet) {
 	startTime := time.Now()
 	header, body, err := h.fetchBlockResponse(peer, blockHash, headersCh, bodiesCh)
 	if err != nil {
 		if peer.IsDisconnected() {
 			peer.Log().Tracef("block %v response timed out for disconnected peer", blockHash.String())
-			return nil
+			return
 		}
 
 		switch {
@@ -358,7 +354,9 @@ func (h *ethHandler) awaitBlockResponse(peer *eth2.Peer, blockHash common.Hash, 
 			peer.Log().Errorf("could not fetch block header and body for block %v: %v", blockHash.String(), err)
 		}
 
-		return err
+		peer.Disconnect(p2p.DiscUselessPeer)
+		h.disconnectPeer(peer.ID())
+		return
 	}
 
 	elapsedTime := time.Since(startTime)
@@ -366,11 +364,7 @@ func (h *ethHandler) awaitBlockResponse(peer *eth2.Peer, blockHash common.Hash, 
 
 	if err = h.processBlockComponents(peer, header, body); err != nil {
 		log.Errorf("error processing block components for hash %v: %v", blockHash.String(), err)
-
-		return err
 	}
-
-	return nil
 }
 
 func (h *ethHandler) fetchBlockResponse(peer *eth2.Peer, blockHash common.Hash, headersCh, bodiesCh chan eth.Packet) (*ethtypes.Header, *eth2.BlockBody, error) {

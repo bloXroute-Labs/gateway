@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
 
-	"github.com/sourcegraph/jsonrpc2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
@@ -57,7 +57,7 @@ type Connector interface {
 type feedManager interface {
 	Notify(notification types.Notification)
 	GetGrpcSubscriptionReply() []feed.ClientSubscriptionFullInfo
-	Subscribe(feedName types.FeedType, feedConnectionType types.FeedConnectionType, conn *jsonrpc2.Conn, ci types.ClientInfo, ro types.ReqOptions, ethSubscribe bool) (*feed.ClientSubscriptionHandlingInfo, error)
+	Subscribe(feedName types.FeedType, feedConnectionType types.FeedConnectionType, conn io.Closer, ci types.ClientInfo, ro types.ReqOptions, ethSubscribe bool) (*feed.ClientSubscriptionHandlingInfo, error)
 	Unsubscribe(subscriptionID string, closeClientConnection bool, errMsg string) error
 }
 

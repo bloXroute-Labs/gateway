@@ -7,7 +7,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/gorilla/websocket"
-	"github.com/sourcegraph/jsonrpc2"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
@@ -32,7 +31,7 @@ type EthSubscribeFeedResponse struct {
 	Result       interface{} `json:"result"`
 }
 
-func (h *handlerObj) handleRPCEthSubscribe(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request, ws blockchain.WSProvider, rpcParams []interface{}) {
+func (h *handlerObj) handleRPCEthSubscribe(ctx context.Context, conn *conn, req Request, ws blockchain.WSProvider, rpcParams []interface{}) {
 	if len(rpcParams) < 1 || len(rpcParams) > 2 {
 		err := fmt.Sprintf("unable to process %v RPC request: expected at least 1 param but no more than 2, got %d", jsonrpc.RPCEthSubscribe, len(rpcParams))
 		sendErrorMsg(ctx, jsonrpc.InvalidParams, err, conn, req.ID)
@@ -57,7 +56,7 @@ func (h *handlerObj) handleRPCEthSubscribe(ctx context.Context, conn *jsonrpc2.C
 	}
 }
 
-func (h *handlerObj) handleEthSubscribeNewPendingTxs(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request, ci types.ClientInfo) {
+func (h *handlerObj) handleEthSubscribeNewPendingTxs(ctx context.Context, conn *conn, req Request, ci types.ClientInfo) {
 	var feed types.FeedType
 	if h.pendingTxsSourceFromNode {
 		feed = types.PendingTxsFeed
@@ -126,7 +125,7 @@ func (h *handlerObj) handleEthSubscribeNewPendingTxs(ctx context.Context, conn *
 	}
 }
 
-func (h *handlerObj) handleEthSubscribeNewHeads(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request, ci types.ClientInfo) {
+func (h *handlerObj) handleEthSubscribeNewHeads(ctx context.Context, conn *conn, req Request, ci types.ClientInfo) {
 	request := &ClientReq{
 		Feed:     types.NewBlocksFeed,
 		Includes: []string{"header", "hash", "tx_contents.nonce"},
@@ -180,7 +179,7 @@ func (h *handlerObj) handleEthSubscribeNewHeads(ctx context.Context, conn *jsonr
 	}
 }
 
-func (h *handlerObj) handleEthSubscribeFeed(ctx context.Context, feedType string, conn *jsonrpc2.Conn, req *jsonrpc2.Request, ws blockchain.WSProvider, rpcParams []interface{}) {
+func (h *handlerObj) handleEthSubscribeFeed(ctx context.Context, feedType string, conn *conn, req Request, ws blockchain.WSProvider, rpcParams []interface{}) {
 	var err error
 	var sub *blockchain.Subscription
 	subscribeChan := make(chan interface{})
@@ -237,7 +236,7 @@ func (h *handlerObj) handleEthSubscribeFeed(ctx context.Context, feedType string
 }
 
 // sendTxNotificationEthFormat builds a response according to client request and notifies the client
-func (h *handlerObj) sendTxNotificationEthFormat(ctx context.Context, subscriptionID string, clientReq *ClientReq, conn *jsonrpc2.Conn, tx *types.NewTransactionNotification) error {
+func (h *handlerObj) sendTxNotificationEthFormat(ctx context.Context, subscriptionID string, clientReq *ClientReq, conn *conn, tx *types.NewTransactionNotification) error {
 	result := filterAndIncludeTx(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
 	if result == nil {
 		return nil
@@ -257,7 +256,7 @@ func (h *handlerObj) sendTxNotificationEthFormat(ctx context.Context, subscripti
 }
 
 // sendEthSubscribeNotification builds a response according to client request and notifies the client
-func (h *handlerObj) sendEthSubscribeNotification(ctx context.Context, subscriptionID string, conn *jsonrpc2.Conn, payload interface{}) error {
+func (h *handlerObj) sendEthSubscribeNotification(ctx context.Context, subscriptionID string, conn *conn, payload interface{}) error {
 	response := EthSubscribeFeedResponse{
 		Subscription: subscriptionID,
 		Result:       payload,

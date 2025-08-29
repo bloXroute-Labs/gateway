@@ -147,7 +147,7 @@ func (m *MEVBundle) SetHash() {
 	// 1 bytes frontrunning legacy support
 	buf = append(buf, []uint8{0}...)
 
-	// Convert map to a sorted slice of key-value pairs
+	// convert map to a sorted slice of key-value pairs
 	builders := make([]string, 0, len(m.MEVBuilders))
 	for k := range m.MEVBuilders {
 		builders = append(builders, k)
