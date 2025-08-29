@@ -2,9 +2,9 @@ package ws
 
 import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/zhouzhuojie/conditions"
 
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler"
+	"github.com/bloXroute-Labs/gateway/v2/servers/handler/filter"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
@@ -51,11 +51,12 @@ type txReceiptResponse struct {
 
 // ClientReq represent client request
 type ClientReq struct {
-	Includes []string
-	Feed     types.FeedType
-	Expr     conditions.Expr
-	calls    *map[string]*handler.RPCCall
-	MultiTxs bool
+	Includes  []string
+	Feed      types.FeedType
+	Expr      *filter.Expression
+	calls     *map[string]*handler.RPCCall
+	MultiTxs  bool
+	ParsedTxs bool
 }
 
 type subscriptionRequest struct {
@@ -69,6 +70,7 @@ type subscriptionOptions struct {
 	Filters    string              `json:"Filters"`
 	CallParams []map[string]string `json:"Call-Params"`
 	MultiTxs   bool                `json:"MultiTxs"`
+	ParsedTxs  *bool               `json:"ParsedTxs"`
 }
 
 type rpcPingResponse struct {

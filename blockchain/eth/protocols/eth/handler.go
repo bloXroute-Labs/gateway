@@ -2,6 +2,8 @@ package eth
 
 import (
 	"context"
+	"errors"
+	"io"
 	"time"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
@@ -82,7 +84,10 @@ func MakeProtocols(ctx context.Context, backend Backend, network uint64) []p2p.P
 func handle(backend Backend, peer *Peer) error {
 	for {
 		if err := ReadAndHandle(backend, peer); err != nil {
-			peer.Log().Errorf("message handling failed in `eth`: %v", err)
+			if !errors.Is(err, io.EOF) {
+				peer.Log().Errorf("message handling failed in `eth`: %v", err)
+			}
+
 			return err
 		}
 	}
@@ -169,7 +174,7 @@ func HandleMassage(backend Backend, msg p2p.Msg, peer *Peer) error {
 		return handler(backend, msg, peer)
 	}
 
-	log.Warnf("unknown message code %d from peer %s", msg.Code, peer.ID())
+	log.Warnf("unknown message code %d from peer %s", msg.Code, peer)
 
 	return nil
 }

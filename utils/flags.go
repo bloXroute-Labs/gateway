@@ -306,11 +306,6 @@ var (
 		Name:  "bsc-source-endpoint",
 		Usage: "websocket endpoint for BSC mainnet go-gateway",
 	}
-	CheckMevCredit = &cli.BoolFlag{
-		Name:  "check-mev-credit",
-		Usage: "enable this flag will forward the mev rpc request to cloud api",
-		Value: false,
-	}
 	TerminalTotalDifficulty = &cli.StringFlag{
 		Name:   "terminal-total-difficulty",
 		Usage:  "Overrides the terminal total difficulty settings of the blockchain network",

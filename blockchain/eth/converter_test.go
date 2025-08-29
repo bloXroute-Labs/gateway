@@ -79,7 +79,7 @@ func TestConverter_Block(t *testing.T) {
 
 	require.Equal(t, td, blockInfo.TotalDifficulty())
 
-	canonicFormat, err := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil, false)
+	canonicFormat, err := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil)
 	require.NoError(t, err)
 
 	for i, tx := range canonicFormat.Transactions {
@@ -123,7 +123,7 @@ func TestConverter_BSCBlockWithBlobs(t *testing.T) {
 
 	require.Equal(t, td, blockInfo.TotalDifficulty())
 
-	canonicFormat, err := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil, false)
+	canonicFormat, err := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil)
 	require.NoError(t, err)
 
 	for i, tx := range canonicFormat.Transactions {

@@ -968,7 +968,8 @@ type BlocksRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Includes []string               `protobuf:"bytes,1,rep,name=includes,proto3" json:"includes,omitempty"`
 	// Deprecated: Marked as deprecated in gateway.proto.
-	AuthHeader    string `protobuf:"bytes,2,opt,name=auth_header,json=authHeader,proto3" json:"auth_header,omitempty"`
+	AuthHeader    string                `protobuf:"bytes,2,opt,name=auth_header,json=authHeader,proto3" json:"auth_header,omitempty"`
+	ParsedTxs     *wrapperspb.BoolValue `protobuf:"bytes,3,opt,name=parsedTxs,proto3" json:"parsedTxs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1016,6 +1017,13 @@ func (x *BlocksRequest) GetAuthHeader() string {
 		return x.AuthHeader
 	}
 	return ""
+}
+
+func (x *BlocksRequest) GetParsedTxs() *wrapperspb.BoolValue {
+	if x != nil {
+		return x.ParsedTxs
+	}
+	return nil
 }
 
 type BlockHeader struct {
@@ -4774,11 +4782,12 @@ const file_gateway_proto_rawDesc = "" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12!\n" +
 	"\fstorage_keys\x18\x02 \x03(\tR\vstorageKeys\"'\n" +
 	"\bTxsReply\x12\x1b\n" +
-	"\x02tx\x18\x01 \x03(\v2\v.gateway.TxR\x02tx\"P\n" +
+	"\x02tx\x18\x01 \x03(\v2\v.gateway.TxR\x02tx\"\x8a\x01\n" +
 	"\rBlocksRequest\x12\x1a\n" +
 	"\bincludes\x18\x01 \x03(\tR\bincludes\x12#\n" +
 	"\vauth_header\x18\x02 \x01(\tB\x02\x18\x01R\n" +
-	"authHeader\"\xc6\x05\n" +
+	"authHeader\x128\n" +
+	"\tparsedTxs\x18\x03 \x01(\v2\x1a.google.protobuf.BoolValueR\tparsedTxs\"\xc6\x05\n" +
 	"\vBlockHeader\x12\x1f\n" +
 	"\vparent_hash\x18\x01 \x01(\tR\n" +
 	"parentHash\x12\x1f\n" +
@@ -5222,83 +5231,84 @@ var file_gateway_proto_depIdxs = []int32{
 	3,  // 2: gateway.EthOnBlockRequest.call_params:type_name -> gateway.CallParams
 	67, // 3: gateway.BlxrSubmitBundleRequest.mev_builders:type_name -> gateway.BlxrSubmitBundleRequest.MevBuildersEntry
 	9,  // 4: gateway.TxsReply.tx:type_name -> gateway.Tx
-	13, // 5: gateway.BlocksReply.header:type_name -> gateway.BlockHeader
-	14, // 6: gateway.BlocksReply.future_validator_info:type_name -> gateway.FutureValidatorInfo
-	9,  // 7: gateway.BlocksReply.transaction:type_name -> gateway.Tx
-	15, // 8: gateway.BlocksReply.withdrawals:type_name -> gateway.Withdrawal
-	20, // 9: gateway.SubscriptionsReply.subscriptions:type_name -> gateway.Subscription
-	70, // 10: gateway.Peer.initiator:type_name -> google.protobuf.BoolValue
-	70, // 11: gateway.Peer.disabled:type_name -> google.protobuf.BoolValue
-	27, // 12: gateway.Peer.unpaid_tx_burst_limit_excess:type_name -> gateway.RateSnapshot
-	27, // 13: gateway.Peer.paid_tx_burst_limit_excess:type_name -> gateway.RateSnapshot
-	27, // 14: gateway.Peer.paid_tx_throughput:type_name -> gateway.RateSnapshot
-	27, // 15: gateway.Peer.unpaid_tx_throughput:type_name -> gateway.RateSnapshot
-	28, // 16: gateway.PeersReply.peers:type_name -> gateway.Peer
-	31, // 17: gateway.Transactions.transactions:type_name -> gateway.Transaction
-	71, // 18: gateway.BxTransaction.add_time:type_name -> google.protobuf.Timestamp
-	33, // 19: gateway.GetBxTransactionResponse.tx:type_name -> gateway.BxTransaction
-	33, // 20: gateway.TxStoreNetworkData.oldest_tx:type_name -> gateway.BxTransaction
-	37, // 21: gateway.TxStoreReply.network_data:type_name -> gateway.TxStoreNetworkData
-	39, // 22: gateway.BlxrBatchTXRequest.transactions_and_senders:type_name -> gateway.TxAndSender
-	43, // 23: gateway.BlxrBatchTXReply.tx_hashes:type_name -> gateway.TxIndex
-	44, // 24: gateway.BlxrBatchTXReply.tx_errors:type_name -> gateway.ErrorIndex
-	49, // 25: gateway.NodeConnStatus.ws_connection:type_name -> gateway.WsConnStatus
-	48, // 26: gateway.NodeConnStatus.node_performance:type_name -> gateway.NodePerformance
-	52, // 27: gateway.BDNConnStatus.latency:type_name -> gateway.ConnectionLatency
-	53, // 28: gateway.StatusResponse.gateway_info:type_name -> gateway.GatewayInfo
-	68, // 29: gateway.StatusResponse.nodes:type_name -> gateway.StatusResponse.NodesEntry
-	69, // 30: gateway.StatusResponse.relays:type_name -> gateway.StatusResponse.RelaysEntry
-	47, // 31: gateway.StatusResponse.account_info:type_name -> gateway.AccountInfo
-	61, // 32: gateway.ProposedBlockRequest.payload:type_name -> gateway.CompressTx
-	65, // 33: gateway.ProposedBlockStatsReply.records:type_name -> gateway.ProposedBlockStatsRecord
-	72, // 34: gateway.ProposedBlockStatsRecord.sending_duration:type_name -> google.protobuf.Duration
-	71, // 35: gateway.ProposedBlockStatsRecord.received_time:type_name -> google.protobuf.Timestamp
-	71, // 36: gateway.ProposedBlockStatsRecord.sent_time:type_name -> google.protobuf.Timestamp
-	50, // 37: gateway.StatusResponse.NodesEntry.value:type_name -> gateway.NodeConnStatus
-	51, // 38: gateway.StatusResponse.RelaysEntry.value:type_name -> gateway.BDNConnStatus
-	41, // 39: gateway.Gateway.BlxrTx:input_type -> gateway.BlxrTxRequest
-	40, // 40: gateway.Gateway.BlxrBatchTX:input_type -> gateway.BlxrBatchTXRequest
-	26, // 41: gateway.Gateway.Peers:input_type -> gateway.PeersRequest
-	36, // 42: gateway.Gateway.TxStoreSummary:input_type -> gateway.TxStoreRequest
-	34, // 43: gateway.Gateway.GetTx:input_type -> gateway.GetBxTransactionRequest
-	24, // 44: gateway.Gateway.Stop:input_type -> gateway.StopRequest
-	22, // 45: gateway.Gateway.Version:input_type -> gateway.VersionRequest
-	46, // 46: gateway.Gateway.Status:input_type -> gateway.StatusRequest
-	19, // 47: gateway.Gateway.Subscriptions:input_type -> gateway.SubscriptionsRequest
-	17, // 48: gateway.Gateway.DisconnectInboundPeer:input_type -> gateway.DisconnectInboundPeerRequest
-	8,  // 49: gateway.Gateway.NewTxs:input_type -> gateway.TxsRequest
-	8,  // 50: gateway.Gateway.PendingTxs:input_type -> gateway.TxsRequest
-	12, // 51: gateway.Gateway.NewBlocks:input_type -> gateway.BlocksRequest
-	12, // 52: gateway.Gateway.BdnBlocks:input_type -> gateway.BlocksRequest
-	4,  // 53: gateway.Gateway.EthOnBlock:input_type -> gateway.EthOnBlockRequest
-	1,  // 54: gateway.Gateway.TxReceipts:input_type -> gateway.TxReceiptsRequest
-	58, // 55: gateway.Gateway.ShortIDs:input_type -> gateway.ShortIDsRequest
-	56, // 56: gateway.Gateway.TxsFromShortIDs:input_type -> gateway.ShortIDListRequest
-	6,  // 57: gateway.Gateway.BlxrSubmitBundle:input_type -> gateway.BlxrSubmitBundleRequest
-	42, // 58: gateway.Gateway.BlxrTx:output_type -> gateway.BlxrTxReply
-	45, // 59: gateway.Gateway.BlxrBatchTX:output_type -> gateway.BlxrBatchTXReply
-	29, // 60: gateway.Gateway.Peers:output_type -> gateway.PeersReply
-	38, // 61: gateway.Gateway.TxStoreSummary:output_type -> gateway.TxStoreReply
-	35, // 62: gateway.Gateway.GetTx:output_type -> gateway.GetBxTransactionResponse
-	25, // 63: gateway.Gateway.Stop:output_type -> gateway.StopReply
-	23, // 64: gateway.Gateway.Version:output_type -> gateway.VersionReply
-	54, // 65: gateway.Gateway.Status:output_type -> gateway.StatusResponse
-	21, // 66: gateway.Gateway.Subscriptions:output_type -> gateway.SubscriptionsReply
-	18, // 67: gateway.Gateway.DisconnectInboundPeer:output_type -> gateway.DisconnectInboundPeerReply
-	11, // 68: gateway.Gateway.NewTxs:output_type -> gateway.TxsReply
-	11, // 69: gateway.Gateway.PendingTxs:output_type -> gateway.TxsReply
-	16, // 70: gateway.Gateway.NewBlocks:output_type -> gateway.BlocksReply
-	16, // 71: gateway.Gateway.BdnBlocks:output_type -> gateway.BlocksReply
-	5,  // 72: gateway.Gateway.EthOnBlock:output_type -> gateway.EthOnBlockReply
-	2,  // 73: gateway.Gateway.TxReceipts:output_type -> gateway.TxReceiptsReply
-	59, // 74: gateway.Gateway.ShortIDs:output_type -> gateway.ShortIDsReply
-	57, // 75: gateway.Gateway.TxsFromShortIDs:output_type -> gateway.TxListReply
-	7,  // 76: gateway.Gateway.BlxrSubmitBundle:output_type -> gateway.BlxrSubmitBundleReply
-	58, // [58:77] is the sub-list for method output_type
-	39, // [39:58] is the sub-list for method input_type
-	39, // [39:39] is the sub-list for extension type_name
-	39, // [39:39] is the sub-list for extension extendee
-	0,  // [0:39] is the sub-list for field type_name
+	70, // 5: gateway.BlocksRequest.parsedTxs:type_name -> google.protobuf.BoolValue
+	13, // 6: gateway.BlocksReply.header:type_name -> gateway.BlockHeader
+	14, // 7: gateway.BlocksReply.future_validator_info:type_name -> gateway.FutureValidatorInfo
+	9,  // 8: gateway.BlocksReply.transaction:type_name -> gateway.Tx
+	15, // 9: gateway.BlocksReply.withdrawals:type_name -> gateway.Withdrawal
+	20, // 10: gateway.SubscriptionsReply.subscriptions:type_name -> gateway.Subscription
+	70, // 11: gateway.Peer.initiator:type_name -> google.protobuf.BoolValue
+	70, // 12: gateway.Peer.disabled:type_name -> google.protobuf.BoolValue
+	27, // 13: gateway.Peer.unpaid_tx_burst_limit_excess:type_name -> gateway.RateSnapshot
+	27, // 14: gateway.Peer.paid_tx_burst_limit_excess:type_name -> gateway.RateSnapshot
+	27, // 15: gateway.Peer.paid_tx_throughput:type_name -> gateway.RateSnapshot
+	27, // 16: gateway.Peer.unpaid_tx_throughput:type_name -> gateway.RateSnapshot
+	28, // 17: gateway.PeersReply.peers:type_name -> gateway.Peer
+	31, // 18: gateway.Transactions.transactions:type_name -> gateway.Transaction
+	71, // 19: gateway.BxTransaction.add_time:type_name -> google.protobuf.Timestamp
+	33, // 20: gateway.GetBxTransactionResponse.tx:type_name -> gateway.BxTransaction
+	33, // 21: gateway.TxStoreNetworkData.oldest_tx:type_name -> gateway.BxTransaction
+	37, // 22: gateway.TxStoreReply.network_data:type_name -> gateway.TxStoreNetworkData
+	39, // 23: gateway.BlxrBatchTXRequest.transactions_and_senders:type_name -> gateway.TxAndSender
+	43, // 24: gateway.BlxrBatchTXReply.tx_hashes:type_name -> gateway.TxIndex
+	44, // 25: gateway.BlxrBatchTXReply.tx_errors:type_name -> gateway.ErrorIndex
+	49, // 26: gateway.NodeConnStatus.ws_connection:type_name -> gateway.WsConnStatus
+	48, // 27: gateway.NodeConnStatus.node_performance:type_name -> gateway.NodePerformance
+	52, // 28: gateway.BDNConnStatus.latency:type_name -> gateway.ConnectionLatency
+	53, // 29: gateway.StatusResponse.gateway_info:type_name -> gateway.GatewayInfo
+	68, // 30: gateway.StatusResponse.nodes:type_name -> gateway.StatusResponse.NodesEntry
+	69, // 31: gateway.StatusResponse.relays:type_name -> gateway.StatusResponse.RelaysEntry
+	47, // 32: gateway.StatusResponse.account_info:type_name -> gateway.AccountInfo
+	61, // 33: gateway.ProposedBlockRequest.payload:type_name -> gateway.CompressTx
+	65, // 34: gateway.ProposedBlockStatsReply.records:type_name -> gateway.ProposedBlockStatsRecord
+	72, // 35: gateway.ProposedBlockStatsRecord.sending_duration:type_name -> google.protobuf.Duration
+	71, // 36: gateway.ProposedBlockStatsRecord.received_time:type_name -> google.protobuf.Timestamp
+	71, // 37: gateway.ProposedBlockStatsRecord.sent_time:type_name -> google.protobuf.Timestamp
+	50, // 38: gateway.StatusResponse.NodesEntry.value:type_name -> gateway.NodeConnStatus
+	51, // 39: gateway.StatusResponse.RelaysEntry.value:type_name -> gateway.BDNConnStatus
+	41, // 40: gateway.Gateway.BlxrTx:input_type -> gateway.BlxrTxRequest
+	40, // 41: gateway.Gateway.BlxrBatchTX:input_type -> gateway.BlxrBatchTXRequest
+	26, // 42: gateway.Gateway.Peers:input_type -> gateway.PeersRequest
+	36, // 43: gateway.Gateway.TxStoreSummary:input_type -> gateway.TxStoreRequest
+	34, // 44: gateway.Gateway.GetTx:input_type -> gateway.GetBxTransactionRequest
+	24, // 45: gateway.Gateway.Stop:input_type -> gateway.StopRequest
+	22, // 46: gateway.Gateway.Version:input_type -> gateway.VersionRequest
+	46, // 47: gateway.Gateway.Status:input_type -> gateway.StatusRequest
+	19, // 48: gateway.Gateway.Subscriptions:input_type -> gateway.SubscriptionsRequest
+	17, // 49: gateway.Gateway.DisconnectInboundPeer:input_type -> gateway.DisconnectInboundPeerRequest
+	8,  // 50: gateway.Gateway.NewTxs:input_type -> gateway.TxsRequest
+	8,  // 51: gateway.Gateway.PendingTxs:input_type -> gateway.TxsRequest
+	12, // 52: gateway.Gateway.NewBlocks:input_type -> gateway.BlocksRequest
+	12, // 53: gateway.Gateway.BdnBlocks:input_type -> gateway.BlocksRequest
+	4,  // 54: gateway.Gateway.EthOnBlock:input_type -> gateway.EthOnBlockRequest
+	1,  // 55: gateway.Gateway.TxReceipts:input_type -> gateway.TxReceiptsRequest
+	58, // 56: gateway.Gateway.ShortIDs:input_type -> gateway.ShortIDsRequest
+	56, // 57: gateway.Gateway.TxsFromShortIDs:input_type -> gateway.ShortIDListRequest
+	6,  // 58: gateway.Gateway.BlxrSubmitBundle:input_type -> gateway.BlxrSubmitBundleRequest
+	42, // 59: gateway.Gateway.BlxrTx:output_type -> gateway.BlxrTxReply
+	45, // 60: gateway.Gateway.BlxrBatchTX:output_type -> gateway.BlxrBatchTXReply
+	29, // 61: gateway.Gateway.Peers:output_type -> gateway.PeersReply
+	38, // 62: gateway.Gateway.TxStoreSummary:output_type -> gateway.TxStoreReply
+	35, // 63: gateway.Gateway.GetTx:output_type -> gateway.GetBxTransactionResponse
+	25, // 64: gateway.Gateway.Stop:output_type -> gateway.StopReply
+	23, // 65: gateway.Gateway.Version:output_type -> gateway.VersionReply
+	54, // 66: gateway.Gateway.Status:output_type -> gateway.StatusResponse
+	21, // 67: gateway.Gateway.Subscriptions:output_type -> gateway.SubscriptionsReply
+	18, // 68: gateway.Gateway.DisconnectInboundPeer:output_type -> gateway.DisconnectInboundPeerReply
+	11, // 69: gateway.Gateway.NewTxs:output_type -> gateway.TxsReply
+	11, // 70: gateway.Gateway.PendingTxs:output_type -> gateway.TxsReply
+	16, // 71: gateway.Gateway.NewBlocks:output_type -> gateway.BlocksReply
+	16, // 72: gateway.Gateway.BdnBlocks:output_type -> gateway.BlocksReply
+	5,  // 73: gateway.Gateway.EthOnBlock:output_type -> gateway.EthOnBlockReply
+	2,  // 74: gateway.Gateway.TxReceipts:output_type -> gateway.TxReceiptsReply
+	59, // 75: gateway.Gateway.ShortIDs:output_type -> gateway.ShortIDsReply
+	57, // 76: gateway.Gateway.TxsFromShortIDs:output_type -> gateway.TxListReply
+	7,  // 77: gateway.Gateway.BlxrSubmitBundle:output_type -> gateway.BlxrSubmitBundleReply
+	59, // [59:78] is the sub-list for method output_type
+	40, // [40:59] is the sub-list for method input_type
+	40, // [40:40] is the sub-list for extension type_name
+	40, // [40:40] is the sub-list for extension extendee
+	0,  // [0:40] is the sub-list for field type_name
 }
 
 func init() { file_gateway_proto_init() }

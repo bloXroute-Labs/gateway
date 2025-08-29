@@ -84,7 +84,6 @@ func (p *Peer) RequestBlocksByRange(startHeight uint64, startHash common.Hash, c
 		timeout: time.Second,
 	})
 	if err != nil {
-		p.log.Errorf("failed to request blocks by range: %v", err)
 		return nil, err
 	}
 

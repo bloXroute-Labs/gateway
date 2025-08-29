@@ -66,6 +66,50 @@ func newHandler(ctx context.Context, config *network.EthConfig, chain *core.Chai
 	return h
 }
 
+// runPeer registers a peer within the peer set and starts handling all its messages
+func (h *handler) runPeer(peer *eth2.Peer, wg *sync.WaitGroup, handler func(*eth2.Peer) error) error {
+	peerEndpoint := peer.IPEndpoint()
+	_, isRecommended := h.recommendedPeers[fmt.Sprintf("%s:%d", peerEndpoint.IP, peerEndpoint.Port)]
+	if !peer.Dynamic() && !isRecommended {
+		ok := h.wsManager.SetBlockchainPeer(peer)
+		if !ok {
+			peer.Log().Warnf("unable to set blockchain peer for %v: no corresponding websockets provider found (ok if websockets URI was omitted)", peerEndpoint.IPPort())
+		}
+		if ws, ok := h.wsManager.Provider(&peerEndpoint); ok {
+			wg.Add(1)
+			go h.runEthSub(peer.Context(), ws, wg)
+		}
+	}
+	if err := h.peers.register(peer, nil); err != nil {
+		return err
+	}
+
+	defer func() {
+		if !peer.Dynamic() && !isRecommended {
+			ok := h.wsManager.UnsetBlockchainPeer(peerEndpoint)
+			if !ok {
+				peer.Log().Warnf("unable to unset blockchain peer for %v: no corresponding websockets provider found (ok if websockets URI was omitted)", peerEndpoint.IPPort())
+			}
+		}
+		// cancel context. Should stop the wsProvider
+		peer.Stop()
+
+		err := h.peers.unregister(peer.ID())
+		if err != nil {
+			peer.Log().Errorf("failed to unregister peer %v: %v", peerEndpoint.IPPort(), err)
+		}
+	}()
+
+	peer.Start()
+
+	time.AfterFunc(checkpointTimeout, func() {
+		peer.PassCheckpoint()
+	})
+
+	// start handling messages from the peer
+	return handler(peer)
+}
+
 func (h *handler) runEthPeer(peer *eth2.Peer, handler func(peer *eth2.Peer) error) error {
 	l := peer.Log()
 
@@ -100,58 +144,15 @@ func (h *handler) runEthPeer(peer *eth2.Peer, handler func(peer *eth2.Peer) erro
 
 	wg := new(sync.WaitGroup)
 
-	_, isRecommended := h.recommendedPeers[fmt.Sprintf("%s:%d", endpoint.IP, endpoint.Port)]
-	if !peer.Dynamic() && !isRecommended {
-		ok := h.wsManager.SetBlockchainPeer(peer)
-		if !ok {
-			l.Warnf("unable to set blockchain peer for %v: no corresponding websockets provider found (ok if websockets URI was omitted)", endpoint.IPPort())
-		}
-		if ws, ok := h.wsManager.Provider(&endpoint); ok {
-			wg.Add(1)
-			go h.runEthSub(peer.Context(), ws, wg)
-		}
-	}
-	if err := h.peers.register(peer, bscExt); err != nil {
-		return err
-	}
-
-	defer func() {
-		if !peer.Dynamic() && !isRecommended {
-			ok := h.wsManager.UnsetBlockchainPeer(endpoint)
-			if !ok {
-				l.Warnf("unable to unset blockchain peer for %v: no corresponding websockets provider found (ok if websockets URI was omitted)", endpoint.IPPort())
-			}
-		}
-		// cancel context. Should stop the wsProvider
-		peer.Stop()
-
-		err = h.peers.unregister(peer.ID())
-		if err != nil {
-			l.Errorf("failed to unregister peer %v: %v", endpoint.IPPort(), err)
-		}
-	}()
-
-	peer.Start()
-
-	time.AfterFunc(checkpointTimeout, func() {
-		peer.PassCheckpoint()
-	})
-
-	// start handling messages from the peer
-	peerErr := handler(peer)
-	if errors.Is(peerErr, context.Canceled) {
-		peerErr = nil
-	}
-
+	peerErr := h.runPeer(peer, wg, handler)
 	err = h.bridge.SendBlockchainConnectionStatus(blockchain.ConnectionStatus{PeerEndpoint: endpoint, IsConnected: false, IsDynamic: peer.Dynamic()})
 	if err != nil {
-		l.Errorf("failed to send blockchain disconnect status for %v - %v, peer error - %v", endpoint, err, peerErr)
+		l.Errorf("failed to send blockchain disconnect status for %v: err %v, peer error %v", endpoint, err, peerErr)
 		return err
 	}
 	// TODO Here we have disconnection, but that disconnection does not affect BDNPerformanceStats
 
 	wg.Wait()
-
 	l.Errorf("peer %v terminated with error: %v", endpoint, peerErr)
 
 	return err

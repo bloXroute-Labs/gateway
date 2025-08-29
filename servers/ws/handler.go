@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sourcegraph/jsonrpc2"
-
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
 	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
@@ -49,7 +47,7 @@ type handlerObj struct {
 }
 
 // Handle handling client requests
-func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
+func (h *handlerObj) Handle(ctx context.Context, conn *conn, req Request) {
 	start := time.Now()
 	defer func() {
 		h.log.Debugf("websocket handling for method %v ended. Duration %v", jsonrpc.RPCRequestType(req.Method), time.Since(start))
@@ -133,15 +131,25 @@ func (h *handlerObj) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonr
 }
 
 // sendNotification - build a response according to client request and notify client
-func (h *handlerObj) sendNotification(ctx context.Context, subscriptionID string, clientReq *ClientReq, conn *jsonrpc2.Conn, notification types.Notification) error {
+func (h *handlerObj) sendNotification(ctx context.Context, subscriptionID string, clientReq *ClientReq, conn *conn, notification types.Notification) error {
 	response := BlockResponse{
 		Subscription: subscriptionID,
 	}
-	content := notification.WithFields(clientReq.Includes)
+	// prepare includes: if client requested raw transactions, map "transactions" -> "raw_transactions" for WithFields
+	includes := make([]string, len(clientReq.Includes))
+	copy(includes, clientReq.Includes)
+	if !clientReq.ParsedTxs {
+		for i, inc := range includes {
+			if inc == "transactions" {
+				includes[i] = "raw_transactions"
+			}
+		}
+	}
+	content := notification.WithFields(includes)
 	response.Result = content
 	err := conn.Notify(ctx, "subscribe", response)
 	if err != nil {
-		if !errors.Is(err, jsonrpc2.ErrClosed) {
+		if !errors.Is(err, ErrClosed) {
 			h.log.Errorf("error reply to subscriptionID %v: %v", subscriptionID, err.Error())
 		}
 		return err

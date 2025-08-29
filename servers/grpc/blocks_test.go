@@ -53,7 +53,7 @@ func TestNewBlocks(t *testing.T) {
 	require.NoError(t, err)
 	block, err := bridge.BlockBDNtoBlockchain(bxBlock)
 	require.NoError(t, err)
-	blockNotification, err := types.NewEthBlockNotification(common.Hash(bxBlock.ExecutionHash()), block.(*bdn2.BlockInfo).Block, nil, false)
+	blockNotification, err := types.NewEthBlockNotification(common.Hash(bxBlock.ExecutionHash()), block.(*bdn2.BlockInfo).Block, nil)
 	require.NoError(t, err)
 	blockNotification.SetNotificationType(types.NewBlocksFeed)
 
@@ -101,7 +101,7 @@ func TestBdnBlocks(t *testing.T) {
 	require.NoError(t, err)
 	block, err := bridge.BlockBDNtoBlockchain(bxBlock)
 	require.NoError(t, err)
-	blockNotification, err := types.NewEthBlockNotification(common.Hash(bxBlock.ExecutionHash()), block.(*bdn2.BlockInfo).Block, nil, false)
+	blockNotification, err := types.NewEthBlockNotification(common.Hash(bxBlock.ExecutionHash()), block.(*bdn2.BlockInfo).Block, nil)
 	require.NoError(t, err)
 	blockNotification.SetNotificationType(types.BDNBlocksFeed)
 

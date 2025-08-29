@@ -217,7 +217,7 @@ func (r *TxReceiptsNotification) WithFields(fields []string) Notification {
 }
 
 // Filters -
-func (r *TxReceiptsNotification) Filters(_ []string) map[string]interface{} {
+func (r *TxReceiptsNotification) Filters() map[string]interface{} {
 	return nil
 }
 

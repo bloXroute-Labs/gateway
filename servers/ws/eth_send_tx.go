@@ -5,14 +5,13 @@ import (
 	"fmt"
 
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
-	"github.com/sourcegraph/jsonrpc2"
 
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler"
 )
 
-func (h *handlerObj) handleRPCEthSendTx(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request, rpcParams []interface{}) {
+func (h *handlerObj) handleRPCEthSendTx(ctx context.Context, conn *conn, req Request, rpcParams []interface{}) {
 	if len(rpcParams) != 1 {
 		err := fmt.Sprintf("unable to process %v RPC request: expected 1, got %d", jsonrpc.RPCEthSendRawTransaction, len(rpcParams))
 		sendErrorMsg(ctx, jsonrpc.InvalidParams, err, conn, req.ID)

@@ -59,26 +59,8 @@ var AllFields = []string{
 	"tx_contents.blob_versioned_hashes", "tx_contents.y_parity", "tx_contents.authorization_list",
 }
 
-// AllFieldsWithFrom is used with transactions feeds
+// AllFieldsWithFrom is used with the transactions feeds
 var AllFieldsWithFrom = append(AllFields, "tx_contents.from")
-
-// EmptyFilteredTransactionMap is a map of key value used to check the filters provided by the websocket client
-var EmptyFilteredTransactionMap = map[string]interface{}{
-	"from":                     "0x0",
-	"gas_price":                float64(0),
-	"gas":                      float64(0),
-	"tx_hash":                  "0x0",
-	"input":                    "0x0",
-	"method_id":                "0x0",
-	"value":                    float64(0),
-	"to":                       "0x0",
-	"type":                     "0",
-	"chain_id":                 float64(0),
-	"max_fee_per_gas":          float64(0),
-	"max_priority_fee_per_gas": float64(0),
-	"max_fee_per_blob_gas":     float64(0),
-	"blob_versioned_hashes":    []string{},
-}
 
 // EthTransaction represents the JSON encoding of an Ethereum transaction
 type EthTransaction struct {
@@ -127,7 +109,11 @@ func (et *EthTransaction) From() (*common.Address, error) {
 	et.lock.Lock()
 	defer et.lock.Unlock()
 
-	// Cached
+	return et.sender()
+}
+
+func (et *EthTransaction) sender() (*common.Address, error) {
+	// cached
 	if et.from != nil {
 		return et.from, nil
 	}
@@ -137,7 +123,7 @@ func (et *EthTransaction) From() (*common.Address, error) {
 		return nil, fmt.Errorf("could not parse Ethereum transaction from: %v", err)
 	}
 
-	// Cache
+	// cache
 	et.from = &from
 
 	return &from, nil
@@ -186,39 +172,17 @@ func (et *EthTransaction) createFilters() {
 
 	tx := et.tx
 	et.filters["chain_id"] = int(tx.ChainId().Int64())
+
 	switch tx.Type() {
-	case ethtypes.BlobTxType:
+	case ethtypes.BlobTxType: // 3
 		et.filters["max_fee_per_gas"] = int(tx.GasFeeCap().Int64())
 		et.filters["max_priority_fee_per_gas"] = int(tx.GasTipCap().Int64())
 		et.filters["max_fee_per_blob_gas"] = int(tx.BlobGasFeeCap().Int64())
-		et.filters["gas_price"] = 0
-	case ethtypes.DynamicFeeTxType, ethtypes.SetCodeTxType:
+	case ethtypes.DynamicFeeTxType, ethtypes.SetCodeTxType: // 2, 4
 		et.filters["max_fee_per_gas"] = int(tx.GasFeeCap().Int64())
 		et.filters["max_priority_fee_per_gas"] = int(tx.GasTipCap().Int64())
-		et.filters["gas_price"] = 0
-		et.filters["max_fee_per_blob_gas"] = 0
-		// Because the short circuit behavior is not working in the current evaluation library, and when it tries to evaluate
-		// all parts of the expressions fail on the undefined values.
-		// For example, before this change, the following filter always failed:
-		// (type == '0' && gas_price > 21000000000) || (type == '2' && max_priority_fee_per_gas > 21000000000).
-		//
-		// That's why was decided to set default defined values, just to be able to evaluate the expressions.
-		// Anyway, the evaluation will be correct regardless of the default values.
-		//
-		// Also, to handle the 1-filter setup, when the user defines only the gas_price filter, for example,
-		// we provide the preprocessing check of the tx type and configured filters.
-		// check out isFiltersSupportedByTxType function of bxgateway/servers/client_handler.go
-		//
-		// It means, that when it comes to the evaluation of the filters, we will have only complex expressions,
-		// where we don't actually care about these default values we configured here.
-		//
-		// TODO: to get rid of this stuff, we need to move to another expression evaluation library (or forking existing one)
-		// to support short circuit behavior for the logical operators.
-	case ethtypes.AccessListTxType, ethtypes.LegacyTxType:
+	case ethtypes.AccessListTxType, ethtypes.LegacyTxType: // 1, 0
 		et.filters["gas_price"] = BigIntAsFloat64(tx.GasPrice())
-		et.filters["max_fee_per_gas"] = 0
-		et.filters["max_priority_fee_per_gas"] = 0
-		et.filters["max_fee_per_blob_gas"] = 0
 	}
 
 	et.filters["type"] = strconv.Itoa(int(tx.Type()))
@@ -237,6 +201,11 @@ func (et *EthTransaction) createFilters() {
 		et.filters["method_id"] = "0x" + methodID[2:10]
 	} else {
 		et.filters["method_id"] = methodID
+	}
+
+	from, err := et.sender()
+	if err == nil {
+		et.filters["from"] = AddressAsString(from)
 	}
 }
 
@@ -357,23 +326,10 @@ func (et *EthTransaction) Nonce() uint64 {
 }
 
 // Filters returns a map of key,value that can be used to filter transactions
-func (et *EthTransaction) Filters(filters []string) map[string]interface{} {
+func (et *EthTransaction) Filters() map[string]interface{} {
 	et.createFilters()
 
-	filteredFields := make(map[string]interface{})
-	for _, param := range filters {
-		if v, ok := et.filters[param]; ok {
-			filteredFields[param] = v
-		} else if param == "from" {
-			from, err := et.From()
-			if err != nil {
-				continue
-			}
-			filteredFields["from"] = AddressAsString(from)
-		}
-	}
-
-	return filteredFields
+	return et.filters
 }
 
 // Fields - creates a map with selected fields

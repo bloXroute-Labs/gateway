@@ -5,12 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/sourcegraph/jsonrpc2"
-
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 )
 
-func (h *handlerObj) handleRPCNewPendingTxsSourceFromNode(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
+func (h *handlerObj) handleRPCNewPendingTxsSourceFromNode(ctx context.Context, conn *conn, req Request) {
 	if h.serverAccountID != h.connectionAccount.AccountID {
 		errDifferentAccAuth := fmt.Sprintf(errFDifferentAccAuth, jsonrpc.RPCChangeNewPendingTxFromNode)
 		h.log.Errorf("%v. account auth: %v, node account: %v", errDifferentAccAuth, h.connectionAccount.AccountID, h.serverAccountID)

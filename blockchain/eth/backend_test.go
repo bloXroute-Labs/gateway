@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/protocols/bsc"
+
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -506,6 +508,53 @@ func TestHandler_HandleNewBlock_TooFarInFuture(t *testing.T) {
 	assertNoBlockSentToBDN(t, bridge)
 }
 
+func TestRunPeer(t *testing.T) {
+	bridge := blockchain.NewBxBridge(Converter{}, false)
+	config, _ := network.NewEthereumPreset("BSC-Mainnet")
+	_, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(1)
+	ctx := context.Background()
+	testHandler := newHandler(ctx, &config, core.NewChain(ctx, config.IgnoreBlockTimeout), bridge, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout, false), make(map[string]struct{}))
+
+	peer, _ := testPeer(1, 1, eth2.ETH66)
+	mu := new(sync.Mutex)
+	doneRunPeer := false
+	wg := new(sync.WaitGroup)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- testHandler.runPeer(peer, wg, func(peer *eth2.Peer) error {
+			<-peer.Context().Done()
+			mu.Lock()
+			doneRunPeer = true
+			mu.Unlock()
+			return nil
+		})
+	}()
+	// peer should be connected
+	testUtils.WaitUntilTrueOrFail(t, func() bool {
+		_, ok := testHandler.peers.get(peer.ID())
+		return ok
+	})
+	peer.Stop()
+	// check that we actually returned after peer disconnection
+	testUtils.WaitUntilTrueOrFail(t, func() bool {
+		mu.Lock()
+		donePeer := doneRunPeer
+		mu.Unlock()
+		return donePeer
+	})
+	// when we canceled the peer ctx we should execute the defer func in run peer which unregister
+	testUtils.WaitUntilTrueOrFail(t, func() bool {
+		_, ok := testHandler.peers.get(peer.ID())
+		return !ok
+	})
+	select {
+	case err := <-errCh:
+		assert.NoError(t, err, "runPeer should return cleanly after Stop()")
+	case <-time.After(time.Second):
+		t.Fatal("runPeer did not return within 1s")
+	}
+}
+
 func TestHandler_HandleGetBlockHeaders(t *testing.T) {
 	_, testHandler := setupBSCMainnet()
 	peer, rw := testPeer(1, 1, eth2.ETH66)
@@ -564,6 +613,20 @@ func TestHandler_HandleGetBlockHeaders(t *testing.T) {
 	handled, err := peer.NotifyResponse(blockHeaders.RequestId, &blockHeaders.BlockHeadersRequest)
 	require.NoError(t, err)
 	require.True(t, handled)
+}
+
+func TestHandler_blockAnnouncementsWithError(t *testing.T) {
+	_, testHandler := setupBSCMainnet()
+	peer, rw := testPeer(2, 1, eth2.ETH66)
+	bscPeerTest := bsc.NewPeer(context.Background(), bsc.Bsc2, peer.Peer, rw)
+	_ = testHandler.peers.register(peer, bscPeerTest)
+	peer.Start()
+
+	blockHeight := uint64(1)
+	block := bxmock.NewEthBlock(blockHeight, common.Hash{})
+	err := testHandleNewBlockHashes(testHandler, peer, block.Hash(), blockHeight)
+	require.Error(t, err)
+	assert.True(t, peer.IsDisconnected())
 }
 
 func TestHandler_HandleNewBlockHashes66(t *testing.T) {
@@ -1165,7 +1228,7 @@ func assertNoBlockSentToBDN(t *testing.T, bridge blockchain.Bridge) {
 }
 
 func assertBlockSentToBlockchain(t *testing.T, rw *test.MsgReadWriter, hash common.Hash) eth.NewBlockPacket {
-	assert.True(t, rw.ExpectWrite(time.Millisecond))
+	assert.True(t, rw.ExpectWrite(time.Millisecond*10))
 	assert.Equal(t, 1, len(rw.WriteMessages))
 	msg := rw.PopWrittenMessage()
 	assert.Equal(t, uint64(eth.NewBlockMsg), msg.Code)

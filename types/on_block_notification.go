@@ -39,7 +39,7 @@ func (n *OnBlockNotification) WithFields(fields []string) Notification {
 }
 
 // Filters -
-func (n *OnBlockNotification) Filters(filters []string) map[string]interface{} {
+func (n *OnBlockNotification) Filters() map[string]interface{} {
 	return nil
 }
 

@@ -24,9 +24,10 @@ func HandleTxReceipts(wsManager blockchain.WSManager, block *types.EthBlockNotif
 	var mu sync.Mutex
 	g := new(errgroup.Group)
 	rpcOptions := blockchain.RPCOptions{RetryAttempts: bxgateway.MaxEthTxReceiptCallRetries, RetryInterval: bxgateway.EthTxReceiptCallRetrySleepInterval}
-	txsCountHex := fmt.Sprintf("0x%x", len(block.Transactions))
+	txsCountHex := fmt.Sprintf("0x%x", len(block.GetTransactions()))
+	txs := block.GetTransactions()
 
-	for _, t := range block.Transactions {
+	for _, t := range txs {
 		tx := t
 		g.Go(func() error {
 			hash := tx["hash"]

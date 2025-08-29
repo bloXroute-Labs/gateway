@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -130,7 +131,7 @@ func (f *Manager) NotifyError(notification ErrorNotification) {
 
 // Subscribe - subscribe a client to a desired feed
 func (f *Manager) Subscribe(feedName types.FeedType, feedConnectionType types.FeedConnectionType,
-	conn *jsonrpc2.Conn, ci types.ClientInfo, ro types.ReqOptions, ethSubscribe bool) (*ClientSubscriptionHandlingInfo, error) {
+	conn io.Closer, ci types.ClientInfo, ro types.ReqOptions, ethSubscribe bool) (*ClientSubscriptionHandlingInfo, error) {
 
 	id := f.subscriptionServices.GenerateSubscriptionID(ethSubscribe)
 	clientSubscription := ClientSubscription{

@@ -67,8 +67,8 @@ const (
 
 	bloomStoreInterval = time.Hour
 
-	bscBlocksPerEpochPreMaxwell = 500
-	bscBlocksPerEpochMaxwell    = 1000
+	// https://github.com/bnb-chain/BEPs/blob/master/BEPs/BEP-524.md
+	bscBlocksPerEpoch = 1000
 
 	relayMapInterval     = 2 * time.Minute
 	fastestRelayInterval = 12 * time.Hour
@@ -87,14 +87,10 @@ const (
 )
 
 var (
-	maxwellHardForkTime              = time.Date(2025, 6, 30, 2, 30, 0, 0, time.UTC)
-	maxwellHardForkTimeTestnet       = time.Date(2025, 5, 26, 7, 5, 0, 0, time.UTC)
-	maxwellSecondHardForkTime        = maxwellHardForkTime.Add(time.Millisecond * 750 * 1000)        // 1000 blocks * 0.75 seconds per block
-	maxwellSecondHardForkTimeTestnet = maxwellHardForkTimeTestnet.Add(time.Millisecond * 750 * 1000) // 1000 blocks * 0.75 seconds per block
-	errUnsupportedBlockType          = errors.New("block type is not supported")
-	errIgnored                       = errors.New("ignored request")
-	errExtraDataTooSmall             = errors.New("wrong extra data, too small")
-	errNotAlignedValidatorsList      = errors.New("parse validators failed, validator list is not aligned")
+	errUnsupportedBlockType     = errors.New("block type is not supported")
+	errIgnored                  = errors.New("ignored request")
+	errExtraDataTooSmall        = errors.New("wrong extra data, too small")
+	errNotAlignedValidatorsList = errors.New("parse validators failed, validator list is not aligned")
 )
 
 type gateway struct {
@@ -837,7 +833,7 @@ func (g *gateway) queryEpochBlock(height uint64) error {
 					return fmt.Errorf("failed to extract validator list from extraData: %v", err)
 				}
 
-				g.validatorListMap.Delete(height - g.bscBlocksPerEpoch()*2) // remove the validator list that doesn't need anymore
+				g.validatorListMap.Delete(height - bscBlocksPerEpoch*2) // remove the validator list that doesn't need anymore
 				g.validatorListMap.Store(height, validatorList)
 
 				return nil
@@ -856,20 +852,9 @@ func (g *gateway) generateBSCValidator(blockHeight uint64) []*types.FutureValida
 	}
 
 	// currentEpochBlockHeight will be the most recent block height that can be module by amount of blocks in an epoch
-	blocksPerEpoch := g.bscBlocksPerEpoch()
-	currentEpochBlockHeight := blockHeight / blocksPerEpoch * blocksPerEpoch
-	previousEpochBlockHeight := currentEpochBlockHeight - blocksPerEpoch
+	currentEpochBlockHeight := blockHeight / bscBlocksPerEpoch * bscBlocksPerEpoch
+	previousEpochBlockHeight := currentEpochBlockHeight - bscBlocksPerEpoch
 
-	var secondHardForkTime time.Time
-	if g.sdn.NetworkNum() == bxtypes.BSCMainnetNum {
-		secondHardForkTime = maxwellSecondHardForkTime
-	} else {
-		secondHardForkTime = maxwellSecondHardForkTimeTestnet
-	}
-
-	if time.Now().After(maxwellHardForkTime) && time.Now().Before(secondHardForkTime) {
-		previousEpochBlockHeight = currentEpochBlockHeight - bscBlocksPerEpochPreMaxwell
-	}
 	prevEpochValidatorList, exist := g.validatorListMap.Load(previousEpochBlockHeight)
 	if !exist { // we need previous epoch validator list to calculate
 		err := g.queryEpochBlock(previousEpochBlockHeight)
@@ -971,14 +956,13 @@ func (g *gateway) generateFutureValidatorInfo(block *types.BxBlock, blockInfo *c
 	defer g.validatorInfoUpdateLock.Unlock()
 
 	blockHeight := block.Number.Uint64()
-	blocksPerEpoch := g.bscBlocksPerEpoch()
 
-	if (g.sdn.NetworkNum() == bxtypes.BSCMainnetNum || g.sdn.NetworkNum() == bxtypes.BSCTestnetNum) && blockHeight%blocksPerEpoch == 0 {
+	if (g.sdn.NetworkNum() == bxtypes.BSCMainnetNum || g.sdn.NetworkNum() == bxtypes.BSCTestnetNum) && blockHeight%bscBlocksPerEpoch == 0 {
 		validatorList, err := bscExtractValidatorListFromBlock(blockInfo.Block.Extra())
 		if err != nil {
 			g.log.Errorf("failed to extract validator list from extra data: %v", err)
 		} else {
-			g.validatorListMap.Delete(blockHeight - blocksPerEpoch) // remove the validator list that doesn't need anymore
+			g.validatorListMap.Delete(blockHeight - bscBlocksPerEpoch) // remove the validator list that doesn't need anymore
 			g.validatorListMap.Store(blockHeight, validatorList)
 		}
 	}
@@ -1054,7 +1038,7 @@ func (g *gateway) notifyBlockFeeds(bxBlock *types.BxBlock, nodeSource *connectio
 	var addedNewBlock, addedBdnBlock bool
 
 	notifyEthBlockFeeds := func(block *bxcommoneth.Block, nodeSource *connections.Blockchain, info []*types.FutureValidatorInfo, isBlockchainBlock bool) error {
-		ethNotification, err := types.NewEthBlockNotification(common.Hash(bxBlock.ExecutionHash()), block, info, g.txIncludeSenderInFeed)
+		ethNotification, err := types.NewEthBlockNotification(common.Hash(bxBlock.ExecutionHash()), block, info)
 		if err != nil {
 			return err
 		}
@@ -1310,7 +1294,6 @@ func (g *gateway) handleBridgeMessages(ctx context.Context) error {
 					fmt.Sprintf("handleBlockFromBlockchain hash=[%s]", blockchainBlock.Block.Hash()), blockchainBlock.PeerEndpoint.String(), 1)
 			}
 		case beaconMessage := <-g.bridge.ReceiveBeaconMessageFromNode():
-
 			g.traceIfSlow(func() {
 				g.handleBeaconMessageFromBlockchain(&beaconMessage)
 			},
@@ -1319,17 +1302,17 @@ func (g *gateway) handleBridgeMessages(ctx context.Context) error {
 	}
 }
 
-func (g *gateway) handleBeaconMessageFromBlockchain(beaconMessageFromNode *blockchain.BeaconMessageFromNode) error {
+func (g *gateway) handleBeaconMessageFromBlockchain(beaconMessageFromNode *blockchain.BeaconMessageFromNode) {
 	startTime := g.clock.Now()
 	if !g.seenBeaconMessages.SetIfAbsent(beaconMessageFromNode.Message.Hash.String(), 30*time.Minute) {
 		g.log.Tracef("skipping beacon message %v, already seen", beaconMessageFromNode.Message.Hash.String())
-		return core.ErrAlreadySeen
+		return
 	}
 
 	beaconMessage, err := g.blobProcessor.BxBeaconMessageToBeaconMessage(beaconMessageFromNode.Message, g.sdn.NetworkNum())
 	if err != nil {
-		g.log.Errorf("Failed to convert beaconMessage from BxBeaconMessage")
-		return err
+		g.log.Errorf("failed to convert beaconMessage from BxBeaconMessage: %v", err)
+		return
 	}
 
 	source := connections.NewBlockchainConn(beaconMessageFromNode.PeerEndpoint)
@@ -1342,7 +1325,6 @@ func (g *gateway) handleBeaconMessageFromBlockchain(beaconMessageFromNode *block
 		beaconMessage.BlockHash().String())
 
 	g.log.Tracef("broadcasted beacon message from Blockchain to BDN %v, from %v to peers[%v]", beaconMessage, source, results)
-	return nil
 }
 
 func (g *gateway) NodeStatus() connections.NodeStatus {
@@ -2035,17 +2017,4 @@ func (g *gateway) forwardBSCTx(conn *http.Client, txHash string, tx string, endp
 		"response":   string(body),
 		"statusCode": resp.StatusCode,
 	}).Info("transaction sent")
-}
-
-// bscBlocksPerEpoch returns the number of blocks per epoch for BSC.
-// https://github.com/bnb-chain/BEPs/blob/master/BEPs/BEP-524.md
-func (g *gateway) bscBlocksPerEpoch() uint64 {
-	if g.sdn.NetworkNum() == bxtypes.BSCMainnetNum && time.Now().After(maxwellHardForkTime) {
-		return bscBlocksPerEpochMaxwell
-
-	} else if g.sdn.NetworkNum() == bxtypes.BSCTestnetNum && time.Now().After(maxwellHardForkTimeTestnet) {
-		return bscBlocksPerEpochMaxwell
-	}
-
-	return bscBlocksPerEpochPreMaxwell
 }
