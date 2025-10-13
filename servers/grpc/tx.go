@@ -48,7 +48,7 @@ func (g *server) BlxrTx(ctx context.Context, req *pb.BlxrTxRequest) (*pb.BlxrTxR
 
 	grpc := connections.NewRPCConn(*accountID, getPeerAddr(ctx), g.params.sdn.NetworkNum(), bxtypes.GRPC)
 	txHash, ok, err := handler.HandleSingleTransaction(g.params.node, g.params.wsManager, req.Transaction, nil, grpc,
-		req.NodeValidation, bxtypes.NetworkNumToChainID[g.params.sdn.NetworkNum()])
+		req.NodeValidation, bxtypes.NetworkNumToChainID[g.params.sdn.NetworkNum()], true)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -89,7 +89,7 @@ func (g *server) BlxrBatchTX(ctx context.Context, req *pb.BlxrBatchTXRequest) (*
 
 	for idx, transactionsAndSender := range transactionsAndSenders {
 		tx := transactionsAndSender.GetTransaction()
-		txHash, ok, err := handler.HandleSingleTransaction(g.params.node, g.params.wsManager, tx, transactionsAndSender.GetSender(), grpc, req.NodeValidation, g.params.chainID)
+		txHash, ok, err := handler.HandleSingleTransaction(g.params.node, g.params.wsManager, tx, transactionsAndSender.GetSender(), grpc, req.NodeValidation, g.params.chainID, true)
 		if err != nil {
 			txErrors = append(txErrors, &pb.ErrorIndex{Idx: int32(idx), Error: err.Error()})
 			continue

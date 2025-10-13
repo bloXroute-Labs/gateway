@@ -41,7 +41,7 @@ func (h *handlerObj) handleRPCEthSendTx(ctx context.Context, conn *conn, req Req
 	}
 
 	reqWS := connections.NewRPCConn(h.connectionAccount.AccountID, h.remoteAddress, h.networkNum, bxtypes.Websocket)
-	txHash, ok, err := handler.HandleSingleTransaction(h.node, h.nodeWSManager, rawTxStr, nil, reqWS, false, h.chainID)
+	txHash, ok, err := handler.HandleSingleTransaction(h.node, h.nodeWSManager, rawTxStr, nil, reqWS, false, h.chainID, false)
 	if err != nil {
 		sendErrorMsg(ctx, jsonrpc.InvalidParams, err.Error(), conn, req.ID)
 	}

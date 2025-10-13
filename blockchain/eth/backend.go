@@ -604,7 +604,7 @@ func (h *handler) sendConfirmedBlocksToBDN(count int, peerEndpoint types.NodeEnd
 	blockHash := ethcommon.BytesToHash(b.Hash().Bytes())
 
 	if h.chain.HasConfirmationSendToBDN(blockHash) {
-		log.Debugf("block %v has already been sent in a block confirm message to gateway", b.Hash())
+		log.Tracef("block %v has already been sent in a block confirm message to gateway", b.Hash())
 		return
 	}
 	log.Tracef("sending block (%v) confirm message to gateway from backend", b.Hash())

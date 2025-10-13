@@ -52,7 +52,7 @@ func TestManageServers(t *testing.T) {
 		nil, services.NewNoOpSubscriptionServices(), wsManager, nil,
 		time.Now(), "", fm,
 		statistics.NoStats{}, nil,
-		false, "", "", nil,
+		false, "", "", nil, nil,
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())

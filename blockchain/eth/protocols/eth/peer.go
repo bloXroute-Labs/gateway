@@ -43,6 +43,7 @@ const (
 	blockQueueMaxSize               = 50
 	delayLimit                      = time.Second
 	readStatusTimeout               = 6 * time.Second
+	sendQueueSize                   = 20
 )
 
 // special error constants during peer message processing
@@ -77,6 +78,14 @@ type Peer struct {
 
 	ConfirmedHead atomic.Value // stores core.BlockRef
 	sentHead      atomic.Value // stores core.BlockRef
+
+	// send queue to avoid blocking callers on p2p.Send
+	sendCh chan sendJob
+}
+
+type sendJob struct {
+	code uint64
+	data interface{}
 }
 
 // NewPeer returns a wrapped Ethereum peer
@@ -100,7 +109,10 @@ func newPeer(parent context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version 
 		queuedBlocks:         make([]NewBlockPacket, 0),
 		ResponseQueue:        syncmap.NewIntegerMapOf[uint64, chan eth.Packet](),
 		RequestConfirmations: true,
+		sendCh:               make(chan sendJob, sendQueueSize),
 	}
+
+	go peer.startSender()
 	peer.endpoint = types.NodeEndpoint{IP: p.Node().IP().String(), Port: p.Node().TCP(), PublicKey: p.Info().Enode, Dynamic: !p.Info().Network.Static, ID: p.ID().String()}
 	peer.ConfirmedHead.Store(core.BlockRef{})
 	peer.sentHead.Store(core.BlockRef{})
@@ -111,6 +123,24 @@ func newPeer(parent context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version 
 		"id":         fmt.Sprintf("%x", peerID[:8]),
 	})
 	return peer
+}
+
+func (p *Peer) startSender() {
+	for {
+		select {
+		case job, ok := <-p.sendCh:
+			if !ok {
+				return
+			}
+			err := p2p.Send(p.rw, job.code, job.data)
+			if err != nil && errors.Is(err, p2p.ErrShuttingDown) {
+				p.log.Warn("peer is shutting down, disconnecting")
+				p.Disconnect(p2p.DiscQuitting)
+			}
+		case <-p.ctx.Done():
+			return
+		}
+	}
 }
 
 // PassCheckpoint marks the peer as having passed the checkpoint, which is used to determine if the peer is ready to receive blocks
@@ -627,13 +657,14 @@ func (p *Peer) send(msgCode uint64, data interface{}) error {
 		return nil
 	}
 
-	err := p2p.Send(p.rw, msgCode, data)
-	if err != nil && errors.Is(err, p2p.ErrShuttingDown) {
-		p.log.Warn("peer is shutting down, disconnecting")
-		p.Disconnect(p2p.DiscQuitting)
+	job := sendJob{code: msgCode, data: data}
+	select {
+	case p.sendCh <- job:
+		return nil
+	default:
+		p.log.Warnf("send queue full for %v msgCode %d", p.IPEndpoint(), msgCode)
+		return fmt.Errorf("send enqueue full")
 	}
-
-	return err
 }
 
 // Handshake executes the Ethereum protocol Handshake. Unlike Geth, the gateway waits for the peer status message before sending its own, to replicate some peer status fields.

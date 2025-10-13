@@ -259,7 +259,7 @@ func (beaconBlockNotification *DenebBlockNotification) Clone() BlockNotification
 // EthBlockNotification - represents a single block
 type EthBlockNotification struct {
 	BlockHash        *ethcommon.Hash `json:"hash,omitempty"`
-	block            *bxethcommon.Block
+	Block            *bxethcommon.Block
 	Header           *Header                  `json:"header,omitempty"`
 	Transactions     []map[string]interface{} `json:"transactions,omitempty"`
 	Uncles           []Header                 `json:"uncles,omitempty"`
@@ -284,7 +284,7 @@ func NewEthBlockNotification(hash ethcommon.Hash, block *bxethcommon.Block, info
 	}
 	return &EthBlockNotification{
 		BlockHash:     &hash,
-		block:         block,
+		Block:         block,
 		Header:        ConvertEthHeaderToBlockNotificationHeader(block.Header()),
 		Uncles:        ethUncles,
 		ValidatorInfo: info,
@@ -297,7 +297,7 @@ func NewEthBlockNotification(hash ethcommon.Hash, block *bxethcommon.Block, info
 
 // GetTransactions returns a shallow copy of the transactions slice
 func (ethBlockNotification *EthBlockNotification) GetTransactions() []map[string]interface{} {
-	return ethBlockNotification.parseTransactions()
+	return ethBlockNotification.parseTransactions(true)
 }
 
 func (ethBlockNotification *EthBlockNotification) parseRawTransactions() [][]byte {
@@ -308,8 +308,8 @@ func (ethBlockNotification *EthBlockNotification) parseRawTransactions() [][]byt
 	}
 
 	rawTransactions := make([][]byte, 0)
-	if ethBlockNotification.block != nil {
-		for _, tx := range ethBlockNotification.block.Transactions() {
+	if ethBlockNotification.Block != nil {
+		for _, tx := range ethBlockNotification.Block.Transactions() {
 			rawTx, err := tx.MarshalBinary()
 			if err != nil {
 				log.Errorf("failed to marshal transaction: %v", err)
@@ -340,18 +340,47 @@ func (ethBlockNotification *EthBlockNotification) GetParsedTransactions() []map[
 	return ethBlockNotification.Transactions
 }
 
-func (ethBlockNotification *EthBlockNotification) parseTransactions() []map[string]interface{} {
+func (ethBlockNotification *EthBlockNotification) parseTansactionsWithSenders(senders map[string]Sender) []map[string]interface{} {
+	ethBlockNotification.txsMu.Lock()
+	defer ethBlockNotification.txsMu.Unlock()
+	if ethBlockNotification.Block != nil {
+		ethTxs := make([]map[string]interface{}, 0)
+		for _, tx := range ethBlockNotification.Block.Transactions() {
+			if sender, ok := senders[tx.Hash().String()]; ok {
+				txFields, err := parseFieldsFromTx(tx, false)
+				if err != nil {
+					log.Errorf("failed to parse fields from txs: %v", err)
+					return nil
+				}
+				txFields["from"] = sender.String()
+				ethTxs = append(ethTxs, txFields)
+			} else {
+				txFields, err := parseFieldsFromTx(tx, true)
+				if err != nil {
+					log.Errorf("failed to parse fields from txs: %v", err)
+					return nil
+				}
+				ethTxs = append(ethTxs, txFields)
+			}
+		}
+		ethBlockNotification.Transactions = ethTxs
+		return ethTxs
+	}
+	return nil
+}
+
+func (ethBlockNotification *EthBlockNotification) parseTransactions(includeFrom bool) []map[string]interface{} {
 	ethBlockNotification.txsMu.Lock()
 	defer ethBlockNotification.txsMu.Unlock()
 	if ethBlockNotification.Transactions != nil {
 		return ethBlockNotification.Transactions
 	}
 
-	if ethBlockNotification.block != nil {
+	if ethBlockNotification.Block != nil {
 		ethTxs := make([]map[string]interface{}, 0)
 
-		for _, tx := range ethBlockNotification.block.Transactions() {
-			txFields, err := parseFieldsFromTx(tx)
+		for _, tx := range ethBlockNotification.Block.Transactions() {
+			txFields, err := parseFieldsFromTx(tx, includeFrom)
 			if err != nil {
 				log.Errorf("failed to parse fields from txs: %v", err)
 				return nil
@@ -384,7 +413,7 @@ func (ethBlockNotification *EthBlockNotification) parseTransactionsFromRaw() ([]
 			return nil, err
 		}
 
-		ethTxFields, err := parseFieldsFromTx(&tx)
+		ethTxFields, err := parseFieldsFromTx(&tx, true)
 		if err != nil {
 			return nil, err
 		}
@@ -394,12 +423,17 @@ func (ethBlockNotification *EthBlockNotification) parseTransactionsFromRaw() ([]
 	return ethTxs, nil
 }
 
-func parseFieldsFromTx(tx *ethtypes.Transaction) (map[string]any, error) {
+func parseFieldsFromTx(tx *ethtypes.Transaction, includeFrom bool) (map[string]any, error) {
 	ethTx, err := NewEthTransaction(tx, EmptySender)
 	if err != nil {
 		return nil, err
 	}
-	fields := ethTx.Fields(AllFieldsWithFrom)
+	var fields map[string]interface{}
+	if includeFrom {
+		fields = ethTx.Fields(AllFieldsWithFrom)
+	} else {
+		fields = ethTx.Fields(AllFields)
+	}
 	if ethTx.Type() >= ethtypes.DynamicFeeTxType {
 		fields["gasPrice"] = fields["maxFeePerGas"]
 	}
@@ -497,7 +531,7 @@ func ConvertEthHeaderToBlockNotificationHeader(ethHeader *ethtypes.Header) *Head
 
 // WithFields returns notification with specified fields
 func (ethBlockNotification *EthBlockNotification) WithFields(fields []string) Notification {
-	block := EthBlockNotification{txsMu: ethBlockNotification.txsMu, rawTxsMu: ethBlockNotification.rawTxsMu, block: ethBlockNotification.block}
+	block := EthBlockNotification{txsMu: ethBlockNotification.txsMu, rawTxsMu: ethBlockNotification.rawTxsMu, Block: ethBlockNotification.Block}
 
 	for _, param := range fields {
 		switch param {
@@ -506,7 +540,9 @@ func (ethBlockNotification *EthBlockNotification) WithFields(fields []string) No
 		case "header":
 			block.Header = ethBlockNotification.Header
 		case "transactions":
-			block.Transactions = ethBlockNotification.parseTransactions()
+			block.Transactions = ethBlockNotification.parseTransactions(true)
+		case "transactions_without_sender":
+			block.Transactions = ethBlockNotification.parseTransactions(false)
 		case "raw_transactions":
 			block.RawTransactions = ethBlockNotification.parseRawTransactions()
 		case "uncles":
@@ -518,6 +554,11 @@ func (ethBlockNotification *EthBlockNotification) WithFields(fields []string) No
 		}
 	}
 	return &block
+}
+
+// GetTxs returns transactions with senders
+func (ethBlockNotification *EthBlockNotification) GetTxs(senders map[string]Sender) []map[string]interface{} {
+	return ethBlockNotification.parseTansactionsWithSenders(senders)
 }
 
 // Filters converts filters as field value map

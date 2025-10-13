@@ -36,9 +36,9 @@ type EthTxStore struct {
 func NewEthTxStore(clock clock.Clock, cleanupInterval time.Duration,
 	noSIDAge time.Duration, assigner ShortIDAssigner, hashHistory HashHistory, cleanedShortIDsChannel chan types.ShortIDsByNetwork,
 	networkConfig sdnmessage.BlockchainNetworks, bloom BloomFilter, blobCompressorStorage BlobCompressorStorage,
-	blobsCleanerEnabled bool,
+	blobsCleanerEnabled bool, senderExtractor *SenderExtractor,
 ) *EthTxStore {
-	bxStore := newBxTxStore(clock, networkConfig, cleanupInterval, noSIDAge, assigner, hashHistory, cleanedShortIDsChannel, timeToAvoidReEntry, bloom, blobCompressorStorage, blobsCleanerEnabled)
+	bxStore := newBxTxStore(clock, networkConfig, cleanupInterval, noSIDAge, assigner, hashHistory, cleanedShortIDsChannel, timeToAvoidReEntry, bloom, blobCompressorStorage, blobsCleanerEnabled, senderExtractor)
 	return &EthTxStore{
 		BxTxStore:    bxStore,
 		nonceTracker: newNonceTracker(clock, networkConfig, cleanNonceInterval),
@@ -119,6 +119,9 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 	if !result.NewContent {
 		return result
 	}
+	if t.senderExtractor != nil {
+		t.submitTxsToSenderExtractor(ethTx, content, result, transaction)
+	}
 
 	if !result.Transaction.Flags().IsWithSidecar() && (!t.isReuseNonceActive(network) || sender == types.EmptySender) {
 		return result
@@ -162,6 +165,20 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 	}
 
 	return result
+}
+
+func (t *EthTxStore) submitTxsToSenderExtractor(ethTx *types.EthTransaction, content types.TxContent, result types.TransactionResult, transaction *types.BxTransaction) {
+	if ethTx != nil {
+		t.senderExtractor.submitEth(ethTx)
+	} else if content != nil && !result.NewSID {
+		if transaction.Content() == nil {
+			transaction.SetContent(content)
+		}
+		ethTx, err := transaction.MakeAndSetEthTransaction(types.EmptySender)
+		if err == nil {
+			t.senderExtractor.submitEth(ethTx)
+		}
+	}
 }
 
 // Stop halts the nonce tracker in addition to regular tx service cleanup

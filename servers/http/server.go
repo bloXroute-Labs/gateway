@@ -16,6 +16,7 @@ import (
 	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 
+	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler"
@@ -32,16 +33,25 @@ type Server struct {
 	feedManager *feed.Manager
 	port        int
 	oFACList    *types.OFACMap
+	bdnStats    *bxmessage.BdnPerformanceStats
 }
 
 // NewServer creates and returns a new websocket server managed by feedManager
-func NewServer(node connections.BxListener, feedManager *feed.Manager, port int, sdn sdnsdk.SDNHTTP, oFACList *types.OFACMap) *Server {
+func NewServer(
+	node connections.BxListener,
+	feedManager *feed.Manager,
+	port int,
+	sdn sdnsdk.SDNHTTP,
+	oFACList *types.OFACMap,
+	bdnStats *bxmessage.BdnPerformanceStats,
+) *Server {
 	return &Server{
 		port:        port,
 		node:        node,
 		feedManager: feedManager,
 		sdn:         sdn,
 		oFACList:    oFACList,
+		bdnStats:    bdnStats,
 	}
 }
 
@@ -82,6 +92,7 @@ func (s *Server) Shutdown() {
 func (s *Server) setupHandlers() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.httpRPCHandler)
+	mux.HandleFunc("/healthz", s.httpHealthzHandler)
 
 	return mux
 }
@@ -137,6 +148,30 @@ func (s *Server) httpRPCHandler(w http.ResponseWriter, r *http.Request) {
 	default:
 		err := fmt.Errorf("got unsupported method name: %v", rpcRequest.Method)
 		writeErrorJSON(w, rpcRequest.ID, http.StatusNotFound, err)
+	}
+}
+
+func (s *Server) httpHealthzHandler(w http.ResponseWriter, _ *http.Request) {
+	ok := false
+	for _, node := range s.bdnStats.NodeStats() {
+		if node.IsConnected {
+			ok = true
+			break
+		}
+	}
+
+	response := struct {
+		Status string `json:"status"`
+	}{Status: "ok"}
+
+	if !ok {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		response.Status = "no connected peers"
+	}
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Errorf("error: failed to encode health json: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
 	}
 }
 

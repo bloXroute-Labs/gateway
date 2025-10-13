@@ -15,7 +15,7 @@ import (
 
 // HandleEthOnBlock handle eth on block
 func HandleEthOnBlock(wsManager blockchain.WSManager, block *types.EthBlockNotification, calls map[string]*RPCCall, sendNotification func(notification *types.OnBlockNotification) error) error {
-	if len(block.GetParsedTransactions()) > 0 {
+	if len(block.GetTransactions()) > 0 {
 		nodeWS, ok := wsManager.GetSyncedWSProvider(block.Source())
 		if !ok {
 			log.Errorf("failed to get synced ws provider")

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
@@ -16,6 +17,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
+	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
 	"github.com/bloXroute-Labs/gateway/v2/types"
@@ -24,6 +26,12 @@ import (
 var (
 	errParamsValueIsMissing = "params is missing in the request"
 	errFDifferentAccAuth    = "%s is not allowed when account authentication is different from the node account"
+)
+
+// include field constants
+const (
+	includeTransactions              = "transactions"
+	includeTransactionsWithoutSender = "transactions_without_sender"
 )
 
 type handlerObj struct {
@@ -44,6 +52,7 @@ type handlerObj struct {
 	enableBlockchainRPC      bool
 	txFromFieldIncludable    bool
 	oFACList                 *types.OFACMap
+	senderExtractor          *services.SenderExtractor
 }
 
 // Handle handling client requests
@@ -130,6 +139,23 @@ func (h *handlerObj) Handle(ctx context.Context, conn *conn, req Request) {
 	}
 }
 
+func (h *handlerObj) buildNotificationContent(notification types.Notification, includes []string) types.Notification {
+	// for block feeds, replace 'transactions' with 'transactions_without_sender' for WithFields
+	switch notification.NotificationType() {
+	case types.NewBlocksFeed, types.BDNBlocksFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed:
+		newIncludes := replaceTransactionsWithourSenderIfNeeded(includes)
+		content := notification.WithFields(newIncludes)
+		if blockContent, ok := content.(*types.EthBlockNotification); ok {
+			senders := h.senderExtractor.GetSendersFromBlockTxs(blockContent.Block)
+			blockContent.GetTxs(senders)
+			return blockContent
+		}
+		return content
+	default:
+		return notification.WithFields(includes)
+	}
+}
+
 // sendNotification - build a response according to client request and notify client
 func (h *handlerObj) sendNotification(ctx context.Context, subscriptionID string, clientReq *ClientReq, conn *conn, notification types.Notification) error {
 	response := BlockResponse{
@@ -145,8 +171,8 @@ func (h *handlerObj) sendNotification(ctx context.Context, subscriptionID string
 			}
 		}
 	}
-	content := notification.WithFields(includes)
-	response.Result = content
+
+	response.Result = h.buildNotificationContent(notification, includes)
 	err := conn.Notify(ctx, "subscribe", response)
 	if err != nil {
 		if !errors.Is(err, ErrClosed) {
@@ -155,4 +181,19 @@ func (h *handlerObj) sendNotification(ctx context.Context, subscriptionID string
 		return err
 	}
 	return nil
+}
+
+func replaceTransactionsWithourSenderIfNeeded(includes []string) []string {
+	if !slices.Contains(includes, includeTransactions) {
+		return includes
+	}
+	newIncludes := make([]string, 0, len(includes))
+	for _, inc := range includes {
+		if inc == includeTransactions {
+			continue
+		}
+		newIncludes = append(newIncludes, inc)
+	}
+	newIncludes = append(newIncludes, includeTransactionsWithoutSender)
+	return newIncludes
 }
