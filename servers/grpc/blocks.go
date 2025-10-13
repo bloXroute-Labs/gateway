@@ -102,6 +102,10 @@ func (g *server) handleBlocks(req *pb.BlocksRequest, stream pb.Gateway_BdnBlocks
 		if i := slices.Index(includes, "transactions"); i >= 0 {
 			includes = slices.Replace(includes, i, i+1, "raw_transactions")
 		}
+	} else {
+		if i := slices.Index(includes, "transactions"); i >= 0 {
+			includes = slices.Replace(includes, i, i+1, "transactions_without_sender")
+		}
 	}
 
 	for {
@@ -132,6 +136,11 @@ func generateEthOnBlockReply(n *types.OnBlockNotification) *pb.EthOnBlockReply {
 		BlockHeight: n.BlockHeight,
 		Tag:         n.Tag,
 	}
+}
+
+func (g *server) generateTxsWithSenders(n *types.EthBlockNotification) []map[string]interface{} {
+	senders := g.params.senderExtractor.GetSendersFromBlockTxs(n.Block)
+	return n.GetTxs(senders)
 }
 
 func (g *server) generateBlockReply(n *types.EthBlockNotification, parsedTxs bool) *pb.BlocksReply {
@@ -177,7 +186,7 @@ func (g *server) generateBlockReplyWithRawTxs(n *types.EthBlockNotification) []*
 
 func (g *server) generateBlockReplyWithParsedTxs(n *types.EthBlockNotification) []*pb.Tx {
 	parsedTxs := make([]*pb.Tx, 0)
-	for index, tx := range n.GetParsedTransactions() {
+	for index, tx := range g.generateTxsWithSenders(n) {
 		var from []byte
 		if f, ok := tx["from"]; ok {
 			from = g.decodeHex(f.(string))

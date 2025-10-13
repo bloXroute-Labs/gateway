@@ -66,7 +66,12 @@ func TestPeer_Handshake(t *testing.T) {
 	ps, err := peer.Handshake(1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
 	require.NoError(t, err)
 	assert.Equal(t, peerStatus, *ps)
-
+	require.Eventually(t,
+		func() bool { return rw.SentCount.Load() >= 2 },
+		100*time.Millisecond,
+		5*time.Millisecond,
+		"sentCount did not reach 2 in time",
+	)
 	// outgoing status message enqueued
 	assert.Equal(t, 2, len(rw.WriteMessages), "Status and NewPooledTransactionHashesMsg should be sent")
 	assert.Equal(t, uint64(eth.StatusMsg), rw.WriteMessages[0].Code)
@@ -259,6 +264,12 @@ func TestPeer_SendNewBlock_HeadUpdates(t *testing.T) {
 	peer.UpdateHead(4, block4b.Hash())
 
 	assert.True(t, rw.ExpectWrite(maxWriteTimeout))
+	require.Eventually(t,
+		func() bool { return rw.SentCount.Load() >= 1 },
+		100*time.Millisecond,
+		5*time.Millisecond,
+		"sentCount did not reach 1 in time",
+	)
 	assert.Equal(t, 1, len(rw.WriteMessages))
 
 	var blockPacket NewBlockPacket
@@ -279,6 +290,12 @@ func TestPeer_RequestBlockHeaderNonBlocking(t *testing.T) {
 
 	err = peer.RequestBlockHeader(common.Hash{})
 	assert.NoError(t, err)
+	require.Eventually(t,
+		func() bool { return rw.SentCount.Load() >= 1 },
+		100*time.Millisecond,
+		5*time.Millisecond,
+		"sentCount did not reach 1 in time",
+	)
 
 	assert.Equal(t, 1, len(rw.WriteMessages))
 

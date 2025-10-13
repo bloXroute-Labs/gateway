@@ -11,7 +11,7 @@ import (
 )
 
 func TestEthBlock(t *testing.T) {
-	block := EthBlockNotification{txsMu: &sync.RWMutex{}, rawTxsMu: &sync.RWMutex{}, block: &bxethcommon.Block{}}
+	block := EthBlockNotification{txsMu: &sync.RWMutex{}, rawTxsMu: &sync.RWMutex{}, Block: &bxethcommon.Block{}}
 	_ = block.WithFields([]string{"hash", "header", "transactions", "uncles"})
 	// TODO add test checking the header values
 }

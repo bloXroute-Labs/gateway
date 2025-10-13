@@ -21,6 +21,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"
+	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/services/account"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
@@ -51,6 +52,7 @@ type Server struct {
 	wsConnDelayOnErr      time.Duration // wsConnDelayOnErr amount of time to sleep before closing a bad connection. This is configured by tests to a shorted value
 	txFromFieldIncludable bool
 	oFACList              *types.OFACMap
+	senderExtractor       *services.SenderExtractor
 }
 
 // NewWSServer creates and returns a new websocket server
@@ -65,7 +67,8 @@ func NewWSServer(
 	nodeWSManager blockchain.WSManager,
 	stats statistics.Stats,
 	txFromFieldIncludable bool,
-	oFACList *types.OFACMap) *Server {
+	oFACList *types.OFACMap,
+	senderExtractor *services.SenderExtractor) *Server {
 
 	networkNum := sdn.NetworkNum()
 	chainID := bxtypes.NetworkNumToChainID[networkNum]
@@ -86,6 +89,7 @@ func NewWSServer(
 		wsConnDelayOnErr:      10 * time.Second,
 		txFromFieldIncludable: txFromFieldIncludable,
 		oFACList:              oFACList,
+		senderExtractor:       senderExtractor,
 	}
 
 	return s
@@ -253,6 +257,7 @@ func (s *Server) wsHandler(w http.ResponseWriter, r *http.Request) {
 		txFromFieldIncludable:    s.txFromFieldIncludable,
 		pendingTxsSourceFromNode: s.cfg.PendingTxsSourceFromNode,
 		oFACList:                 s.oFACList,
+		senderExtractor:          s.senderExtractor,
 	}
 
 	_ = newConn(r.Context(), connection, handler)

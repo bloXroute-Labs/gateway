@@ -26,6 +26,7 @@ func HandleSingleTransaction(
 	conn connections.Conn,
 	nodeValidationRequested bool,
 	gatewayChainID bxtypes.NetworkID,
+	forBuilders bool,
 ) (string, bool, error) {
 
 	txContent, err := types.DecodeHex(transaction)
@@ -42,6 +43,10 @@ func HandleSingleTransaction(
 		var sender types.Sender
 		copy(sender[:], txSender)
 		tx.SetSender(sender)
+	}
+
+	if forBuilders {
+		tx.AddFlags(types.TFForBuilders)
 	}
 
 	if !pendingReevaluation {

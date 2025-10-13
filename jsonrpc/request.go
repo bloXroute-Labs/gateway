@@ -41,6 +41,8 @@ const (
 	RPCEthCancelBundle        RPCRequestType = "eth_cancelBundle"
 	RPCEthSendExclusiveBundle RPCRequestType = "eth_sendExclusiveBundle"
 	RPCEthSendArbOnlyBundle   RPCRequestType = "eth_sendArbOnlyBundle"
+	RPCEstimateGas            RPCRequestType = "eth_estimateGas"
+	RPCETHCall                RPCRequestType = "eth_call"
 )
 
 // RPCMethodToRPCRequestType maps gRPC methods to RPCRequestType
@@ -59,7 +61,7 @@ type RPCTxPayload struct {
 	NodeValidation          bool           `json:"node_validation"`
 	FrontRunningProtection  bool           `json:"front_running_protection"`
 	BackrunmeRewardAddress  string         `json:"backrunme_reward_address,omitempty"`
-	Simulation              bool           `json:"simulation,omitempty"`
+	RPCMode                 bool           `json:"rpc_mode,omitempty"`
 }
 
 // RPCBatchTxPayload is the payload of blxr_batch_tx request
@@ -81,7 +83,7 @@ type rpcTxJSON struct {
 	NodeValidation          bool           `json:"node_validation"`
 	FrontRunningProtection  bool           `json:"front_running_protection"`
 	BackrunmeRewardAddress  string         `json:"backrunme_reward_address,omitempty"`
-	Simulation              bool           `json:"simulation,omitempty"`
+	RPCMode                 bool           `json:"rpc_mode,omitempty"`
 }
 
 // UnmarshalJSON provides a compatibility layer for go-ethereum style RPC calls, which are [object], instead of just object.
@@ -112,7 +114,7 @@ func (p *RPCTxPayload) UnmarshalJSON(b []byte) error {
 	p.FrontRunningProtection = payload.FrontRunningProtection
 	p.MevBundleTx = payload.MevBundleTx
 	p.BackrunmeRewardAddress = payload.BackrunmeRewardAddress
-	p.Simulation = payload.Simulation
+	p.RPCMode = payload.RPCMode
 
 	return nil
 }

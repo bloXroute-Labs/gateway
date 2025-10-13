@@ -143,6 +143,7 @@ func testGRPCServer(t *testing.T, port int, user string, password string) (*Serv
 		nil,
 		false,
 		nil,
+		services.NewSenderExtractor(),
 	)
 
 	return grpcServer, feedMngr

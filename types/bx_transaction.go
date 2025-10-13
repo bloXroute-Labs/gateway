@@ -4,7 +4,6 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -197,8 +196,6 @@ func (bt *BxTransaction) MakeAndSetEthTransaction(sender Sender) (*EthTransactio
 	defer bt.m.Unlock()
 
 	if bt.tx != nil {
-		log.Debugf("reusing existing EthTransaction for %s", bt.hash.Format(false))
-
 		return bt.tx, nil
 	}
 

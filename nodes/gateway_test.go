@@ -304,7 +304,7 @@ func TestGateway_HandleTransactionFromBlockchain_SeenInBloomFilter(t *testing.T)
 
 	g.TxStore = services.NewEthTxStore(g.clock, 30*time.Minute, 10*time.Minute,
 		services.NewEmptyShortIDAssigner(), services.NewHashHistory("seenTxs", 30*time.Minute), nil,
-		*g.sdn.Networks(), bf, services.NewNoOpBlockCompressorStorage(), false)
+		*g.sdn.Networks(), bf, services.NewNoOpBlockCompressorStorage(), false, nil)
 
 	go func() {
 		err := g.handleBridgeMessages(context.Background())
@@ -325,7 +325,7 @@ func TestGateway_HandleTransactionFromBlockchain_SeenInBloomFilter(t *testing.T)
 	// create empty TxStore to make sure transaction is ignored due to bloom_filter
 	g.TxStore = services.NewEthTxStore(g.clock, 30*time.Minute, 10*time.Minute,
 		services.NewEmptyShortIDAssigner(), services.NewHashHistory("seenTxs", 30*time.Minute), nil,
-		*g.sdn.Networks(), bf, services.NewNoOpBlockCompressorStorage(), false)
+		*g.sdn.Networks(), bf, services.NewNoOpBlockCompressorStorage(), false, nil)
 
 	processEthTxOnBridge(t, bridge, ethTx, g.blockchainPeers[0])
 	assertNoTransactionSentToRelay(t, mockTLS)
@@ -1195,7 +1195,7 @@ func TestGateway_Status(t *testing.T) {
 	g.clientHandler = servers.NewClientHandler(&g.Bx, g.BxConfig, g, g.sdn, accService, g.bridge,
 		g.blockchainPeers, services.NewNoOpSubscriptionServices(), g.wsManager, g.bdnStats,
 		g.timeStarted, g.gatewayPublicKey, g.feedManager, g.stats, g.TxStore,
-		false, "", "", nil,
+		false, "", "", nil, nil,
 	)
 
 	go g.clientHandler.ManageServers(context.Background(), g.BxConfig.ManageWSServer)
@@ -1296,7 +1296,6 @@ func TestGateway_ConnectionStatus(t *testing.T) {
 	wg.Wait()
 	require.True(t, g.bdnStats.NodeStats()["123.45.6.78 1234"].IsConnected)
 }
-
 
 func createPeerData(timeNodeConnected string) ([]*types.NodeEndpoint, map[string]*bxmessage.BdnPerformanceStatsData) {
 	endpoints := []*types.NodeEndpoint{

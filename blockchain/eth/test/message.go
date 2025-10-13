@@ -2,6 +2,7 @@ package test
 
 import (
 	"errors"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/p2p"
@@ -19,6 +20,9 @@ type MsgReadWriter struct {
 	// provide an alerting mechanism if write doesn't happen on main goroutine (writeChannelSize = -1 if this is not needed)
 	writeAlertCh   chan bool
 	writeToChannel bool
+
+	// count of sent messages (incremented by WriteMsg)
+	SentCount atomic.Uint64
 
 	readTimeout time.Duration
 }
@@ -55,8 +59,13 @@ func (t *MsgReadWriter) ReadMsg() (p2p.Msg, error) {
 // WriteMsg tracks all messages that are supposedly written to the RW peer
 func (t *MsgReadWriter) WriteMsg(msg p2p.Msg) error {
 	t.WriteMessages = append(t.WriteMessages, msg)
+	t.SentCount.Add(1)
 	if t.writeToChannel {
-		t.writeAlertCh <- true
+		// non-blocking signal to avoid deadlocks in tests
+		select {
+		case t.writeAlertCh <- true:
+		default:
+		}
 	}
 	return nil
 }

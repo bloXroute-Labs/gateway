@@ -158,11 +158,11 @@ type gateway struct {
 	log           *log.Entry
 	chainID       int64
 
-	blobsManager   *beacon.BlobSidecarCacheManager
-	ignoredRelays  *syncmap.SyncMap[string, bxtypes.RelayInfo]
-	relaysToSwitch *syncmap.SyncMap[string, bool]
-	ofacMap        *types.OFACMap
-
+	blobsManager    *beacon.BlobSidecarCacheManager
+	ignoredRelays   *syncmap.SyncMap[string, bxtypes.RelayInfo]
+	relaysToSwitch  *syncmap.SyncMap[string, bool]
+	ofacMap         *types.OFACMap
+	senderExtractor *services.SenderExtractor
 }
 
 func (g *gateway) startOFACUpdater() {
@@ -301,13 +301,13 @@ func NewGateway(parent context.Context,
 		ignoredRelays:                syncmap.NewStringMapOf[bxtypes.RelayInfo](),
 		relaysToSwitch:               syncmap.NewStringMapOf[bool](),
 		ofacMap:                      syncmap.NewStringMapOf[bool](),
+		senderExtractor:              services.NewSenderExtractor(),
 		log: log.WithFields(log.Fields{
 			"component": "gateway",
 		}),
 		blobsManager: blobsManager,
 	}
 	g.chainID = int64(bxtypes.NetworkNumToChainID[sdn.NetworkNum()])
-
 
 	if bxConfig.BlockchainNetwork == bxtypes.BSCMainnet {
 		g.validatorStatusMap = syncmap.NewStringMapOf[bool]()
@@ -388,7 +388,7 @@ func (g *gateway) setSyncWithRelay() {
 func (g *gateway) setupTxStore() {
 	assigner := services.NewEmptyShortIDAssigner()
 	g.TxStore = services.NewEthTxStore(g.clock, 30*time.Minute, 10*time.Minute,
-		assigner, services.NewHashHistory("seenTxs", 30*time.Minute), nil, *g.sdn.Networks(), g.bloomFilter, services.NewBlobCompressorStorage(), false)
+		assigner, services.NewHashHistory("seenTxs", 30*time.Minute), nil, *g.sdn.Networks(), g.bloomFilter, services.NewBlobCompressorStorage(), false, g.senderExtractor)
 	g.blockProcessor = services.NewBlockProcessor(g.TxStore)
 	g.blobProcessor = services.NewBlobProcessor(g.TxStore, g.blobsManager)
 }
@@ -532,6 +532,7 @@ func (g *gateway) Run() error {
 	}
 
 	go g.TxStore.Start()
+	go g.senderExtractor.Run()
 
 	sslCert := g.sslCerts
 
@@ -570,7 +571,7 @@ func (g *gateway) Run() error {
 	g.clientHandler = servers.NewClientHandler(&g.Bx, g.BxConfig, g, g.sdn, accService, g.bridge,
 		g.blockchainPeers, services.NewNoOpSubscriptionServices(), g.wsManager, g.bdnStats,
 		g.timeStarted, g.gatewayPublicKey, g.feedManager, g.stats, g.TxStore,
-		txFromFieldIncludable, sslCert.PrivateCertFile(), sslCert.PrivateKeyFile(), g.ofacMap,
+		txFromFieldIncludable, sslCert.PrivateCertFile(), sslCert.PrivateKeyFile(), g.ofacMap, g.senderExtractor,
 	)
 
 	group.Go(func() error {
@@ -1357,6 +1358,10 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 
 	switch typedMsg := msg.(type) {
 	case *bxmessage.Tx:
+		if typedMsg.Flags().IsForBuilders() {
+			_ = g.broadcast(typedMsg, source, bxtypes.RelayProxy)
+			return nil
+		}
 		// insert to order queue if tx is flagged as send to node and no txs to blockchain is false, and we have static peers or dynamic peers
 		if typedMsg.Flags().ShouldDeliverToNode() && !g.BxConfig.NoTxsToBlockchain && (g.staticEnodesCount > 0 || g.BxConfig.EnableDynamicPeers) {
 			err = g.txsOrderQueue.Insert(typedMsg, source)
@@ -1864,7 +1869,6 @@ func (g *gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source c
 
 	g.stats.AddGatewayBundleEvent(event, source, start, mevBundle.BundleHash, mevBundle.GetNetworkNum(), mevBundle.Names(), mevBundle.UUID, blockNumber, mevBundle.MinTimestamp, mevBundle.MaxTimestamp)
 }
-
 
 func (g *gateway) getHeaderFromGateway() string {
 	accountID := g.sdn.AccountModel().AccountID

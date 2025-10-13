@@ -47,6 +47,7 @@ type BxTxStore struct {
 	cleanedShortIDsChannel chan types.ShortIDsByNetwork
 	bloom                  BloomFilter
 	blobsCleanerEnabled    bool
+	senderExtractor        *SenderExtractor
 }
 
 // NewBxTxStore creates a new BxTxStore to store and processes all relevant transactions
@@ -55,13 +56,13 @@ func NewBxTxStore(cleanupFreq time.Duration, networkConfig sdnmessage.Blockchain
 	timeToAvoidReEntry time.Duration, bloom BloomFilter, blobCompressorStorage BlobCompressorStorage,
 	blobsCleanerEnabled bool,
 ) BxTxStore {
-	return newBxTxStore(clock.RealClock{}, networkConfig, cleanupFreq, noSIDAge, assigner, seenTxs, cleanedShortIDsChannel, timeToAvoidReEntry, bloom, blobCompressorStorage, blobsCleanerEnabled)
+	return newBxTxStore(clock.RealClock{}, networkConfig, cleanupFreq, noSIDAge, assigner, seenTxs, cleanedShortIDsChannel, timeToAvoidReEntry, bloom, blobCompressorStorage, blobsCleanerEnabled, nil)
 }
 
 func newBxTxStore(clock clock.Clock, networkConfig sdnmessage.BlockchainNetworks, cleanupFreq time.Duration,
 	noSIDAge time.Duration, assigner ShortIDAssigner, seenTxs HashHistory, cleanedShortIDsChannel chan types.ShortIDsByNetwork,
 	timeToAvoidReEntry time.Duration, bloom BloomFilter, blobCompressorStorage BlobCompressorStorage,
-	blobsCleanerEnabled bool,
+	blobsCleanerEnabled bool, senderExtractor *SenderExtractor,
 ) BxTxStore {
 	bxStore := BxTxStore{
 		clock:                  clock,
@@ -78,6 +79,7 @@ func newBxTxStore(clock clock.Clock, networkConfig sdnmessage.BlockchainNetworks
 		cleanedShortIDsChannel: cleanedShortIDsChannel,
 		bloom:                  bloom,
 		blobsCleanerEnabled:    blobsCleanerEnabled,
+		senderExtractor:        senderExtractor,
 	}
 
 	if blobsCleanerEnabled {

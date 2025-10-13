@@ -20,7 +20,7 @@ const (
 	_ // Deprecated: TFNextValidatorRebroadcast  used for semi private tx
 	_ // Deprecated: TFFrontRunningProtection
 	TFWithSidecar
-	_ // [NOTICE] last flag
+	TFForBuilders // [NOTICE] last flag
 )
 
 // IsPaid indicates whether the transaction is considered paid from the user and consumes quota
@@ -41,4 +41,9 @@ func (f TxFlags) IsReuseSenderNonce() bool {
 // IsWithSidecar return true if transaction have blobs sidecar
 func (f TxFlags) IsWithSidecar() bool {
 	return f&TFWithSidecar != 0
+}
+
+// IsForBuilders return true if transaction is to be sent to builders
+func (f TxFlags) IsForBuilders() bool {
+	return f&TFForBuilders != 0
 }
