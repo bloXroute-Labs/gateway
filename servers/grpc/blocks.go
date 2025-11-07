@@ -237,6 +237,15 @@ func (*server) generateBlockReplyHeader(h *types.Header) *pb.BlockHeader {
 	if h.RequestsHash != nil {
 		blockReplyHeader.RequestsHash = h.RequestsHash.String()
 	}
+	if h.BlobGasUsed != "" {
+		blockReplyHeader.BlobGasUsed = h.BlobGasUsed
+	}
+	if h.ExcessBlobGas != "" {
+		blockReplyHeader.ExcessBlobGas = h.ExcessBlobGas
+	}
+	if h.ParentBeaconRoot != nil {
+		blockReplyHeader.ParentBeaconRoot = h.ParentBeaconRoot.String()
+	}
 	return &blockReplyHeader
 }
 

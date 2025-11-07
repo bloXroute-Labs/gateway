@@ -157,20 +157,9 @@ func (bp *blockProcessor) BxBlockFromBroadcast(broadcast *bxmessage.Broadcast) (
 	}
 
 	shortIDs := broadcast.ShortIDs()
-	var bxTransactions []*types.BxTransaction
-	var missingShortIDs types.ShortIDList
 	var err error
 
-	// looking for missing sids
-	for _, sid := range shortIDs {
-		bxTransaction, err := bp.txStore.GetTxByShortID(sid, false)
-		if err == nil { // sid exists in TxStore
-			bxTransactions = append(bxTransactions, bxTransaction)
-		} else {
-			missingShortIDs = append(missingShortIDs, sid)
-		}
-	}
-
+	bxTransactions, missingShortIDs := bp.fetchTxsWithRetry(shortIDs, 5*time.Millisecond, 200*time.Millisecond)
 	if len(missingShortIDs) > 0 {
 		return nil, missingShortIDs, ErrMissingShortIDs
 	}
@@ -195,6 +184,70 @@ func (bp *blockProcessor) BxBlockFromBroadcast(broadcast *bxmessage.Broadcast) (
 	}
 
 	return block, missingShortIDs, err
+}
+
+// fetchTxsWithRetry tries to get transactions by short IDs from txStore, polling interval until timeout.
+func (bp *blockProcessor) fetchTxsWithRetry(shortIDs []types.ShortID, interval time.Duration, timeout time.Duration) (txs []*types.BxTransaction, missing types.ShortIDList) {
+	// split into helper calls for clarity
+	txs, missingIndices := bp.initialFetch(shortIDs)
+	if len(missingIndices) == 0 {
+		return txs, nil
+	}
+	return bp.pollMissing(shortIDs, txs, missingIndices, interval, timeout)
+}
+
+// initialFetch tries to fetch all shortIDs once and returns the tx slice and indices that were missing
+func (bp *blockProcessor) initialFetch(shortIDs []types.ShortID) ([]*types.BxTransaction, []int) {
+	txs := make([]*types.BxTransaction, len(shortIDs))
+	missingIndices := make([]int, 0)
+	for i, sid := range shortIDs {
+		bxTransaction, err := bp.txStore.GetTxByShortID(sid, false)
+		if err == nil {
+			txs[i] = bxTransaction
+		} else {
+			missingIndices = append(missingIndices, i)
+		}
+	}
+	return txs, missingIndices
+}
+
+// pollMissing polls only the missing indices until timeout and fills txs in-place when found
+func (bp *blockProcessor) pollMissing(shortIDs []types.ShortID, txs []*types.BxTransaction, missingIndices []int, interval, timeout time.Duration) ([]*types.BxTransaction, types.ShortIDList) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	timeoutCh := time.After(timeout)
+	intervalsMade := 1
+
+	for {
+		select {
+		case <-ticker.C:
+			intervalsMade++
+			var stillMissing []int
+			for _, idx := range missingIndices {
+				sid := shortIDs[idx]
+				bxTransaction, err := bp.txStore.GetTxByShortID(sid, false)
+				if err == nil {
+					txs[idx] = bxTransaction
+				} else {
+					stillMissing = append(stillMissing, idx)
+				}
+			}
+
+			if len(stillMissing) == 0 {
+				if intervalsMade > 1 {
+					log.Debugf("successfully fetched %d transactions with %d intervals", len(txs), intervalsMade)
+				}
+				return txs, nil
+			}
+			missingIndices = stillMissing
+		case <-timeoutCh:
+			missingShortIDs := make(types.ShortIDList, 0, len(missingIndices))
+			for _, idx := range missingIndices {
+				missingShortIDs = append(missingShortIDs, shortIDs[idx])
+			}
+			return nil, missingShortIDs
+		}
+	}
 }
 
 func (bp *blockProcessor) processSidecarsFromRLPBroadcast(rlpSidecars []bxBroadcastBSCBlobSidecar) ([]*types.BxBSCBlobSidecar, uint64, error) {

@@ -139,14 +139,12 @@ func (c *realWSConn) ReadJSONHelper(v interface{}) error {
 		return err
 	}
 
-	processingStart := time.Now()
 	err = json.NewDecoder(r).Decode(v)
 	if err == io.EOF {
 		// One value is expected in the message.
 		err = io.ErrUnexpectedEOF
 	}
 
-	log.Tracef("ws request preprocessing payload decoding duration is %v ms", time.Since(processingStart).Milliseconds())
 	return err
 }
 
