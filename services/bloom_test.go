@@ -4,10 +4,12 @@ import (
 	"context"
 	"math/rand"
 	"os"
+	"path"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/bits-and-blooms/bloom/v3"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/bloXroute-Labs/bxcommon-go/clock"
@@ -282,4 +284,58 @@ func generateHashes(count int) [][]byte {
 	}
 
 	return hashes
+}
+
+func TestBloomStartupResetsIncompatibleFilesAndClampsCounter(t *testing.T) {
+	t.Parallel()
+
+	datadir := t.TempDir()
+	bloomDir := path.Join(datadir, bloomFilterDirName)
+	if err := os.MkdirAll(bloomDir, os.ModePerm); err != nil {
+		t.Fatalf("mkdir bloom dir: %v", err)
+	}
+
+	// Write incompatible current/previous files with a larger capacity
+	oldCap := uint32(100)
+	old := bloom.NewWithEstimates(uint(oldCap), bloomFalsePositiveProbability)
+	if _, err := writeBloomToFile(old, path.Join(bloomDir, currentBloomFileName)); err != nil {
+		t.Fatalf("write current: %v", err)
+	}
+	if _, err := writeBloomToFile(old, path.Join(bloomDir, previousBloomFileName)); err != nil {
+		t.Fatalf("write previous: %v", err)
+	}
+
+	// Persist a counter that exceeds the new capacity
+	if err := writeCounterToFile(oldCap, path.Join(bloomDir, counterBloomFileName)); err != nil {
+		t.Fatalf("write counter: %v", err)
+	}
+
+	// Start with a smaller capacity; implementation should reset incompatible files and clamp counter
+	newCap := uint32(10)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	bfIface, err := NewBloomFilter(ctx, clock.RealClock{}, time.Hour, datadir, newCap, 16)
+	if err != nil {
+		t.Fatalf("NewBloomFilter: %v", err)
+	}
+	cancel() // stop workers
+
+	bf := bfIface.(*bloomFilter)
+	if bf.current.Cap() != bloom.NewWithEstimates(uint(newCap), bloomFalsePositiveProbability).Cap() {
+		t.Fatalf("current cap mismatch: got %d", bf.current.Cap())
+	}
+	if bf.previous.Cap() != bloom.NewWithEstimates(uint(newCap), bloomFalsePositiveProbability).Cap() {
+		t.Fatalf("previous cap mismatch: got %d", bf.previous.Cap())
+	}
+	if got := bf.counter.Load(); got != newCap-1 {
+		t.Fatalf("counter not clamped: got %d, want %d", got, newCap-1)
+	}
+
+	// The incompatible on-disk files should have been removed
+	if _, err := os.Stat(path.Join(bloomDir, currentBloomFileName)); !os.IsNotExist(err) {
+		t.Fatalf("current.bloom not removed on reset: err=%v", err)
+	}
+	if _, err := os.Stat(path.Join(bloomDir, previousBloomFileName)); !os.IsNotExist(err) {
+		t.Fatalf("previous.bloom not removed on reset: err=%v", err)
+	}
 }

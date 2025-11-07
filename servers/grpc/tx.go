@@ -322,7 +322,7 @@ func generateTxReceiptReply(n *types.TxReceipt) *pb.TxReceiptsReply {
 
 		txReceiptsReply.Logs = append(txReceiptsReply.Logs, &pb.TxLogs{
 			Address:          interfaceToString(receiptLogMap["address"]),
-			Topics:           interfaceToStringArray(receiptLogMap["topics"]),
+			Topics:           interfaceToStringSlice(receiptLogMap["topics"]),
 			Data:             interfaceToString(receiptLogMap["data"]),
 			BlockNumber:      interfaceToString(receiptLogMap["blockNumber"]),
 			TransactionHash:  interfaceToString(receiptLogMap["transactionHash"]),

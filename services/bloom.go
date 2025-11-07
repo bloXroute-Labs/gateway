@@ -226,10 +226,10 @@ func (b *bloomFilter) newBfPair() (curr, prev *bloom.BloomFilter, counter uint32
 		log.Infof("BloomFilter bloom file %s does not exist", previousBloomFilePath)
 	case err != nil:
 		log.Warnf("BloomFilter file is corrupted: %v", err)
-		if err = os.Remove(currentBloomFilePath); err != nil {
+		if err = os.Remove(previousBloomFilePath); err != nil {
 			return nil, nil, 0, fmt.Errorf("cannot remove bloom filter file: %v", err)
 		}
-		curr = b.newEmptyBf()
+		prev = b.newEmptyBf()
 	default:
 		log.Infof("BloomFilter read bloom filter from file %s, bytes %v", previousBloomFilePath, readBytes)
 	}
@@ -243,6 +243,30 @@ func (b *bloomFilter) newBfPair() (curr, prev *bloom.BloomFilter, counter uint32
 		return nil, nil, 0, err
 	default:
 		log.Infof("BloomFilter read counter from file %s", counterBloomFilePath)
+	}
+
+	// Validate on-disk filters against current capacity/FPP and reset if incompatible
+	expected := b.newEmptyBf()
+	if curr.K() != expected.K() || curr.Cap() != expected.Cap() {
+		log.Warnf("BloomFilter current on disk incompatible (Cap=%d,K=%d), expected (Cap=%d,K=%d); resetting",
+			curr.Cap(), curr.K(), expected.Cap(), expected.K())
+		_ = os.Remove(currentBloomFilePath)
+		curr = expected
+	}
+	if prev.K() != expected.K() || prev.Cap() != expected.Cap() {
+		log.Warnf("BloomFilter previous on disk incompatible (Cap=%d,K=%d), expected (Cap=%d,K=%d); resetting",
+			prev.Cap(), prev.K(), expected.Cap(), expected.K())
+		_ = os.Remove(previousBloomFilePath)
+		prev = b.newEmptyBf()
+	}
+	// Clamp counter to avoid stuck rotation when persisted counter >= capacity
+	if counter >= b.capacity {
+		log.Warnf("BloomFilter counter %d >= capacity %d; clamping to capacity-1", counter, b.capacity)
+		if b.capacity > 0 {
+			counter = b.capacity - 1
+		} else {
+			counter = 0
+		}
 	}
 
 	return curr, prev, counter, nil

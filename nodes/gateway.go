@@ -62,8 +62,8 @@ import (
 )
 
 const (
-	bscMainnetBloomCap = 519e6
-	mainnetBloomCap    = 85e6
+	bscMainnetBloomCap = 259e6
+	mainnetBloomCap    = 42e6
 
 	bloomStoreInterval = time.Hour
 

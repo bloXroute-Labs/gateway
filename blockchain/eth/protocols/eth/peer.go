@@ -43,7 +43,7 @@ const (
 	blockQueueMaxSize               = 50
 	delayLimit                      = time.Second
 	readStatusTimeout               = 6 * time.Second
-	sendQueueSize                   = 20
+	sendQueueSize                   = 300
 )
 
 // special error constants during peer message processing

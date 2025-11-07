@@ -363,11 +363,24 @@ func interfaceToString(value interface{}) string {
 	return ""
 }
 
-func interfaceToStringArray(value interface{}) []string {
-	if stringArray, ok := value.([]string); ok {
-		return stringArray
+func interfaceToStringSlice(value interface{}) []string {
+	if strSlice, ok := value.([]string); ok {
+		return strSlice
 	}
-	return []string{}
+
+	if ifaceSlice, ok := value.([]interface{}); ok {
+		var strSlice []string
+		for _, iface := range ifaceSlice {
+			str, ok := iface.(string)
+			if !ok {
+				return nil
+			}
+			strSlice = append(strSlice, str)
+		}
+		return strSlice
+	}
+
+	return nil
 }
 
 func interfaceToBool(value interface{}) bool {

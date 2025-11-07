@@ -36,13 +36,14 @@ const (
 
 // External RPCRequestType enumeration
 const (
-	RPCEthSendBundle          RPCRequestType = "eth_sendBundle"
-	RPCEthCallBundle          RPCRequestType = "eth_callBundle"
-	RPCEthCancelBundle        RPCRequestType = "eth_cancelBundle"
-	RPCEthSendExclusiveBundle RPCRequestType = "eth_sendExclusiveBundle"
-	RPCEthSendArbOnlyBundle   RPCRequestType = "eth_sendArbOnlyBundle"
-	RPCEstimateGas            RPCRequestType = "eth_estimateGas"
-	RPCETHCall                RPCRequestType = "eth_call"
+	RPCEthSendBundle           RPCRequestType = "eth_sendBundle"
+	RPCEthCallBundle           RPCRequestType = "eth_callBundle"
+	RPCEthCancelBundle         RPCRequestType = "eth_cancelBundle"
+	RPCEthSendExclusiveBundle  RPCRequestType = "eth_sendExclusiveBundle"
+	RPCEthSendArbOnlyBundle    RPCRequestType = "eth_sendArbOnlyBundle"
+	RPCEstimateGas             RPCRequestType = "eth_estimateGas"
+	RPCETHCall                 RPCRequestType = "eth_call"
+	RPCEthSendEndOfBlockBundle RPCRequestType = "eth_sendEndOfBlockBundle"
 )
 
 // RPCMethodToRPCRequestType maps gRPC methods to RPCRequestType
