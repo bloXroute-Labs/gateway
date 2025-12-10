@@ -342,12 +342,8 @@ func (b *BxConn) ProcessMessage(msgBytes bxmessage.MessageBytes) {
 		}
 		_ = b.Node.HandleMsg(errorNotification, b, connections.RunForeground)
 	case bxmessage.MEVBundleType:
-		mevBundle := &bxmessage.MEVBundle{}
-		if err := mevBundle.Unpack(msg, b.Protocol()); err != nil {
-			b.log.Warnf("Failed to unpack mevBundle bxmessage: %v", err)
-			return
-		}
-		_ = b.Node.HandleMsg(mevBundle, b, connections.RunForeground)
+	// Do nothing. Bundle propagation no longer accepted as of
+	// https://bloxroute.atlassian.net/browse/BP-3153
 	case bxmessage.BeaconMessageType:
 		beaconMessage := &bxmessage.BeaconMessage{}
 		if err := beaconMessage.Unpack(msg, b.Protocol()); err != nil {

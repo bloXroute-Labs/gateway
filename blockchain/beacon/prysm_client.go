@@ -5,10 +5,10 @@ import (
 	"errors"
 	"time"
 
-	"github.com/OffchainLabs/prysm/v6/consensus-types/blocks"
-	"github.com/OffchainLabs/prysm/v6/consensus-types/interfaces"
-	prysmTypes "github.com/OffchainLabs/prysm/v6/consensus-types/primitives"
-	ethpb "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	prysmTypes "github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -25,15 +25,14 @@ const prysmClientTimeout = 10 * time.Second
 
 // PrysmClient is gRPC Prysm client
 type PrysmClient struct {
-	ctx         context.Context
-	clock       clock.Clock
-	config      *network.EthConfig
-	addr        string
-	bridge      blockchain.Bridge
-	endpoint    types.NodeEndpoint
-	beaconBlock bool
-	log         *log.Entry
-	latestSlot  prysmTypes.Slot
+	ctx        context.Context
+	clock      clock.Clock
+	config     *network.EthConfig
+	addr       string
+	bridge     blockchain.Bridge
+	endpoint   types.NodeEndpoint
+	log        *log.Entry
+	latestSlot prysmTypes.Slot
 }
 
 // NewPrysmClient creates new Prysm gRPC client
@@ -100,10 +99,11 @@ func (c *PrysmClient) run() {
 
 					var blk interfaces.ReadOnlySignedBeaconBlock
 					switch b := res.Block.(type) {
-					case *ethpb.StreamBlocksResponse_DenebBlock:
-						blk, err = blocks.NewSignedBeaconBlock(b.DenebBlock)
-					case *ethpb.StreamBlocksResponse_ElectraBlock:
-						blk, err = blocks.NewSignedBeaconBlock(b.ElectraBlock)
+					case *ethpb.StreamBlocksResponse_FuluBlock:
+						blk, err = blocks.NewSignedBeaconBlock(b.FuluBlock)
+					default:
+						c.log.Errorf("unexpected block type received from prysm: %T", b)
+						continue
 					}
 
 					if err != nil {

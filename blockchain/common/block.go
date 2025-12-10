@@ -15,7 +15,7 @@ type Block struct {
 }
 
 // NewBlock creates a new block. The input data is copied,
-func NewBlock(header *ethTypes.Header, body *ethTypes.Body, receipts []*ethTypes.Receipt, hasher ethTypes.TrieHasher) *Block {
+func NewBlock(header *ethTypes.Header, body *ethTypes.Body, receipts []*ethTypes.Receipt, hasher ethTypes.ListHasher) *Block {
 	return &Block{Block: *ethTypes.NewBlock(header, body, receipts, hasher)}
 }
 

@@ -105,6 +105,7 @@ const WSProviderTimeout = 10 * time.Second
 // SDNAccountRequestTimeout - duration after which SDN account requests are deleted if no response received
 const SDNAccountRequestTimeout = time.Minute * 2
 
+
 const (
 	// BloxrouteBuilderName - set bloxroute mev builder name
 	BloxrouteBuilderName = "bloxroute"

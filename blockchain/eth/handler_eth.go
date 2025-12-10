@@ -51,7 +51,7 @@ func (h *ethHandler) PeerInfo(id enode.ID) interface{} {
 // In general, messages that require responses should not reach this function.
 func (h *ethHandler) Handle(peer *eth2.Peer, packet eth2.Packet) error {
 	switch p := packet.(type) {
-	case *eth.StatusPacket:
+	case *eth.StatusPacket68:
 		return nil
 	case *eth.TransactionsPacket:
 		return h.processTransactions(peer, *p)

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
@@ -372,7 +372,7 @@ func TestEthTxStore_AddInvalidTx(t *testing.T) {
 }
 
 func newEthTransaction(nonce uint64, gasFee, gasTip int64) (*types.EthTransaction, error) {
-	to := common.HexToAddress("0x12345")
+	to := ethcommon.HexToAddress("0x12345")
 
 	rawTx := ethtypes.NewTx(&ethtypes.DynamicFeeTx{
 		ChainID:    big.NewInt(testChainID),
@@ -396,7 +396,7 @@ func newEthTransaction(nonce uint64, gasFee, gasTip int64) (*types.EthTransactio
 }
 
 func newBlobTypeTransaction(nonce uint64, gasFee, gasTip, blobFeeCap uint64) (*types.EthTransaction, error) {
-	to := common.HexToAddress("0x12345")
+	to := ethcommon.HexToAddress("0x12345")
 
 	rawTx := ethtypes.NewTx(&ethtypes.BlobTx{
 		ChainID:    uint256.NewInt(uint64(testChainID)),
@@ -409,8 +409,8 @@ func newBlobTypeTransaction(nonce uint64, gasFee, gasTip, blobFeeCap uint64) (*t
 		Value:      uint256.NewInt(100),
 		Data:       []byte{},
 		AccessList: nil,
-		BlobHashes: []common.Hash{
-			common.HexToHash("0x12345"),
+		BlobHashes: []ethcommon.Hash{
+			ethcommon.HexToHash("0x12345"),
 		},
 	})
 
@@ -429,11 +429,11 @@ func newSetCodeTransaction(nonce uint64, gasFee, gasTip uint64) (*types.EthTrans
 		return nil, err
 	}
 
-	to := common.HexToAddress("0x12345")
+	to := ethcommon.HexToAddress("0x12345")
 
 	auth, err := ethtypes.SignSetCode(keyA, ethtypes.SetCodeAuthorization{
 		ChainID: *uint256.MustFromBig(params.TestChainConfig.ChainID),
-		Address: common.Address{0x42},
+		Address: ethcommon.Address{0x42},
 		Nonce:   0,
 	})
 	if err != nil {

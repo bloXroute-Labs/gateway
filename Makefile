@@ -15,12 +15,12 @@ V = 0
 Q = $(if $(filter 1,$V),,@)
 M = $(shell printf "\033[34;1m▶\033[0m")
 
-GOLANGCI_LINT_VERSION=1.64.5
+GOLANGCI_LINT_VERSION=v1.64.5
 GOLANGCI_LINT_VERSION_COMMAND = golangci-lint --version
 GOLANGCI_LINT_VERSION_PRINT = $(shell $(GOLANGCI_LINT_VERSION_COMMAND) | sed -n 's/.*version \([0-9.]*\).*/\1/p')
 
 .PHONY: all
-all: check-go-mod gateway 
+all: check-go-mod gateway
 
 check-go-mod: ; $(info $(M) checking if go.mod and go.sum are up-to-date...)
 	$Q $(GO) mod tidy
@@ -91,12 +91,12 @@ lint: golangci-lint
 	@golangci-lint run --timeout 10m0s
 
 .PHONY: golangci-lint
-golangci-lint:
-	@if ! command -v golangci-lint >/dev/null 2>&1; then \
+golangci-lint: ## # !!IMPORTANT!! force to install it once on the CI when go version is changed
+	@if ! command -v golangci-lint@${GOLANGCI_LINT_VERSION} >/dev/null 2>&1; then \
 		echo "golangci-lint not found, installing..."; \
 		$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}; \
 	else \
-	  	echo "using golangci-lint version $(GOLANGCI_LINT_VERSION_PRINT)"; \
+		echo "using golangci-lint version $(GOLANGCI_LINT_VERSION_PRINT)"; \
 	fi
 
 .PHONY: fmt

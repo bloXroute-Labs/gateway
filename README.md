@@ -7,10 +7,10 @@
     <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs welcome!" />
   </a>
   <a href="https://discord.gg/FAYTEMm">
-    <img alt="Discord" src="https://img.shields.io/discord/638409433860407300?logo=discord">  
+    <img alt="Discord" src="https://img.shields.io/discord/638409433860407300?logo=discord">
   </a>
   <a href="https://twitter.com/intent/follow?screen_name=bloxroutelabs">
-    <img alt="Twitter Follow" src="https://img.shields.io/twitter/follow/bloxroutelabs?style=social">  
+    <img alt="Twitter Follow" src="https://img.shields.io/twitter/follow/bloxroutelabs?style=social">
   </a>
 </p>
 
@@ -28,12 +28,12 @@ For more information, you can read our [white paper].
 
 ## Quick start
 
-You can choose either to either run locally or [Docker] (recommended). Refer to  
+You can choose either to either run locally or [Docker] (recommended). Refer to
 [our technical documentation][install] for full usage instructions.
 
 ## Building the source
 
-Building gateway requires a Go (version 1.24 or later). Once the Go environment is set up, you can build the gateway by running:
+Building gateway requires a Go (version 1.25 or later). Once the Go environment is set up, you can build the gateway by running:
 
 ```bash
 make gateway

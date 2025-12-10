@@ -1,10 +1,7 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
-	"os"
 	"time"
 
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
@@ -13,7 +10,6 @@ import (
 	"github.com/bloXroute-Labs/bxcommon-go/logger"
 
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/bloXroute-Labs/gateway/v2/utils/bundle"
 )
 
 const (
@@ -48,17 +44,15 @@ type Bx struct {
 	BlocksOnly       bool
 	AllTransactions  bool
 	SendConfirmation bool
-	MEVBuilders      map[string]*bundle.Builder
 
-	MevMinerSendBundleMethodName string
-	ForwardTransactionEndpoint   string
-	ForwardTransactionMethod     string
-	EnableDynamicPeers           bool
-	EnableBlockchainRPC          bool
-	PendingTxsSourceFromNode     bool
-	NoTxsToBlockchain            bool
-	NoBlocks                     bool
-	NoStats                      bool
+	ForwardTransactionEndpoint string
+	ForwardTransactionMethod   string
+	EnableDynamicPeers         bool
+	EnableBlockchainRPC        bool
+	PendingTxsSourceFromNode   bool
+	NoTxsToBlockchain          bool
+	NoBlocks                   bool
+	NoStats                    bool
 
 	*GRPC
 	*Env
@@ -85,18 +79,6 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		return nil, err
 	}
 
-	var mevBuilders map[string]*bundle.Builder
-	if ctx.IsSet(utils.MEVBuildersFilePathFlag.Name) {
-		contents, err := os.ReadFile(ctx.String(utils.MEVBuildersFilePathFlag.Name))
-		if err != nil {
-			return nil, fmt.Errorf("failed to open mev builders file: %s", err)
-		}
-
-		if err := json.Unmarshal(contents, &mevBuilders); err != nil {
-			return nil, fmt.Errorf("failed to decode mev builders file: %s", err)
-		}
-	}
-
 	bxConfig := &Bx{
 		Host:               ctx.String(utils.HostFlag.Name),
 		OverrideExternalIP: ctx.IsSet(utils.ExternalIPFlag.Name),
@@ -115,13 +97,9 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		WebsocketPort:       ctx.Int(utils.WSPortFlag.Name),
 		ManageWSServer:      ctx.Bool(utils.ManageWSServer.Name),
 
-		HTTPPort: ctx.Int(utils.HTTPPortFlag.Name),
-
 		BlocksOnly:       ctx.Bool(utils.BlocksOnlyFlag.Name),
 		SendConfirmation: ctx.Bool(utils.SendBlockConfirmation.Name),
 		AllTransactions:  ctx.Bool(utils.AllTransactionsFlag.Name),
-
-		MEVBuilders: mevBuilders,
 
 		ForwardTransactionEndpoint: ctx.String(utils.ForwardTransactionEndpoint.Name),
 		ForwardTransactionMethod:   ctx.String(utils.ForwardTransactionMethod.Name),

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	ecdsaprysm "github.com/OffchainLabs/prysm/v6/crypto/ecdsa"
+	ecdsaprysm "github.com/OffchainLabs/prysm/v7/crypto/ecdsa"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/enode"

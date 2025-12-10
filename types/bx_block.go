@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/common"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 )
 
 // BxBlockType is block type
@@ -23,6 +23,7 @@ const (
 	BxBlockTypeEth
 	BxBlockTypeBeaconDeneb
 	BxBlockTypeBeaconElectra
+	BxBlockTypeBeaconFulu
 )
 
 // String implements Stringer interface
@@ -34,6 +35,8 @@ func (t BxBlockType) String() string {
 		return "deneb"
 	case BxBlockTypeBeaconElectra:
 		return "electra"
+	case BxBlockTypeBeaconFulu:
+		return "fulu"
 	default:
 		return ""
 	}
@@ -56,13 +59,13 @@ func NewBxBlockTransaction(hash SHA256Hash, content []byte) *BxBlockTransaction 
 // BxBSCBlobSidecar represents a slice of BSC blob sidecars
 type BxBSCBlobSidecar struct {
 	TxIndex      uint64
-	TxHash       common.Hash
+	TxHash       ethcommon.Hash
 	IsCompressed bool
-	TxSidecar    *ethtypes.BlobTxSidecar `rlp:"optional"`
+	TxSidecar    *common.BlobTxSidecar `rlp:"optional"`
 }
 
 // NewBxBSCBlobSidecar creates a new BSC blob sidecars
-func NewBxBSCBlobSidecar(txIndex uint64, txHash common.Hash, isCompressed bool, sidecar *ethtypes.BlobTxSidecar) *BxBSCBlobSidecar {
+func NewBxBSCBlobSidecar(txIndex uint64, txHash ethcommon.Hash, isCompressed bool, sidecar *common.BlobTxSidecar) *BxBSCBlobSidecar {
 	return &BxBSCBlobSidecar{
 		TxIndex:      txIndex,
 		TxHash:       txHash,
@@ -145,7 +148,7 @@ func (b *BxBlock) String() string {
 // IsBeaconBlock returns true if block is beacon
 func (b *BxBlock) IsBeaconBlock() bool {
 	switch b.Type {
-	case BxBlockTypeBeaconDeneb, BxBlockTypeBeaconElectra:
+	case BxBlockTypeBeaconDeneb, BxBlockTypeBeaconElectra, BxBlockTypeBeaconFulu:
 		return true
 	default:
 		return false

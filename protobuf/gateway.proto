@@ -27,7 +27,6 @@ service Gateway {
   rpc TxReceipts (TxReceiptsRequest) returns (stream TxReceiptsReply){}
   rpc ShortIDs (ShortIDsRequest) returns (ShortIDsReply);
   rpc TxsFromShortIDs (ShortIDListRequest) returns (TxListReply) {}
-  rpc BlxrSubmitBundle (BlxrSubmitBundleRequest) returns (BlxrSubmitBundleReply) {}
 }
 
 message TxLogs {
@@ -82,28 +81,6 @@ message EthOnBlockReply {
   string response = 2;
   string blockHeight = 3;
   string tag = 4;
-}
-
-message BlxrSubmitBundleRequest {
-  map<string, string> mev_builders = 1;
-  repeated string transactions = 2;
-  string block_number = 3;
-  int64 min_timestamp = 4;
-  int64 max_timestamp = 5;
-  repeated string reverting_hashes = 6;
-  string uuid = 7;
-  int64 bundle_price = 8 [deprecated = true];
-  bool enforce_payout = 9 [deprecated = true];
-  bool avoid_mixed_bundles = 10;
-  bool priority_fee_refund = 11;
-  string refund_recipient = 12;
-  int64 blocks_count = 13;
-  repeated string dropping_hashes = 14;
-  bool end_of_block = 15;
-}
-
-message BlxrSubmitBundleReply {
-  string bundle_hash = 1;
 }
 
 message TxsRequest{

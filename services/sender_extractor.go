@@ -14,7 +14,7 @@ const defaultSenderStoreCapacity = 1000
 
 // SenderExtractor receives EthTransaction pointers and extracts their senders in a background goroutine
 type SenderExtractor struct {
-	ch      chan *types.EthTransaction
+	ch      chan *types.BxTransaction
 	senders *boundedSenderStore
 }
 
@@ -80,7 +80,7 @@ func (b *boundedSenderStore) Size() int {
 // NewSenderExtractor creates a new SenderExtractor
 func NewSenderExtractor() *SenderExtractor {
 	s := &SenderExtractor{
-		ch:      make(chan *types.EthTransaction, 1000),
+		ch:      make(chan *types.BxTransaction, 1000),
 		senders: newBoundedSenderStore(),
 	}
 	return s
@@ -88,25 +88,30 @@ func NewSenderExtractor() *SenderExtractor {
 
 // Run runs the SenderExtractor
 func (s *SenderExtractor) Run() {
-	for ethTx := range s.ch {
-		if ethTx == nil {
+	for bxTx := range s.ch {
+		if bxTx == nil {
 			continue
 		}
-		if sender, err := ethTx.Sender(); err == nil {
-			h := ethTx.Hash()
-			s.senders.Store(h, senderEntry{sender: sender, timestamp: time.Now()})
-		} else {
-			log.Errorf("failed to extract sender for ethTx: %v", ethTx.Hash().String())
+		ethTx, err := bxTx.MakeAndSetEthTransaction(types.EmptySender)
+		if err != nil {
+			log.Errorf("failed to make and set eth transaction: %v", err)
+			continue
 		}
+		txHash := ethTx.Hash()
+		sender, err := ethTx.Sender()
+		if err != nil {
+			log.Errorf("failed to get sender for tx %v: %v", txHash, err)
+			continue
+		}
+		s.senders.Store(txHash, senderEntry{sender: sender, timestamp: time.Now()})
 	}
 }
 
-func (s *SenderExtractor) submitEth(ethTx *types.EthTransaction) {
+func (s *SenderExtractor) submitEth(bxTx *types.BxTransaction) {
 	select {
-	case s.ch <- ethTx:
+	case s.ch <- bxTx:
 	default:
 	}
-
 }
 
 // GetSender returns the extracted sender for the given tx hash if available.

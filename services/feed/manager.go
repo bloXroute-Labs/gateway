@@ -378,7 +378,13 @@ func (f *Manager) notifySubscribers(ctx context.Context) {
 		case notification := <-f.feed:
 			f.metricsExporter.PushIncrFeedNotificationProcessed(uint32(f.networkNum), string(notification.NotificationType()))
 			f.lock.RLock()
+
+			customNotification, isCustom := notification.(types.CustomNotification)
 			for uid, clientSub := range f.idToClientSubscription {
+				if isCustom {
+					customNotification.ApplyAccountLogic(string(clientSub.AccountID))
+				}
+
 				if (clientSub.feedConnectionType == types.WebSocketFeed || clientSub.feedConnectionType == types.GRPCFeed) && clientSub.feedType == notification.NotificationType() {
 					select {
 					case clientSub.feed <- notification:

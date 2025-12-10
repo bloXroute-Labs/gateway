@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/OffchainLabs/prysm/v6/beacon-chain/core/blocks"
-	"github.com/OffchainLabs/prysm/v6/beacon-chain/state"
-	"github.com/OffchainLabs/prysm/v6/config/params"
-	"github.com/OffchainLabs/prysm/v6/consensus-types/interfaces"
-	"github.com/OffchainLabs/prysm/v6/consensus-types/primitives"
-	ethpb "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
-	"github.com/OffchainLabs/prysm/v6/time/slots"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/blocks"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 )
 
 type checkpoint struct {
@@ -26,7 +26,7 @@ type Chain struct {
 	justifiedCheckpoint *checkpoint
 	finalizedCheckpoint *checkpoint
 	checkpoint          *checkpoint
-	status              *ethpb.Status
+	status              *ethpb.StatusV2
 
 	lock *sync.RWMutex
 }
@@ -73,7 +73,7 @@ func (c *Chain) AddBlock(block interfaces.ReadOnlySignedBeaconBlock) error {
 		if c.justifiedCheckpoint != nil && (c.finalizedCheckpoint == nil || c.justifiedCheckpoint.slot-c.finalizedCheckpoint.slot == c.slotsPerEpoch) {
 			c.finalizedCheckpoint = c.justifiedCheckpoint
 
-			c.status = &ethpb.Status{
+			c.status = &ethpb.StatusV2{
 				ForkDigest:     digest[:],
 				FinalizedRoot:  c.finalizedCheckpoint.root,
 				FinalizedEpoch: slots.ToEpoch(primitives.Slot(c.finalizedCheckpoint.slot)),
@@ -92,7 +92,7 @@ func (c *Chain) AddBlock(block interfaces.ReadOnlySignedBeaconBlock) error {
 		}
 	} else if c.finalizedCheckpoint != nil && uint64(blockSlot)-c.finalizedCheckpoint.slot > c.slotsPerEpoch*2 && uint64(blockSlot)-c.finalizedCheckpoint.slot < c.slotsPerEpoch*3 {
 		// Just update status if same epoch yet
-		c.status = &ethpb.Status{
+		c.status = &ethpb.StatusV2{
 			ForkDigest:     digest[:],
 			FinalizedRoot:  c.finalizedCheckpoint.root,
 			FinalizedEpoch: slots.ToEpoch(primitives.Slot(c.finalizedCheckpoint.slot)),
@@ -105,7 +105,7 @@ func (c *Chain) AddBlock(block interfaces.ReadOnlySignedBeaconBlock) error {
 }
 
 // Status returns the current status of the chain
-func (c *Chain) Status(peer *peer) *ethpb.Status {
+func (c *Chain) Status(peer *peer) *ethpb.StatusV2 {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 
@@ -136,12 +136,13 @@ func (c *Chain) initStatus() error {
 		return err
 	}
 
-	c.status = &ethpb.Status{
-		ForkDigest:     digest[:],
-		FinalizedRoot:  params.BeaconConfig().ZeroHash[:],
-		FinalizedEpoch: 0,
-		HeadRoot:       genesisBlkRoot[:],
-		HeadSlot:       0,
+	c.status = &ethpb.StatusV2{
+		ForkDigest:            digest[:],
+		FinalizedRoot:         params.BeaconConfig().ZeroHash[:],
+		FinalizedEpoch:        0,
+		HeadRoot:              genesisBlkRoot[:],
+		HeadSlot:              0,
+		EarliestAvailableSlot: 0,
 	}
 
 	return nil

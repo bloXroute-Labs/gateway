@@ -668,8 +668,8 @@ func (p *Peer) send(msgCode uint64, data interface{}) error {
 }
 
 // Handshake executes the Ethereum protocol Handshake. Unlike Geth, the gateway waits for the peer status message before sending its own, to replicate some peer status fields.
-func (p *Peer) Handshake(networkChain uint64, totalDifficulty *big.Int, head common.Hash, genesis common.Hash, executionLayerForks []string) (*eth.StatusPacket, error) {
-	var peerStatus eth.StatusPacket
+func (p *Peer) Handshake(networkChain uint64, totalDifficulty *big.Int, head common.Hash, genesis common.Hash, executionLayerForks []string) (*eth.StatusPacket68, error) {
+	var peerStatus eth.StatusPacket68
 	err := p.readStatusMessage(&peerStatus, eth.StatusMsg)
 	if err != nil {
 		return nil, err
@@ -684,7 +684,7 @@ func (p *Peer) Handshake(networkChain uint64, totalDifficulty *big.Int, head com
 		head = peerStatus.Head
 	}
 	// used the same fork ID as received from peer; gateway is expected to usually be compatible with Ethereum peer
-	err = p.send(eth.StatusMsg, &eth.StatusPacket{
+	err = p.send(eth.StatusMsg, &eth.StatusPacket68{
 		ProtocolVersion: uint32(p.version),
 		NetworkID:       networkChain,
 		TD:              totalDifficulty,

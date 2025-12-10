@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	ethpb "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	libp2pPeer "github.com/libp2p/go-libp2p/core/peer"
 )
 
@@ -65,7 +65,7 @@ func (p *peers) rangeByID(f func(libp2pPeer.ID, *peer) bool) {
 
 type peer struct {
 	addrInfo atomic.Pointer[libp2pPeer.AddrInfo]
-	status   atomic.Pointer[ethpb.Status]
+	status   atomic.Pointer[ethpb.StatusV2]
 
 	handshaking    atomic.Bool
 	connected      *atomic.Bool
@@ -88,11 +88,11 @@ func (p *peer) finishHandshake() {
 	p.handshaking.Store(false)
 }
 
-func (p *peer) setStatus(status *ethpb.Status) {
+func (p *peer) setStatus(status *ethpb.StatusV2) {
 	p.status.Store(status)
 }
 
-func (p *peer) getStatus() *ethpb.Status {
+func (p *peer) getStatus() *ethpb.StatusV2 {
 	return p.status.Load()
 }
 

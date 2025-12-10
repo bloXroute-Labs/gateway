@@ -12,6 +12,8 @@ func (t BxBeaconMessageType) String() string {
 		return "EthBlob"
 	case BxBeaconMessageTypeCompressedEthBlob:
 		return "CompressedEthBlob"
+	case BxBeaconMessageTypeEthDataColumn:
+		return "EthBlobDataColumn"
 	default:
 		return "Unknown"
 	}
@@ -22,6 +24,7 @@ const (
 	BxBeaconMessageTypeUnknown BxBeaconMessageType = iota
 	BxBeaconMessageTypeEthBlob
 	BxBeaconMessageTypeCompressedEthBlob
+	BxBeaconMessageTypeEthDataColumn
 )
 
 // BxBeaconMessage represents a beacon message

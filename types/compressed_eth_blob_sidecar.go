@@ -1,7 +1,7 @@
 package types
 
 import (
-	ethpb "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	ssz "github.com/prysmaticlabs/fastssz"
 )
 

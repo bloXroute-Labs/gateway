@@ -15,6 +15,7 @@ const (
 	broadcastTypeEth           broadcastType = "blck"
 	broadcastTypeBeaconDeneb   broadcastType = "bcnd"
 	broadcastTypeBeaconElectra broadcastType = "bcne"
+	broadcastTypeBeaconFulu    broadcastType = "bcnf"
 )
 
 // Broadcast - represent the "broadcast" message
@@ -33,6 +34,8 @@ func blockToBroadcastType(blockType types.BxBlockType) broadcastType {
 		return broadcastTypeBeaconDeneb
 	case types.BxBlockTypeBeaconElectra:
 		return broadcastTypeBeaconElectra
+	case types.BxBlockTypeBeaconFulu:
+		return broadcastTypeBeaconFulu
 	case types.BxBlockTypeEth:
 		fallthrough
 	default:
@@ -66,10 +69,22 @@ func (b Broadcast) String() string {
 	return fmt.Sprintf("broadcast(hash: %s, type: %s, network: %d, short txs: %d)", b.hash, b.broadcastType, b.networkNumber, len(b.ShortIDs()))
 }
 
+// Clone clones the broadcast message
+func (b *Broadcast) Clone() *Broadcast {
+	return &Broadcast{
+		BroadcastHeader: b.BroadcastHeader,
+		broadcastType:   b.broadcastType,
+		encrypted:       b.encrypted,
+		block:           b.block,
+		sids:            b.sids,
+		beaconHash:      b.beaconHash,
+	}
+}
+
 // IsBeaconBlock returns true if block is beacon
 func (b *Broadcast) IsBeaconBlock() bool {
 	switch broadcastType(b.broadcastType[:]) {
-	case broadcastTypeBeaconDeneb, broadcastTypeBeaconElectra:
+	case broadcastTypeBeaconDeneb, broadcastTypeBeaconElectra, broadcastTypeBeaconFulu:
 		return true
 	default:
 		return false
@@ -85,6 +100,8 @@ func (b Broadcast) BlockType() types.BxBlockType {
 		return types.BxBlockTypeBeaconDeneb
 	case broadcastTypeBeaconElectra:
 		return types.BxBlockTypeBeaconElectra
+	case broadcastTypeBeaconFulu:
+		return types.BxBlockTypeBeaconFulu
 	default:
 		return types.BxBlockTypeUnknown
 	}
@@ -106,8 +123,10 @@ func (b Broadcast) ShortIDs() types.ShortIDList {
 }
 
 // SetBroadcastType sets the broadcast type
-func (b *Broadcast) SetBroadcastType(broadcastType [BroadcastTypeLen]byte) {
-	b.broadcastType = broadcastType
+func (b *Broadcast) SetBroadcastType(bType types.BxBlockType) {
+	var t [BroadcastTypeLen]byte
+	copy(t[:], blockToBroadcastType(bType))
+	b.broadcastType = t
 }
 
 // SetEncrypted sets the encrypted byte

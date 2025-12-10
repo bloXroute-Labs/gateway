@@ -46,25 +46,19 @@ type gatewayBlockRecord struct {
 	BeaconBlockHash   string             `json:"beacon_block_hash,omitempty"`
 }
 
-type bundleRecord struct {
-	EventSubjectID   string             `json:"event_subject_id"`
-	EventName        string             `json:"event_name"`
-	AccountID        bxtypes.AccountID  `json:"account_id"`
-	NodeID           bxtypes.NodeID     `json:"node_id"`
-	StartDateTime    string             `json:"start_date_time"`
-	EndDateTime      string             `json:"end_date_time"`
-	NetworkNum       bxtypes.NetworkNum `json:"network_num"`
-	MEVBuilderNames  []string           `json:"mev_builder_names"`
-	UUID             string             `json:"uuid"`
-	BlockNumber      int64              `json:"block_number"`
-	MinTimestamp     int                `json:"min_timestamp"`
-	MaxTimestamp     int                `json:"max_timestamp"`
-	ExtraData        bundleExtraData    `json:"extra_data,omitempty"`
-	SentPeers        int                `json:"sent_peers,omitempty"`
-	SentGatewayPeers int                `json:"gateway_peers,omitempty"`
+type ethBlockContent struct {
+	BlockHash  string             `json:"block_hash"`
+	NetworkNum bxtypes.NetworkNum `json:"network_num"`
+	Header     string             `json:"header"`
+	Txs        string             `json:"txs"`
+	Trailer    string             `json:"trailer"`
 }
 
-// BundleSentToBuilderRecord represents a record of a bundle sent to a builder
+type blockExtraData struct {
+	MoreInfo string `json:"more_info,omitempty"`
+}
+
+// BundleSentToBuilderRecord is still used by cloudservices
 type BundleSentToBuilderRecord struct {
 	EstimatedBundleReceivedTime string                 `json:"estimated_bundle_received_time"`
 	BundleHash                  string                 `json:"bundle_hash"`
@@ -78,22 +72,6 @@ type BundleSentToBuilderRecord struct {
 	BuilderURL                  string                 `json:"builder_url"`
 	StatusCode                  int                    `json:"status_code"`
 	ErrorMessage                string                 `json:"error_message"`
-}
-
-type ethBlockContent struct {
-	BlockHash  string             `json:"block_hash"`
-	NetworkNum bxtypes.NetworkNum `json:"network_num"`
-	Header     string             `json:"header"`
-	Txs        string             `json:"txs"`
-	Trailer    string             `json:"trailer"`
-}
-
-type blockExtraData struct {
-	MoreInfo string `json:"more_info,omitempty"`
-}
-
-type bundleExtraData struct {
-	MoreInfo string `json:"more_info,omitempty"`
 }
 
 // LogRecord represents a log message to be sent to FluentD

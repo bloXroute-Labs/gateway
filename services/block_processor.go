@@ -13,6 +13,7 @@ import (
 	"github.com/bloXroute-Labs/bxcommon-go/clock"
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
@@ -114,7 +115,7 @@ func (bp *blockProcessor) BxBlockToBroadcast(block *types.BxBlock, networkNum bx
 	switch block.Type {
 	case types.BxBlockTypeEth:
 		broadcastMessage, usedShortIDs, err = bp.newRLPBlockBroadcast(block, networkNum, minTxAge)
-	case types.BxBlockTypeBeaconDeneb, types.BxBlockTypeBeaconElectra:
+	case types.BxBlockTypeBeaconDeneb, types.BxBlockTypeBeaconElectra, types.BxBlockTypeBeaconFulu:
 		broadcastMessage, usedShortIDs, err = bp.newSSZBlockBroadcast(block, networkNum, minTxAge)
 	case types.BxBlockTypeUnknown:
 		return nil, nil, ErrUnknownBlockType
@@ -127,7 +128,7 @@ func (bp *blockProcessor) BxBlockToBroadcast(block *types.BxBlock, networkNum bx
 	switch block.Type {
 	case types.BxBlockTypeEth:
 		bp.markProcessed(block.Hash(), SeenFromNode)
-	case types.BxBlockTypeBeaconDeneb, types.BxBlockTypeBeaconElectra:
+	case types.BxBlockTypeBeaconDeneb, types.BxBlockTypeBeaconElectra, types.BxBlockTypeBeaconFulu:
 		bp.markProcessed(block.BeaconHash(), SeenFromNode)
 	}
 
@@ -141,7 +142,7 @@ func (bp *blockProcessor) BxBlockFromBroadcast(broadcast *bxmessage.Broadcast) (
 	switch broadcast.BlockType() {
 	case types.BxBlockTypeEth:
 		blockHash = broadcast.Hash().String()
-	case types.BxBlockTypeBeaconDeneb, types.BxBlockTypeBeaconElectra:
+	case types.BxBlockTypeBeaconDeneb, types.BxBlockTypeBeaconElectra, types.BxBlockTypeBeaconFulu:
 		if broadcast.BeaconHash().Empty() {
 			return nil, nil, ErrNotCompatibleBeaconBlock
 		}
@@ -172,7 +173,7 @@ func (bp *blockProcessor) BxBlockFromBroadcast(broadcast *bxmessage.Broadcast) (
 		if err == nil {
 			bp.markProcessed(broadcast.Hash(), SeenFromRelay)
 		}
-	case types.BxBlockTypeBeaconDeneb, types.BxBlockTypeBeaconElectra:
+	case types.BxBlockTypeBeaconDeneb, types.BxBlockTypeBeaconElectra, types.BxBlockTypeBeaconFulu:
 		block, err = bp.newBxBlockFromSSZBroadcast(broadcast, bxTransactions)
 
 		if err == nil {
@@ -285,7 +286,11 @@ func (bp *blockProcessor) processSidecarsFromRLPBroadcast(rlpSidecars []bxBroadc
 
 			log.Tracef("successfully decompressed eth block blob sidecar, index: %d, tx hash: %s", blobSidecar.TxIndex, blobSidecar.TxHash.String())
 
-			blobSidecar.TxSidecar = ethTx.BlobTxSidecar()
+			blobSidecar.TxSidecar = &common.BlobTxSidecar{
+				Blobs:       ethTx.BlobTxSidecar().Blobs,
+				Commitments: ethTx.BlobTxSidecar().Commitments,
+				Proofs:      ethTx.BlobTxSidecar().Proofs,
+			}
 			blobSidecar.IsCompressed = false
 		} else {
 			log.Tracef("eth block blob sidecar is not compressed, tx hash: %s", blobSidecar.TxHash.String())

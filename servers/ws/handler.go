@@ -88,7 +88,8 @@ func (h *handlerObj) Handle(ctx context.Context, conn *conn, req Request) {
 			h.log.Errorf("error replying to %v, method %v: %v", h.remoteAddress, req.Method, err)
 		}
 	case jsonrpc.RPCBundleSubmission:
-		h.handleRPCBundleSubmission(ctx, conn, req)
+	// Do nothing. Bundle propagation no longer accepted as of
+	// https://bloxroute.atlassian.net/browse/BP-3153
 	case jsonrpc.RPCChangeNewPendingTxFromNode:
 		h.handleRPCNewPendingTxsSourceFromNode(ctx, conn, req)
 	default:
