@@ -14,7 +14,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/servers/grpc"
-	http2 "github.com/bloXroute-Labs/gateway/v2/servers/http"
 	"github.com/bloXroute-Labs/gateway/v2/servers/ws"
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/services/account"
@@ -33,7 +32,6 @@ type ClientHandler struct {
 
 	// servers
 	websocketServer *ws.Server
-	httpServer      *http2.Server
 	gRPCServer      *grpc.Server
 }
 
@@ -60,7 +58,6 @@ func NewClientHandler(
 	oFACList *types.OFACMap,
 	senderExtractor *services.SenderExtractor,
 ) *ClientHandler {
-
 	var websocketServer *ws.Server
 	var gRPCServer *grpc.Server
 
@@ -75,14 +72,11 @@ func NewClientHandler(
 		)
 	}
 
-	httpServer := http2.NewServer(node, feedManager, config.HTTPPort, sdn, oFACList, bdnStats)
-
 	return &ClientHandler{
 		subscriptionServices: subscriptionServices,
 		nodeWSManager:        nodeWSManager,
 		feedManager:          feedManager,
 		websocketServer:      websocketServer,
-		httpServer:           httpServer,
 		gRPCServer:           gRPCServer,
 		log:                  log.WithFields(log.Fields{"component": "gatewayClientHandler"}),
 	}
@@ -159,16 +153,6 @@ func (ch *ClientHandler) runServers() (wait func() error) {
 			return nil
 		})
 	}
-	if ch.httpServer != nil {
-		eg.Go(func() error {
-			err := ch.httpServer.Start()
-			if err != nil {
-				log.Errorf("error running http server, err: %v", err)
-				return err
-			}
-			return nil
-		})
-	}
 
 	return eg.Wait
 }
@@ -182,10 +166,6 @@ func (ch *ClientHandler) shutdownServers() {
 
 	if ch.gRPCServer != nil {
 		ch.gRPCServer.Shutdown()
-	}
-
-	if ch.httpServer != nil {
-		ch.httpServer.Shutdown()
 	}
 
 	ch.feedManager.CloseAllClientConnections()

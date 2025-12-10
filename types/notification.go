@@ -9,6 +9,14 @@ type Notification interface {
 	NotificationType() FeedType
 }
 
+// CustomNotification represents a notification that can apply account-specific logic
+// This interface extends Notification with the purpose of producing
+// tailored notifications based on the subscriber's account.
+type CustomNotification interface {
+	Notification
+	ApplyAccountLogic(account string)
+}
+
 // BlockNotification represents a generic block notification
 type BlockNotification interface {
 	Notification

@@ -3,23 +3,20 @@ package beacon
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
-	"github.com/OffchainLabs/prysm/v6/api/server/structs"
-	"github.com/OffchainLabs/prysm/v6/consensus-types/blocks"
-	"github.com/OffchainLabs/prysm/v6/consensus-types/interfaces"
-	prysmTypes "github.com/OffchainLabs/prysm/v6/consensus-types/primitives"
-	ethpb "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
-	"github.com/OffchainLabs/prysm/v6/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	prysmTypes "github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ssz "github.com/prysmaticlabs/fastssz"
 	"github.com/r3labs/sse"
@@ -33,22 +30,17 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
-// For the lighthouse client, we make different block encoding for now
-// (JSON instead of SSZ), cause it doesn't support the SZZ.
 const (
-	lighthouse       = "lighthouse"
 	keepAliveMessage = ""
 
 	// Beacon API routes
 	requestBlockRoute         = "http://%s/eth/v2/beacon/blocks/%s"
-	requestBlobSidecarRoute   = "http://%s/eth/v1/beacon/blob_sidecars/%s?indices=%s"
 	requestClientVersionRoute = "http://%s/eth/v1/node/version"
 	subscribeEventRoute       = "http://%s/eth/v1/events?topics=%s"
-	broadcastBlockRoute       = "http://%s/eth/v1/beacon/blocks"
+	broadcastBlockRoute       = "http://%s/eth/v2/beacon/blocks"
 
 	// topics for the event stream
-	topicsNewBlockHead    = "head"
-	topicsNewBlobsSidecar = "blob_sidecar"
+	topicsNewBlockHead = "head"
 )
 
 var errUnknownClientVersion = errors.New("unknown client version")
@@ -57,24 +49,6 @@ type nodeVersionResponse struct {
 	Data struct {
 		Version string `json:"version"`
 	} `json:"data"`
-}
-
-type blobDecoder interface {
-	decodeBlobSidecar([]byte) (*ethpb.BlobSidecars, error)
-}
-
-func newDefaultBlobDecoder() blobDecoder {
-	return &defaultBlobDecoder{}
-}
-
-type defaultBlobDecoder struct{}
-
-func newLightHouseBlobDecoder() blobDecoder {
-	return &lightHouseBlobDecoder{}
-}
-
-type lightHouseBlobDecoder struct {
-	defaultBlobDecoder
 }
 
 // APIClient represents the client for subscribing to the Beacon API event stream.
@@ -87,7 +61,6 @@ type APIClient struct {
 	ctx          context.Context
 	httpClient   *http.Client
 	nodeEndpoint types.NodeEndpoint
-	blobDecoder  blobDecoder
 	initialized  atomic.Bool
 	sharedSync   *APISharedSync
 	isConnected  bool
@@ -108,7 +81,6 @@ func NewAPIClient(ctx context.Context, httpClient *http.Client, config *network.
 		config:       config,
 		clock:        clock.RealClock{},
 		httpClient:   httpClient,
-		blobDecoder:  newDefaultBlobDecoder(),
 		nodeEndpoint: endpoint,
 		initialized:  atomic.Bool{},
 		sharedSync:   sharedSync,
@@ -178,14 +150,13 @@ func (c *APIClient) newRequest(uri string) (*http.Request, error) {
 
 func (c *APIClient) processResponse(respBodyRaw []byte, v, hash string) (interfaces.ReadOnlySignedBeaconBlock, error) {
 	var rawBlock ssz.Unmarshaler
-	switch v {
-	case version.String(version.Deneb):
-		rawBlock = &ethpb.SignedBeaconBlockDeneb{}
-	default:
-		// Not all the clients support the block's version in the HTTP header of the response.
-		// If version didn't mention - use the last one.
-		rawBlock = &ethpb.SignedBeaconBlockElectra{}
+
+	if v != version.String(version.Fulu) {
+		return nil, fmt.Errorf("unsupported version: %s", v)
 	}
+
+	rawBlock = &ethpb.SignedBeaconBlockFulu{}
+
 	if err := rawBlock.UnmarshalSSZ(respBodyRaw); err != nil {
 		return nil, fmt.Errorf("[hash=%s,version=%s], failed to unmarshal response body: %s, err: %v", hash, v, string(respBodyRaw), err)
 	}
@@ -204,15 +175,12 @@ type headEventData struct {
 // client connection.
 
 func (c *APIClient) requestClientVersionUntilSuccess() {
-	var version string
-	var err error
-
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
 		default:
-			version, err = c.requestClientVersion()
+			version, err := c.requestClientVersion()
 			if err != nil {
 				if errors.Is(err, context.Canceled) {
 					return
@@ -221,9 +189,7 @@ func (c *APIClient) requestClientVersionUntilSuccess() {
 				break
 			}
 
-			if strings.Contains(version, lighthouse) {
-				c.blobDecoder = newLightHouseBlobDecoder()
-			}
+			c.log.Infof("successfully retrieved beacon client version: %s", version)
 
 			c.initialized.Store(true)
 
@@ -243,10 +209,6 @@ func (c *APIClient) Start() error {
 	})
 	g.Go(func() error {
 		c.subscribeToEvents(fmt.Sprintf(subscribeEventRoute, c.URL, topicsNewBlockHead), c.blockHeadEventHandler())
-		return nil
-	})
-	g.Go(func() error {
-		c.subscribeToEvents(fmt.Sprintf(subscribeEventRoute, c.URL, topicsNewBlobsSidecar), c.blobSidecarEventHandler())
 		return nil
 	})
 
@@ -291,30 +253,6 @@ func (c *APIClient) subscribeToEvents(eventsURL string, handler func(msg *sse.Ev
 	}
 }
 
-func (defaultBlobDecoder) decodeBlobSidecar(responseBody []byte) (*ethpb.BlobSidecars, error) {
-	blobSidecar := new(ethpb.BlobSidecars)
-
-	if err := blobSidecar.UnmarshalSSZ(responseBody); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response body: %v", err)
-	}
-
-	return blobSidecar, nil
-}
-
-func (d lightHouseBlobDecoder) decodeBlobSidecar(responseBody []byte) (*ethpb.BlobSidecars, error) {
-	// Check if the response is missing the offset
-	// Currently LightHouse doesn't include the offset in the response, but it's required for SSZ unmarshalling
-	var offset uint64
-
-	if offset = ssz.ReadOffset(responseBody[0:4]); offset > uint64(len(responseBody)) {
-		return nil, ssz.ErrInvalidVariableOffset
-	}
-
-	responseBody = append([]byte{4, 0, 0, 0}, responseBody...)
-
-	return d.defaultBlobDecoder.decodeBlobSidecar(responseBody)
-}
-
 func (c *APIClient) retry(fn func() error, maxTry int, sleep time.Duration) (attempt int, err error) {
 	for ; attempt < maxTry; attempt++ {
 		err = fn()
@@ -324,122 +262,6 @@ func (c *APIClient) retry(fn func() error, maxTry int, sleep time.Duration) (att
 		time.Sleep(sleep)
 	}
 	return attempt + 1, err
-}
-
-func (c *APIClient) requestBlobSidecarWithRetries(beaconHash string, index string) (*ethpb.BlobSidecars, error) {
-	uri := fmt.Sprintf(requestBlobSidecarRoute, c.URL, beaconHash, index)
-	req, err := c.newRequest(uri)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make new request to Beacon API route: %v", err)
-	}
-
-	var respBodyRaw []byte
-
-	requestBlobSidecar := func() error {
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-
-		respBodyRaw, err = io.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("failed to read response body: %v", err)
-		}
-
-		if resp.StatusCode == http.StatusNotFound {
-			return fmt.Errorf("blob sidecars not found yet for hash: %s, index: %s", beaconHash, index)
-		}
-		return nil
-	}
-
-	attempt, err := c.retry(requestBlobSidecar, 10, time.Millisecond*40)
-	if err != nil {
-		return nil, err
-	}
-
-	c.log.Tracef("received blob sidecar from Beacon API for [hash: %s, index: %s] after %d attempts", beaconHash, index, attempt)
-
-	return c.blobDecoder.decodeBlobSidecar(respBodyRaw)
-}
-
-func (c *APIClient) isNeedToRequestBlobSidecar(blobSidecarEvent *structs.BlobSidecarEvent) bool {
-	eventSlot, err := strconv.ParseUint(blobSidecarEvent.Slot, 10, 64)
-	if err != nil {
-		c.log.Errorf("could not parse slot from blob sidecar event, slot data: %s, err: %v ", blobSidecarEvent.Slot, err)
-		return false
-	}
-
-	index, err := strconv.ParseUint(blobSidecarEvent.Index, 10, 64)
-	if err != nil {
-		c.log.Errorf("could not parse index from blob sidecar event, index data: %s, err: %v ", blobSidecarEvent.Index, err)
-		return false
-	}
-
-	needToRequestBlobSidecar, err := c.sharedSync.needToRequestBlobSidecar(eventSlot, index)
-	if err != nil {
-		c.log.Errorf("%v", err)
-	}
-	if !needToRequestBlobSidecar {
-		c.log.Tracef("blob sidecar request already processed: slot: %s, index: %d, block hash: %s", blobSidecarEvent.Slot, index, blobSidecarEvent.BlockRoot)
-	}
-	return needToRequestBlobSidecar
-}
-
-// blobSidecarEventHandler returns a function to handle server-sent events.
-func (c *APIClient) blobSidecarEventHandler() func(msg *sse.Event) {
-	handleBlobSidecarEvent := func(eventData []byte) {
-		if string(eventData) == keepAliveMessage {
-			return
-		}
-
-		c.log.Tracef("received blob sidecar event: %s", string(eventData))
-
-		var blobSidecarEvent structs.BlobSidecarEvent
-
-		err := json.Unmarshal(eventData, &blobSidecarEvent)
-		if err != nil {
-			c.log.Errorf("could not unmarshal blob sidecar event: %s, err: %v ", string(eventData), err)
-			return
-		}
-
-		if !c.isNeedToRequestBlobSidecar(&blobSidecarEvent) {
-			return
-		}
-
-		// retry to request blob sidecars in case of failure
-		blobSidecars, err := c.requestBlobSidecarWithRetries(blobSidecarEvent.BlockRoot, blobSidecarEvent.Index)
-		if err != nil {
-			c.log.Tracef("failed to request blob sidecar: %v", err)
-			return
-		}
-
-		for _, sidecar := range blobSidecars.Sidecars {
-			// validate the blob sidecar
-			bdnSidecar, err := c.bridge.BeaconMessageToBDN(sidecar)
-			if err != nil {
-				c.log.Errorf("could not convert blob sidecar to BDN: %v", err)
-				continue
-			}
-
-			if err := c.bridge.SendBeaconMessageToBDN(bdnSidecar, c.nodeEndpoint); err != nil {
-				c.log.Errorf("could not send blob sidecar to BDN: %v", err)
-				continue
-			}
-
-			headerRoot, err := sidecar.SignedBlockHeader.Header.HashTreeRoot()
-			if err != nil {
-				c.log.Errorf("could not get header root: %v", err)
-				continue
-			}
-
-			c.log.Tracef("propagated blob sidecar from Beacon API to BDN: index %v, slot %v, kzgCommitment %v, block hash %s", sidecar.Index, sidecar.SignedBlockHeader.Header.Slot, hex.EncodeToString(sidecar.KzgCommitment), hex.EncodeToString(headerRoot[:]))
-		}
-	}
-
-	return func(msg *sse.Event) {
-		go handleBlobSidecarEvent(msg.Data)
-	}
 }
 
 // blockHeadEventHandler returns a function to handle server-sent events.

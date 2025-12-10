@@ -5,8 +5,8 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/OffchainLabs/prysm/v6/consensus-types/interfaces"
-	eth "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"

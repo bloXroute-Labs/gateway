@@ -4,15 +4,15 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/OffchainLabs/prysm/v6/beacon-chain/p2p"
-	prysmTypes "github.com/OffchainLabs/prysm/v6/beacon-chain/p2p/types"
-	types "github.com/OffchainLabs/prysm/v6/consensus-types/primitives"
-	"github.com/OffchainLabs/prysm/v6/consensus-types/wrapper"
-	ethpb "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/go-bitfield"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	prysmTypes "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/types"
+	types "github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/wrapper"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	libp2pNetwork "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	ssz "github.com/prysmaticlabs/fastssz"
-	"github.com/prysmaticlabs/go-bitfield"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 )
@@ -26,7 +26,7 @@ func (n *Node) statusRPCHandler(stream libp2pNetwork.Stream) {
 
 	SetRPCStreamDeadlines(stream)
 
-	msg := new(ethpb.Status)
+	msg := new(ethpb.StatusV2)
 	if err := n.encoding.DecodeWithMaxLength(stream, msg); err != nil {
 		n.log.Errorf("could not decode status RPC request from peer %v: %v", stream.Conn().RemotePeer(), err)
 		return
@@ -125,6 +125,13 @@ func (n *Node) metadataRPCHandler(stream libp2pNetwork.Stream) {
 	case p2p.SchemaVersionV2:
 		currMd = wrapper.WrappedMetadataV1(
 			&ethpb.MetaDataV1{
+				Attnets:   bitfield.NewBitvector64(),
+				SeqNumber: 0,
+				Syncnets:  bitfield.Bitvector4{byte(0xF)},
+			})
+	case p2p.SchemaVersionV3:
+		currMd = wrapper.WrappedMetadataV2(
+			&ethpb.MetaDataV2{
 				Attnets:   bitfield.NewBitvector64(),
 				SeqNumber: 0,
 				Syncnets:  bitfield.Bitvector4{byte(0xF)},

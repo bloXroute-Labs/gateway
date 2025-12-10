@@ -4,13 +4,15 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"time"
 
-	"github.com/OffchainLabs/prysm/v6/consensus-types/interfaces"
-	prysmTypes "github.com/OffchainLabs/prysm/v6/consensus-types/primitives"
-	"github.com/OffchainLabs/prysm/v6/encoding/bytesutil"
-	ethpb "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
-	"github.com/OffchainLabs/prysm/v6/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/kzg"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/peerdas"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	ssz "github.com/prysmaticlabs/fastssz"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
@@ -18,6 +20,12 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
+
+func init() {
+	if err := kzg.Start(); err != nil {
+		panic(err)
+	}
+}
 
 // HandleBDNBeaconMessages waits for beacon messages from BDN and broadcast it to the connected nodes
 func HandleBDNBeaconMessages(ctx context.Context, b blockchain.Bridge, n *Node, blobsManager *BlobSidecarCacheManager) {
@@ -46,6 +54,28 @@ func HandleBDNBeaconMessages(ctx context.Context, b blockchain.Bridge, n *Node, 
 							log.Errorf("failed to broadcast blob sidecar to P2P connections: %v", err)
 						} else {
 							n.log.Tracef("Broadcasted blob sidecar message, index %v, block hash: %v, kzg commitment: %v", blobSidecar.Index, hex.EncodeToString(beaconMessage.BlockHash[:]), hex.EncodeToString(blobSidecar.KzgCommitment[:]))
+						}
+					}()
+				}
+			case types.BxBeaconMessageTypeEthDataColumn:
+				convertedMessage, err := b.BeaconMessageBDNToBlockchain(beaconMessage)
+				if err != nil {
+					log.Errorf("failed to convert BDN blob to beacon blob: %v", err)
+					continue
+				}
+
+				blobSidecar, ok := convertedMessage.(*ethpb.DataColumnSidecar)
+				if !ok {
+					log.Errorf("failed to convert BDN blob to beacon blob: %v", err)
+					continue
+				}
+
+				if broadcastP2P {
+					go func() {
+						if err := n.BroadcastDataColumn(blobSidecar); err != nil {
+							log.Errorf("failed to broadcast data column sidecar to P2P connections: %v", err)
+						} else {
+							n.log.Tracef("Broadcasted data column sidecar message, index %v, block hash: %v", blobSidecar.Index, hex.EncodeToString(beaconMessage.BlockHash[:]))
 						}
 					}()
 				}
@@ -95,8 +125,6 @@ func HandleBDNBlocks(ctx context.Context, b blockchain.Bridge, n *Node, beaconAP
 }
 
 func broadcastToClients(blockHash string, castedBlock interfaces.ReadOnlySignedBeaconBlock, beaconAPIClients []*APIClient, blobsManager *BlobSidecarCacheManager) {
-	castedBlock.Block().Slot()
-
 	blockContents, ethConsensusVersion, err := fillBlockContents(blobsManager, castedBlock, blockHash)
 	if err != nil {
 		log.Errorf("failed to fill block contents for block %s: %v, skipping block broadcasting", blockHash, err)
@@ -131,11 +159,10 @@ func fillBlockContents(blobsManager *BlobSidecarCacheManager, castedBlock interf
 	}
 
 	switch block := bp.(type) {
-	case *ethpb.SignedBeaconBlockDeneb:
-		kzgCommits := block.Block.Body.BlobKzgCommitments
-		expectedBlobSidecarAmount := len(kzgCommits)
+	case *ethpb.SignedBeaconBlockFulu:
+		expectedBlobSidecarAmount := len(block.Block.Body.BlobKzgCommitments)
 
-		denebBlockContents := &ethpb.SignedBeaconBlockContentsDeneb{
+		fuluBlockContents := &ethpb.SignedBeaconBlockContentsFulu{
 			Block:     block,
 			KzgProofs: make([][]byte, expectedBlobSidecarAmount),
 			Blobs:     make([][]byte, expectedBlobSidecarAmount),
@@ -143,93 +170,120 @@ func fillBlockContents(blobsManager *BlobSidecarCacheManager, castedBlock interf
 
 		if expectedBlobSidecarAmount == 0 {
 			log.Tracef("no blob sidecars expected for block hash %s, broadcasting", blockHash)
-			return denebBlockContents, version.String(version.Deneb), nil
+			return fuluBlockContents, version.String(version.Fulu), nil
 		}
 
-		kzgProofs, blobs, err := proofsAndBlobs(blobsManager, kzgCommits, blockHash, castedBlock.Block().Slot(), uint64(expectedBlobSidecarAmount))
+		kzgProofs, blobs, err := retrieveBlobsFromDataColumns(blobsManager, castedBlock, blockHash)
 		if err != nil {
 			return nil, "", err
 		}
 
-		denebBlockContents.KzgProofs = kzgProofs
-		denebBlockContents.Blobs = blobs
+		fuluBlockContents.KzgProofs = kzgProofs
+		fuluBlockContents.Blobs = blobs
 
-		return denebBlockContents, version.String(version.Deneb), nil
-	case *ethpb.SignedBeaconBlockElectra:
-		kzgCommits := block.Block.Body.BlobKzgCommitments
-		expectedBlobSidecarAmount := len(kzgCommits)
-
-		electraBlockContents := &ethpb.SignedBeaconBlockContentsElectra{
-			Block:     block,
-			KzgProofs: make([][]byte, expectedBlobSidecarAmount),
-			Blobs:     make([][]byte, expectedBlobSidecarAmount),
-		}
-
-		if expectedBlobSidecarAmount == 0 {
-			log.Tracef("no blob sidecars expected for block hash %s, broadcasting", blockHash)
-			return electraBlockContents, version.String(version.Electra), nil
-		}
-
-		kzgProofs, blobs, err := proofsAndBlobs(blobsManager, kzgCommits, blockHash, castedBlock.Block().Slot(), uint64(expectedBlobSidecarAmount))
-		if err != nil {
-			return nil, "", err
-		}
-
-		electraBlockContents.KzgProofs = kzgProofs
-		electraBlockContents.Blobs = blobs
-		return electraBlockContents, version.String(version.Electra), nil
+		return fuluBlockContents, version.String(version.Fulu), nil
 	default:
 		return nil, "", fmt.Errorf("unrecognized block type: %T", block)
 	}
 }
 
-func proofsAndBlobs(blobsManager *BlobSidecarCacheManager, kzgCommits [][]byte, blockHash string, slot prysmTypes.Slot, expectedBlobSidecarAmount uint64) (kzgProofs, blobs [][]byte, err error) {
-	kzgProofs = make([][]byte, expectedBlobSidecarAmount)
-	blobs = make([][]byte, expectedBlobSidecarAmount)
-	receivedBlobSidecarAmount := uint64(0)
+func retrieveBlobsFromDataColumns(blobsManager *BlobSidecarCacheManager, block interfaces.ReadOnlySignedBeaconBlock, blockHash string) (kzgProofs, blobs [][]byte, err error) {
+	kgzCommitements, err := block.Block().Body().BlobKzgCommitments()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get KZG commitments from block body: %v", err)
+	}
 
-	log.Tracef("waiting for %d blob sidecars for block hash %s", expectedBlobSidecarAmount, blockHash)
+	expectedBlobs := len(kgzCommitements)
+
+	kzgProofs = make([][]byte, 0, len(kgzCommitements))
+	blobs = make([][]byte, 0, len(kgzCommitements))
+	var receivedBlobSidecarAmount int
+
+	log.Tracef("waiting for %d blob sidecars for block hash %s", expectedBlobs, blockHash)
 
 	waitingStartingTime := time.Now()
-	blobsCh := blobsManager.SubscribeToBlobByBlockHash(blockHash, slot)
+	blobsCh := blobsManager.SubscribeToBlobByBlockHash(blockHash, block.Block().Slot())
 
+	columnSidecar := make([]blocks.VerifiedRODataColumn, 0)
 	for blob := range blobsCh {
 		log.Tracef("received blob sidecar for block hash %s, index: %d", blockHash, blob.Index)
 
-		if blob.Index >= expectedBlobSidecarAmount {
-			log.Warnf("received blob sidecar with bigger index than expected, index: %v, expected max: %v", blob.Index, expectedBlobSidecarAmount-1)
-			continue
-		}
-
-		blockCommitment := bytesutil.ToBytes48(kzgCommits[blob.Index])
-		blobCommitment := bytesutil.ToBytes48(blob.KzgCommitment)
-		if blobCommitment != blockCommitment {
-			log.Warnf("commitment %#x != block commitment %#x, at index %d for block hash %#x at slot %d ", blobCommitment, blockCommitment, blob.Index, blockHash, blob.SignedBlockHeader.Header.Slot)
-			continue
+		roDataColumn, err := blocks.NewRODataColumn(blob)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create RODataColumn from blob sidecar: %v", err)
 		}
 
 		receivedBlobSidecarAmount++
-		// only success case
 
-		kzgProofs[blob.Index] = blob.KzgProof
-		blobs[blob.Index] = blob.Blob
+		columnSidecar = append(columnSidecar, blocks.NewVerifiedRODataColumn(roDataColumn))
 
-		if receivedBlobSidecarAmount == expectedBlobSidecarAmount {
+		minColumnCount := peerdas.MinimumColumnCountToReconstruct()
+		if receivedBlobSidecarAmount >= 0 && uint64(receivedBlobSidecarAmount) == minColumnCount {
 			break
+		}
+	}
+
+	minColumnCount := peerdas.MinimumColumnCountToReconstruct()
+	if receivedBlobSidecarAmount < 0 || uint64(receivedBlobSidecarAmount) < minColumnCount {
+		return nil, nil, fmt.Errorf("received only %d blob sidecars, need at least %d to reconstruct blobs", receivedBlobSidecarAmount, peerdas.MinimumColumnCountToReconstruct())
+	}
+
+	slices.SortFunc(columnSidecar, func(a, b blocks.VerifiedRODataColumn) int {
+		//nolint:gosec
+		// G115: safe, max value is 128
+		return int(a.GetIndex() - b.GetIndex())
+	})
+
+	roBlock, err := blocks.NewROBlock(block)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create ROBlock from block: %v", err)
+	}
+
+	indexes := make([]int, 0, len(kgzCommitements))
+	for i := range kgzCommitements {
+		indexes = append(indexes, i)
+	}
+
+	verifiedBlobs, err := peerdas.ReconstructBlobs(roBlock, columnSidecar, indexes)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to reconstruct blobs from column sidecars: %v", err)
+	}
+
+	// Extract blobs from verified blobs
+	for _, verifiedBlob := range verifiedBlobs {
+		blobs = append(blobs, verifiedBlob.GetBlob())
+	}
+
+	// Prysm expects flat array of cell proofs: [blob0_cell0_proof, blob0_cell1_proof, ..., blob1_cell0_proof, ...]
+	for _, blobBytes := range blobs {
+		var kzgBlob kzg.Blob
+		if copy(kzgBlob[:], blobBytes) != len(kzgBlob) {
+			return nil, nil, fmt.Errorf("wrong blob size during cell proof computation")
+		}
+
+		// Compute cells and their KZG proofs for this blob
+		cellsAndProofs, err := kzg.ComputeCellsAndKZGProofs(&kzgBlob)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to compute cells and proofs for blob: %v", err)
+		}
+
+		// Append all cell proofs for this blob (128 proofs)
+		for _, cellProof := range cellsAndProofs.Proofs {
+			kzgProofs = append(kzgProofs, cellProof[:])
 		}
 	}
 
 	blobsManager.UnsubscribeFromBlobByBlockHash(blockHash)
 
-	if receivedBlobSidecarAmount != expectedBlobSidecarAmount {
+	if len(blobs) != expectedBlobs {
 		// not all blob sidecars were received and the block should not be broadcasted
 		// also it means that received channel for blobs was closed, so we don't need to unsubscribe
-		err = fmt.Errorf("received %d blob sidecars, expected %d", receivedBlobSidecarAmount, expectedBlobSidecarAmount)
+		err = fmt.Errorf("received %d blob sidecars, expected %d", receivedBlobSidecarAmount, expectedBlobs)
 
 		return
 	}
 
-	log.Tracef("received all %d blob sidecars for block hash %s, waited %d ms", expectedBlobSidecarAmount, blockHash, time.Since(waitingStartingTime).Milliseconds())
+	log.Tracef("received all %d blob for block hash %s, waited %d ms", expectedBlobs, blockHash, time.Since(waitingStartingTime).Milliseconds())
 
 	return
 }

@@ -3,13 +3,13 @@ package beacon
 import (
 	"testing"
 
-	"github.com/OffchainLabs/prysm/v6/beacon-chain/core/transition"
-	"github.com/OffchainLabs/prysm/v6/consensus-types/blocks"
-	"github.com/OffchainLabs/prysm/v6/consensus-types/interfaces"
-	"github.com/OffchainLabs/prysm/v6/consensus-types/primitives"
-	ethpb "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
-	"github.com/OffchainLabs/prysm/v6/testing/util"
-	"github.com/OffchainLabs/prysm/v6/time/slots"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/transition"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/stretchr/testify/require"
 )
 
@@ -123,7 +123,7 @@ func TestChain(t *testing.T) {
 	}
 
 	assertCheckpoints(t, finalized, justified, ch)
-	require.EqualValues(t, &ethpb.Status{
+	require.EqualValues(t, &ethpb.StatusV2{
 		ForkDigest:     emptyStatus.ForkDigest,
 		FinalizedRoot:  finalized.root,
 		FinalizedEpoch: slots.ToEpoch(9),
@@ -136,7 +136,7 @@ func TestChain(t *testing.T) {
 	require.NoError(t, err)
 
 	assertCheckpoints(t, finalized, justified, ch)
-	require.EqualValues(t, &ethpb.Status{
+	require.EqualValues(t, &ethpb.StatusV2{
 		ForkDigest:     emptyStatus.ForkDigest,
 		FinalizedRoot:  finalized.root,
 		FinalizedEpoch: slots.ToEpoch(10),

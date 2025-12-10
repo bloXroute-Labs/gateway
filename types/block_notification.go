@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/OffchainLabs/prysm/v6/consensus-types/interfaces"
-	ethpb "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
-	"github.com/OffchainLabs/prysm/v6/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -51,7 +51,18 @@ func NewBeaconBlockNotification(block interfaces.ReadOnlySignedBeaconBlock) (Blo
 			Hash:                     hex.EncodeToString(hash[:]),
 			SignedBeaconBlockElectra: blk,
 		}, nil
+	case version.Fulu:
+		blk := genericBlock.GetFulu().GetBlock()
 
+		hash, err := blk.GetBlock().HashTreeRoot()
+		if err != nil {
+			return nil, err
+		}
+
+		return &FuluBlockNotification{
+			Hash:                  hex.EncodeToString(hash[:]),
+			SignedBeaconBlockFulu: blk,
+		}, nil
 	default:
 		return nil, fmt.Errorf("not supported %s", version.String(block.Version()))
 	}
@@ -317,7 +328,6 @@ func (ethBlockNotification *EthBlockNotification) parseRawTransactions() [][]byt
 			}
 			rawTransactions = append(rawTransactions, rawTx)
 		}
-
 	} else {
 		log.Errorf("block is nil, cannot parse raw transactions for block hash: %s", ethBlockNotification.GetHash())
 	}
@@ -486,7 +496,6 @@ func (h *Header) UpdateNumber(number uint64) {
 
 // ConvertEthHeaderToBlockNotificationHeader converts Ethereum header to bloxroute Ethereum Header
 func ConvertEthHeaderToBlockNotificationHeader(ethHeader *ethtypes.Header) *Header {
-
 	var blobGasUsed, excessBlobGas string
 	var parentBeaconRoot *ethcommon.Hash
 	if ethHeader.BlobGasUsed != nil {
@@ -621,4 +630,101 @@ func (ethBlockNotification *EthBlockNotification) GetRawTxByIndex(index int) []b
 func (ethBlockNotification *EthBlockNotification) SetLocks() {
 	ethBlockNotification.rawTxsMu = &sync.RWMutex{}
 	ethBlockNotification.txsMu = &sync.RWMutex{}
+}
+
+// FuluBlockNotification represents electra beacon block notification
+type FuluBlockNotification struct {
+	*ethpb.SignedBeaconBlockFulu
+
+	Hash string `json:"hash"`
+
+	notificationType FeedType
+	source           *NodeEndpoint
+}
+
+// WithFields returns notification with specified fields
+func (e *FuluBlockNotification) WithFields(fields []string) Notification {
+	block := FuluBlockNotification{}
+	for _, param := range fields {
+		switch param {
+		case "hash":
+			block.Hash = e.Hash
+		case "header":
+			if block.SignedBeaconBlockFulu == nil {
+				block.SignedBeaconBlockFulu = &ethpb.SignedBeaconBlockFulu{}
+			}
+
+			if block.Block == nil {
+				block.Block = &ethpb.BeaconBlockElectra{}
+			}
+
+			block.Block.Slot = e.GetBlock().GetSlot()
+			block.Block.ProposerIndex = e.GetBlock().GetProposerIndex()
+			block.Block.ParentRoot = e.GetBlock().GetParentRoot()
+			block.Block.StateRoot = e.GetBlock().GetStateRoot()
+		case "slot":
+			if block.SignedBeaconBlockFulu == nil {
+				block.SignedBeaconBlockFulu = &ethpb.SignedBeaconBlockFulu{}
+			}
+
+			if block.SignedBeaconBlockFulu.Block == nil {
+				block.Block = &ethpb.BeaconBlockElectra{}
+			}
+
+			block.Block.Slot = e.GetBlock().GetSlot()
+		case "body":
+			if block.SignedBeaconBlockFulu == nil {
+				block.SignedBeaconBlockFulu = &ethpb.SignedBeaconBlockFulu{}
+			}
+
+			if block.SignedBeaconBlockFulu.Block == nil {
+				block.Block = &ethpb.BeaconBlockElectra{}
+			}
+
+			block.Block.Body = e.GetBlock().GetBody()
+		}
+	}
+
+	return &block
+}
+
+// Filters -
+func (e *FuluBlockNotification) Filters() map[string]interface{} {
+	return nil
+}
+
+// LocalRegion -
+func (e *FuluBlockNotification) LocalRegion() bool {
+	return false
+}
+
+// GetHash returns block hash
+func (e *FuluBlockNotification) GetHash() string {
+	return e.Hash
+}
+
+// NotificationType returns feed name
+func (e *FuluBlockNotification) NotificationType() FeedType {
+	return e.notificationType
+}
+
+// SetNotificationType sets feed name
+func (e *FuluBlockNotification) SetNotificationType(feedType FeedType) {
+	e.notificationType = feedType
+}
+
+// SetSource sets source endpoint
+func (e *FuluBlockNotification) SetSource(endpoint *NodeEndpoint) {
+	e.source = endpoint
+}
+
+// IsNil returns true if nil
+func (e *FuluBlockNotification) IsNil() bool {
+	return e == nil
+}
+
+// Clone clones notification
+func (e *FuluBlockNotification) Clone() BlockNotification {
+	n := *e
+	return &n
 }

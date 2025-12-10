@@ -94,7 +94,10 @@ const EmptyProtocol = 0
 const MinProtocol = NextValidatorMultipleProtocol
 
 // CurrentProtocol tracks the most recent version of the bloxroute wire protocol
-const CurrentProtocol = BundlesEndOfBlocks
+const CurrentProtocol = FuluProtocol
+
+// FuluProtocol is the minimum protocol version that supports Fulu update
+const FuluProtocol = 54
 
 // BundlesEndOfBlocks is the minimum protocol version that supports bundle end of block
 const BundlesEndOfBlocks = 53

@@ -34,7 +34,6 @@ func TestManageServers(t *testing.T) {
 		GRPC:             &config.GRPC{Enabled: true, Port: 9100},
 		WebsocketEnabled: true,
 		WebsocketPort:    28333,
-		HTTPPort:         9090,
 	}
 
 	ctrl := gomock.NewController(t)
@@ -64,7 +63,6 @@ func TestManageServers(t *testing.T) {
 
 	test.WaitServerStopped(t, "localhost:28333")
 	test.WaitServerStopped(t, "localhost:9100")
-	test.WaitServerStopped(t, "localhost:9090")
 
 	// test if the first sync status is 'unsynced'
 	wsManager.syncChan <- blockchain.Unsynced
@@ -73,19 +71,16 @@ func TestManageServers(t *testing.T) {
 
 	test.WaitServerStarted(t, "localhost:28333")
 	test.WaitServerStarted(t, "localhost:9100")
-	test.WaitServerStarted(t, "localhost:9090")
 
 	wsManager.syncChan <- blockchain.Unsynced
 
 	test.WaitServerStopped(t, "localhost:28333")
 	test.WaitServerStopped(t, "localhost:9100")
-	test.WaitServerStopped(t, "localhost:9090")
 
 	wsManager.syncChan <- blockchain.Synced
 
 	test.WaitServerStarted(t, "localhost:28333")
 	test.WaitServerStarted(t, "localhost:9100")
-	test.WaitServerStarted(t, "localhost:9090")
 
 	clientHandler.shutdownServers()
 

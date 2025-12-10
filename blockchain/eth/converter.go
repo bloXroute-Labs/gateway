@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/OffchainLabs/prysm/v6/consensus-types/blocks"
-	"github.com/OffchainLabs/prysm/v6/consensus-types/interfaces"
-	"github.com/OffchainLabs/prysm/v6/encoding/bytesutil"
-	v1 "github.com/OffchainLabs/prysm/v6/proto/engine/v1"
-	ethpb "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
-	"github.com/OffchainLabs/prysm/v6/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	v1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -117,7 +117,7 @@ func (c Converter) beaconBlockBlockchainToBDN(wrappedBlock beacon.WrappedReadOnl
 		return nil, fmt.Errorf("could not copy block: %v", err)
 	}
 
-	if block.Version() != version.Deneb && block.Version() != version.Electra {
+	if block.Version() != version.Deneb && block.Version() != version.Electra && block.Version() != version.Electra && block.Version() != version.Fulu {
 		return nil, fmt.Errorf("block version %v is not supported", block.Version())
 	}
 
@@ -177,6 +177,22 @@ func (c Converter) beaconBlockBlockchainToBDN(wrappedBlock beacon.WrappedReadOnl
 		b.Block.Body.ExecutionPayload.Transactions = nil
 		concreteBlock = b
 		bxBlockType = types.BxBlockTypeBeaconElectra
+	case version.Fulu:
+		blockFulu := b.GetFulu()
+		if blockFulu == nil {
+			return nil, bdn.ErrNotFuluBlock
+		}
+
+		b := blockFulu.GetBlock()
+
+		resp, err = parseExecutionPayload(b.GetBlock().GetBody().GetExecutionPayload())
+		if err != nil {
+			return nil, err
+		}
+
+		b.Block.Body.ExecutionPayload.Transactions = nil
+		concreteBlock = b
+		bxBlockType = types.BxBlockTypeBeaconFulu
 	default:
 		return nil, fmt.Errorf("unrecognized beacon block %v version %v", beaconHash, block.Version())
 	}
@@ -228,7 +244,7 @@ func (c Converter) BlockBDNtoBlockchain(block *types.BxBlock) (interface{}, erro
 	switch block.Type {
 	case types.BxBlockTypeEth:
 		return c.ethBlockBDNtoBlockchain(block)
-	case types.BxBlockTypeBeaconDeneb, types.BxBlockTypeBeaconElectra:
+	case types.BxBlockTypeBeaconDeneb, types.BxBlockTypeBeaconElectra, types.BxBlockTypeBeaconFulu:
 		return c.beaconBlockBDNtoBlockchain(block)
 	default:
 		return nil, fmt.Errorf("could not convert block %v block type %v", block.Hash(), block.Type)
@@ -300,6 +316,19 @@ func (c Converter) beaconBlockBDNtoBlockchain(block *types.BxBlock) (interfaces.
 		blk = b
 	case types.BxBlockTypeBeaconElectra:
 		b := new(ethpb.SignedBeaconBlockElectra)
+		if err := b.UnmarshalSSZ(block.Trailer); err != nil {
+			return nil, fmt.Errorf("could not convert block %v body to blockchain format: %v", block.Hash(), err)
+		}
+
+		txs, err := c.extractTransactionsFromBlock(block)
+		if err != nil {
+			return nil, err
+		}
+
+		b.Block.Body.ExecutionPayload.Transactions = txs
+		blk = b
+	case types.BxBlockTypeBeaconFulu:
+		b := new(ethpb.SignedBeaconBlockFulu)
 		if err := b.UnmarshalSSZ(block.Trailer); err != nil {
 			return nil, fmt.Errorf("could not convert block %v body to blockchain format: %v", block.Hash(), err)
 		}
@@ -462,10 +491,38 @@ func (c Converter) BeaconMessageToBDN(msg interface{}) (*types.BxBeaconMessage, 
 			return nil, fmt.Errorf("could not get block hash: %v", err)
 		}
 
+		//nolint:gosec
+		// G115: blob index and slot values will never exceed uint32 in practice
 		return types.NewBxBeaconMessage(
 			hash,
 			NewSHA256Hash(blockHash),
 			types.BxBeaconMessageTypeEthBlob,
+			data,
+			uint32(m.GetIndex()),
+			uint32(m.GetSignedBlockHeader().GetHeader().GetSlot()),
+		), nil
+	case *ethpb.DataColumnSidecar:
+		data, err := m.MarshalSSZ()
+		if err != nil {
+			return nil, fmt.Errorf("could not marshal blob sidecar: %v", err)
+		}
+
+		hash, err := m.HashTreeRoot()
+		if err != nil {
+			return nil, fmt.Errorf("could not get hash: %v", err)
+		}
+
+		blockHash, err := m.SignedBlockHeader.Header.HashTreeRoot()
+		if err != nil {
+			return nil, fmt.Errorf("could not get block hash: %v", err)
+		}
+
+		//nolint:gosec
+		// G115: blob index and slot values will never exceed uint32 in practice
+		return types.NewBxBeaconMessage(
+			hash,
+			NewSHA256Hash(blockHash),
+			types.BxBeaconMessageTypeEthDataColumn,
 			data,
 			uint32(m.GetIndex()),
 			uint32(m.GetSignedBlockHeader().GetHeader().GetSlot()),
@@ -485,6 +542,13 @@ func (c Converter) BeaconMessageBDNToBlockchain(msg *types.BxBeaconMessage) (int
 		}
 
 		return blob, nil
+	case types.BxBeaconMessageTypeEthDataColumn:
+		dataColumnSidecar := new(ethpb.DataColumnSidecar)
+		if err := dataColumnSidecar.UnmarshalSSZ(msg.Data); err != nil {
+			return nil, fmt.Errorf("could not unmarshal blob sidecar: %v", err)
+		}
+
+		return dataColumnSidecar, nil
 	default:
 		return nil, fmt.Errorf("could not convert beacon message %v", msg)
 	}

@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	fieldparams "github.com/OffchainLabs/prysm/v6/config/fieldparams"
-	"github.com/OffchainLabs/prysm/v6/encoding/bytesutil"
-	ethpb "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,13 +30,11 @@ func TestSidecarCache_AddBlobSidecar(t *testing.T) {
 	for i := range commitmentInclusionProof {
 		commitmentInclusionProof[i] = bytesutil.PadTo([]byte{}, 32)
 	}
-	blobSidecar := &ethpb.BlobSidecar{
-		Index:                    1,
-		Blob:                     bytesutil.PadTo([]byte{'C'}, fieldparams.BlobLength),
-		KzgCommitment:            bytesutil.PadTo([]byte{'D'}, fieldparams.BLSPubkeyLength),
-		KzgProof:                 bytesutil.PadTo([]byte{'E'}, fieldparams.BLSPubkeyLength),
-		SignedBlockHeader:        header,
-		CommitmentInclusionProof: commitmentInclusionProof,
+	blobSidecar := &ethpb.DataColumnSidecar{
+		Index:             1,
+		Column:            make([][]byte, fieldparams.CellsPerBlob),
+		KzgCommitments:    make([][]byte, fieldparams.CellsPerBlob),
+		SignedBlockHeader: header,
 	}
 
 	// calculate block hash

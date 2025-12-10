@@ -1,21 +1,20 @@
 package beacon
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 	"time"
 
-	"github.com/OffchainLabs/prysm/v6/beacon-chain/core/signing"
-	p2ptypes "github.com/OffchainLabs/prysm/v6/beacon-chain/p2p/types"
-	"github.com/OffchainLabs/prysm/v6/beacon-chain/state"
-	"github.com/OffchainLabs/prysm/v6/config/params"
-	"github.com/OffchainLabs/prysm/v6/consensus-types/interfaces"
-	prysmTypes "github.com/OffchainLabs/prysm/v6/consensus-types/primitives"
-	"github.com/OffchainLabs/prysm/v6/encoding/bytesutil"
-	"github.com/OffchainLabs/prysm/v6/network/forks"
-	"github.com/OffchainLabs/prysm/v6/time/slots"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	prysmTypes "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/types"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/ethereum/go-ethereum/common"
+	ssz "github.com/prysmaticlabs/fastssz"
 
 	"github.com/bloXroute-Labs/bxcommon-go/clock"
 	"github.com/bloXroute-Labs/bxcommon-go/logger"
@@ -75,45 +74,57 @@ func SendBlockToBDN(clock clock.Clock, log *logger.Entry, block WrappedReadOnlyS
 	return nil
 }
 
-func currentSlot(genesisTime uint64) prysmTypes.Slot {
-	return prysmTypes.Slot(uint64(time.Now().Unix()-int64(genesisTime)) / params.BeaconConfig().SecondsPerSlot)
+func currentSlot(genesisTime uint64) primitives.Slot {
+	//nolint:gosec
+	// G115: unix time cannot be negative
+	return primitives.Slot((uint64(time.Now().Unix()) - genesisTime) / params.BeaconConfig().SecondsPerSlot)
 }
 
-func epochStartTime(genesisTime uint64, epoch prysmTypes.Epoch) (time.Time, error) {
-	slot, err := slots.EpochStart(epoch)
-	if err != nil {
-		return time.Time{}, err
+func extractValidDataTypeFromTopic(topic string, digest []byte) (ssz.Unmarshaler, error) {
+	switch topic {
+	case p2p.BlockSubnetTopicFormat:
+		return extractDataTypeFromTypeMap(prysmTypes.BlockMap, digest)
+	case p2p.AttestationSubnetTopicFormat:
+		return extractDataTypeFromTypeMap(prysmTypes.AttestationMap, digest)
+	case p2p.AggregateAndProofSubnetTopicFormat:
+		return extractDataTypeFromTypeMap(prysmTypes.AggregateAttestationMap, digest)
+	case p2p.AttesterSlashingSubnetTopicFormat:
+		return extractDataTypeFromTypeMap(prysmTypes.AttesterSlashingMap, digest)
+	case p2p.LightClientOptimisticUpdateTopicFormat:
+		return extractDataTypeFromTypeMap(prysmTypes.LightClientOptimisticUpdateMap, digest)
+	case p2p.LightClientFinalityUpdateTopicFormat:
+		return extractDataTypeFromTypeMap(prysmTypes.LightClientFinalityUpdateMap, digest)
 	}
-
-	return slots.ToTime(genesisTime, slot)
+	return nil, nil
 }
 
-func extractBlockDataType(digest []byte, vRoot []byte) (interfaces.ReadOnlySignedBeaconBlock, error) {
+func extractDataTypeFromTypeMap[T any](typeMap map[[4]byte]func() (T, error), digest []byte) (T, error) {
+	var zero T
+
 	if len(digest) == 0 {
-		bFunc, ok := p2ptypes.BlockMap[bytesutil.ToBytes4(params.BeaconConfig().GenesisForkVersion)]
+		f, ok := typeMap[bytesutil.ToBytes4(params.BeaconConfig().GenesisForkVersion)]
 		if !ok {
-			return nil, errors.New("no block type exists for the genesis fork version")
+			return zero, fmt.Errorf("no %T type exists for the genesis fork version", zero)
 		}
-		return bFunc()
+		return f()
 	}
 	if len(digest) != forkDigestLength {
-		return nil, fmt.Errorf("invalid digest returned, wanted a length of %d but received %d", forkDigestLength, len(digest))
+		return zero, fmt.Errorf("invalid digest returned, wanted a length of %d but received %d", forkDigestLength, len(digest))
 	}
-	for k, blkFunc := range p2ptypes.BlockMap {
-		rDigest, err := signing.ComputeForkDigest(k[:], vRoot[:])
-		if err != nil {
-			return nil, err
-		}
-		if rDigest == bytesutil.ToBytes4(digest) {
-			return blkFunc()
-		}
+	forkVersion, _, err := params.ForkDataFromDigest([4]byte(digest))
+	if err != nil {
+		return zero, fmt.Errorf("could not extract %T data type, saw digest=%#x", zero, digest)
 	}
-	return nil, errors.New("no valid digest matched")
+
+	f, ok := typeMap[forkVersion]
+	if ok {
+		return f()
+	}
+	return zero, fmt.Errorf("could not extract %T data type, saw digest=%#x", zero, digest)
 }
 
 func currentForkDigest(genesisState state.BeaconState) ([4]byte, error) {
-	genesisTime := time.Unix(int64(genesisState.GenesisTime()), 0)
-	genesisValidatorsRoot := genesisState.GenesisValidatorsRoot()
-
-	return forks.CreateForkDigest(genesisTime, genesisValidatorsRoot)
+	currentSlot := slots.CurrentSlot(genesisState.GenesisTime())
+	currentEpoch := slots.ToEpoch(currentSlot)
+	return params.ForkDigest(currentEpoch), nil
 }

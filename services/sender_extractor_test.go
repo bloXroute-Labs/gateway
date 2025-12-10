@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/hex"
 	"testing"
 	"time"
 
@@ -21,22 +22,23 @@ func TestSenderExtractor_StoresSender(t *testing.T) {
 	s := NewSenderExtractor()
 	// run extractor loop
 	go s.Run()
-
-	// create signed transaction
-	priv, _ := crypto.GenerateKey()
-	tx := bxmock.NewSignedEthTx(ethtypes.LegacyTxType, 1, priv, nil)
-	ethTx, err := types.NewEthTransaction(tx, types.EmptySender)
-	require.NoError(t, err)
+	var hash types.SHA256Hash
+	hashRes, _ := hex.DecodeString("da605de1ee226fd20ba7e82745c742af5255284f8362d66fd8bcf89a318ac5f1")
+	copy(hash[:], hashRes)
+	content, _ := hex.DecodeString("f8678201d785012a05f20082520894bbdef5f330f08afd93a7696f4ea79af4a41d0f8080808194a0d0f839e1efadc7f1f1cbba67a5dcee50e3c49d3b8b6bc5ebebcf4886d04260a7a07b4e4849bc016cbf17cd27e4fcbb301c5b25a14cc3c9d0b3c244567d7fbad6fc")
+	bxTx := types.NewRawBxTransaction(hash, content)
 
 	// submit transaction for sender extraction
-	s.submitEth(ethTx)
+	s.submitEth(bxTx)
+	ethTx, err := bxTx.MakeAndSetEthTransaction(types.EmptySender)
+	require.NoError(t, err)
+	sender, err := ethTx.Sender()
+	require.NoError(t, err)
 
 	// wait for extractor to pick it up (100ms timeout)
-	found, ok := waitForSender(s, ethTx.Hash(), 100*time.Millisecond)
+	found, ok := waitForSender(s, bxTx.Hash(), 100*time.Millisecond)
 	require.True(t, ok, "expected sender to be extracted and stored")
-	expected, err := ethTx.Sender()
-	require.NoError(t, err)
-	assert.Equal(t, expected, found)
+	assert.Equal(t, sender, found)
 }
 
 // Test that GetSender returns false when hash not present

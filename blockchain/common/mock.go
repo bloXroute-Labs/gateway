@@ -1,44 +1,50 @@
 package common
 
 import (
-	"io"
-	"log"
-	"os"
-	"path/filepath"
-	"runtime"
+	"math/big"
 
-	"github.com/ethereum/go-ethereum/rlp"
+	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 )
 
 // ResolvePath resolves the given path relative to the module root.
+// Kept for backwards compatibility; currently unused.
 func ResolvePath(relPath string) string {
-	_, b, _, _ := runtime.Caller(0)
-	basepath := filepath.Dir(b)
-	return filepath.Join(basepath, "..", relPath)
+	// This implementation is intentionally left as a stub to avoid relying on
+	// on-disk RLP fixtures whose encoding no longer matches the current
+	// go-ethereum BlobTxSidecar layout.
+	return relPath
 }
 
-// ReadMockBSCBlobSidecars reads the RLP file and decodes its content.
+// ReadMockBSCBlobSidecars returns a deterministic in-memory BlobSidecars
+// fixture that matches the current go-ethereum BlobTxSidecar structure.
 func ReadMockBSCBlobSidecars() (BlobSidecars, error) {
-	filePath := ResolvePath("./common/test/bsc_blob_sidecars_len_1.rlp")
+	var (
+		blob       kzg4844.Blob
+		commitment kzg4844.Commitment
+		proof      kzg4844.Proof
+	)
 
-	file, err := os.Open(filePath)
-	if err != nil {
-		log.Fatalf("Failed to open file: %v", err)
-		return BlobSidecars{}, err
-	}
-	defer file.Close()
+	// Fill a few bytes to make the data non-zero and stable across runs.
+	blob[0] = 0x01
+	commitment[0] = 0x02
+	proof[0] = 0x03
 
-	rlpData, err := io.ReadAll(file)
-	if err != nil {
-		log.Fatalf("Failed to read file: %v", err)
-		return BlobSidecars{}, err
-	}
+	txHash := ethcommon.Hash{}
+	txHash[0] = 0x01
 
-	var sidecars BlobSidecars
-	err = rlp.DecodeBytes(rlpData, &sidecars)
-	if err != nil {
-		log.Fatalf("Failed to decode RLP data: %v", err)
-		return BlobSidecars{}, err
+	sidecars := BlobSidecars{
+		&BlobSidecar{
+			BlobTxSidecar: &BlobTxSidecar{
+				[]kzg4844.Blob{blob},
+				[]kzg4844.Commitment{commitment},
+				[]kzg4844.Proof{proof},
+			},
+			BlockNumber: big.NewInt(1),
+			BlockHash:   ethcommon.Hash{},
+			TxIndex:     0,
+			TxHash:      txHash,
+		},
 	}
 
 	return sidecars, nil

@@ -15,13 +15,12 @@ import (
 	"os"
 	"path"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/OffchainLabs/prysm/v6/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/sourcegraph/jsonrpc2"
@@ -57,7 +56,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/services/validator"
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
-	"github.com/bloXroute-Labs/gateway/v2/utils/bundle"
 	"github.com/bloXroute-Labs/gateway/v2/version"
 )
 
@@ -122,13 +120,9 @@ type gateway struct {
 
 	bestBlockHeight       int
 	bdnBlocksSkipCount    int
-	seenMEVBundles        services.HashHistory
-	seenMEVMinerBundles   services.HashHistory
 	seenMEVSearchers      services.HashHistory
 	seenBlockConfirmation services.HashHistory
 	seenBeaconMessages    services.HashHistory
-
-	mevBundleDispatcher *bundle.Dispatcher
 
 	bscTxClient      *http.Client
 	gatewayPublicKey string
@@ -163,6 +157,7 @@ type gateway struct {
 	relaysToSwitch  *syncmap.SyncMap[string, bool]
 	ofacMap         *types.OFACMap
 	senderExtractor *services.SenderExtractor
+
 }
 
 func (g *gateway) startOFACUpdater() {
@@ -281,8 +276,6 @@ func NewGateway(parent context.Context,
 		possiblePendingTxs:           services.NewHashHistory("possiblePendingTxs", 15*time.Minute),
 		bdnBlocks:                    services.NewHashHistory("bdnBlocks", 15*time.Minute),
 		newBlocks:                    services.NewHashHistory("newBlocks", 15*time.Minute),
-		seenMEVBundles:               services.NewHashHistory("mevBundle", 30*time.Minute),
-		seenMEVMinerBundles:          services.NewHashHistory("mevMinerBundle", 30*time.Minute),
 		seenMEVSearchers:             services.NewHashHistory("mevSearcher", 30*time.Minute),
 		seenBlockConfirmation:        services.NewHashHistory("blockConfirmation", 30*time.Minute),
 		seenBeaconMessages:           services.NewHashHistory("beaconMessages", 30*time.Minute),
@@ -308,6 +301,7 @@ func NewGateway(parent context.Context,
 		blobsManager: blobsManager,
 	}
 	g.chainID = int64(bxtypes.NetworkNumToChainID[sdn.NetworkNum()])
+
 
 	if bxConfig.BlockchainNetwork == bxtypes.BSCMainnet {
 		g.validatorStatusMap = syncmap.NewStringMapOf[bool]()
@@ -342,7 +336,6 @@ func NewGateway(parent context.Context,
 		g.stats = statistics.NewStats(g.BxConfig.FluentDEnabled, g.BxConfig.FluentDHost, g.sdn.NodeID(), g.sdn.Networks(), g.BxConfig.LogNetworkContent)
 	}
 
-	g.mevBundleDispatcher = bundle.NewDispatcher(g.stats, bxConfig.MEVBuilders)
 	g.txsQueue = services.NewMsgQueue(runtime.NumCPU()*2, bxgateway.ParallelQueueChannelSize, g.msgAdapter)
 	g.txsOrderQueue = services.NewMsgQueue(1, bxgateway.ParallelQueueChannelSize, g.msgAdapter)
 
@@ -438,19 +431,6 @@ func InitSDN(bxConfig *config.Bx, blockchainPeers []types.NodeEndpoint, gatewayP
 	}
 
 	accountModel := sdn.AccountModel()
-
-	accountBuilders := make(map[string]bool)
-	for _, builder := range accountModel.MEVBuilders {
-		accountBuilders[builder] = true
-	}
-
-	// Check if the account is allowed to run the mev builder
-	for builder := range bxConfig.MEVBuilders {
-		if !accountBuilders[builder] {
-			return nil, nil, fmt.Errorf("account %v is not allowed to run %v mev builder, closing the gateway. Please contact support@bloxroute.com to enable running this mev builder", accountModel.AccountID, builder)
-		}
-	}
-
 	if uint64(staticEnodesCount) < uint64(accountModel.MinAllowedNodes.MsgQuota.Limit) {
 		if staticEnodesCount == 0 {
 			panic(fmt.Sprintf("Account %v is not allowed to run a gateway without node. Please check prior log entries for the reason the gateway is not connected to the node",
@@ -1331,10 +1311,6 @@ func (g *gateway) handleBeaconMessageFromBlockchain(beaconMessageFromNode *block
 func (g *gateway) NodeStatus() connections.NodeStatus {
 	var capabilities types.CapabilityFlags
 
-	if len(g.BxConfig.MEVBuilders) > 0 {
-		capabilities |= types.CapabilityMEVBuilder
-	}
-
 	if g.BxConfig.EnableBlockchainRPC {
 		capabilities |= types.CapabilityBlockchainRPCEnabled
 	}
@@ -1389,7 +1365,8 @@ func (g *gateway) HandleMsg(msg bxmessage.Message, source connections.Conn, back
 		g.setSyncWithRelay()
 		err = g.Bx.HandleMsg(msg, source)
 	case *bxmessage.MEVBundle:
-		go g.handleMEVBundleMessage(*typedMsg, source)
+	// Do nothing. Bundle propagation no longer accepted as of
+	// https://bloxroute.atlassian.net/browse/BP-3153
 	case *bxmessage.ErrorNotification:
 		if typedMsg.Code < types.MinErrorNotificationCode {
 			source.Log().Warnf("received a warn notification %v.", typedMsg.Reason)
@@ -1825,49 +1802,6 @@ func (g *gateway) notify(notification types.Notification) {
 
 func (g *gateway) notifyError(errorMsg feed.ErrorNotification) {
 	g.feedManager.NotifyError(errorMsg)
-}
-
-func (g *gateway) handleMEVBundleMessage(mevBundle bxmessage.MEVBundle, source connections.Conn) {
-	fromRelay := connections.IsRelay(source.GetConnectionType())
-	start := time.Now()
-	blockNumber, err := strconv.ParseInt(strings.TrimPrefix(mevBundle.BlockNumber, "0x"), 16, 64)
-	if err != nil {
-		g.log.Errorf("failed to parse block %v: %v", mevBundle, err)
-	}
-
-	if !g.seenMEVBundles.SetIfAbsent(mevBundle.Hash().String(), time.Minute*30) {
-		eventName := "GatewayReceivedBundleFromBDNIgnoreSeen"
-		if !fromRelay {
-			eventName = "GatewayReceivedBundleFromFeedIgnoreSeen"
-		}
-
-		source.Log().Tracef("ignoring %s duration: %v ms, time in network: %v ms", mevBundle, time.Since(start).Milliseconds(), start.Sub(mevBundle.PerformanceTimestamp).Milliseconds())
-		g.stats.AddGatewayBundleEvent(eventName, source, start, mevBundle.BundleHash, mevBundle.GetNetworkNum(), mevBundle.Names(), mevBundle.UUID, blockNumber, mevBundle.MinTimestamp, mevBundle.MaxTimestamp)
-		return
-	}
-
-	var event string
-	if fromRelay {
-		event = "GatewayReceivedBundleFromBDN"
-
-		if mevBundle.UUID == "" && !mevBundle.PriorityFeeRefund {
-			if err := g.mevBundleDispatcher.Dispatch(&mevBundle); err != nil {
-				g.log.Errorf("failed to dispatch mev bundle %v: %v", mevBundle.BundleHash, err)
-			}
-
-			source.Log().Tracef("dispatching %s duration: %v ms, time in network: %v ms", mevBundle, time.Since(start).Milliseconds(), start.Sub(mevBundle.PerformanceTimestamp).Milliseconds())
-		}
-	} else {
-		event = "GatewayReceivedBundleFromFeed"
-
-		// set timestamp as late as possible.
-		mevBundle.PerformanceTimestamp = time.Now()
-		broadcastRes := g.broadcast(&mevBundle, source, bxtypes.RelayProxy)
-
-		source.Log().Tracef("broadcasting %s %s duration: %v ms, time in network: %v ms", mevBundle, broadcastRes, time.Since(start).Milliseconds(), start.Sub(mevBundle.PerformanceTimestamp).Milliseconds())
-	}
-
-	g.stats.AddGatewayBundleEvent(event, source, start, mevBundle.BundleHash, mevBundle.GetNetworkNum(), mevBundle.Names(), mevBundle.UUID, blockNumber, mevBundle.MinTimestamp, mevBundle.MaxTimestamp)
 }
 
 func (g *gateway) getHeaderFromGateway() string {

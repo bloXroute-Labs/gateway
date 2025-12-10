@@ -1,15 +1,11 @@
 package services
 
 import (
-	"bytes"
-	"encoding/hex"
 	"fmt"
 
-	ethpb "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
@@ -35,10 +31,10 @@ func NewBlobProcessor(txStore TxStore, blobsManager *beacon.BlobSidecarCacheMana
 	}
 }
 
-func (bp *blobProcessor) propagateEthBlobSidecarToBlobManager(ethBlobSidecar *ethpb.BlobSidecar) {
+func (bp *blobProcessor) propagateEthBlobSidecarToBlobManager(ethBlobColumnSidecar *ethpb.DataColumnSidecar) {
 	if bp.blobsManager != nil {
 		// blobsManager can be nil in some cases, be careful
-		err := bp.blobsManager.AddBlobSidecar(ethBlobSidecar)
+		err := bp.blobsManager.AddBlobSidecar(ethBlobColumnSidecar)
 		if err != nil {
 			log.Warnf("failed to add blob sidecar: %v", err)
 			// We don't return an error here because we can still broadcast the message even if blobsManager fails
@@ -47,161 +43,38 @@ func (bp *blobProcessor) propagateEthBlobSidecarToBlobManager(ethBlobSidecar *et
 	}
 }
 
-func (bp *blobProcessor) compressedBlobSidecarToEthBlobSidecar(blob *types.CompressedEthBlobSidecar, fullBlob []byte) *ethpb.BlobSidecar {
-	return &ethpb.BlobSidecar{
-		Index:                    blob.Index,
-		Blob:                     fullBlob,
-		KzgCommitment:            blob.KzgCommitment,
-		KzgProof:                 blob.KzgProof,
-		SignedBlockHeader:        blob.SignedBlockHeader,
-		CommitmentInclusionProof: blob.CommitmentInclusionProof,
-	}
-}
-
-func (bp *blobProcessor) ethBlobSidecarToCompressedBlobSidecar(ethBlobSidecar *ethpb.BlobSidecar, txHash []byte) *types.CompressedEthBlobSidecar {
-	return &types.CompressedEthBlobSidecar{
-		Index:                    ethBlobSidecar.GetIndex(),
-		TxHash:                   txHash,
-		KzgCommitment:            ethBlobSidecar.GetKzgCommitment(),
-		KzgProof:                 ethBlobSidecar.GetKzgProof(),
-		SignedBlockHeader:        ethBlobSidecar.GetSignedBlockHeader(),
-		CommitmentInclusionProof: ethBlobSidecar.GetCommitmentInclusionProof(),
-	}
-}
-
-func (bp *blobProcessor) compressForBDN(bxBeaconMessage *types.BxBeaconMessage) (*types.BxBeaconMessage, error) {
-	sidecar := new(ethpb.BlobSidecar)
-	if err := sidecar.UnmarshalSSZ(bxBeaconMessage.Data); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal eth blob sidecar: %v", err)
-	}
-
-	bp.propagateEthBlobSidecarToBlobManager(sidecar)
-
-	kzg := hex.EncodeToString(sidecar.KzgCommitment)
-	bxTx, err := bp.txStore.GetTxByKzgCommitment(kzg)
-	if err != nil {
-		log.Tracef("not found tx for kzg commitment %s, broadcasting original eth sidecar: %v", kzg, err)
-		return bxBeaconMessage, nil
-	}
-
-	compressedSidecar := bp.ethBlobSidecarToCompressedBlobSidecar(sidecar, bxTx.Hash().Bytes())
-
-	newSidecarData, err := compressedSidecar.MarshalSSZ()
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal eth blob sidecar: %v", err)
-	}
-
-	log.Tracef("successfully compressed eth blob sidecar, kzg commitment: %v", hex.EncodeToString(compressedSidecar.KzgCommitment))
-
-	return types.NewBxBeaconMessage(
-		bxBeaconMessage.Hash,
-		bxBeaconMessage.BlockHash,
-		types.BxBeaconMessageTypeCompressedEthBlob, // New compressed type
-		newSidecarData,
-		bxBeaconMessage.Index,
-		bxBeaconMessage.Slot,
-	), nil
-}
-
-func findBlobValueByKzgCommitmentFromBlobTxSidecar(targetCommitment []byte, sidecar *ethtypes.BlobTxSidecar) ([]byte, bool) {
-	for i, commitment := range sidecar.Commitments {
-		if bytes.Equal(targetCommitment, commitment[:]) {
-			return sidecar.Blobs[i][:], true
-		}
-	}
-
-	return nil, false
-}
-
-func (bp *blobProcessor) decompressFromBDN(beaconMessage *bxmessage.BeaconMessage) (*types.BxBeaconMessage, error) {
-	sidecarFromBroadcast := new(types.CompressedEthBlobSidecar)
-	if err := sidecarFromBroadcast.UnmarshalSSZ(beaconMessage.Data()); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal compressed eth blob sidecar: %v", err)
-	}
-
-	compressedBlobTxHash, err := types.NewSHA256Hash(sidecarFromBroadcast.TxHash)
-	if err != nil {
-		return nil, fmt.Errorf("failed to calculate compressed tx hash: %v", err)
-	}
-
-	bxTx, ok := bp.txStore.Get(compressedBlobTxHash)
-	if !ok {
-		return nil, fmt.Errorf("failed to find tx by compressed hash: %v", compressedBlobTxHash)
-	}
-
-	var ethTx ethtypes.Transaction
-	err = rlp.DecodeBytes(bxTx.Content(), &ethTx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode tx: %v", err)
-	}
-
-	if ethTx.BlobTxSidecar() == nil {
-		return nil, fmt.Errorf("tx does not have blob sidecar")
-	}
-
-	if len(ethTx.BlobTxSidecar().Commitments) == 0 {
-		return nil, fmt.Errorf("tx blob sidecar does not have kzg commitments")
-	}
-
-	if len(ethTx.BlobTxSidecar().Blobs) == 0 {
-		return nil, fmt.Errorf("tx blob sidecar does not have blobs")
-	}
-
-	blob, ok := findBlobValueByKzgCommitmentFromBlobTxSidecar(sidecarFromBroadcast.KzgCommitment, ethTx.BlobTxSidecar())
-
-	if !ok {
-		return nil, fmt.Errorf("failed to find blob value for commitment: %v", sidecarFromBroadcast.KzgCommitment)
-	}
-
-	ethSidecar := bp.compressedBlobSidecarToEthBlobSidecar(sidecarFromBroadcast, blob)
-
-	bp.propagateEthBlobSidecarToBlobManager(ethSidecar)
-
-	uncompressedSidecarBytes, err := ethSidecar.MarshalSSZ()
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal eth blob sidecar: %v", err)
-	}
-
-	log.Tracef("successfully decompressed blob sidecar, kzg commitment: %v", hex.EncodeToString(ethSidecar.KzgCommitment))
-
-	return &types.BxBeaconMessage{
-		Hash:      beaconMessage.Hash(),
-		BlockHash: beaconMessage.BlockHash(),
-		Type:      types.BxBeaconMessageTypeEthBlob, // New decompressed type
-		Data:      uncompressedSidecarBytes,
-		Index:     beaconMessage.Index(),
-		Slot:      beaconMessage.Slot(),
-	}, nil
-}
-
 func (bp *blobProcessor) BxBeaconMessageToBeaconMessage(bxBeaconMessage *types.BxBeaconMessage, networkNum bxtypes.NetworkNum) (*bxmessage.BeaconMessage, error) {
-	compressedBxBeaconMessage, err := bp.compressForBDN(bxBeaconMessage)
-	if err != nil {
-		return nil, fmt.Errorf("failed to prepare for BDN: %v", err)
-	}
+	// TODO: implement compression
+	switch bxBeaconMessage.Type {
+	case types.BxBeaconMessageTypeEthDataColumn:
+		if bp.blobsManager != nil {
+			sidecar := new(ethpb.DataColumnSidecar)
+			if err := sidecar.UnmarshalSSZ(bxBeaconMessage.Data); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal eth blob sidecar: %v", err)
+			}
 
-	return bxmessage.NewBeaconMessage(
-		compressedBxBeaconMessage.Hash,
-		compressedBxBeaconMessage.BlockHash,
-		compressedBxBeaconMessage.Type,
-		compressedBxBeaconMessage.Data,
-		compressedBxBeaconMessage.Index,
-		compressedBxBeaconMessage.Slot,
-		networkNum,
-	), nil
+			bp.propagateEthBlobSidecarToBlobManager(sidecar)
+		}
+
+		return bxmessage.NewBeaconMessage(
+			bxBeaconMessage.Hash,
+			bxBeaconMessage.BlockHash,
+			bxBeaconMessage.Type,
+			bxBeaconMessage.Data,
+			bxBeaconMessage.Index,
+			bxBeaconMessage.Slot,
+			networkNum,
+		), nil
+	default:
+		return nil, fmt.Errorf("invalid beacon message type %s", bxBeaconMessage.Type)
+	}
 }
 
 func (bp *blobProcessor) BeaconMessageToBxBeaconMessage(beaconMessage *bxmessage.BeaconMessage) (*types.BxBeaconMessage, error) {
 	var resultBxBeaconMessage *types.BxBeaconMessage
-	var err error
 
 	switch beaconMessage.Type() {
-	case types.BxBeaconMessageTypeCompressedEthBlob:
-		resultBxBeaconMessage, err = bp.decompressFromBDN(beaconMessage)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decompress from BDN: %v", err)
-		}
-	case types.BxBeaconMessageTypeEthBlob:
+	case types.BxBeaconMessageTypeEthDataColumn:
 		resultBxBeaconMessage = types.NewBxBeaconMessage(
 			beaconMessage.Hash(),
 			beaconMessage.BlockHash(),
@@ -212,13 +85,14 @@ func (bp *blobProcessor) BeaconMessageToBxBeaconMessage(beaconMessage *bxmessage
 		)
 
 		if bp.blobsManager != nil {
-			ethSidecar := new(ethpb.BlobSidecar)
-			if err := ethSidecar.UnmarshalSSZ(beaconMessage.Data()); err != nil {
+			dataColumnSidecar := new(ethpb.DataColumnSidecar)
+			if err := dataColumnSidecar.UnmarshalSSZ(beaconMessage.Data()); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal eth blob sidecar: %v", err)
 			}
-			bp.propagateEthBlobSidecarToBlobManager(ethSidecar)
+			bp.propagateEthBlobSidecarToBlobManager(dataColumnSidecar)
 		}
-
+	default:
+		return nil, fmt.Errorf("invalid beacon message type %s", beaconMessage.Type())
 	}
 
 	return resultBxBeaconMessage, nil

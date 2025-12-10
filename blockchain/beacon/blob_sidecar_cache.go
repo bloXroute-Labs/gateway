@@ -7,21 +7,23 @@ import (
 	"sync"
 	"time"
 
-	prysmTypes "github.com/OffchainLabs/prysm/v6/consensus-types/primitives"
-	ethpb "github.com/OffchainLabs/prysm/v6/proto/prysm/v1alpha1"
-	gethparams "github.com/ethereum/go-ethereum/params"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	prysmTypes "github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
 )
 
-const cleaningFrequency = 12 * time.Second
-const ignoreSlot = 5
+const (
+	cleaningFrequency = 12 * time.Second
+	ignoreSlot        = 5
+)
 
 // BlobCacheValue is a struct that holds the slot and the channel for the blob sidecar
 type BlobCacheValue struct {
 	slot      prysmTypes.Slot
-	ch        chan *ethpb.BlobSidecar
+	ch        chan *ethpb.DataColumnSidecar
 	closeLock sync.RWMutex
 }
 
@@ -33,7 +35,7 @@ type BlobSidecarCacheManager struct {
 }
 
 // AddBlobSidecar adds a blob sidecar to the cache
-func (m *BlobSidecarCacheManager) AddBlobSidecar(blobSidecar *ethpb.BlobSidecar) error {
+func (m *BlobSidecarCacheManager) AddBlobSidecar(blobSidecar *ethpb.DataColumnSidecar) error {
 	blockHash, err := blobSidecar.SignedBlockHeader.Header.HashTreeRoot()
 	if err != nil {
 		return fmt.Errorf("failed to calculate block hash: %v", err)
@@ -45,7 +47,7 @@ func (m *BlobSidecarCacheManager) AddBlobSidecar(blobSidecar *ethpb.BlobSidecar)
 
 	value, _ := m.blobSidecars.LoadOrStore(blockHashStr, &BlobCacheValue{
 		slot: blobSidecar.SignedBlockHeader.Header.Slot,
-		ch:   make(chan *ethpb.BlobSidecar, gethparams.DefaultPragueBlobConfig.Max),
+		ch:   make(chan *ethpb.DataColumnSidecar, params.BeaconConfig().NumberOfColumns),
 	})
 
 	value.closeLock.RLock()
@@ -65,11 +67,11 @@ func (m *BlobSidecarCacheManager) AddBlobSidecar(blobSidecar *ethpb.BlobSidecar)
 }
 
 // SubscribeToBlobByBlockHash subscribes to a blob by block hash
-func (m *BlobSidecarCacheManager) SubscribeToBlobByBlockHash(blockHash string, slot prysmTypes.Slot) chan *ethpb.BlobSidecar {
+func (m *BlobSidecarCacheManager) SubscribeToBlobByBlockHash(blockHash string, slot prysmTypes.Slot) chan *ethpb.DataColumnSidecar {
 	blockHash = strings.TrimPrefix(blockHash, "0x")
 	value, _ := m.blobSidecars.LoadOrStore(blockHash, &BlobCacheValue{
 		slot: slot,
-		ch:   make(chan *ethpb.BlobSidecar, gethparams.DefaultPragueBlobConfig.Max),
+		ch:   make(chan *ethpb.DataColumnSidecar, params.BeaconConfig().NumberOfColumns),
 	})
 
 	value.closeLock.RLock()

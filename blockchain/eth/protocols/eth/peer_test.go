@@ -52,7 +52,7 @@ func TestPeer_Handshake(t *testing.T) {
 
 	peer, rw := testPeer(-1, 1)
 
-	peerStatus := eth.StatusPacket{
+	peerStatus := eth.StatusPacket68{
 		ProtocolVersion: ETH66,
 		NetworkID:       1,
 		TD:              big.NewInt(10),
@@ -104,7 +104,7 @@ func TestPeer_Handshake(t *testing.T) {
 	assert.NotNil(t, err)
 
 	// forkID missmatch
-	rw.QueueIncomingMessage(eth.StatusMsg, eth.StatusPacket{
+	rw.QueueIncomingMessage(eth.StatusMsg, eth.StatusPacket68{
 		ProtocolVersion: 1,
 		NetworkID:       1,
 		TD:              big.NewInt(10),

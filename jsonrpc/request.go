@@ -2,12 +2,7 @@ package jsonrpc
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-
-	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	uuid "github.com/satori/go.uuid"
 )
 
 // RPCRequestType represents the JSON-RPC methods that are callable
@@ -118,88 +113,4 @@ func (p *RPCTxPayload) UnmarshalJSON(b []byte) error {
 	p.RPCMode = payload.RPCMode
 
 	return nil
-}
-
-// RPCBundleSubmissionPayload is the payload of blxr_submit_bundle request
-type RPCBundleSubmissionPayload struct {
-	BlockchainNetwork       string            `json:"blockchain_network"`
-	MEVBuilders             map[string]string `json:"mev_builders"`
-	Transaction             []string          `json:"transaction"`
-	BlockNumber             string            `json:"block_number"`
-	MinTimestamp            int               `json:"min_timestamp"`
-	MaxTimestamp            int               `json:"max_timestamp"`
-	RevertingHashes         []string          `json:"reverting_hashes"`
-	UUID                    string            `json:"uuid"`
-	AvoidMixedBundles       bool              `json:"avoid_mixed_bundles,omitempty"`
-	OriginalSenderAccountID string            `json:"original_sender_account_id"`
-	PriorityFeeRefund       bool              `json:"priority_fee_refund"`
-	IncomingRefundRecipient string            `json:"refund_recipient,omitempty"`
-	BlocksCount             int               `json:"blocks_count,omitempty"`
-	DroppingHashes          []string          `json:"dropping_hashes,omitempty"`
-	EndOfBlock              bool              `json:"end_of_block"`
-}
-
-// Validate doing validation for blxr_submit_bundle payload
-func (p RPCBundleSubmissionPayload) Validate() error {
-	if len(p.Transaction) == 0 && p.UUID == "" {
-		return errors.New("bundle missing txs")
-	}
-
-	if p.BlockNumber == "" && p.UUID == "" {
-		return errors.New("bundle missing blockNumber")
-	}
-
-	if p.MinTimestamp < 0 {
-		return errors.New("min timestamp must be greater than or equal to 0")
-	}
-	if p.MaxTimestamp < 0 {
-		return errors.New("max timestamp must be greater than or equal to 0")
-	}
-
-	if p.UUID != "" {
-		_, err := uuid.FromString(p.UUID)
-		if err != nil {
-			return fmt.Errorf("invalid UUID, %v", err)
-		}
-	}
-
-	_, err := hexutil.DecodeUint64(p.BlockNumber)
-	if err != nil {
-		return fmt.Errorf("blockNumber must be hex, %v", err)
-	}
-
-	if p.IncomingRefundRecipient != "" {
-		if !ethcommon.IsHexAddress(p.IncomingRefundRecipient) {
-			return fmt.Errorf("refund recipient must be a hex address, %v", err)
-		}
-	}
-
-	if len(p.DroppingHashes) > len(p.Transaction) {
-		return fmt.Errorf("dropping txs have too many hashes, %v", p.DroppingHashes)
-	}
-
-	return nil
-}
-
-// RPCSendBundle MEVBundle payload to be used
-type RPCSendBundle struct {
-	Txs               []string `json:"txs"`
-	UUID              string   `json:"uuid,omitempty"` // TODO: this should be called `replacementUuid` according to eth_sendBundle spec
-	BlockNumber       string   `json:"blockNumber"`
-	MinTimestamp      int      `json:"minTimestamp,omitempty"`
-	MaxTimestamp      int      `json:"maxTimestamp,omitempty"`
-	RevertingTxHashes []string `json:"revertingTxHashes,omitempty"`
-	AvoidMixedBundles bool     `json:"avoidMixedBundles,omitempty"`
-	RefundRecipient   string   `json:"refundRecipient,omitempty"`
-	Boost             bool     `json:"boost"` // 'beaverbuild' builder specific
-	AccountID         string   `json:"accountId,omitempty"`
-	BlocksCount       int      `json:"blocksCount,omitempty"`
-	DroppingTxHashes  []string `json:"droppingTxHashes,omitempty"`
-	EndOfBlock        bool     `json:"endOfBlock,omitempty"`
-	AccountTier       string   `json:"accountTier,omitempty"`
-}
-
-// RPCCancelBundlePayload custom json-rpc required to cancel flashbots bundle
-type RPCCancelBundlePayload struct {
-	ReplacementUUID string `json:"replacementUuid"`
 }

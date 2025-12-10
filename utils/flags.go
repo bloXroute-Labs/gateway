@@ -276,12 +276,12 @@ var (
 	}
 	MEVBuildersFilePathFlag = &cli.StringFlag{
 		Name:   "mev-builders-file-path",
-		Usage:  "set mev builders file path for gateway",
+		Usage:  "DEPRECATED. This flag will be removed in future releases.",
 		Hidden: true,
 	}
 	MEVBundleMethodNameFlag = &cli.StringFlag{
 		Name:  "mev-bundle-method-name",
-		Usage: "set custom method for mevBundle request",
+		Usage: "DEPRECATED. This flag will be removed in future releases.",
 		Value: "eth_sendBundle",
 	}
 	SendBlockConfirmation = &cli.BoolFlag{
@@ -422,3 +422,4 @@ var (
 		Value:  "",
 	}
 )
+
