@@ -157,7 +157,6 @@ type gateway struct {
 	relaysToSwitch  *syncmap.SyncMap[string, bool]
 	ofacMap         *types.OFACMap
 	senderExtractor *services.SenderExtractor
-
 }
 
 func (g *gateway) startOFACUpdater() {
@@ -301,7 +300,6 @@ func NewGateway(parent context.Context,
 		blobsManager: blobsManager,
 	}
 	g.chainID = int64(bxtypes.NetworkNumToChainID[sdn.NetworkNum()])
-
 
 	if bxConfig.BlockchainNetwork == bxtypes.BSCMainnet {
 		g.validatorStatusMap = syncmap.NewStringMapOf[bool]()
