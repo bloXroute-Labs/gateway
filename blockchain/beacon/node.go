@@ -82,6 +82,10 @@ const (
 	pubsubQueueSize = 600
 )
 
+var (
+	errNoPeersFoundToBroadcast = errors.New("no peers found to broadcast")
+)
+
 var networkInitMapping = map[string]func(){
 	// Mainnet is default and has required values
 	"Mainnet": func() {},
@@ -472,8 +476,9 @@ func (n *Node) BroadcastBlock(block interfaces.ReadOnlySignedBeaconBlock) error 
 		return fmt.Errorf("could not get current fork digest: %v", err)
 	}
 
-	if err := n.broadcast(fmt.Sprintf(p2p.BlockSubnetTopicFormat, digest), msg); err != nil {
-		return fmt.Errorf("could not broadcast block: %v", err)
+	topic := fmt.Sprintf(p2p.BlockSubnetTopicFormat, digest)
+	if err := n.broadcast(topic, msg); err != nil {
+		return fmt.Errorf("could not broadcast block for topic %v: %v", topic, err)
 	}
 
 	return nil
@@ -559,7 +564,12 @@ func (n *Node) BroadcastDataColumn(dataColumnSidecar *ethpb.DataColumnSidecar) e
 
 	subnet := peerdas.ComputeSubnetForDataColumnSidecar(dataColumnSidecar.Index)
 
-	err = n.broadcast(dataColumnSubnetToTopic(subnet, digest), dataColumnSidecar)
+	topic := dataColumnSubnetToTopic(subnet, digest)
+	err = n.broadcast(topic, dataColumnSidecar)
+	if err == errNoPeersFoundToBroadcast {
+		n.log.Tracef("no peers found to broadcast data column sidecar for topic %v", topic)
+		return errNoPeersFoundToBroadcast
+	}
 	if err != nil {
 		return fmt.Errorf("failed to broadcast blob: %v", err)
 	}
@@ -858,7 +868,7 @@ func (n *Node) broadcast(topic string, msg proto.Message) error {
 	}
 
 	if len(pbTopic.topic.ListPeers()) == 0 {
-		return fmt.Errorf("no peers found to broadcast for topic %v", topic)
+		return errNoPeersFoundToBroadcast
 	}
 
 	castMsg, ok := msg.(fastssz.Marshaler)

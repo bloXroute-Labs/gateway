@@ -73,6 +73,9 @@ func HandleBDNBeaconMessages(ctx context.Context, b blockchain.Bridge, n *Node, 
 				if broadcastP2P {
 					go func() {
 						if err := n.BroadcastDataColumn(blobSidecar); err != nil {
+							if err == errNoPeersFoundToBroadcast {
+								return
+							}
 							log.Errorf("failed to broadcast data column sidecar to P2P connections: %v", err)
 						} else {
 							n.log.Tracef("Broadcasted data column sidecar message, index %v, block hash: %v", blobSidecar.Index, hex.EncodeToString(beaconMessage.BlockHash[:]))
