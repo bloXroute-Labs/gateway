@@ -381,13 +381,14 @@ func (f *Manager) notifySubscribers(ctx context.Context) {
 
 			customNotification, isCustom := notification.(types.CustomNotification)
 			for uid, clientSub := range f.idToClientSubscription {
+				notificationToSend := notification
 				if isCustom {
-					customNotification.ApplyAccountLogic(string(clientSub.AccountID))
+					notificationToSend = customNotification.ApplyAccountLogic(string(clientSub.AccountID))
 				}
 
 				if (clientSub.feedConnectionType == types.WebSocketFeed || clientSub.feedConnectionType == types.GRPCFeed) && clientSub.feedType == notification.NotificationType() {
 					select {
-					case clientSub.feed <- notification:
+					case clientSub.feed <- notificationToSend:
 						f.metricsExporter.PushIncrFeedNotificationDelivered(uint32(f.networkNum), string(notification.NotificationType()), string(clientSub.AccountID))
 					default:
 						f.log.Errorf("can't send %v to channel %v without blocking. Ignored hash %v and unsubscribing", clientSub.feedType, uid, notification.GetHash())

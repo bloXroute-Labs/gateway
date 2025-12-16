@@ -67,6 +67,7 @@ func validateTxFromExternalSource(transaction string, txBytes []byte, gatewayCha
 	// Ethereum's transactions encoding for RPC interfaces is slightly different from the RLP encoded format, so decode + re-encode the transaction for consistency.
 	// Specifically, note `UnmarshalBinary` should be used for RPC interfaces, and rlp.DecodeBytes should be used for the wire protocol.
 	var ethTx ethtypes.Transaction
+	rlpEncoded := false
 	err := ethTx.UnmarshalBinary(txBytes)
 	if err != nil {
 		// If UnmarshalBinary failed, we will try RLP in case user made mistake
@@ -74,6 +75,7 @@ func validateTxFromExternalSource(transaction string, txBytes []byte, gatewayCha
 		if e != nil {
 			return nil, false, fmt.Errorf("failed to unmarshal tx: %w", err)
 		}
+		rlpEncoded = true
 		log.Warnf("Ethereum transaction was in RLP format instead of binary," +
 			" transaction has been processed anyway, but it'd be best to use the Ethereum binary standard encoding")
 	}
@@ -85,11 +87,12 @@ func validateTxFromExternalSource(transaction string, txBytes []byte, gatewayCha
 		log.Debugf("chainID mismatch for hash %v - tx chainID %v, gateway networkNum %v networkChainID %v", ethTx.Hash().String(), ethTx.ChainId().Int64(), networkNum, gatewayChainID)
 		return nil, false, fmt.Errorf("chainID mismatch for hash %v, expect %v got %v, make sure the tx is sent with the right blockchain network", ethTx.Hash().String(), gatewayChainID, ethTx.ChainId().Int64())
 	}
-
-	txContent, err := rlp.EncodeToBytes(&ethTx)
-
-	if err != nil {
-		return nil, false, err
+	txContent := txBytes
+	if rlpEncoded {
+		txContent, err = ethTx.MarshalBinary()
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to marshal tx: %w", err)
+		}
 	}
 
 	var txFlags = types.TFPaidTx | types.TFLocalRegion | types.TFDeliverToNode
