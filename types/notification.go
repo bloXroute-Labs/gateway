@@ -14,7 +14,7 @@ type Notification interface {
 // tailored notifications based on the subscriber's account.
 type CustomNotification interface {
 	Notification
-	ApplyAccountLogic(account string)
+	ApplyAccountLogic(account string) CustomNotification
 }
 
 // BlockNotification represents a generic block notification
