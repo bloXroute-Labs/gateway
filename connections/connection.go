@@ -97,11 +97,6 @@ func IsGateway(connectionType bxtypes.NodeType) bool {
 	return connectionType&bxtypes.Gateway != 0
 }
 
-// IsMevBuilderGateway indicates if the connection is a mev-builder gateway
-func IsMevBuilderGateway(capabilities types.CapabilityFlags) bool {
-	return capabilities&types.CapabilityMEVBuilder != 0
-}
-
 // IsBlockchainRPCEnabled indicates if the connection is enabled web3 bridge
 func IsBlockchainRPCEnabled(capabilities types.CapabilityFlags) bool {
 	return capabilities&types.CapabilityBlockchainRPCEnabled != 0

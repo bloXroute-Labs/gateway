@@ -52,7 +52,7 @@ func setupNet(networkName string) (blockchain.Bridge, *ethHandler) {
 	config, _ := network.NewEthereumPreset(networkName)
 	_, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(3)
 	ctx := context.Background()
-	testHandler := newHandler(ctx, &config, core.NewChain(ctx, config.IgnoreBlockTimeout), bridge, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout, false), make(map[string]struct{}))
+	testHandler := newHandler(ctx, &config, core.NewChain(ctx, config.IgnoreBlockTimeout), bridge, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout, false))
 	return bridge, (*ethHandler)(testHandler)
 }
 
@@ -513,7 +513,7 @@ func TestRunPeer(t *testing.T) {
 	config, _ := network.NewEthereumPreset("BSC-Mainnet")
 	_, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(1)
 	ctx := context.Background()
-	testHandler := newHandler(ctx, &config, core.NewChain(ctx, config.IgnoreBlockTimeout), bridge, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout, false), make(map[string]struct{}))
+	testHandler := newHandler(ctx, &config, core.NewChain(ctx, config.IgnoreBlockTimeout), bridge, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout, false))
 
 	peer, _ := testPeer(1, 1, eth2.ETH66)
 	mu := new(sync.Mutex)
@@ -1124,7 +1124,7 @@ func TestHandler_ConnectionCloseOnContextClosure(t *testing.T) {
 	config, _ := network.NewEthereumPreset("BSC-Mainnet")
 	_, blockchainPeersInfo := test.GenerateBlockchainPeersInfo(1)
 	ctx := context.Background()
-	testHandler := newHandler(ctx, &config, core.NewChain(ctx, config.IgnoreBlockTimeout), bridge, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout, false), make(map[string]struct{}))
+	testHandler := newHandler(ctx, &config, core.NewChain(ctx, config.IgnoreBlockTimeout), bridge, NewEthWSManager(blockchainPeersInfo, NewMockWSProvider, bxgateway.WSProviderTimeout, false))
 
 	peer1, _ := testPeer(1, 1, eth2.ETH66)
 	_ = testHandler.peers.register(peer1, nil)

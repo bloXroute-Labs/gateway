@@ -26,8 +26,6 @@ const (
 var (
 	// ErrMethodNotAllowed is returned when the account is not authorized to call a method
 	ErrMethodNotAllowed = errors.New("not authorized to call this method")
-	// ErrTierTooLow is returned when the account is not enterprise / enterprise elite / ultra
-	ErrTierTooLow = errors.New("account must be enterprise / enterprise elite / ultra")
 	// ErrInvalidHeader is returned when the authorization header is invalid
 	ErrInvalidHeader = errors.New("wrong value in the authorization header")
 )
@@ -120,14 +118,6 @@ func (g *Service) Authorize(accountID bxtypes.AccountID, secretHash string, allo
 		default:
 			connectionAccountModel = accountRes.Account
 			accountResult = accountRes
-		}
-
-		if !connectionAccountModel.TierName.IsEnterprise() {
-			if accountRes.shouldLogError() {
-				l.Warnf("customer account %s must be enterprise / enterprise elite / ultra but it is %v",
-					connectionAccountModel.AccountID, connectionAccountModel.TierName)
-			}
-			return connectionAccountModel, ErrTierTooLow
 		}
 	}
 

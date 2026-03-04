@@ -17,8 +17,10 @@ import (
 )
 
 var (
-	availableFeeds = []types.FeedType{types.NewTxsFeed, types.NewBlocksFeed, types.BDNBlocksFeed, types.PendingTxsFeed,
-		types.OnBlockFeed, types.TxReceiptsFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed}
+	availableFeeds = []types.FeedType{
+		types.NewTxsFeed, types.NewBlocksFeed, types.BDNBlocksFeed, types.PendingTxsFeed,
+		types.OnBlockFeed, types.TxReceiptsFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed,
+	}
 
 	availableFeedsMap = make(map[types.FeedType]struct{})
 )
@@ -87,9 +89,13 @@ func (h *handlerObj) createClientReq(req Request, feed types.FeedType, rpcParams
 		feedStreaming = h.connectionAccount.TransactionReceiptFeed
 	}
 
-	err = h.validateFeed(request.feed, feedStreaming, request.options.Include, len(filters) > 0)
-	if err != nil {
-		return nil, err
+	// HACK: feed validation should not execute on ESE GWs to avoid feed expiration validation
+	// See https://bloxroute.atlassian.net/browse/BP-3340
+	if h.connectionAccount.AccountID != h.serverAccountID {
+		err = h.validateFeed(request.feed, feedStreaming, request.options.Include, len(filters) > 0)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	calls := make(map[string]*handler.RPCCall)

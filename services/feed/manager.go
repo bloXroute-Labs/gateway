@@ -160,7 +160,7 @@ func (f *Manager) Subscribe(feedName types.FeedType, feedConnectionType types.Fe
 		FeedType:       feedName,
 	}
 
-	allowed, reason, permissionRespChannel := f.subscriptionServices.IsSubscriptionAllowed(&subscriptionModel)
+	allowed, reason, permissionRespChannel := f.subscriptionServices.SendSubscribeNotification(&subscriptionModel)
 	if !allowed {
 		log.Debugf("subscription %v: allowed %v, reason %v", id, allowed, reason)
 		return nil, fmt.Errorf(reason)
@@ -241,8 +241,7 @@ func (f *Manager) Unsubscribe(subscriptionID string, closeClientConnection bool,
 		subscriptionID,
 		clientSub.feedType,
 		f.networkNum,
-		clientSub.AccountID,
-		sdnmessage.AccountTier(clientSub.Tier))
+		clientSub.AccountID)
 	close(clientSub.feed)
 
 	if closeClientConnection && clientSub.connection != nil {
@@ -317,7 +316,6 @@ func (f *Manager) GetGrpcSubscriptionReply() []ClientSubscriptionFullInfo {
 	for _, clientData := range f.idToClientSubscription {
 		subscribe := ClientSubscriptionFullInfo{
 			AccountID:    clientData.AccountID,
-			Tier:         clientData.Tier,
 			FeedName:     clientData.feedType,
 			Network:      clientData.network,
 			RemoteAddr:   clientData.RemoteAddress,
@@ -512,7 +510,7 @@ func (f *Manager) checkForDuplicateFeed(clientSubscription *ClientSubscription, 
 				v.Includes == clientSubscription.Includes &&
 				v.Filters == clientSubscription.Filters &&
 				strings.HasPrefix(v.RemoteAddress, remoteIP) {
-				return fmt.Errorf("duplicate feed request - account %v tier %v ip %v previous subscription ID %v", clientSubscription.AccountID, clientSubscription.Tier, remoteAddress, k)
+				return fmt.Errorf("duplicate feed request - account %v ip %v previous subscription ID %v", clientSubscription.AccountID, remoteAddress, k)
 			}
 		}
 	}

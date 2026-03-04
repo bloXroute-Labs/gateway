@@ -7,6 +7,7 @@ import (
 
 	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
 	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -79,7 +80,7 @@ func TestConverter_Block(t *testing.T) {
 
 	require.Equal(t, td, blockInfo.TotalDifficulty())
 
-	canonicFormat, err := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil)
+	canonicFormat, err := types.NewEthBlockNotification(bxtypes.Mainnet, ethBlock.Hash(), ethBlock, nil)
 	require.NoError(t, err)
 
 	for i, tx := range canonicFormat.Transactions {
@@ -123,7 +124,7 @@ func TestConverter_BSCBlockWithBlobs(t *testing.T) {
 
 	require.Equal(t, td, blockInfo.TotalDifficulty())
 
-	canonicFormat, err := types.NewEthBlockNotification(ethBlock.Hash(), ethBlock, nil)
+	canonicFormat, err := types.NewEthBlockNotification(bxtypes.Mainnet, ethBlock.Hash(), ethBlock, nil)
 	require.NoError(t, err)
 
 	for i, tx := range canonicFormat.Transactions {

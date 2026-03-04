@@ -1,4 +1,4 @@
-IMAGE_NAME=bloxroute/bdn-protobuf:v30.2
+IMAGE_NAME=bloxroute/bdn-protobuf:v33.4
 LOCAL_IMAGE_NAME=bx-proto-gen
 
 .PHONY: genproto

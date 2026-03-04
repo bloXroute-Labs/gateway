@@ -3,6 +3,7 @@ package eth
 import (
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 
 	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
@@ -251,7 +252,7 @@ func (c Converter) BlockBDNtoBlockchain(block *types.BxBlock) (interface{}, erro
 	}
 }
 
-func (c Converter) bscSidecarsBDNtoBlockchain(block *types.BxBlock) ([]*bxcommoneth.BlobSidecar, error) {
+func (c Converter) bscSidecarsBDNtoBlockchain(block *types.BxBlock) []*bxcommoneth.BlobSidecar {
 	sidecars := make([]*bxcommoneth.BlobSidecar, len(block.BlobSidecars))
 	for i, sidecar := range block.BlobSidecars {
 		blockchainSidecar := &bxcommoneth.BlobSidecar{
@@ -264,7 +265,7 @@ func (c Converter) bscSidecarsBDNtoBlockchain(block *types.BxBlock) ([]*bxcommon
 		sidecars[i] = blockchainSidecar
 	}
 
-	return sidecars, nil
+	return sidecars
 }
 
 func (c Converter) ethBlockBDNtoBlockchain(block *types.BxBlock) (*core.BlockInfo, error) {
@@ -288,10 +289,7 @@ func (c Converter) ethBlockBDNtoBlockchain(block *types.BxBlock) (*core.BlockInf
 	}
 
 	if len(block.BlobSidecars) > 0 {
-		sidecars, err := c.bscSidecarsBDNtoBlockchain(block)
-		if err != nil {
-			return nil, err
-		}
+		sidecars := c.bscSidecarsBDNtoBlockchain(block)
 		commonBlock.SetBlobSidecars(sidecars)
 	}
 
@@ -352,6 +350,9 @@ func (c Converter) extractTransactionsFromBlock(block *types.BxBlock) ([][]byte,
 	for i, tx := range block.Txs {
 		t := new(ethtypes.Transaction)
 		if err := rlp.DecodeBytes(tx.Content(), t); err != nil {
+			if err == io.EOF {
+				break
+			}
 			return nil, fmt.Errorf("could not decode transaction %d: %v", i, err)
 		}
 

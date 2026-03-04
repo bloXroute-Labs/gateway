@@ -12,8 +12,10 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/holiman/uint256"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/types"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bdn"
 	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
@@ -284,19 +286,19 @@ type EthBlockNotification struct {
 }
 
 // NewEthBlockNotification creates ETH block notification
-func NewEthBlockNotification(hash ethcommon.Hash, block *bxethcommon.Block, info []*FutureValidatorInfo) (*EthBlockNotification, error) {
+func NewEthBlockNotification(blockchainNetwork string, hash ethcommon.Hash, block *bxethcommon.Block, info []*FutureValidatorInfo) (*EthBlockNotification, error) {
 	if hash == (ethcommon.Hash{}) {
 		return nil, errors.New("empty block hash")
 	}
 	ethUncles := make([]Header, 0, len(block.Uncles()))
 	for _, uncle := range block.Uncles() {
-		ethUncle := ConvertEthHeaderToBlockNotificationHeader(uncle)
+		ethUncle := ConvertEthHeaderToBlockNotificationHeader(blockchainNetwork, uncle)
 		ethUncles = append(ethUncles, *ethUncle)
 	}
 	return &EthBlockNotification{
 		BlockHash:     &hash,
 		Block:         block,
-		Header:        ConvertEthHeaderToBlockNotificationHeader(block.Header()),
+		Header:        ConvertEthHeaderToBlockNotificationHeader(blockchainNetwork, block.Header()),
 		Uncles:        ethUncles,
 		ValidatorInfo: info,
 		Withdrawals:   block.Withdrawals(),
@@ -472,6 +474,7 @@ type Header struct {
 	GasLimit         string             `json:"gasLimit"`
 	GasUsed          string             `json:"gasUsed"`
 	Timestamp        string             `json:"timestamp"`
+	MilliTimestamp   string             `json:"milliTimestamp"`
 	ExtraData        string             `json:"extraData"`
 	MixHash          ethcommon.Hash     `json:"mixHash"`
 	Nonce            string             `json:"nonce"`
@@ -495,7 +498,7 @@ func (h *Header) UpdateNumber(number uint64) {
 }
 
 // ConvertEthHeaderToBlockNotificationHeader converts Ethereum header to bloxroute Ethereum Header
-func ConvertEthHeaderToBlockNotificationHeader(ethHeader *ethtypes.Header) *Header {
+func ConvertEthHeaderToBlockNotificationHeader(blockchainNetwork string, ethHeader *ethtypes.Header) *Header {
 	var blobGasUsed, excessBlobGas string
 	var parentBeaconRoot *ethcommon.Hash
 	if ethHeader.BlobGasUsed != nil {
@@ -507,6 +510,14 @@ func ConvertEthHeaderToBlockNotificationHeader(ethHeader *ethtypes.Header) *Head
 	if ethHeader.ParentBeaconRoot != nil {
 		parentBeaconRoot = ethHeader.ParentBeaconRoot
 	}
+
+	// BSC related field from BEP-520
+	// In ETH MixDigest is Randao instead
+	milliseconds := uint64(0)
+	if (blockchainNetwork == types.BSCMainnet || blockchainNetwork == types.BSCTestnet) && ethHeader.MixDigest != (ethcommon.Hash{}) {
+		milliseconds = uint256.NewInt(0).SetBytes32(ethHeader.MixDigest[:]).Uint64()
+	}
+	milliTimestamp := ethHeader.Time*1000 + milliseconds
 
 	newHeader := Header{
 		ParentHash:       ethHeader.ParentHash,
@@ -522,6 +533,7 @@ func ConvertEthHeaderToBlockNotificationHeader(ethHeader *ethtypes.Header) *Head
 		GasLimit:         hexutil.EncodeUint64(ethHeader.GasLimit),
 		GasUsed:          hexutil.EncodeUint64(ethHeader.GasUsed),
 		Timestamp:        hexutil.EncodeUint64(ethHeader.Time),
+		MilliTimestamp:   hexutil.EncodeUint64(milliTimestamp),
 		ExtraData:        hexutil.Encode(ethHeader.Extra),
 		MixHash:          ethHeader.MixDigest,
 		Nonce:            fmt.Sprintf("0x%016s", hexutil.EncodeUint64(ethHeader.Nonce.Uint64())[2:]),

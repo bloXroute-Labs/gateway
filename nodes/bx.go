@@ -41,7 +41,6 @@ type Bx struct {
 	ConnectionsLock *sync.RWMutex
 	Connections     connections.ConnList
 	AccountsFetcher AccountsFetcher
-	dataDir         string
 	clock           clock.RealClock
 }
 
@@ -51,7 +50,6 @@ func NewBx(bxConfig *config.Bx, dataDir string, accountsFetcher AccountsFetcher)
 		BxConfig:        bxConfig,
 		Connections:     make(connections.ConnList, 0),
 		ConnectionsLock: &sync.RWMutex{},
-		dataDir:         dataDir,
 		clock:           clock.RealClock{},
 		AccountsFetcher: accountsFetcher,
 	}

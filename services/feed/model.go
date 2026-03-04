@@ -34,7 +34,6 @@ type ClientSubscriptionHandlingInfo struct {
 // ClientSubscriptionFullInfo contains full info about client subscription
 type ClientSubscriptionFullInfo struct {
 	AccountID    bxtypes.AccountID
-	Tier         string
 	FeedName     types.FeedType
 	Network      bxtypes.NetworkNum
 	RemoteAddr   string

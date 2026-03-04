@@ -157,7 +157,6 @@ func (h *handlerObj) createClientInfoAndRequestOpts(request *ClientReq) (types.C
 	ci := types.ClientInfo{
 		RemoteAddress: h.remoteAddress,
 		AccountID:     h.connectionAccount.AccountID,
-		Tier:          string(h.connectionAccount.TierName),
 		MetaInfo:      h.headers,
 	}
 

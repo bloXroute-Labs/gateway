@@ -99,11 +99,6 @@ func (b Blockchain) Send(msg bxmessage.Message) error {
 	return nil
 }
 
-// SendWithDelay is a no-op
-func (b Blockchain) SendWithDelay(msg bxmessage.Message, delay time.Duration) error {
-	return nil
-}
-
 // Close is a no-op
 func (b Blockchain) Close(reason string) error {
 	return nil

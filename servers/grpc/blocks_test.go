@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,7 +54,7 @@ func TestNewBlocks(t *testing.T) {
 	require.NoError(t, err)
 	block, err := bridge.BlockBDNtoBlockchain(bxBlock)
 	require.NoError(t, err)
-	blockNotification, err := types.NewEthBlockNotification(common.Hash(bxBlock.ExecutionHash()), block.(*bdn2.BlockInfo).Block, nil)
+	blockNotification, err := types.NewEthBlockNotification(bxtypes.Mainnet, common.Hash(bxBlock.ExecutionHash()), block.(*bdn2.BlockInfo).Block, nil)
 	require.NoError(t, err)
 	blockNotification.SetNotificationType(types.NewBlocksFeed)
 
@@ -101,7 +102,7 @@ func TestBdnBlocks(t *testing.T) {
 	require.NoError(t, err)
 	block, err := bridge.BlockBDNtoBlockchain(bxBlock)
 	require.NoError(t, err)
-	blockNotification, err := types.NewEthBlockNotification(common.Hash(bxBlock.ExecutionHash()), block.(*bdn2.BlockInfo).Block, nil)
+	blockNotification, err := types.NewEthBlockNotification(bxtypes.Mainnet, common.Hash(bxBlock.ExecutionHash()), block.(*bdn2.BlockInfo).Block, nil)
 	require.NoError(t, err)
 	blockNotification.SetNotificationType(types.BDNBlocksFeed)
 

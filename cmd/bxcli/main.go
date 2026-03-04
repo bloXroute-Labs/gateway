@@ -600,7 +600,7 @@ func parseTxResponse(rawTxs []*pb.Tx) ([]txReply, error) {
 
 func cmdNewTXs(ctx *cli.Context) error {
 	err := rpc.GatewayConsoleCall(
-		config.NewStreamFromCLI(ctx),
+		config.NewGRPCFromCLI(ctx),
 		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
 			stream, err := client.NewTxs(callCtx, &pb.TxsRequest{Filters: ctx.String("filters"), Includes: ctx.StringSlice("include")})
 			if err != nil {

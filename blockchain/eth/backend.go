@@ -38,27 +38,25 @@ var ErrInvalidPacketType = errors.New("invalid packet type")
 
 // handler is the Ethereum backend implementation. It passes transactions and blocks to the BDN bridge and tracks received blocks and transactions from peers.
 type handler struct {
-	chain            *core.Chain
-	bridge           blockchain.Bridge
-	statusBridge     blockchain.StatusSubscription
-	peers            *peerSet
-	config           *network.EthConfig
-	wsManager        blockchain.WSManager
-	recommendedPeers map[string]struct{}
-	responseQueue    *syncmap.SyncMap[string, chan interface{}]
+	chain         *core.Chain
+	bridge        blockchain.Bridge
+	statusBridge  blockchain.StatusSubscription
+	peers         *peerSet
+	config        *network.EthConfig
+	wsManager     blockchain.WSManager
+	responseQueue *syncmap.SyncMap[string, chan interface{}]
 }
 
 // newHandler returns a new handler and starts its processing go routines
-func newHandler(ctx context.Context, config *network.EthConfig, chain *core.Chain, bridge blockchain.Bridge, wsManager blockchain.WSManager, recommendedPeers map[string]struct{}) *handler {
+func newHandler(ctx context.Context, config *network.EthConfig, chain *core.Chain, bridge blockchain.Bridge, wsManager blockchain.WSManager) *handler {
 	h := &handler{
-		config:           config,
-		chain:            chain,
-		bridge:           bridge,
-		statusBridge:     bridge.SubscribeStatus(false),
-		peers:            newPeerSet(),
-		wsManager:        wsManager,
-		recommendedPeers: recommendedPeers,
-		responseQueue:    syncmap.NewStringMapOf[chan interface{}](),
+		config:        config,
+		chain:         chain,
+		bridge:        bridge,
+		statusBridge:  bridge.SubscribeStatus(false),
+		peers:         newPeerSet(),
+		wsManager:     wsManager,
+		responseQueue: syncmap.NewStringMapOf[chan interface{}](),
 	}
 	go h.checkInitialBlockchainLiveliness(100 * time.Second)
 	go h.handleBDNBridge(ctx)
@@ -69,8 +67,7 @@ func newHandler(ctx context.Context, config *network.EthConfig, chain *core.Chai
 // runPeer registers a peer within the peer set and starts handling all its messages
 func (h *handler) runPeer(peer *eth2.Peer, wg *sync.WaitGroup, handler func(*eth2.Peer) error) error {
 	peerEndpoint := peer.IPEndpoint()
-	_, isRecommended := h.recommendedPeers[fmt.Sprintf("%s:%d", peerEndpoint.IP, peerEndpoint.Port)]
-	if !peer.Dynamic() && !isRecommended {
+	if !peer.Dynamic() {
 		ok := h.wsManager.SetBlockchainPeer(peer)
 		if !ok {
 			peer.Log().Warnf("unable to set blockchain peer for %v: no corresponding websockets provider found (ok if websockets URI was omitted)", peerEndpoint.IPPort())
@@ -85,7 +82,7 @@ func (h *handler) runPeer(peer *eth2.Peer, wg *sync.WaitGroup, handler func(*eth
 	}
 
 	defer func() {
-		if !peer.Dynamic() && !isRecommended {
+		if !peer.Dynamic() {
 			ok := h.wsManager.UnsetBlockchainPeer(peerEndpoint)
 			if !ok {
 				peer.Log().Warnf("unable to unset blockchain peer for %v: no corresponding websockets provider found (ok if websockets URI was omitted)", peerEndpoint.IPPort())

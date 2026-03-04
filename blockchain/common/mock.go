@@ -7,15 +7,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 )
 
-// ResolvePath resolves the given path relative to the module root.
-// Kept for backwards compatibility; currently unused.
-func ResolvePath(relPath string) string {
-	// This implementation is intentionally left as a stub to avoid relying on
-	// on-disk RLP fixtures whose encoding no longer matches the current
-	// go-ethereum BlobTxSidecar layout.
-	return relPath
-}
-
 // ReadMockBSCBlobSidecars returns a deterministic in-memory BlobSidecars
 // fixture that matches the current go-ethereum BlobTxSidecar structure.
 func ReadMockBSCBlobSidecars() (BlobSidecars, error) {

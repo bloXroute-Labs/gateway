@@ -17,7 +17,6 @@ type SubscriptionResponse struct {
 // ClientInfo contains info about account and some meta info
 type ClientInfo struct {
 	RemoteAddress string
-	Tier          string
 	AccountID     bxtypes.AccountID
 	MetaInfo      map[string]string
 }

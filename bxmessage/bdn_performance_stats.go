@@ -57,7 +57,7 @@ type BdnPerformanceStats struct {
 }
 
 // NewBDNStats returns a new instance of BDNPerformanceStats
-func NewBDNStats(blockchainPeers []types.NodeEndpoint, recommendedPeers map[string]struct{}) *BdnPerformanceStats {
+func NewBDNStats(blockchainPeers []types.NodeEndpoint) *BdnPerformanceStats {
 	bdnStats := BdnPerformanceStats{
 		intervalStartTime: time.Now(),
 		nodeStats:         make(map[string]*BdnPerformanceStatsData),
@@ -67,10 +67,6 @@ func NewBDNStats(blockchainPeers []types.NodeEndpoint, recommendedPeers map[stri
 		newStatsData := BdnPerformanceStatsData{}
 		newStatsData.IsBeacon = endpoint.IsBeacon
 		newStatsData.BlockchainNetwork = endpoint.BlockchainNetwork
-		// treat recommended peers as dynamic
-		if _, ok := recommendedPeers[ipPort(endpoint.IP, endpoint.Port)]; ok {
-			newStatsData.Dynamic = true
-		}
 		newStatsData.Dynamic = endpoint.IsDynamic()
 		bdnStats.nodeStats[endpoint.IPPort()] = &newStatsData
 	}

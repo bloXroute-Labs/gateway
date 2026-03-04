@@ -30,7 +30,7 @@ type Server struct {
 
 // NewServer return an Ethereum p2p server, configured with BDN friendly defaults
 func NewServer(parent context.Context, port int, externalIP net.IP, config *network.EthConfig, chain *core.Chain,
-	bridge blockchain.Bridge, dataDir string, logger log.Logger, ws blockchain.WSManager, dynamicPeers, dialRatio int, recommendedPeers map[string]struct{},
+	bridge blockchain.Bridge, dataDir string, logger log.Logger, ws blockchain.WSManager,
 ) (*Server, error) {
 	var privateKey *ecdsa.PrivateKey
 
@@ -56,7 +56,7 @@ func NewServer(parent context.Context, port int, externalIP net.IP, config *netw
 	}
 
 	ctx, cancel := context.WithCancel(parent)
-	backend := newHandler(ctx, config, chain, bridge, ws, recommendedPeers)
+	backend := newHandler(ctx, config, chain, bridge, ws)
 
 	var (
 		discovery       = true
@@ -64,26 +64,12 @@ func NewServer(parent context.Context, port int, externalIP net.IP, config *netw
 	)
 	staticEnodes := config.StaticPeers.Enodes()
 
-	// if no Dynamic peers we want to disable Dialing and Discovery
-	if dynamicPeers == 0 {
-		discovery = false
-		dynamicDisabled = true
-	}
-	if dynamicPeers < len(staticEnodes) {
-		dynamicPeersEnabled := dynamicPeers != 0
-		if dynamicPeersEnabled && dialRatio != 1 {
-			logger.Info("limit of peers to dial is less than number of enodes requested, dialRatio set to 1")
-		}
-		dialRatio = 1
-	}
-
 	server := p2p.Server{
 		Config: p2p.Config{
 			PrivateKey:       privateKey,
-			MaxPeers:         dynamicPeers + len(staticEnodes),
+			MaxPeers:         len(staticEnodes),
 			MaxPendingPeers:  0,
-			DialRatio:        dialRatio,
-			NoDiscovery:      !discovery,
+			NoDiscovery:      true,
 			DiscoveryV5:      false,
 			Name:             config.ProgramName,
 			BootstrapNodesV5: nil,
@@ -126,12 +112,12 @@ func makeProtocols(ctx context.Context, handler *handler) []p2p.Protocol {
 
 // NewServerWithEthLogger returns the p2p server preconfigured with the default Ethereum logger
 func NewServerWithEthLogger(ctx context.Context, port int, externalIP net.IP, config *network.EthConfig,
-	chain *core.Chain, bridge blockchain.Bridge, dataDir string, ws blockchain.WSManager, dynamicPeers, dialRatio int, recommendedPeers map[string]struct{},
+	chain *core.Chain, bridge blockchain.Bridge, dataDir string, ws blockchain.WSManager,
 ) (*Server, error) {
 	l := log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stdout, log.LevelTrace, true))
 	log.SetDefault(l)
 
-	return NewServer(ctx, port, externalIP, config, chain, bridge, dataDir, l, ws, dynamicPeers, dialRatio, recommendedPeers)
+	return NewServer(ctx, port, externalIP, config, chain, bridge, dataDir, l, ws)
 }
 
 // Start starts eth server

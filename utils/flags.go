@@ -71,11 +71,6 @@ var (
 		Aliases: []string{"wsp", "rpc-port"},
 		Value:   28333,
 	}
-	HTTPPortFlag = &cli.IntFlag{
-		Name:  "http-port",
-		Usage: "port for HTTP server to run on",
-		Value: 28335,
-	}
 	CACertURLFlag = &cli.StringFlag{
 		Name:  "ca-cert-url",
 		Usage: "URL for retrieving CA certificates",
@@ -274,47 +269,16 @@ var (
 		Usage: "for gateways only, monitors blockchain node sync status and shuts down/restarts websocket server accordingly",
 		Value: false,
 	}
-	MEVBuildersFilePathFlag = &cli.StringFlag{
-		Name:   "mev-builders-file-path",
-		Usage:  "DEPRECATED. This flag will be removed in future releases.",
-		Hidden: true,
-	}
-	MEVBundleMethodNameFlag = &cli.StringFlag{
-		Name:  "mev-bundle-method-name",
-		Usage: "DEPRECATED. This flag will be removed in future releases.",
-		Value: "eth_sendBundle",
-	}
 	SendBlockConfirmation = &cli.BoolFlag{
 		Name:   "send-block-confirmation",
 		Usage:  "sending block confirmation to relay",
 		Value:  false,
 		Hidden: true,
 	}
-	AuthHeaderFlag = &cli.StringFlag{
-		Name:  "auth-header",
-		Usage: "Authentication header for cloud services",
-	}
-	RPCSSLBaseURL = &cli.StringFlag{
-		Name:  "rpc-ssl-base-url",
-		Usage: "certs for https connection",
-	}
-	ETHGatewayEndpoint = &cli.StringFlag{
-		Name:  "eth-source-endpoint",
-		Usage: "websocket endpoint for Ethereum mainnet go-gateway",
-	}
-	BSCMainnetGatewayEndpoint = &cli.StringFlag{
-		Name:  "bsc-source-endpoint",
-		Usage: "websocket endpoint for BSC mainnet go-gateway",
-	}
 	TerminalTotalDifficulty = &cli.StringFlag{
 		Name:   "terminal-total-difficulty",
 		Usage:  "Overrides the terminal total difficulty settings of the blockchain network",
 		Hidden: true,
-	}
-	EnableDynamicPeers = &cli.BoolFlag{
-		Name:  "enable-dynamic-peers",
-		Usage: "enable dynamic peers for gw",
-		Value: false,
 	}
 	EnableBloomFilter = &cli.BoolFlag{
 		Name:   "enable-bloom-filter",
@@ -322,49 +286,10 @@ var (
 		Value:  false,
 		Hidden: true,
 	}
-	ForwardTransactionEndpoint = &cli.StringFlag{
-		Name:  "forward-transaction-endpoint",
-		Usage: "forward transaction to rpc endpoint",
-		Value: "",
-	}
-	ForwardTransactionMethod = &cli.StringFlag{
-		Name:  "forward-transaction-method",
-		Usage: "calling method of the forwarding transaction to rpc endpoint",
-		Value: "",
-	}
-	TransactionHoldDuration = &cli.IntFlag{
-		Name: "transaction-hold-duration",
-		Usage: "number of millisecond before next block, marking the starting window time for processing front-running protection transaction on " +
-			"validator gateway",
-		Value: 500,
-	}
-	TransactionPassedDueDuration = &cli.IntFlag{
-		Name: "transaction-slot-end-duration",
-		Usage: "number of millisecond before next block, marking the ending window time for processing front-running protection transaction on " +
-			"validator gateway",
-		Value: 200,
-	}
 	EnableBlockchainRPCMethodSupport = &cli.BoolFlag{
 		Name:  "enable-blockchain-rpc",
 		Usage: "forwards blockchain RPC methods to the node and returns node response",
 		Value: false,
-	}
-	DialRatio = &cli.IntFlag{
-		Name:   "dial-ratio",
-		Usage:  "fraction of total peers that are outbound (i.e. 3 will mean 1/3 of total peers should be outbound)",
-		Value:  2,
-		Hidden: true,
-	}
-	CloudAPIAddress = &cli.StringFlag{
-		Name:  "cloud-api-url",
-		Usage: "setting cloudAPI url",
-		Value: "https://mev.api.blxrbdn.com/",
-	}
-	NumRecommendedPeers = &cli.IntFlag{
-		Name:   "num-recommended-peers",
-		Usage:  "number of recommended peers to connect to",
-		Value:  0,
-		Hidden: true,
 	}
 	PendingTxsSourceFromNode = cli.BoolFlag{
 		Name:  "new-pending-txs-source-from-node",
@@ -383,25 +308,11 @@ var (
 		Value:  false,
 		Hidden: true,
 	}
-	BundleSimulationAuthHeader = &cli.StringFlag{
-		Name:     "bundle-simulation-auth-header",
-		Usage:    "provide authorisation header for cloudAPI bundle simulation",
-		Required: true,
-	}
 	NoStats = &cli.BoolFlag{
 		Name:   "no-stats",
 		Usage:  "enable no-stats for not processing stats",
 		Value:  false,
 		Hidden: true,
-	}
-	DatabaseFlag = &cli.StringFlag{
-		Name:     "dbdsn",
-		Usage:    "Database DSN string <username:password@tcp(dns:port)/schema>",
-		Required: true,
-	}
-	BloxrouteAccountsFlag = &cli.StringFlag{
-		Name:  "bloxroute-accounts",
-		Usage: "enable detailed bundle trace response for these accounts",
 	}
 	TxIncludeSenderInFeed = &cli.BoolFlag{
 		Name:   "tx-include-sender-in-feed",
@@ -421,4 +332,11 @@ var (
 		Hidden: true,
 		Value:  "",
 	}
+	SubmitBeaconBlockToAPI = &cli.BoolFlag{
+		Name:   "submit-beacon-block-to-api",
+		Usage:  "submit beacon block to api",
+		Hidden: true,
+		Value:  true,
+	}
 )
+

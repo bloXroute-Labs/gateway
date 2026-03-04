@@ -10,8 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	ethcommon "github.com/ethereum/go-ethereum/common"
+
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 )
 
 // BxBlockType is block type
