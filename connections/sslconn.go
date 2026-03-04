@@ -286,22 +286,6 @@ func (s *SSLConn) Send(msg bxmessage.Message) error {
 	return nil
 }
 
-// SendWithDelay sends messages over the wire to the peer node after waiting the requests delay
-func (s *SSLConn) SendWithDelay(msg bxmessage.Message, delay time.Duration) error {
-	// avoid goroutine creation for no delay
-	if delay == 0 {
-		return s.Send(msg)
-	}
-	go func() {
-		s.clock.Sleep(delay)
-		err := s.Send(msg)
-		if err != nil {
-			s.Log().Errorf("could not send on conn %v", err)
-		}
-	}()
-	return nil
-}
-
 func (s *SSLConn) queueToMessageChan(msg bxmessage.Message) {
 	select {
 	case s.sendMessages <- msg:

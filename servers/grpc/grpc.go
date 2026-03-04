@@ -38,33 +38,39 @@ var (
 // server implementation of GatewayServer
 type server struct {
 	pb.UnimplementedGatewayServer
-	params grpcParams
-	log    *log.Entry
+	params          grpcParams
+	log             *log.Entry
+	serverAccountID bxtypes.AccountID
 }
 
 // grpcParams server params
 type grpcParams struct {
-	node                  connections.BxListener
-	sdn                   sdnsdk.SDNHTTP
-	accService            account.Accounter
-	bridge                blockchain.Bridge
-	blockchainPeers       []types.NodeEndpoint
-	wsManager             blockchain.WSManager
-	bdnStats              *bxmessage.BdnPerformanceStats
-	timeStarted           time.Time
-	gatewayPublicKey      string
-	connector             Connector
-	txFromFieldIncludable bool
-	feedManager           feedManager
-	txStore               services.TxStore
-	chainID               bxtypes.NetworkID
-	oFACList              *types.OFACMap
-	senderExtractor       *services.SenderExtractor
+	node                           connections.BxListener
+	sdn                            sdnsdk.SDNHTTP
+	accService                     account.Accounter
+	bridge                         blockchain.Bridge
+	blockchainPeers                []types.NodeEndpoint
+	wsManager                      blockchain.WSManager
+	bdnStats                       *bxmessage.BdnPerformanceStats
+	timeStarted                    time.Time
+	gatewayPublicKey               string
+	connector                      Connector
+	txFromFieldIncludable          bool
+	feedManager                    feedManager
+	txStore                        services.TxStore
+	chainID                        bxtypes.NetworkID
+	oFACList                       *types.OFACMap
+	senderExtractor                *services.SenderExtractor
 }
 
 // newServer return new server object
-func newServer(gatewayGrpcParams grpcParams) *server {
-	return &server{params: gatewayGrpcParams, log: log.WithFields(log.Fields{"component": "gatewayGrpc"})}
+func newServer(gatewayGrpcParams grpcParams, serverAccountID bxtypes.AccountID) *server {
+	return &server{
+		params:                     gatewayGrpcParams,
+		log:                        log.WithFields(log.Fields{"component": "gatewayGrpc"}),
+		UnimplementedGatewayServer: pb.UnimplementedGatewayServer{},
+		serverAccountID:            serverAccountID,
+	}
 }
 
 // DisconnectInboundPeer disconnect inbound peer from gateway
@@ -176,7 +182,6 @@ func (g *server) Subscriptions(ctx context.Context, req *pb.SubscriptionsRequest
 	for i, sub := range subs {
 		resp.Subscriptions[i] = &pb.Subscription{
 			AccountId:    string(sub.AccountID),
-			Tier:         sub.Tier,
 			FeedName:     string(sub.FeedName),
 			Network:      uint32(sub.Network),
 			RemoteAddr:   sub.RemoteAddr,

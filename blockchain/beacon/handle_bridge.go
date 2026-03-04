@@ -93,7 +93,7 @@ func HandleBDNBeaconMessages(ctx context.Context, b blockchain.Bridge, n *Node, 
 }
 
 // HandleBDNBlocks waits for block from BDN and broadcast it to the connected nodes
-func HandleBDNBlocks(ctx context.Context, b blockchain.Bridge, n *Node, beaconAPIClients []*APIClient, blobsManager *BlobSidecarCacheManager) {
+func HandleBDNBlocks(ctx context.Context, b blockchain.Bridge, n *Node, beaconAPIClients []*APIClient, blobsManager *BlobSidecarCacheManager, submitBeaconBlockToAPI bool) {
 	broadcastP2P := n != nil
 	broadcastBeaconAPI := len(beaconAPIClients) > 0
 
@@ -117,7 +117,7 @@ func HandleBDNBlocks(ctx context.Context, b blockchain.Bridge, n *Node, beaconAP
 				}()
 			}
 
-			if broadcastBeaconAPI {
+			if broadcastBeaconAPI && submitBeaconBlockToAPI {
 				go broadcastToClients(bdnBlock.Hash().String(), castedBlock, beaconAPIClients, blobsManager)
 			}
 		case <-ctx.Done():

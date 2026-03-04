@@ -97,11 +97,6 @@ func (r RPCConn) Send(msg bxmessage.Message) error {
 	return nil
 }
 
-// SendWithDelay is a no-op
-func (r RPCConn) SendWithDelay(msg bxmessage.Message, delay time.Duration) error {
-	return nil
-}
-
 // Close is a no-op
 func (r RPCConn) Close(reason string) error {
 	return nil

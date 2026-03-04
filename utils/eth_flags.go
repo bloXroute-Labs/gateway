@@ -67,10 +67,4 @@ var (
 		Usage:  "overrides the genesis block from the internet",
 		Hidden: true,
 	}
-	EthPropagationBlockDelay = &cli.DurationFlag{
-		Name:   "eth-propagation-delay",
-		Value:  0,
-		Usage:  "ethereum execution layer block propagation delay for gateways",
-		Hidden: true,
-	}
 )

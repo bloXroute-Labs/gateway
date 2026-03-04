@@ -125,13 +125,12 @@ type subscribeRecord struct {
 }
 
 type unsubscribeRecord struct {
-	SubscriptionID string                 `json:"subscription_id"`
-	Type           string                 `json:"type"`
-	Event          string                 `json:"event"`
-	FeedName       types.FeedType         `json:"feed_name"`
-	NetworkNum     bxtypes.NetworkNum     `json:"network_num"`
-	AccountID      bxtypes.AccountID      `json:"account_id"`
-	Tier           sdnmessage.AccountTier `json:"tier"`
+	SubscriptionID string             `json:"subscription_id"`
+	Type           string             `json:"type"`
+	Event          string             `json:"event"`
+	FeedName       types.FeedType     `json:"feed_name"`
+	NetworkNum     bxtypes.NetworkNum `json:"network_num"`
+	AccountID      bxtypes.AccountID  `json:"account_id"`
 }
 
 type sdkInfoRecord struct {

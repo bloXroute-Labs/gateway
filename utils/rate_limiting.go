@@ -98,6 +98,7 @@ type rateLimitType string
 const (
 	Daily          rateLimitType = "day"
 	PerMinute      rateLimitType = "minute"
+	PerHalfMinute  rateLimitType = "halfMinute"
 	PerSecond      rateLimitType = "second"
 	PerMillisecond rateLimitType = "millisecond"
 )
@@ -105,6 +106,7 @@ const (
 var rateLimitTypeToIntervalDuration = map[rateLimitType]time.Duration{
 	Daily:          time.Hour * 24,
 	PerMinute:      time.Minute,
+	PerHalfMinute:  time.Second * 30,
 	PerSecond:      time.Second,
 	PerMillisecond: time.Millisecond,
 }

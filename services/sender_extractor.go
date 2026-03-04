@@ -1,7 +1,6 @@
 package services
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -125,26 +124,13 @@ func (s *SenderExtractor) GetSender(hash types.SHA256Hash) (types.Sender, bool) 
 
 // GetSendersFromBlockTxs returns the senders for the transactions in the block
 func (s *SenderExtractor) GetSendersFromBlockTxs(block *common.Block) map[string]types.Sender {
-	var foundSender, notFoundSender int
 	senders := make(map[string]types.Sender)
 	txs := block.Transactions()
 	for _, tx := range txs {
 		sender, ok := s.GetSender(types.SHA256Hash(tx.Hash()))
 		if ok {
 			senders[tx.Hash().String()] = sender
-			foundSender++
-		} else {
-			notFoundSender++
 		}
-	}
-	if log.IsLevelEnabled(log.DebugLevel) {
-		total := foundSender + notFoundSender
-		pctStr := "0%"
-		if total > 0 {
-			pct := (float64(foundSender) / float64(total)) * 100
-			pctStr = fmt.Sprintf("%.0f%%", pct)
-		}
-		log.Debugf("found %s of senders for block %v", pctStr, block.Number())
 	}
 	return senders
 }

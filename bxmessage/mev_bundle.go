@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	uuid "github.com/satori/go.uuid"
+	"github.com/google/uuid"
 
 	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
 
@@ -312,7 +312,7 @@ func (m MEVBundle) Pack(protocol Protocol) ([]byte, error) {
 
 	// UUID
 	if m.UUID != "" {
-		uuidBytes, err := uuid.FromString(m.UUID)
+		uuidBytes, err := uuid.Parse(m.UUID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to set mev bundle uuid %v", err)
 		}

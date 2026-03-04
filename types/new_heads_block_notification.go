@@ -21,6 +21,7 @@ type NewHeadsBlock struct {
 	GasLimit         string             `json:"gasLimit,omitempty"`
 	GasUsed          string             `json:"gasUsed,omitempty"`
 	Timestamp        string             `json:"timestamp,omitempty"`
+	MilliTimestamp   string             `json:"milliTimestamp,omitempty"`
 
 	notificationType FeedType
 	source           *NodeEndpoint
@@ -44,6 +45,7 @@ func NewHeadsBlockFromEthBlockNotification(blockNotification *EthBlockNotificati
 		GasLimit:         blockNotification.Header.GasLimit,
 		GasUsed:          blockNotification.Header.GasUsed,
 		Timestamp:        blockNotification.Header.Timestamp,
+		MilliTimestamp:   blockNotification.Header.MilliTimestamp,
 		notificationType: blockNotification.notificationType,
 		source:           blockNotification.source,
 	}

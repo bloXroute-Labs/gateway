@@ -63,13 +63,13 @@ type feedManager interface {
 
 // Server implementation for grpc server
 type Server struct {
-	listenAddr       string
-	encodedAuth      string
-	stats            statistics.Stats
-	gatewayAccountID bxtypes.AccountID
-	server           *grpc.Server
-	gatewayServer    pb.GatewayServer
-	mu               sync.RWMutex
+	listenAddr      string
+	encodedAuth     string
+	stats           statistics.Stats
+	serverAccountID bxtypes.AccountID
+	server          *grpc.Server
+	gatewayServer   pb.GatewayServer
+	mu              sync.RWMutex
 }
 
 // NewGRPCServer is the constructor of the Server object
@@ -93,22 +93,22 @@ func NewGRPCServer(
 	senderExtractor *services.SenderExtractor,
 ) *Server {
 	params := grpcParams{
-		node:                  node,
-		sdn:                   sdn,
-		accService:            accService,
-		bridge:                bridge,
-		blockchainPeers:       blockchainPeers,
-		wsManager:             wsManager,
-		bdnStats:              bdnStats,
-		timeStarted:           timeStarted,
-		gatewayPublicKey:      gatewayPublicKey,
-		connector:             connector,
-		txFromFieldIncludable: txFromFieldIncludable,
-		feedManager:           feedManager,
-		txStore:               txStore,
-		chainID:               bxtypes.NetworkNumToChainID[sdn.NetworkNum()],
-		oFACList:              oFACList,
-		senderExtractor:       senderExtractor,
+		node:                           node,
+		sdn:                            sdn,
+		accService:                     accService,
+		bridge:                         bridge,
+		blockchainPeers:                blockchainPeers,
+		wsManager:                      wsManager,
+		bdnStats:                       bdnStats,
+		timeStarted:                    timeStarted,
+		gatewayPublicKey:               gatewayPublicKey,
+		connector:                      connector,
+		txFromFieldIncludable:          txFromFieldIncludable,
+		feedManager:                    feedManager,
+		txStore:                        txStore,
+		chainID:                        bxtypes.NetworkNumToChainID[sdn.NetworkNum()],
+		oFACList:                       oFACList,
+		senderExtractor:                senderExtractor,
 	}
 
 	grpcHostPort := fmt.Sprintf("%v:%v", config.Host, config.Port)
@@ -121,11 +121,11 @@ func NewGRPCServer(
 	}
 
 	gRPCServer := &Server{
-		listenAddr:       grpcHostPort,
-		encodedAuth:      encodedAuth,
-		stats:            stats,
-		gatewayAccountID: sdn.NodeModel().AccountID,
-		gatewayServer:    newServer(params),
+		listenAddr:      grpcHostPort,
+		encodedAuth:     encodedAuth,
+		stats:           stats,
+		serverAccountID: sdn.NodeModel().AccountID,
+		gatewayServer:   newServer(params, sdn.NodeModel().AccountID),
 	}
 
 	return gRPCServer
@@ -215,7 +215,7 @@ func (gs *Server) sdkStat(md metadata.MD, method string, start time.Time) {
 	}
 
 	// blockchain, method, Feed, sourceCode string, start, end time.Time, count int
-	gs.stats.LogSDKInfo(blockchain, method, sourceCode, version, gs.gatewayAccountID, types.GRPCFeed, start, time.Now())
+	gs.stats.LogSDKInfo(blockchain, method, sourceCode, version, gs.serverAccountID, types.GRPCFeed, start, time.Now())
 }
 
 // getPeerAddr returns the address of the gRPC connected client given its context

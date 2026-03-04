@@ -133,6 +133,7 @@ message BlockHeader{
   string excess_blob_gas = 19;
   string parent_beacon_root = 20;
   string requests_hash = 21;
+  string milli_timestamp = 22;
 }
 
 message FutureValidatorInfo{

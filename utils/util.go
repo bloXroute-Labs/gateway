@@ -13,7 +13,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/enode"
-	uuid "github.com/satori/go.uuid"
+	"github.com/google/uuid"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 )
@@ -56,8 +56,7 @@ func GetGID() string {
 
 // GenerateUUID generates random subscription ID
 func GenerateUUID() string {
-	newUUID, _ := uuid.NewV4()
-	return newUUID.String()
+	return uuid.New().String()
 }
 
 // GenerateU128 generates random u128 string as subscription ID

@@ -48,7 +48,7 @@ func TestBdnPerformanceStats_Pack(t *testing.T) {
 	endpoint2 := types.NodeEndpoint{IP: "127.0.0.1", Port: 8002}
 	blockchainPeers := []types.NodeEndpoint{endpoint1}
 
-	bdnStats := NewBDNStats(blockchainPeers, make(map[string]struct{}))
+	bdnStats := NewBDNStats(blockchainPeers)
 	bdnStats.intervalStartTime = bdnStatsFromBytes.intervalStartTime
 	bdnStats.intervalEndTime = bdnStatsFromBytes.intervalEndTime
 	bdnStats.memoryUtilizationMb = 100

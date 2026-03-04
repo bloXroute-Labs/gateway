@@ -6,7 +6,7 @@ import (
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
-	uuid "github.com/satori/go.uuid"
+	"github.com/google/uuid"
 
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
@@ -51,7 +51,7 @@ func (b *BroadcastHeader) SourceID() (sourceID bxtypes.NodeID) {
 
 // SetSourceID sets the source id of the tx
 func (b *BroadcastHeader) SetSourceID(sourceID bxtypes.NodeID) error {
-	sourceIDBytes, err := uuid.FromString(string(sourceID))
+	sourceIDBytes, err := uuid.Parse(string(sourceID))
 	if err != nil {
 		return fmt.Errorf("failed to set source id, source id: %v", sourceIDBytes)
 	}

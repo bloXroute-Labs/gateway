@@ -20,8 +20,6 @@ const (
 	RPCQuotaUsage                 RPCRequestType = "quota_usage"
 	RPCBundleSubmission           RPCRequestType = "blxr_submit_bundle"
 	RPCBundleSimulation           RPCRequestType = "blxr_simulate_bundle"
-	RPCStartMonitoringTx          RPCRequestType = "start_monitor_transaction"
-	RPCStopMonitoringTx           RPCRequestType = "stop_monitor_transaction"
 	RPCFeeBumpTx                  RPCRequestType = "blxr_tx_fee_bump"
 	RPCChangeNewPendingTxFromNode RPCRequestType = "new_pending_txs_source_from_node"
 	RPCEthSubscribe               RPCRequestType = "eth_subscribe"
@@ -33,8 +31,6 @@ const (
 const (
 	RPCEthSendBundle           RPCRequestType = "eth_sendBundle"
 	RPCEthCallBundle           RPCRequestType = "eth_callBundle"
-	RPCEthCancelBundle         RPCRequestType = "eth_cancelBundle"
-	RPCEthSendExclusiveBundle  RPCRequestType = "eth_sendExclusiveBundle"
 	RPCEthSendArbOnlyBundle    RPCRequestType = "eth_sendArbOnlyBundle"
 	RPCEstimateGas             RPCRequestType = "eth_estimateGas"
 	RPCETHCall                 RPCRequestType = "eth_call"
@@ -46,13 +42,18 @@ var RPCMethodToRPCRequestType = map[string]RPCRequestType{
 	"/gateway.Gateway/BlxrTx": RPCTx,
 }
 
+// BLXRMetadata is the metadata included for bloxroute RPC calls
+type BLXRMetadata struct {
+	OriginalSenderAccountID string `json:"original_sender_account_id"`
+}
+
 // RPCTxPayload is the payload of blxr_tx requests
 type RPCTxPayload struct {
 	Transaction             string         `json:"transaction"`
 	MevBundleTx             bool           `json:"mev_bundle_tx"`
 	ValidatorsOnly          bool           `json:"validators_only"`
 	BlockchainNetwork       string         `json:"blockchain_network"`
-	OriginalSenderAccountID string         `json:"original_sender_account_id"`
+	OriginalSenderAccountID string         `json:"original_sender_account_id"` // deprecated, use BLXRMetadata instead
 	OriginalRPCMethod       RPCRequestType `json:"original_rpc_method"`
 	NodeValidation          bool           `json:"node_validation"`
 	FrontRunningProtection  bool           `json:"front_running_protection"`

@@ -135,7 +135,7 @@ func testGRPCServer(t *testing.T, port int, user string, password string) (*Serv
 		bridge,
 		blockchainPeers,
 		wsManager,
-		bxmessage.NewBDNStats(blockchainPeers, make(map[string]struct{})),
+		bxmessage.NewBDNStats(blockchainPeers),
 		time.Now(),
 		"",
 		bx,

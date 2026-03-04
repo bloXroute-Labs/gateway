@@ -44,7 +44,6 @@ func main() {
 			utils.WSFlag,
 			utils.WSPortFlag,
 			utils.WSHostFlag,
-			utils.HTTPPortFlag,
 			utils.EnvFlag,
 			utils.LogLevelFlag,
 			utils.LogFileLevelFlag,
@@ -80,18 +79,9 @@ func main() {
 			utils.ManageWSServer,
 			utils.LogNetworkContentFlag,
 			utils.WSTLSFlag,
-			utils.MEVBuildersFilePathFlag,
-			utils.MEVBundleMethodNameFlag,
 			utils.SendBlockConfirmation,
 			utils.TerminalTotalDifficulty,
-			utils.EnableDynamicPeers,
-			utils.ForwardTransactionEndpoint,
-			utils.ForwardTransactionMethod,
-			utils.TransactionHoldDuration,
-			utils.TransactionPassedDueDuration,
 			utils.EnableBlockchainRPCMethodSupport,
-			utils.DialRatio,
-			utils.NumRecommendedPeers,
 			utils.NoTxsToBlockchain,
 			utils.NoBlocks,
 			utils.NoStats,
@@ -102,6 +92,7 @@ func main() {
 			utils.BeaconTrustedPeersFileFlag,
 			utils.BeaconPort,
 			utils.EnableQuicFlag,
+			utils.SubmitBeaconBlockToAPI,
 		},
 		Action:         runGateway,
 		Before:         config.BeforeFunc,
@@ -158,12 +149,9 @@ func runGateway(c *cli.Context) error {
 	// set node ID for fluentd logging
 	log.SetNodeID(string(sdn.NodeID()))
 
-	// create a set of recommended peers
-	recommendedPeers := make(map[string]struct{})
-
 	startupBeaconNode := len(ethConfig.StaticPeers.BeaconNodes()) > 0 || c.Int(utils.BeaconPort.Name) != 0
 	startupBeaconAPIClients := len(ethConfig.StaticPeers.BeaconAPIEndpoints()) > 0
-	startupBlockchainClient := startupBeaconAPIClients || startupBeaconNode || len(ethConfig.StaticPeers.Enodes()) > 0 || bxConfig.EnableDynamicPeers // if beacon node running we need to receive txs also
+	startupBlockchainClient := startupBeaconAPIClients || startupBeaconNode || len(ethConfig.StaticPeers.Enodes()) > 0 // if beacon node running we need to receive txs also
 	startupPrysmClient := len(ethConfig.StaticPeers.PrysmAddrs()) > 0
 
 	var bridge blockchain.Bridge
@@ -188,7 +176,7 @@ func runGateway(c *cli.Context) error {
 		return fmt.Errorf("if websocket server management is enabled, a valid websocket address must be provided")
 	}
 	if bxConfig.EnableBlockchainRPC && !ethConfig.StaticPeers.ValidWSAddr() {
-		return fmt.Errorf("if blockchan rpc is enabled, a valid websocket address must be provided")
+		return fmt.Errorf("if blockchain rpc is enabled, a valid websocket address must be provided")
 	}
 
 	var beaconNode *beacon.Node
@@ -245,7 +233,7 @@ func runGateway(c *cli.Context) error {
 			return nil
 		})
 		group.Go(func() error {
-			beacon.HandleBDNBlocks(gCtx, bridge, beaconNode, beaconAPIClients, blobsManager)
+			beacon.HandleBDNBlocks(gCtx, bridge, beaconNode, beaconAPIClients, blobsManager, c.Bool(utils.SubmitBeaconBlockToAPI.Name))
 			return nil
 		})
 	}
@@ -257,13 +245,10 @@ func runGateway(c *cli.Context) error {
 		wsManager,
 		blobsManager,
 		blockchainPeers,
-		recommendedPeers,
 		gatewayPublicKey,
 		sdn,
 		sslCerts,
 		len(ethConfig.StaticPeers.Enodes()),
-		c.Int(utils.TransactionHoldDuration.Name),
-		c.Int(utils.TransactionPassedDueDuration.Name),
 		c.Bool(utils.EnableBloomFilter.Name),
 		c.Bool(utils.TxIncludeSenderInFeed.Name),
 		c.String(utils.OFACEndpoint.Name),
@@ -285,14 +270,7 @@ func runGateway(c *cli.Context) error {
 		// TODO: use resolver to get public IP if externalIP flag is omitted
 		port, externalIP := c.Int(utils.PortFlag.Name), net.ParseIP(c.String(utils.ExternalIPFlag.Name))
 
-		dynamicPeers := int(sdn.AccountModel().InboundNodeConnections.MsgQuota.Limit)
-		if !bxConfig.EnableDynamicPeers {
-			dynamicPeers = 0
-		}
-
-		dialRatio := c.Int(utils.DialRatio.Name)
-
-		blockchainServer, err = eth.NewServerWithEthLogger(gCtx, port, externalIP, ethConfig, ethChain, bridge, dataDir, wsManager, dynamicPeers, dialRatio, recommendedPeers)
+		blockchainServer, err = eth.NewServerWithEthLogger(gCtx, port, externalIP, ethConfig, ethChain, bridge, dataDir, wsManager)
 		if err != nil {
 			return err
 		}

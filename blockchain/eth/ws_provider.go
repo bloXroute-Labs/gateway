@@ -2,6 +2,7 @@ package eth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -15,6 +16,8 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
+
+var errClientDisconnected = errors.New("eth ws client is not connected")
 
 // WSProvider implements the blockchain.WSProvider interface for Ethereum
 type WSProvider struct {
@@ -114,6 +117,11 @@ func (ws *WSProvider) Subscribe(responseChannel interface{}, feedName string, ar
 	ctx, cancel := context.WithTimeout(context.Background(), ws.timeout)
 	defer cancel()
 
+	// edge case between reconnections - if not handled, it leads to panic
+	if ws.client == nil {
+		return nil, errClientDisconnected
+	}
+
 	var sub *rpc.ClientSubscription
 	var err error
 	if len(args) < 1 {
@@ -152,6 +160,12 @@ func (ws *WSProvider) CallRPC(method string, payload []interface{}, options bloc
 		response interface{}
 		err      error
 	)
+
+	// edge case between reconnections - if not handled, it leads to panic
+	if ws.client == nil {
+		return nil, errClientDisconnected
+	}
+
 	for retries := 0; retries < options.RetryAttempts; retries++ {
 		err = ws.client.Call(&response, method, payload...)
 		if (err != nil && strings.Contains(err.Error(), "header not found")) || response == nil {

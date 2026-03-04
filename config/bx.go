@@ -45,14 +45,11 @@ type Bx struct {
 	AllTransactions  bool
 	SendConfirmation bool
 
-	ForwardTransactionEndpoint string
-	ForwardTransactionMethod   string
-	EnableDynamicPeers         bool
-	EnableBlockchainRPC        bool
-	PendingTxsSourceFromNode   bool
-	NoTxsToBlockchain          bool
-	NoBlocks                   bool
-	NoStats                    bool
+	EnableBlockchainRPC      bool
+	PendingTxsSourceFromNode bool
+	NoTxsToBlockchain        bool
+	NoBlocks                 bool
+	NoStats                  bool
 
 	*GRPC
 	*Env
@@ -101,14 +98,11 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		SendConfirmation: ctx.Bool(utils.SendBlockConfirmation.Name),
 		AllTransactions:  ctx.Bool(utils.AllTransactionsFlag.Name),
 
-		ForwardTransactionEndpoint: ctx.String(utils.ForwardTransactionEndpoint.Name),
-		ForwardTransactionMethod:   ctx.String(utils.ForwardTransactionMethod.Name),
-		EnableDynamicPeers:         ctx.Bool(utils.EnableDynamicPeers.Name),
-		EnableBlockchainRPC:        ctx.Bool(utils.EnableBlockchainRPCMethodSupport.Name),
-		PendingTxsSourceFromNode:   ctx.Bool(utils.PendingTxsSourceFromNode.Name),
-		NoTxsToBlockchain:          ctx.Bool(utils.NoTxsToBlockchain.Name),
-		NoBlocks:                   ctx.Bool(utils.NoBlocks.Name),
-		NoStats:                    ctx.Bool(utils.NoStats.Name),
+		EnableBlockchainRPC:      ctx.Bool(utils.EnableBlockchainRPCMethodSupport.Name),
+		PendingTxsSourceFromNode: ctx.Bool(utils.PendingTxsSourceFromNode.Name),
+		NoTxsToBlockchain:        ctx.Bool(utils.NoTxsToBlockchain.Name),
+		NoBlocks:                 ctx.Bool(utils.NoBlocks.Name),
+		NoStats:                  ctx.Bool(utils.NoStats.Name),
 
 		GRPC:       grpcConfig,
 		Env:        env,
@@ -140,22 +134,6 @@ type GRPC struct {
 
 // NewGRPCFromCLI builds GRPC configuration from the CLI context
 func NewGRPCFromCLI(ctx *cli.Context) *GRPC {
-	grpcConfig := GRPC{
-		Enabled:        ctx.Bool(utils.GRPCFlag.Name),
-		Host:           ctx.String(utils.GRPCHostFlag.Name),
-		Port:           ctx.Int(utils.GRPCPortFlag.Name),
-		User:           ctx.String(utils.GRPCUserFlag.Name),
-		Password:       ctx.String(utils.GRPCPasswordFlag.Name),
-		EncodedAuth:    ctx.String(utils.GRPCAuthFlag.Name),
-		EncodedAuthSet: ctx.IsSet(utils.GRPCAuthFlag.Name),
-		AuthEnabled:    ctx.IsSet(utils.GRPCAuthFlag.Name) || (ctx.IsSet(utils.GRPCUserFlag.Name) && ctx.IsSet(utils.GRPCPasswordFlag.Name)),
-		Timeout:        defaultStreamTimeout,
-	}
-	return &grpcConfig
-}
-
-// NewStreamFromCLI builds GRPC stream configuration from the CLI context
-func NewStreamFromCLI(ctx *cli.Context) *GRPC {
 	grpcConfig := GRPC{
 		Enabled:        ctx.Bool(utils.GRPCFlag.Name),
 		Host:           ctx.String(utils.GRPCHostFlag.Name),

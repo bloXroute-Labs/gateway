@@ -11,10 +11,10 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
-	"github.com/golang/protobuf/ptypes/wrappers"
 
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler"
@@ -22,11 +22,13 @@ import (
 )
 
 var (
-	txContentFields = []string{"tx_contents.nonce", "tx_contents.tx_hash",
+	txContentFields = []string{
+		"tx_contents.nonce", "tx_contents.tx_hash",
 		"tx_contents.gas_price", "tx_contents.gas", "tx_contents.to", "tx_contents.value", "tx_contents.input",
 		"tx_contents.v", "tx_contents.r", "tx_contents.s", "tx_contents.from", "tx_contents.type", "tx_contents.access_list",
 		"tx_contents.chain_id", "tx_contents.max_priority_fee_per_gas", "tx_contents.max_fee_per_gas", "tx_contents.max_fee_per_blob_gas",
-		"tx_contents.blob_versioned_hashes", "tx_contents.y_parity", "tx_contents.authorization_list"}
+		"tx_contents.blob_versioned_hashes", "tx_contents.y_parity", "tx_contents.authorization_list",
+	}
 	validOnBlockParams = []string{"name", "response", "block_height", "tag"}
 	validBlockParams   = append(txContentFields, "tx_contents.from", "hash", "header", "transactions", "uncles", "future_validator_info", "withdrawals")
 )
@@ -40,7 +42,7 @@ func (g *server) NewBlocks(req *pb.BlocksRequest, stream pb.Gateway_NewBlocksSer
 		return status.Error(codes.PermissionDenied, err.Error())
 	}
 	if req.GetParsedTxs() == nil {
-		req.ParsedTxs = &wrappers.BoolValue{Value: true}
+		req.ParsedTxs = &wrapperspb.BoolValue{Value: true}
 	}
 
 	return g.handleBlocks(req, stream, types.NewBlocksFeed, *accountModel)
@@ -55,7 +57,7 @@ func (g *server) BdnBlocks(req *pb.BlocksRequest, stream pb.Gateway_BdnBlocksSer
 		return status.Error(codes.PermissionDenied, err.Error())
 	}
 	if req.GetParsedTxs() == nil {
-		req.ParsedTxs = &wrappers.BoolValue{Value: true}
+		req.ParsedTxs = &wrapperspb.BoolValue{Value: true}
 	}
 
 	return g.handleBlocks(req, stream, types.BDNBlocksFeed, *accountModel)
@@ -69,13 +71,18 @@ func (g *server) EthOnBlock(req *pb.EthOnBlockRequest, stream pb.Gateway_EthOnBl
 	if err != nil {
 		return status.Error(codes.PermissionDenied, err.Error())
 	}
+
+	// This feed is only available on customer GWs, not cloud service ESE GWs
+	if accountModel.AccountID != g.serverAccountID {
+		err = fmt.Errorf("EthOnBlock feed is not available via cloud services. Feed is only supported on gateways")
+		return status.Error(codes.PermissionDenied, err.Error())
+	}
 	return g.ethOnBlock(req, stream, *accountModel)
 }
 
 func (g *server) handleBlocks(req *pb.BlocksRequest, stream pb.Gateway_BdnBlocksServer, feedType types.FeedType, account sdnmessage.Account) error {
 	ci := types.ClientInfo{
 		AccountID:     account.AccountID,
-		Tier:          string(account.TierName),
 		MetaInfo:      types.SDKMetaFromContext(stream.Context()),
 		RemoteAddress: getPeerAddr(stream.Context()),
 	}
@@ -225,6 +232,7 @@ func (*server) generateBlockReplyHeader(h *types.Header) *pb.BlockHeader {
 	blockReplyHeader.GasLimit = h.GasLimit
 	blockReplyHeader.GasUsed = h.GasUsed
 	blockReplyHeader.Timestamp = h.Timestamp
+	blockReplyHeader.MilliTimestamp = h.MilliTimestamp
 	blockReplyHeader.ExtraData = h.ExtraData
 	blockReplyHeader.MixHash = h.MixHash.String()
 	blockReplyHeader.Nonce = h.Nonce
@@ -252,7 +260,6 @@ func (*server) generateBlockReplyHeader(h *types.Header) *pb.BlockHeader {
 func (g *server) ethOnBlock(req *pb.EthOnBlockRequest, stream pb.Gateway_EthOnBlockServer, account sdnmessage.Account) error {
 	ci := types.ClientInfo{
 		AccountID:     account.AccountID,
-		Tier:          string(account.TierName),
 		MetaInfo:      types.SDKMetaFromContext(stream.Context()),
 		RemoteAddress: getPeerAddr(stream.Context()),
 	}

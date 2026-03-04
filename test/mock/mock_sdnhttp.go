@@ -346,3 +346,45 @@ func (mr *MockSDNHTTPMockRecorder) SetNetworks(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetNetworks", reflect.TypeOf((*MockSDNHTTP)(nil).SetNetworks), arg0)
 }
+
+// SetInternalGateway mocks base method.
+func (m *MockSDNHTTP) SetInternalGateway(arg0 *message.InternalGateway) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetInternalGateway")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetInternalGateway indicates an expected call of SetInternalGateway.
+func (mr *MockSDNHTTPMockRecorder) SetInternalGateway(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetInternalGateway", reflect.TypeOf((*MockSDNHTTP)(nil).SetInternalGateway), arg0)
+}
+
+// AddInternalGatewaySubscription mocks base method.
+func (m *MockSDNHTTP) AddInternalGatewaySubscription(arg0 types.AccountID) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddInternalGatewaySubscription")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddInternalGatewaySubscription indicates an expected call of AddInternalGatewaySubscription.
+func (mr *MockSDNHTTPMockRecorder) AddInternalGatewaySubscription(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddInternalGatewaySubscription", reflect.TypeOf((*MockSDNHTTP)(nil).AddInternalGatewaySubscription), arg0)
+}
+
+// RemoveInternalGatewaySubscription mocks base method.
+func (m *MockSDNHTTP) RemoveInternalGatewaySubscription(arg0 types.AccountID) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveInternalGatewaySubscription")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RemoveInternalGatewaySubscription indicates an expected call of RemoveInternalGatewaySubscription.
+func (mr *MockSDNHTTPMockRecorder) RemoveInternalGatewaySubscription(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveInternalGatewaySubscription", reflect.TypeOf((*MockSDNHTTP)(nil).RemoveInternalGatewaySubscription), arg0)
+}

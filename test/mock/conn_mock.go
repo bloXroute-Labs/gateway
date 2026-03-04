@@ -25,6 +25,7 @@ import (
 type MockConn struct {
 	ctrl     *gomock.Controller
 	recorder *MockConnMockRecorder
+	isgomock struct{}
 }
 
 // MockConnMockRecorder is the mock recorder for MockConn.
@@ -45,17 +46,17 @@ func (m *MockConn) EXPECT() *MockConnMockRecorder {
 }
 
 // Close mocks base method.
-func (m *MockConn) Close(arg0 string) error {
+func (m *MockConn) Close(reason string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Close", arg0)
+	ret := m.ctrl.Call(m, "Close", reason)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Close indicates an expected call of Close.
-func (mr *MockConnMockRecorder) Close(arg0 any) *gomock.Call {
+func (mr *MockConnMockRecorder) Close(reason any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockConn)(nil).Close), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockConn)(nil).Close), reason)
 }
 
 // Connect mocks base method.
@@ -73,15 +74,15 @@ func (mr *MockConnMockRecorder) Connect() *gomock.Call {
 }
 
 // Disable mocks base method.
-func (m *MockConn) Disable(arg0 string) {
+func (m *MockConn) Disable(reason string) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Disable", arg0)
+	m.ctrl.Call(m, "Disable", reason)
 }
 
 // Disable indicates an expected call of Disable.
-func (mr *MockConnMockRecorder) Disable(arg0 any) *gomock.Call {
+func (mr *MockConnMockRecorder) Disable(reason any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Disable", reflect.TypeOf((*MockConn)(nil).Disable), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Disable", reflect.TypeOf((*MockConn)(nil).Disable), reason)
 }
 
 // GetAccountID mocks base method.
@@ -379,46 +380,32 @@ func (mr *MockConnMockRecorder) Protocol() *gomock.Call {
 }
 
 // ReadMessages mocks base method.
-func (m *MockConn) ReadMessages(arg0 func(bxmessage.MessageBytes), arg1 time.Duration, arg2 int, arg3 func([]byte) int) (int, error) {
+func (m *MockConn) ReadMessages(callBack func(bxmessage.MessageBytes), readDeadline time.Duration, headerLen int, readPayloadLen func([]byte) int) (int, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ReadMessages", arg0, arg1, arg2, arg3)
+	ret := m.ctrl.Call(m, "ReadMessages", callBack, readDeadline, headerLen, readPayloadLen)
 	ret0, _ := ret[0].(int)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ReadMessages indicates an expected call of ReadMessages.
-func (mr *MockConnMockRecorder) ReadMessages(arg0, arg1, arg2, arg3 any) *gomock.Call {
+func (mr *MockConnMockRecorder) ReadMessages(callBack, readDeadline, headerLen, readPayloadLen any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadMessages", reflect.TypeOf((*MockConn)(nil).ReadMessages), arg0, arg1, arg2, arg3)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadMessages", reflect.TypeOf((*MockConn)(nil).ReadMessages), callBack, readDeadline, headerLen, readPayloadLen)
 }
 
 // Send mocks base method.
-func (m *MockConn) Send(arg0 bxmessage.Message) error {
+func (m *MockConn) Send(msg bxmessage.Message) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Send", arg0)
+	ret := m.ctrl.Call(m, "Send", msg)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Send indicates an expected call of Send.
-func (mr *MockConnMockRecorder) Send(arg0 any) *gomock.Call {
+func (mr *MockConnMockRecorder) Send(msg any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Send", reflect.TypeOf((*MockConn)(nil).Send), arg0)
-}
-
-// SendWithDelay mocks base method.
-func (m *MockConn) SendWithDelay(arg0 bxmessage.Message, arg1 time.Duration) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SendWithDelay", arg0, arg1)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// SendWithDelay indicates an expected call of SendWithDelay.
-func (mr *MockConnMockRecorder) SendWithDelay(arg0, arg1 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendWithDelay", reflect.TypeOf((*MockConn)(nil).SendWithDelay), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Send", reflect.TypeOf((*MockConn)(nil).Send), msg)
 }
 
 // SetProtocol mocks base method.

@@ -44,7 +44,7 @@ type Stats interface {
 		sentPeers int, startTime time.Time, sentGatewayPeers int, originalSize int, compressSize int, shortIDsCount int, txsCount int, recoveredTxsCount int, block *types.BxBlock)
 	LogSubscribeStats(subscriptionID string, accountID bxtypes.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
 		ip string, networkNum bxtypes.NetworkNum, feedInclude []string, feedFilter string)
-	LogUnsubscribeStats(subscriptionID string, feedName types.FeedType, networkNum bxtypes.NetworkNum, accountID bxtypes.AccountID, tierName sdnmessage.AccountTier)
+	LogUnsubscribeStats(subscriptionID string, feedName types.FeedType, networkNum bxtypes.NetworkNum, accountID bxtypes.AccountID)
 	LogSDKInfo(blockchain, method, sourceCode, version string, accountID bxtypes.AccountID, feed types.FeedConnectionType, start, end time.Time)
 	AddBlobEvent(name, eventSubjectID string, sourceID bxtypes.NodeID, networkNum bxtypes.NetworkNum, startTime, endTime time.Time, originalSize, compressSize int, blobIndex uint32, blockHash string)
 }
@@ -69,7 +69,7 @@ func (NoStats) LogSubscribeStats(string, bxtypes.AccountID, types.FeedType, sdnm
 }
 
 // LogUnsubscribeStats does nothing
-func (NoStats) LogUnsubscribeStats(string, types.FeedType, bxtypes.NetworkNum, bxtypes.AccountID, sdnmessage.AccountTier) {
+func (NoStats) LogUnsubscribeStats(string, types.FeedType, bxtypes.NetworkNum, bxtypes.AccountID) {
 }
 
 // LogSDKInfo does nothing
@@ -330,7 +330,7 @@ func (s FluentdStats) LogSubscribeStats(subscriptionID string, accountID bxtypes
 }
 
 // LogUnsubscribeStats generates a fluentd STATS event
-func (s FluentdStats) LogUnsubscribeStats(subscriptionID string, feedName types.FeedType, networkNum bxtypes.NetworkNum, accountID bxtypes.AccountID, tierName sdnmessage.AccountTier) {
+func (s FluentdStats) LogUnsubscribeStats(subscriptionID string, feedName types.FeedType, networkNum bxtypes.NetworkNum, accountID bxtypes.AccountID) {
 	now := time.Now()
 	record := unsubscribeRecord{
 		Type:           "subscriptions",
@@ -339,7 +339,6 @@ func (s FluentdStats) LogUnsubscribeStats(subscriptionID string, feedName types.
 		NetworkNum:     networkNum,
 		FeedName:       feedName,
 		AccountID:      accountID,
-		Tier:           tierName,
 	}
 	s.LogToFluentD(record, now, "stats.subscriptions.events")
 }

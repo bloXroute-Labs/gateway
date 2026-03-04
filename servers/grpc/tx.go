@@ -27,11 +27,11 @@ import (
 
 const maxTxsInSingleResponse = 10
 
-var (
-	validTxReceiptParams = []string{"block_hash", "block_number", "contract_address",
-		"cumulative_gas_used", "effective_gas_price", "from", "gas_used", "logs", "logs_bloom",
-		"status", "to", "transaction_hash", "transaction_index", "type", "txs_count"}
-)
+var validTxReceiptParams = []string{
+	"block_hash", "block_number", "contract_address",
+	"cumulative_gas_used", "effective_gas_price", "from", "gas_used", "logs", "logs_bloom",
+	"status", "to", "transaction_hash", "transaction_index", "type", "txs_count",
+}
 
 // BlxrTx submit blxr tx
 func (g *server) BlxrTx(ctx context.Context, req *pb.BlxrTxRequest) (*pb.BlxrTxReply, error) {
@@ -143,6 +143,11 @@ func (g *server) TxReceipts(req *pb.TxReceiptsRequest, stream pb.Gateway_TxRecei
 	if err != nil {
 		return status.Error(codes.PermissionDenied, err.Error())
 	}
+	// This feed is only available on customer GWs, not cloud service ESE GWs
+	if accountModel.AccountID != g.serverAccountID {
+		err = fmt.Errorf("TxReceipts feed is not available via cloud services. Feed is only supported on gateways")
+		return status.Error(codes.PermissionDenied, err.Error())
+	}
 
 	return g.txReceipts(req, stream, *accountModel)
 }
@@ -200,7 +205,6 @@ func (g *server) shortIDs(req *pb.ShortIDsRequest) (*pb.ShortIDsReply, error) {
 func (g *server) txReceipts(req *pb.TxReceiptsRequest, stream pb.Gateway_TxReceiptsServer, account sdnmessage.Account) error {
 	ci := types.ClientInfo{
 		AccountID:     account.AccountID,
-		Tier:          string(account.TierName),
 		MetaInfo:      types.SDKMetaFromContext(stream.Context()),
 		RemoteAddress: getPeerAddr(stream.Context()),
 	}
@@ -227,7 +231,10 @@ func (g *server) txReceipts(req *pb.TxReceiptsRequest, stream pb.Gateway_TxRecei
 		select {
 		case errMsg := <-sub.ErrMsgChan:
 			return status.Error(codes.Internal, errMsg)
-		case notification := <-sub.FeedChan:
+		case notification, ok := <-sub.FeedChan:
+			if !ok {
+				return nil
+			}
 			txReceiptsNotificationReply := notification.WithFields(includes).(*types.TxReceiptsNotification)
 			for _, receipt := range txReceiptsNotificationReply.Receipts {
 				grpcTxReceiptsNotificationReply := generateTxReceiptReply(receipt)
@@ -256,7 +263,6 @@ func (g *server) handleTransactions(req *pb.TxsRequest, stream pb.Gateway_NewTxs
 
 	ci := types.ClientInfo{
 		AccountID:     account.AccountID,
-		Tier:          string(account.TierName),
 		MetaInfo:      types.SDKMetaFromContext(stream.Context()),
 		RemoteAddress: getPeerAddr(stream.Context()),
 	}

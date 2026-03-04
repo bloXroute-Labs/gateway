@@ -111,12 +111,9 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 			false),
 		beacon.NewBlobSidecarCacheManager(1606824023),
 		blockchainPeers,
-		make(map[string]struct{}),
 		"",
 		sdn,
 		nil,
-		0,
-		0,
 		0,
 		false,
 		false,
@@ -126,8 +123,10 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 
 	g := node.(*gateway)
 
-	// Required for TxReceipts feed
-	g.wsManager.UpdateNodeSyncStatus(blockchainPeers[0], blockchain.Synced)
+	if numPeers != 0 {
+		// Required for TxReceipts feed
+		g.wsManager.UpdateNodeSyncStatus(blockchainPeers[0], blockchain.Synced)
+	}
 
 	g.setupTxStore()
 	g.txTrace = loggers.NewTxTrace(nil)
@@ -543,6 +542,107 @@ func TestGateway_HandleBlockConfirmationFromBackend(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestGateway_HandleNoActiveBlockchainPeers(t *testing.T) {
+	t.Run("no limit", func(t *testing.T) {
+		bridge, g := setup(t, 0)
+		sdn := mock.NewMockSDNHTTP(gomock.NewController(t))
+		sdn.EXPECT().AccountModel().Return(sdnmessage.Account{
+			MinAllowedNodes: sdnmessage.BDNMinAllowedNodesService{
+				BDNQuotaService: sdnmessage.BDNQuotaService{
+					MsgQuota: sdnmessage.BDNService{
+						Limit: 0,
+					},
+				},
+			},
+		}).Times(1)
+		g.sdn = sdn
+
+		ctx, cancel := context.WithCancel(context.Background())
+		errC := make(chan error, 1)
+
+		go func() {
+			errC <- g.handleBridgeMessages(ctx)
+		}()
+
+		timeout := time.After(time.Millisecond * 10)
+
+	loop:
+		for {
+			select {
+			case <-timeout:
+				t.Fatal("timeout waiting for no active blockchain peers alert to be handled")
+				return
+			default:
+				err := bridge.SendNoActiveBlockchainPeersAlert()
+				if err != nil {
+					time.Sleep(time.Millisecond)
+					continue
+				}
+				break loop
+			}
+		}
+
+		cancel()
+
+		timeout = time.After(time.Millisecond * 10)
+
+		select {
+		case err := <-errC:
+			require.NoError(t, err)
+		case <-timeout:
+			t.Fatal("timeout waiting for no active blockchain peers alert to be handled")
+		}
+	})
+
+	t.Run("with limit", func(t *testing.T) {
+		bridge, g := setup(t, 0)
+		sdn := mock.NewMockSDNHTTP(gomock.NewController(t))
+		sdn.EXPECT().AccountModel().Return(sdnmessage.Account{
+			MinAllowedNodes: sdnmessage.BDNMinAllowedNodesService{
+				BDNQuotaService: sdnmessage.BDNQuotaService{
+					MsgQuota: sdnmessage.BDNService{
+						Limit: 1,
+					},
+				},
+			},
+		}).Times(1)
+		g.sdn = sdn
+
+		errC := make(chan error, 1)
+
+		go func() {
+			errC <- g.handleBridgeMessages(context.Background())
+		}()
+
+		timeout := time.After(time.Millisecond * 10)
+
+	loop:
+		for {
+			select {
+			case <-timeout:
+				t.Fatal("timeout waiting for no active blockchain peers alert to be handled")
+				return
+			default:
+				err := bridge.SendNoActiveBlockchainPeersAlert()
+				if err != nil {
+					time.Sleep(time.Millisecond)
+					continue
+				}
+				break loop
+			}
+		}
+
+		timeout = time.After(time.Millisecond * 10)
+
+		select {
+		case err := <-errC:
+			require.ErrorIs(t, err, errNoBlockchainNodeConnection)
+		case <-timeout:
+			t.Fatal("timeout waiting for no active blockchain peers alert to be handled")
+		}
+	})
+}
+
 func TestGateway_HandleTransactionHashesFromBlockchain(t *testing.T) {
 	bridge, g := setup(t, 1)
 
@@ -711,10 +811,10 @@ func TestGateway_HandleBlockFromBlockchain(t *testing.T) {
 	}()
 
 	g.BxConfig.WebsocketEnabled = true
-	s1, _ := g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	s2, _ := g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	s3, _ := g.feedManager.Subscribe(types.NewBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	s4, _ := g.feedManager.Subscribe(types.OnBlockFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	s1, _ := g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{}, types.ReqOptions{}, false)
+	s2, _ := g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{}, types.ReqOptions{}, false)
+	s3, _ := g.feedManager.Subscribe(types.NewBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{}, types.ReqOptions{}, false)
+	s4, _ := g.feedManager.Subscribe(types.OnBlockFeed, types.WebSocketFeed, nil, types.ClientInfo{}, types.ReqOptions{}, false)
 
 	feedChan := subscribeAll(s1.FeedChan, s2.FeedChan, s3.FeedChan, s4.FeedChan)
 
@@ -760,9 +860,9 @@ func TestGateway_HandleBlockFromInboundBlockchain(t *testing.T) {
 	}()
 
 	g.BxConfig.WebsocketEnabled = true
-	s1, _ := g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	s2, _ := g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	s3, _ := g.feedManager.Subscribe(types.OnBlockFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	s1, _ := g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{}, types.ReqOptions{}, false)
+	s2, _ := g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{}, types.ReqOptions{}, false)
+	s3, _ := g.feedManager.Subscribe(types.OnBlockFeed, types.WebSocketFeed, nil, types.ClientInfo{}, types.ReqOptions{}, false)
 
 	feedChan := subscribeAll(s1.FeedChan, s2.FeedChan, s3.FeedChan)
 
@@ -851,7 +951,7 @@ func TestGateway_HandleBlockFromBlockchain_TwoRelays(t *testing.T) {
 
 func TestGateway_HandleBlockFromRelay(t *testing.T) {
 	bridge, g := setup(t, 1)
-	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{}, types.ReqOptions{}, false)
 	_, relayConn1 := addRelayConn(g)
 	mockTLS2, _ := addRelayConn(g)
 
@@ -898,8 +998,8 @@ func TestGateway_HandleBlockFromRelay(t *testing.T) {
 
 func TestGateway_HandleBeaconBlockFromRelay(t *testing.T) {
 	bridge, g := setup(t, 1)
-	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{}, types.ReqOptions{}, false)
+	g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{}, types.ReqOptions{}, false)
 	_, relayConn1 := addRelayConn(g)
 	mockTLS2, _ := addRelayConn(g)
 
@@ -1002,10 +1102,10 @@ func TestGateway_HandleBeaconBlockFromRelay(t *testing.T) {
 
 func TestGateway_ValidateHeightBDNBlocksWithNode(t *testing.T) {
 	bridge, g := setup(t, 1)
-	s1, _ := g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	s2, _ := g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	s3, _ := g.feedManager.Subscribe(types.OnBlockFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	s4, _ := g.feedManager.Subscribe(types.NewBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	s1, _ := g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{}, types.ReqOptions{}, false)
+	s2, _ := g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{}, types.ReqOptions{}, false)
+	s3, _ := g.feedManager.Subscribe(types.OnBlockFeed, types.WebSocketFeed, nil, types.ClientInfo{}, types.ReqOptions{}, false)
+	s4, _ := g.feedManager.Subscribe(types.NewBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{}, types.ReqOptions{}, false)
 
 	feedManagerChan := subscribeAll(s1.FeedChan, s2.FeedChan, s3.FeedChan, s4.FeedChan)
 
@@ -1069,9 +1169,9 @@ func TestGateway_ValidateHeightBDNBlocksWithNode(t *testing.T) {
 
 func TestGateway_ValidateHeightBDNBlocksWithoutNode(t *testing.T) {
 	bridge, g := setup(t, 1)
-	s1, _ := g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	s2, _ := g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	s3, _ := g.feedManager.Subscribe(types.OnBlockFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	s1, _ := g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{}, types.ReqOptions{}, false)
+	s2, _ := g.feedManager.Subscribe(types.TxReceiptsFeed, types.WebSocketFeed, nil, types.ClientInfo{}, types.ReqOptions{}, false)
+	s3, _ := g.feedManager.Subscribe(types.OnBlockFeed, types.WebSocketFeed, nil, types.ClientInfo{}, types.ReqOptions{}, false)
 
 	feedManagerChan := subscribeAll(s1.FeedChan, s2.FeedChan, s3.FeedChan)
 
@@ -1099,8 +1199,8 @@ func TestGateway_ValidateHeightBDNBlocksWithoutNode(t *testing.T) {
 func TestGateway_TestNoTxReceiptsWithoutSubscription(t *testing.T) {
 	// The test checks that there is no TxReceipts feed notification when there is no corresponding subscription
 	bridge, g := setup(t, 1)
-	s1, _ := g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
-	s2, _ := g.feedManager.Subscribe(types.OnBlockFeed, types.WebSocketFeed, nil, types.ClientInfo{Tier: string(sdnmessage.ATierEnterprise)}, types.ReqOptions{}, false)
+	s1, _ := g.feedManager.Subscribe(types.BDNBlocksFeed, types.WebSocketFeed, nil, types.ClientInfo{}, types.ReqOptions{}, false)
+	s2, _ := g.feedManager.Subscribe(types.OnBlockFeed, types.WebSocketFeed, nil, types.ClientInfo{}, types.ReqOptions{}, false)
 
 	feedManagerChan := subscribeAll(s1.FeedChan, s2.FeedChan)
 
@@ -1244,6 +1344,7 @@ func TestGateway_ConnectionStatus(t *testing.T) {
 	wg.Wait()
 	require.True(t, g.bdnStats.NodeStats()["123.45.6.78 1234"].IsConnected)
 }
+
 
 func createPeerData(timeNodeConnected string) ([]*types.NodeEndpoint, map[string]*bxmessage.BdnPerformanceStatsData) {
 	endpoints := []*types.NodeEndpoint{

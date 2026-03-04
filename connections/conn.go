@@ -37,7 +37,6 @@ type Conn interface {
 	Connect() error
 	ReadMessages(callBack func(bxmessage.MessageBytes), readDeadline time.Duration, headerLen int, readPayloadLen func([]byte) int) (int, error)
 	Send(msg bxmessage.Message) error
-	SendWithDelay(msg bxmessage.Message, delay time.Duration) error
 	Disable(reason string)
 	Close(reason string) error
 }

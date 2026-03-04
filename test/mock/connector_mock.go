@@ -23,6 +23,7 @@ import (
 type MockConnector struct {
 	ctrl     *gomock.Controller
 	recorder *MockConnectorMockRecorder
+	isgomock struct{}
 }
 
 // MockConnectorMockRecorder is the mock recorder for MockConnector.
@@ -43,31 +44,31 @@ func (m *MockConnector) EXPECT() *MockConnectorMockRecorder {
 }
 
 // Broadcast mocks base method.
-func (m *MockConnector) Broadcast(arg0 bxmessage.Message, arg1 connections.Conn, arg2 types.NodeType) types0.BroadcastResults {
+func (m *MockConnector) Broadcast(msg bxmessage.Message, source connections.Conn, to types.NodeType) types0.BroadcastResults {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Broadcast", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "Broadcast", msg, source, to)
 	ret0, _ := ret[0].(types0.BroadcastResults)
 	return ret0
 }
 
 // Broadcast indicates an expected call of Broadcast.
-func (mr *MockConnectorMockRecorder) Broadcast(arg0, arg1, arg2 any) *gomock.Call {
+func (mr *MockConnectorMockRecorder) Broadcast(msg, source, to any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Broadcast", reflect.TypeOf((*MockConnector)(nil).Broadcast), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Broadcast", reflect.TypeOf((*MockConnector)(nil).Broadcast), msg, source, to)
 }
 
 // Peers mocks base method.
-func (m *MockConnector) Peers(arg0 string) []bxmessage.PeerInfo {
+func (m *MockConnector) Peers(peerType string) []bxmessage.PeerInfo {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Peers", arg0)
+	ret := m.ctrl.Call(m, "Peers", peerType)
 	ret0, _ := ret[0].([]bxmessage.PeerInfo)
 	return ret0
 }
 
 // Peers indicates an expected call of Peers.
-func (mr *MockConnectorMockRecorder) Peers(arg0 any) *gomock.Call {
+func (mr *MockConnectorMockRecorder) Peers(peerType any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Peers", reflect.TypeOf((*MockConnector)(nil).Peers), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Peers", reflect.TypeOf((*MockConnector)(nil).Peers), peerType)
 }
 
 // Relays mocks base method.
