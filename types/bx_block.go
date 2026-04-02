@@ -106,6 +106,9 @@ type BxBlock struct {
 	timestamp       time.Time
 	size            int
 
+	// interfaces.ReadOnlySignedBeaconBlock or *bxcommoneth.BlockInfo
+	original interface{}
+
 	mu sync.RWMutex
 }
 
@@ -135,6 +138,25 @@ func NewRawBxBlock(hash, beaconHash SHA256Hash, bType BxBlockType, header []byte
 		BlobSidecars:    sidecars,
 	}
 	return bxBlock
+}
+
+// SetOriginal sets the original blockchain block that this BxBlock represents.
+func (b *BxBlock) SetOriginal(original interface{}) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	// interfaces.ReadOnlySignedBeaconBlock with transactions
+	// or
+	// *bxcommoneth.BlockInfo
+	b.original = original
+}
+
+// Original returns the original blockchain block that this BxBlock represents.
+func (b *BxBlock) Original() interface{} {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	return b.original
 }
 
 // String implements Stringer interface

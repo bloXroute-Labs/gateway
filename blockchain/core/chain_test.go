@@ -571,9 +571,9 @@ func TestChain_cleanNoChainstate(t *testing.T) {
 }
 
 func addBDNBlock(c *Chain, block *bxethcommon.Block) int {
-	bi := NewBlockInfo(block, nil)
+	bi := bxethcommon.NewBlockInfo(block, nil)
 	_ = c.SetTotalDifficulty(bi)
-	return c.AddBlock(bi, BSBDN)
+	return c.AddBlock(bi, BSBDN, true)
 }
 
 func addBlock(c *Chain, block *bxethcommon.Block) int {
@@ -581,9 +581,9 @@ func addBlock(c *Chain, block *bxethcommon.Block) int {
 }
 
 func addBlockWithTD(c *Chain, block *bxethcommon.Block, td *big.Int) int {
-	bi := NewBlockInfo(block, td)
+	bi := bxethcommon.NewBlockInfo(block, td)
 	_ = c.SetTotalDifficulty(bi)
-	return c.AddBlock(bi, BSBlockchain)
+	return c.AddBlock(bi, BSBlockchain, true)
 }
 
 func assertChainState(t *testing.T, c *Chain, block *bxethcommon.Block, index int, length int) {

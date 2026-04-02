@@ -4,16 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
 
-	"github.com/bloXroute-Labs/gateway/v2"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler/filter"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler/validator"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 var (
@@ -69,32 +67,37 @@ func (h *handlerObj) createClientReq(req Request, feed types.FeedType, rpcParams
 		}
 	}
 
-	// check if valid Feed
-	var filters []string
-	if expr != nil {
-		filters = expr.Args()
-	}
-
-	feedStreaming := sdnmessage.BDNFeedService{}
-	switch request.feed {
-	case types.NewTxsFeed:
-		feedStreaming = h.connectionAccount.NewTransactionStreaming
-	case types.PendingTxsFeed:
-		feedStreaming = h.connectionAccount.PendingTransactionStreaming
-	case types.BDNBlocksFeed, types.NewBlocksFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed:
-		feedStreaming = h.connectionAccount.NewBlockStreaming
-	case types.OnBlockFeed:
-		feedStreaming = h.connectionAccount.OnBlockFeed
-	case types.TxReceiptsFeed:
-		feedStreaming = h.connectionAccount.TransactionReceiptFeed
-	}
-
 	// HACK: feed validation should not execute on ESE GWs to avoid feed expiration validation
 	// See https://bloxroute.atlassian.net/browse/BP-3340
 	if h.connectionAccount.AccountID != h.serverAccountID {
-		err = h.validateFeed(request.feed, feedStreaming, request.options.Include, len(filters) > 0)
-		if err != nil {
-			return nil, err
+		feedStreaming := sdnmessage.BDNQuotaService{}
+
+		switch request.feed {
+		case types.NewTxsFeed, types.PendingTxsFeed:
+			switch h.networkNum {
+			case bxtypes.MainnetNum:
+				feedStreaming = h.connectionAccount.EthMempoolStreaming
+			case bxtypes.BSCMainnetNum:
+				feedStreaming = h.connectionAccount.BscMempoolStreaming
+			}
+		case types.BDNBlocksFeed, types.NewBlocksFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed, types.OnBlockFeed:
+			switch h.networkNum {
+			case bxtypes.MainnetNum:
+				feedStreaming = h.connectionAccount.EthBlocksStreaming
+			case bxtypes.BSCMainnetNum:
+				feedStreaming = h.connectionAccount.BscBlocksStreaming
+			}
+		case types.TxReceiptsFeed:
+			switch h.networkNum {
+			case bxtypes.MainnetNum:
+				feedStreaming = h.connectionAccount.EthTxReceiptsStreaming
+			case bxtypes.BSCMainnetNum:
+				feedStreaming = h.connectionAccount.BscTxReceiptsStreaming
+			}
+		}
+
+		if !feedStreaming.IsActive() {
+			return nil, fmt.Errorf("%v is not allowed", request.feed)
 		}
 	}
 
@@ -157,27 +160,4 @@ func (h *handlerObj) parseSubscriptionRequest(req Request) (types.FeedType, json
 	}
 
 	return feed, rpcParams[1], nil
-}
-
-func (h *handlerObj) validateFeed(feedName types.FeedType, feedStreaming sdnmessage.BDNFeedService, includes []string, hasFilters bool) error {
-	expireDateTime, err := time.Parse(bxgateway.TimeDateLayoutISO, feedStreaming.ExpireDate)
-	if err != nil {
-		return fmt.Errorf("failed to parse expire date %v: %w", feedStreaming.ExpireDate, err)
-	}
-	if time.Now().UTC().After(expireDateTime) {
-		return fmt.Errorf("%v is not allowed or date has been expired", feedName)
-	}
-	if feedStreaming.Feed.AllowFiltering && utils.Exists("all", feedStreaming.Feed.AvailableFields) {
-		return nil
-	}
-	for _, include := range includes {
-		if !utils.Exists(include, feedStreaming.Feed.AvailableFields) {
-			return fmt.Errorf("including %v field in %v is not allowed", include, feedName)
-		}
-	}
-	if !feedStreaming.Feed.AllowFiltering && hasFilters {
-		return fmt.Errorf("filtering in %v is not allowed", feedName)
-	}
-
-	return nil
 }

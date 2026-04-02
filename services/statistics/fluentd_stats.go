@@ -45,6 +45,7 @@ type Stats interface {
 	LogSubscribeStats(subscriptionID string, accountID bxtypes.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
 		ip string, networkNum bxtypes.NetworkNum, feedInclude []string, feedFilter string)
 	LogUnsubscribeStats(subscriptionID string, feedName types.FeedType, networkNum bxtypes.NetworkNum, accountID bxtypes.AccountID)
+	LogSubscriptionsStats(accountID bxtypes.AccountID, feedName types.FeedType, count int, networkNum bxtypes.NetworkNum)
 	LogSDKInfo(blockchain, method, sourceCode, version string, accountID bxtypes.AccountID, feed types.FeedConnectionType, start, end time.Time)
 	AddBlobEvent(name, eventSubjectID string, sourceID bxtypes.NodeID, networkNum bxtypes.NetworkNum, startTime, endTime time.Time, originalSize, compressSize int, blobIndex uint32, blockHash string)
 }
@@ -70,6 +71,10 @@ func (NoStats) LogSubscribeStats(string, bxtypes.AccountID, types.FeedType, sdnm
 
 // LogUnsubscribeStats does nothing
 func (NoStats) LogUnsubscribeStats(string, types.FeedType, bxtypes.NetworkNum, bxtypes.AccountID) {
+}
+
+// LogSubscriptionsStats does nothing
+func (NoStats) LogSubscriptionsStats(bxtypes.AccountID, types.FeedType, int, bxtypes.NetworkNum) {
 }
 
 // LogSDKInfo does nothing
@@ -341,6 +346,22 @@ func (s FluentdStats) LogUnsubscribeStats(subscriptionID string, feedName types.
 		AccountID:      accountID,
 	}
 	s.LogToFluentD(record, now, "stats.subscriptions.events")
+}
+
+// LogSubscriptionsStats generates a fluentd STATS event with the current subscriptions of an account
+func (s FluentdStats) LogSubscriptionsStats(accountID bxtypes.AccountID, feed types.FeedType, count int, networkNum bxtypes.NetworkNum) {
+	now := time.Now()
+	record := Record{
+		Type: "AccountSubscriptions",
+		Data: SubscriptionsRecord{
+			AccountID:  accountID,
+			FeedName:   feed,
+			Count:      count,
+			NetworkNum: networkNum,
+		},
+	}
+
+	s.LogToFluentD(record, now, "stats.subscriptions.current")
 }
 
 // LogSDKInfo generates a fluentd STATS event

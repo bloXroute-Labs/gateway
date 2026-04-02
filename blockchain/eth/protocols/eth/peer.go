@@ -133,9 +133,13 @@ func (p *Peer) startSender() {
 				return
 			}
 			err := p2p.Send(p.rw, job.code, job.data)
-			if err != nil && errors.Is(err, p2p.ErrShuttingDown) {
-				p.log.Warn("peer is shutting down, disconnecting")
-				p.Disconnect(p2p.DiscQuitting)
+			if err != nil {
+				if errors.Is(err, p2p.ErrShuttingDown) {
+					p.log.Warn("peer is shutting down, disconnecting")
+					p.Disconnect(p2p.DiscQuitting)
+					continue
+				}
+				p.log.Errorf("failed to send p2p message with code %v to peer %s: %v", job.code, p, err)
 			}
 		case <-p.ctx.Done():
 			return

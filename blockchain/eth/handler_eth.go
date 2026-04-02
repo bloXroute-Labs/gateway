@@ -66,7 +66,7 @@ func (h *ethHandler) Handle(peer *eth2.Peer, packet eth2.Packet) error {
 		if len(p.Sidecars) > 0 {
 			block.SetBlobSidecars(p.Sidecars)
 		}
-		return h.processBlock(peer, core.NewBlockInfo(block, p.TD))
+		return h.processBlock(peer, bxcommoneth.NewBlockInfo(block, p.TD))
 	case *eth.NewBlockHashesPacket:
 		return h.processBlockAnnouncement(peer, *p)
 	case *eth.BlockHeadersRequest:
@@ -74,6 +74,19 @@ func (h *ethHandler) Handle(peer *eth2.Peer, packet eth2.Packet) error {
 	default:
 		return fmt.Errorf("unexpected eth packet type: %v", packet)
 	}
+}
+
+func (h *ethHandler) HandleRaw(peer *eth2.Peer, packet p2p.Msg) error {
+	startTime := time.Now()
+
+	block, err := types.ParseNewBlockPacket(packet.Payload)
+	if err != nil {
+		return fmt.Errorf("could not parse new block packet: %v", err)
+	}
+
+	peer.Log().Debugf("received new block packet for block %v (height %v) with raw payload size %v bytes, took %v to parse", block.Hash().String(), block.Number(), packet.Size, time.Since(startTime))
+
+	return h.processBlockRaw(peer, block)
 }
 
 func (h *ethHandler) RequestTransactions(hashes []common.Hash) ([]rlp.RawValue, error) {
@@ -88,16 +101,22 @@ func (h *ethHandler) RequestTransactions(hashes []common.Hash) ([]rlp.RawValue, 
 	}
 
 	if err := h.bridge.RequestTransactionsFromBDN(requestID, bxHashes); err != nil {
+		h.responseQueue.Delete(requestID)
 		return nil, fmt.Errorf("could not request transactions from BDN: %v", err)
 	}
 
-	bdnTxs := (<-respChan).([]*types.BxTransaction)
-	txs := make([]rlp.RawValue, len(bdnTxs))
-	for i, bdnTx := range bdnTxs {
-		txs[i] = rlp.RawValue(bdnTx.Content())
+	select {
+	case result := <-respChan:
+		bdnTxs := result.([]*types.BxTransaction)
+		txs := make([]rlp.RawValue, len(bdnTxs))
+		for i, bdnTx := range bdnTxs {
+			txs[i] = rlp.RawValue(bdnTx.Content())
+		}
+		return txs, nil
+	case <-time.After(5 * time.Second):
+		h.responseQueue.Delete(requestID)
+		return nil, fmt.Errorf("timeout waiting for BDN response for request %s", requestID)
 	}
-
-	return txs, nil
 }
 
 func (h *ethHandler) processTransactions(peer *eth2.Peer, txs []*ethtypes.Transaction) error {
@@ -148,17 +167,43 @@ func (h *ethHandler) processTransactionHashes(peer *eth2.Peer, txHashes []common
 	return err
 }
 
-func (h *ethHandler) processBlock(peer *eth2.Peer, blockInfo *core.BlockInfo) error {
-	block := blockInfo.Block
+func (h *ethHandler) processBlock(peer *eth2.Peer, blockInfo *bxcommoneth.BlockInfo) error {
+	if h.config.Network == network.EthMainnetChainID {
+		peer.Log().Errorf("ignoring block [hash=%s, height=%d] from old node", blockInfo.Hash().String(), blockInfo.Number())
+		return nil
+	}
+
+	if err := h.chain.ValidateBlock(blockInfo.Block); err != nil {
+		if errors.Is(err, core.ErrAlreadySeen) {
+			peer.Log().Debugf("skipping block %v (height %v): %v", blockInfo.Hash().String(), blockInfo.Number(), err)
+		} else {
+			peer.Log().Warnf("skipping block %v (height %v): %v", blockInfo.Hash().String(), blockInfo.Number(), err)
+		}
+		return nil
+	}
+
+	newHeadCount := h.chain.AddBlock(blockInfo, core.BSBlockchain, true)
+
+	confirm := h.sendConfirmedBlocksToBDN(newHeadCount, peer.IPEndpoint())
+
+	if confirm {
+		h.broadcastBlock(blockInfo, peer)
+	}
+
+	return nil
+}
+
+func (h *ethHandler) processBlockRaw(peer *eth2.Peer, block *types.RawBlock) error {
 	blockHash := block.Hash()
 	blockHeight := block.Number()
+	peer.UpdateHead(blockHeight, blockHash)
 
 	if h.config.Network == network.EthMainnetChainID {
 		peer.Log().Errorf("ignoring block [hash=%s, height=%d] from old node", blockHash.String(), blockHeight)
 		return nil
 	}
 
-	if err := h.chain.ValidateBlock(block); err != nil {
+	if err := h.chain.ValidateBlockRaw(block); err != nil {
 		if errors.Is(err, core.ErrAlreadySeen) {
 			peer.Log().Debugf("skipping block %v (height %v): %v", blockHash.String(), blockHeight, err)
 		} else {
@@ -168,9 +213,12 @@ func (h *ethHandler) processBlock(peer *eth2.Peer, blockInfo *core.BlockInfo) er
 	}
 
 	peer.Log().Debugf("processing new block %v (height %v)", blockHash.String(), blockHeight)
-	newHeadCount := h.chain.AddBlock(blockInfo, core.BSBlockchain)
-	h.sendConfirmedBlocksToBDN(newHeadCount, peer.IPEndpoint())
-	h.broadcastBlock(block, blockInfo.TotalDifficulty(), peer)
+	newHeadCount := h.chain.AddBlockRaw(block, core.BSBlockchain)
+	h.sendConfirmedRawBlocksToBDN(newHeadCount, peer.IPEndpoint())
+
+	blockInfo := &bxcommoneth.BlockInfo{Block: block.Block(), TD: block.TotalDifficulty()}
+	_ = h.chain.AddBlock(blockInfo, core.BSBlockchain, false)
+	h.broadcastBlock(blockInfo, peer)
 	return nil
 }
 
@@ -259,7 +307,7 @@ func (h *ethHandler) isChainIDMatch(txChainID uint64) bool {
 	return false
 }
 
-func (h *ethHandler) sendConfirmedBlocksToBDN(count int, peerEndpoint types.NodeEndpoint) {
+func (h *ethHandler) sendConfirmedBlocksToBDN(count int, peerEndpoint types.NodeEndpoint) bool {
 	newHeads, err := h.chain.GetNewHeadsForBDN(count)
 	if err != nil {
 		log.Errorf("could not fetch chainstate: %v", err)
@@ -268,13 +316,14 @@ func (h *ethHandler) sendConfirmedBlocksToBDN(count int, peerEndpoint types.Node
 	// iterate in reverse to send all new heads in ascending order to BDN
 	for i := len(newHeads) - 1; i >= 0; i-- {
 		newHead := newHeads[i]
-		hash := newHead.Block.Hash()
+		hash := newHead.Hash()
 
 		bdnBlock, err := h.bridge.BlockBlockchainToBDN(newHead)
 		if err != nil {
 			log.Errorf("could not convert block %v: %v", hash, err)
 			continue
 		}
+
 		err = h.bridge.SendBlockToBDN(bdnBlock, peerEndpoint)
 		if err != nil {
 			log.Errorf("could not send block %v to BDN: %v", hash, err)
@@ -286,21 +335,73 @@ func (h *ethHandler) sendConfirmedBlocksToBDN(count int, peerEndpoint types.Node
 	b, err := h.blockAtDepth(h.config.BlockConfirmationsCount)
 	if err != nil {
 		log.Debugf("cannot retrieve bxblock at depth %v, %v", h.config.BlockConfirmationsCount, err)
-		return
+		return false
 	}
 	blockHash := common.BytesToHash(b.Hash().Bytes())
 
 	if h.chain.HasConfirmationSendToBDN(blockHash) {
 		log.Tracef("block %v has already been sent in a block confirm message to gateway", b.Hash())
-		return
+		return false
 	}
+
 	log.Tracef("sending block (%v) confirm message to gateway from backend", b.Hash())
 	err = h.bridge.SendConfirmedBlockToGateway(b, peerEndpoint)
 	if err != nil {
 		log.Debugf("failed sending block(%v) confirmation message to gateway, %v", b.Hash(), err)
-		return
+		return false
 	}
 	h.chain.MarkConfirmationSentToBDN(blockHash)
+
+	return true
+}
+
+func (h *ethHandler) sendConfirmedRawBlocksToBDN(count int, peerEndpoint types.NodeEndpoint) bool {
+	newHeads, err := h.chain.GetNewHeadsRawForBDN(count)
+	if err != nil {
+		log.Errorf("could not fetch chainstate: %v", err)
+	}
+
+	// iterate in reverse to send all new heads in ascending order to BDN
+	for i := len(newHeads) - 1; i >= 0; i-- {
+		newHead := newHeads[i]
+		hash := newHead.Hash()
+
+		bdnBlock, err := h.bridge.BlockBlockchainToBDN(newHead)
+		if err != nil {
+			log.Errorf("could not convert block %v: %v", hash, err)
+			continue
+		}
+
+		err = h.bridge.SendBlockToBDN(bdnBlock, peerEndpoint)
+		if err != nil {
+			log.Errorf("could not send block %v to BDN: %v", hash, err)
+			continue
+		}
+		h.chain.MarkSentToBDN(hash)
+	}
+
+	b, err := h.blockAtDepth(h.config.BlockConfirmationsCount)
+	if err != nil {
+		log.Debugf("cannot retrieve bxblock at depth %v, %v", h.config.BlockConfirmationsCount, err)
+		return false
+	}
+	blockHash := common.BytesToHash(b.Hash().Bytes())
+
+	if h.chain.HasConfirmationSendToBDN(blockHash) {
+		log.Tracef("block %v has already been sent in a block confirm message to gateway", b.Hash())
+		return false
+	}
+
+	log.Tracef("sending block (%v) confirm message to gateway from backend", b.Hash())
+	err = h.bridge.SendConfirmedBlockToGateway(b, peerEndpoint)
+	if err != nil {
+		log.Debugf("failed sending block(%v) confirmation message to gateway, %v", b.Hash(), err)
+		return false
+	}
+	h.chain.MarkConfirmationSentToBDN(blockHash)
+
+	log.Tracef("sending block (%v) confirm message to gateway from backend", b.Hash())
+	return true
 }
 
 func (h *ethHandler) blockAtDepth(chainDepth int) (*types.BxBlock, error) {
@@ -309,8 +410,7 @@ func (h *ethHandler) blockAtDepth(chainDepth int) (*types.BxBlock, error) {
 		log.Debugf("cannot retrieve block with chain depth %v, %v", chainDepth, err)
 		return nil, err
 	}
-	blockInfo := core.NewBlockInfo(block, block.Header().Difficulty)
-	bxBlock, err := h.bridge.BlockBlockchainToBDN(blockInfo)
+	bxBlock, err := h.bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(block, block.Header().Difficulty))
 	if err != nil {
 		log.Debugf("cannot convert eth block to BDN block at the chain depth %v with hash %v, %v", chainDepth, block.Hash(), err)
 		return nil, err
@@ -318,22 +418,23 @@ func (h *ethHandler) blockAtDepth(chainDepth int) (*types.BxBlock, error) {
 	return bxBlock, err
 }
 
-func (h *ethHandler) broadcastBlock(block *bxcommoneth.Block, totalDifficulty *big.Int, sourceBlockchainPeer *eth2.Peer) {
+func (h *ethHandler) broadcastBlock(blockInfo *bxcommoneth.BlockInfo, sourceBlockchainPeer *eth2.Peer) {
 	source := "BDN"
 	if sourceBlockchainPeer != nil {
 		source = sourceBlockchainPeer.IPEndpoint().IPPort()
 	}
 
+	totalDifficulty := blockInfo.TotalDifficulty()
 	if totalDifficulty == nil || totalDifficulty.Cmp(h.config.TerminalTotalDifficulty) >= 0 || totalDifficulty.Cmp(big.NewInt(0)) == 0 {
 		return
 	}
 
+	log.Debugf("queuing block %v from %v", blockInfo.Hash().String(), source)
 	for _, peer := range h.peers.getAll() {
 		if peer.Peer == sourceBlockchainPeer {
 			continue
 		}
-		peer.QueueNewBlock(block, totalDifficulty)
-		peer.Log().Debugf("queuing block %v from %v", block.Hash().String(), source)
+		peer.QueueNewBlock(blockInfo.Block, totalDifficulty)
 	}
 }
 
@@ -435,7 +536,7 @@ func (h *ethHandler) processBlockComponents(peer *eth2.Peer, header *ethtypes.He
 		block = block.WithSidecars(body.Sidecars)
 	}
 
-	bi := core.NewBlockInfo(block, nil)
+	bi := bxcommoneth.NewBlockInfo(block, nil)
 	err := h.chain.SetTotalDifficulty(bi)
 	if err != nil {
 		log.Errorf("could not set total difficulty for block %v: %v", block.Hash().String(), err)

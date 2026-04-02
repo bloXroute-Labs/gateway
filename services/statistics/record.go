@@ -133,6 +133,14 @@ type unsubscribeRecord struct {
 	AccountID      bxtypes.AccountID  `json:"account_id"`
 }
 
+// SubscriptionsRecord represents the number of subscriptions for an account
+type SubscriptionsRecord struct {
+	AccountID  bxtypes.AccountID  `json:"account_id"`
+	FeedName   types.FeedType     `json:"feed_name"`
+	Count      int                `json:"count"`
+	NetworkNum bxtypes.NetworkNum `json:"network_num"`
+}
+
 type sdkInfoRecord struct {
 	Blockchain string            `json:"blockchain"`
 	Method     string            `json:"method"`

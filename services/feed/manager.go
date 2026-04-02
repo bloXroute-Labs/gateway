@@ -23,7 +23,11 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
-const accountExpiredError = "Account expired, unsubscribe feed"
+const (
+	accountExpiredError         = "Account expired, unsubscribe feed"
+	logSubscriptionInterval     = 2 * time.Hour
+	logSubscriptionInitialDelay = time.Minute
+)
 
 // Manager - feed manager fields
 type Manager struct {
@@ -51,7 +55,6 @@ func NewManager(sdn sdnsdk.SDNHTTP,
 	sendNotifications bool,
 	metricsExporter metrics.Exporter,
 ) *Manager {
-
 	logger := log.WithFields(log.Fields{
 		"component": "feedManager",
 	})
@@ -79,7 +82,7 @@ func (f *Manager) Start(ctx context.Context) {
 	f.log.Infof("feedManager is starting for network %v", f.networkNum)
 
 	wg := sync.WaitGroup{}
-	wg.Add(3)
+	wg.Add(4)
 
 	go func() {
 		defer wg.Done()
@@ -94,6 +97,11 @@ func (f *Manager) Start(ctx context.Context) {
 	go func() {
 		defer wg.Done()
 		f.midnightCleanup(ctx)
+	}()
+
+	go func() {
+		defer wg.Done()
+		f.logCurrentSubscriptions(ctx)
 	}()
 
 	wg.Wait()
@@ -131,8 +139,8 @@ func (f *Manager) NotifyError(notification ErrorNotification) {
 
 // Subscribe - subscribe a client to a desired feed
 func (f *Manager) Subscribe(feedName types.FeedType, feedConnectionType types.FeedConnectionType,
-	conn io.Closer, ci types.ClientInfo, ro types.ReqOptions, ethSubscribe bool) (*ClientSubscriptionHandlingInfo, error) {
-
+	conn io.Closer, ci types.ClientInfo, ro types.ReqOptions, ethSubscribe bool,
+) (*ClientSubscriptionHandlingInfo, error) {
 	id := f.subscriptionServices.GenerateSubscriptionID(ethSubscribe)
 	clientSubscription := ClientSubscription{
 		feed:               make(chan types.Notification, bxgateway.BxNotificationChannelSize),
@@ -163,7 +171,7 @@ func (f *Manager) Subscribe(feedName types.FeedType, feedConnectionType types.Fe
 	allowed, reason, permissionRespChannel := f.subscriptionServices.SendSubscribeNotification(&subscriptionModel)
 	if !allowed {
 		log.Debugf("subscription %v: allowed %v, reason %v", id, allowed, reason)
-		return nil, fmt.Errorf(reason)
+		return nil, errors.New(reason)
 	}
 
 	log.Tracef("subscription %v is allowed", id)
@@ -515,4 +523,51 @@ func (f *Manager) checkForDuplicateFeed(clientSubscription *ClientSubscription, 
 		}
 	}
 	return nil
+}
+
+func (f *Manager) logCurrentSubscriptions(ctx context.Context) {
+	ticker := time.NewTicker(logSubscriptionInterval)
+	defer ticker.Stop()
+
+	// wait initial delay so clients have time to resubscribe
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(logSubscriptionInitialDelay):
+	}
+
+	for {
+		subs := f.currentSubscriptions()
+		for accountID, feeds := range subs {
+			for feedType, count := range feeds {
+				f.stats.LogSubscriptionsStats(accountID, feedType, count, f.networkNum)
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (f *Manager) currentSubscriptions() map[bxtypes.AccountID]map[types.FeedType]int {
+	subscriptions := make(map[bxtypes.AccountID]map[types.FeedType]int)
+
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	for i := range f.idToClientSubscription {
+		infos, exists := subscriptions[f.idToClientSubscription[i].AccountID]
+		if !exists {
+			subscriptions[f.idToClientSubscription[i].AccountID] = map[types.FeedType]int{
+				f.idToClientSubscription[i].feedType: 1,
+			}
+			continue
+		}
+		infos[f.idToClientSubscription[i].feedType]++
+	}
+
+	return subscriptions
 }

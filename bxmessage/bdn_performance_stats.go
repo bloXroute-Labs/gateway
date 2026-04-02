@@ -509,7 +509,3 @@ func (bs *BdnPerformanceStats) size() uint32 {
 	total += types.UInt16Len * 2
 	return total
 }
-
-func ipPort(ip string, port int) string {
-	return fmt.Sprintf("%v:%v", ip, port)
-}

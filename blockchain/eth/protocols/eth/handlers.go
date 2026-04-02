@@ -8,9 +8,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
+	"github.com/ethereum/go-ethereum/p2p"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
-
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/core"
 )
 
@@ -114,15 +114,8 @@ func answerGetBlockBodies(backend Backend, query eth.GetBlockBodiesPacket) ([]*B
 	return blockBodies, nil
 }
 
-func handleNewBlockMsg(backend Backend, msg Decoder, peer *Peer) error {
-	var blockPacket NewBlockPacket
-	if err := msg.Decode(&blockPacket); err != nil {
-		log.Errorf("could not decode message %v: %v", msg, err)
-		return fmt.Errorf("could not decode message %v: %v", msg, err)
-	}
-
-	peer.UpdateHead(blockPacket.Block.NumberU64(), blockPacket.Block.Hash())
-	return backend.Handle(peer, &blockPacket)
+func handleNewBlockMsgRaw(backend Backend, msg Decoder, peer *Peer) error {
+	return backend.HandleRaw(peer, msg.(p2p.Msg))
 }
 
 func handleTransactions(backend Backend, msg Decoder, peer *Peer) error {
@@ -155,7 +148,6 @@ func handlePooledTransactions(backend Backend, msg Decoder, peer *Peer) error {
 }
 
 func handleNewPooledTransactionHashes(backend Backend, msg Decoder, peer *Peer) error {
-
 	var txHashes NewPooledTransactionHashesPacket66
 	if err := msg.Decode(&txHashes); err != nil {
 		return fmt.Errorf("could not decode message: %v: %v", msg, err)

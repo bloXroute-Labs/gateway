@@ -3,6 +3,7 @@ package beacon
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -28,7 +29,7 @@ func init() {
 }
 
 // HandleBDNBeaconMessages waits for beacon messages from BDN and broadcast it to the connected nodes
-func HandleBDNBeaconMessages(ctx context.Context, b blockchain.Bridge, n *Node, blobsManager *BlobSidecarCacheManager) {
+func HandleBDNBeaconMessages(ctx context.Context, b blockchain.Bridge, n *Node) {
 	broadcastP2P := n != nil
 
 	for {
@@ -73,7 +74,7 @@ func HandleBDNBeaconMessages(ctx context.Context, b blockchain.Bridge, n *Node, 
 				if broadcastP2P {
 					go func() {
 						if err := n.BroadcastDataColumn(blobSidecar); err != nil {
-							if err == errNoPeersFoundToBroadcast {
+							if errors.Is(err, errNoPeersFoundToBroadcast) {
 								return
 							}
 							log.Errorf("failed to broadcast data column sidecar to P2P connections: %v", err)
@@ -100,12 +101,19 @@ func HandleBDNBlocks(ctx context.Context, b blockchain.Bridge, n *Node, beaconAP
 	for {
 		select {
 		case bdnBlock := <-b.ReceiveBeaconBlockFromBDN():
-			beaconBlock, err := b.BlockBDNtoBlockchain(bdnBlock)
-			if err != nil {
-				log.Errorf("failed to convert BDN block to beacon block: %v", err)
+			if !broadcastP2P && !(broadcastBeaconAPI && submitBeaconBlockToAPI) {
 				continue
 			}
-			castedBlock := beaconBlock.(interfaces.ReadOnlySignedBeaconBlock)
+
+			castedBlock, ok := bdnBlock.Original().(interfaces.ReadOnlySignedBeaconBlock)
+			if !ok {
+				beaconBlock, err := b.BlockBDNtoBlockchain(bdnBlock)
+				if err != nil {
+					log.Errorf("failed to convert BDN block to beacon block: %v", err)
+					continue
+				}
+				castedBlock = beaconBlock.(interfaces.ReadOnlySignedBeaconBlock)
+			}
 
 			if broadcastP2P {
 				go func() {
@@ -121,7 +129,7 @@ func HandleBDNBlocks(ctx context.Context, b blockchain.Bridge, n *Node, beaconAP
 				go broadcastToClients(bdnBlock.Hash().String(), castedBlock, beaconAPIClients, blobsManager)
 			}
 		case <-ctx.Done():
-			log.Infof("ending handleBDNBlocksBridge")
+			log.Infof("ending HandleBDNBlocks")
 			return
 		}
 	}
@@ -191,15 +199,15 @@ func fillBlockContents(blobsManager *BlobSidecarCacheManager, castedBlock interf
 }
 
 func retrieveBlobsFromDataColumns(blobsManager *BlobSidecarCacheManager, block interfaces.ReadOnlySignedBeaconBlock, blockHash string) (kzgProofs, blobs [][]byte, err error) {
-	kgzCommitements, err := block.Block().Body().BlobKzgCommitments()
+	kgzCommitments, err := block.Block().Body().BlobKzgCommitments()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get KZG commitments from block body: %v", err)
 	}
 
-	expectedBlobs := len(kgzCommitements)
+	expectedBlobs := len(kgzCommitments)
 
-	kzgProofs = make([][]byte, 0, len(kgzCommitements))
-	blobs = make([][]byte, 0, len(kgzCommitements))
+	kzgProofs = make([][]byte, 0, len(kgzCommitments))
+	blobs = make([][]byte, 0, len(kgzCommitments))
 	var receivedBlobSidecarAmount int
 
 	log.Tracef("waiting for %d blob sidecars for block hash %s", expectedBlobs, blockHash)
@@ -242,8 +250,8 @@ func retrieveBlobsFromDataColumns(blobsManager *BlobSidecarCacheManager, block i
 		return nil, nil, fmt.Errorf("failed to create ROBlock from block: %v", err)
 	}
 
-	indexes := make([]int, 0, len(kgzCommitements))
-	for i := range kgzCommitements {
+	indexes := make([]int, 0, len(kgzCommitments))
+	for i := range kgzCommitments {
 		indexes = append(indexes, i)
 	}
 

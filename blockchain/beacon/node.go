@@ -391,12 +391,7 @@ func (n *Node) Start() error {
 	go n.sendStatusRequests()
 	go n.bxStatusHandler()
 
-	currentForkDigest, err := currentForkDigest(n.genesisState)
-	if err != nil {
-		return fmt.Errorf("could not get current fork digest: %v", err)
-	}
-
-	return n.subscribeAll(currentForkDigest)
+	return n.subscribeAll(currentForkDigest(n.genesisState))
 }
 
 func (n *Node) sendStatusRequests() {
@@ -467,17 +462,14 @@ func (n *Node) BroadcastBlock(block interfaces.ReadOnlySignedBeaconBlock) error 
 		return err
 	}
 
-	if err := n.chain.AddBlock(block); err != nil {
+	if err = n.chain.AddBlock(block); err != nil {
 		return fmt.Errorf("could not update status: %v", err)
 	}
 
-	digest, err := currentForkDigest(n.genesisState)
-	if err != nil {
-		return fmt.Errorf("could not get current fork digest: %v", err)
-	}
+	digest := currentForkDigest(n.genesisState)
 
 	topic := fmt.Sprintf(p2p.BlockSubnetTopicFormat, digest)
-	if err := n.broadcast(topic, msg); err != nil {
+	if err = n.broadcast(topic, msg); err != nil {
 		return fmt.Errorf("could not broadcast block for topic %v: %v", topic, err)
 	}
 
@@ -557,16 +549,12 @@ func dataColumnSubnetToTopic(subnet uint64, forkDigest [4]byte) string {
 
 // BroadcastDataColumn broadcasts data column sidecar to peers
 func (n *Node) BroadcastDataColumn(dataColumnSidecar *ethpb.DataColumnSidecar) error {
-	digest, err := currentForkDigest(n.genesisState)
-	if err != nil {
-		return fmt.Errorf("could not get current fork digest: %v", err)
-	}
-
+	digest := currentForkDigest(n.genesisState)
 	subnet := peerdas.ComputeSubnetForDataColumnSidecar(dataColumnSidecar.Index)
 
 	topic := dataColumnSubnetToTopic(subnet, digest)
-	err = n.broadcast(topic, dataColumnSidecar)
-	if err == errNoPeersFoundToBroadcast {
+	err := n.broadcast(topic, dataColumnSidecar)
+	if errors.Is(err, errNoPeersFoundToBroadcast) {
 		n.log.Tracef("no peers found to broadcast data column sidecar for topic %v", topic)
 		return errNoPeersFoundToBroadcast
 	}
@@ -602,7 +590,7 @@ func (n *Node) dataColumnSubscriber(msg *pubsub.Message) {
 		return
 	}
 
-	if err := n.bridge.SendBeaconMessageToBDN(bxSidecar, *endpoint); err != nil {
+	if err = n.bridge.SendBeaconMessageToBDN(bxSidecar, *endpoint); err != nil {
 		n.log.Errorf("could not send beacon message to BDN: %v", err)
 		return
 	}
@@ -618,12 +606,9 @@ func (n *Node) dataColumnSubscriber(msg *pubsub.Message) {
 
 // BroadcastBlob broadcasts blob to peers
 func (n *Node) BroadcastBlob(blobSidecar *ethpb.BlobSidecar) error {
-	digest, err := currentForkDigest(n.genesisState)
-	if err != nil {
-		return fmt.Errorf("could not get current fork digest: %v", err)
-	}
+	digest := currentForkDigest(n.genesisState)
 
-	err = n.broadcast(blobSubnetToTopic(blobSidecar.Index, digest), blobSidecar)
+	err := n.broadcast(blobSubnetToTopic(blobSidecar.Index, digest), blobSidecar)
 	if err != nil {
 		return fmt.Errorf("failed to broadcast blob: %v", err)
 	}
@@ -812,7 +797,7 @@ func (n *Node) blockSubscriber(msg *pubsub.Message) {
 		return
 	}
 
-	if err := n.encoding.DecodeGossip(msg.Data, blk); err != nil {
+	if err = n.encoding.DecodeGossip(msg.Data, blk); err != nil {
 		logCtx.Errorf("could not decode block: %v", err)
 		return
 	}
