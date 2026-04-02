@@ -568,14 +568,14 @@ func TestHandler_HandleGetBlockHeaders(t *testing.T) {
 	block1 := bxmock.NewEthBlock(1, common.Hash{})
 
 	block2 := bxmock.NewEthBlock(2, block1.Hash())
-	bi := core.NewBlockInfo(block2, big.NewInt(1))
+	bi := bxcommoneth.NewBlockInfo(block2, big.NewInt(1))
 	_ = testHandler.chain.SetTotalDifficulty(bi)
-	testHandler.chain.AddBlock(bi, core.BSBlockchain)
+	testHandler.chain.AddBlock(bi, core.BSBlockchain, true)
 
 	block3 := bxmock.NewEthBlock(3, block2.Hash())
-	bi = core.NewBlockInfo(block3, big.NewInt(1))
+	bi = bxcommoneth.NewBlockInfo(block3, big.NewInt(1))
 	_ = testHandler.chain.SetTotalDifficulty(bi)
-	testHandler.chain.AddBlock(bi, core.BSBlockchain)
+	testHandler.chain.AddBlock(bi, core.BSBlockchain, true)
 
 	rw.QueueIncomingMessage(uint64(eth.GetBlockHeadersMsg), eth.GetBlockHeadersPacket{
 		RequestId: 1,
@@ -689,7 +689,7 @@ func TestHandler_HandleNewBlockHashes66(t *testing.T) {
 	err = eth2.ReadAndHandle(testHandler, peer)
 	assert.NoError(t, err)
 
-	expectedBlock, _ := bridge.BlockBlockchainToBDN(core.NewBlockInfo(block, nil))
+	expectedBlock, _ := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(block, nil))
 	newBlock := assertBlockSentToBDN(t, bridge, block.Hash())
 	assert.True(t, expectedBlock.Equals(newBlock.Block))
 
@@ -710,7 +710,7 @@ func TestHandler_processBDNBlock(t *testing.T) {
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
 	blockHash := ethBlock.Hash()
 	td := big.NewInt(10000)
-	bxBlock, _ := bridge.BlockBlockchainToBDN(core.NewBlockInfo(ethBlock, td))
+	bxBlock, _ := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(ethBlock, td))
 
 	// indicate previous head from the status message
 	peer.ConfirmedHead.Store(core.BlockRef{Hash: ethBlock.ParentHash()})
@@ -762,7 +762,7 @@ func TestHandler_processBDNBlock_MultiNode(t *testing.T) {
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
 	blockHash := ethBlock.Hash()
 	td := big.NewInt(10000)
-	bxBlock, _ := bridge.BlockBlockchainToBDN(core.NewBlockInfo(ethBlock, td))
+	bxBlock, _ := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(ethBlock, td))
 
 	// indicate previous head from the status message
 	peer.ConfirmedHead.Store(core.BlockRef{Hash: ethBlock.ParentHash()})
@@ -822,7 +822,7 @@ func TestHandler_processBDNBlockResolveDifficulty(t *testing.T) {
 	// generate bx block for processing
 	ethBlock := bxmock.NewEthBlock(10, parentHash)
 	blockHash := ethBlock.Hash()
-	bxBlock, _ := bridge.BlockBlockchainToBDN(core.NewBlockInfo(ethBlock, nil))
+	bxBlock, _ := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(ethBlock, nil))
 
 	(*handler)(testHandler).processBDNBlock(bxBlock)
 
@@ -842,7 +842,7 @@ func TestHandler_processBDNBlockUnresolvableDifficulty(t *testing.T) {
 	height := uint64(10)
 	ethBlock := bxmock.NewEthBlock(height, common.Hash{})
 	blockHash := ethBlock.Hash()
-	bxBlock, _ := bridge.BlockBlockchainToBDN(core.NewBlockInfo(ethBlock, nil))
+	bxBlock, _ := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(ethBlock, nil))
 
 	(*handler)(testHandler).processBDNBlock(bxBlock)
 
@@ -872,7 +872,7 @@ func createBxBlockFromEthHeader(header *ethtypes.Header, chain *core.Chain, brid
 		ethBlock = ethBlock.WithSidecars(sidecars)
 	}
 
-	bi := core.BlockInfo{Block: ethBlock, TD: header.Difficulty}
+	bi := bxcommoneth.BlockInfo{Block: ethBlock, TD: header.Difficulty}
 	bxBlock, err := bridge.BlockBlockchainToBDN(&bi)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert block %v to BDN format: %v", header.Hash().String(), err)
@@ -936,12 +936,12 @@ func TestHandler_blockForks(t *testing.T) {
 	newBlock4b := eth2.NewBlockPacket{Block: &block4b.Block, TD: big.NewInt(402)}
 
 	// sequence of blocks received from BDN
-	bxBlock1, _ := bridge.BlockBlockchainToBDN(core.NewBlockInfo(block1, big.NewInt(100)))
-	bxBlock2a, _ := bridge.BlockBlockchainToBDN(core.NewBlockInfo(block2a, big.NewInt(201)))
-	bxBlock2b, _ := bridge.BlockBlockchainToBDN(core.NewBlockInfo(block2b, big.NewInt(202)))
-	bxBlock3a, _ := bridge.BlockBlockchainToBDN(core.NewBlockInfo(block3a, big.NewInt(301)))
-	bxBlock3b, _ := bridge.BlockBlockchainToBDN(core.NewBlockInfo(block3b, big.NewInt(302)))
-	bxBlock4b, _ := bridge.BlockBlockchainToBDN(core.NewBlockInfo(block4b, big.NewInt(402)))
+	bxBlock1, _ := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(block1, big.NewInt(100)))
+	bxBlock2a, _ := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(block2a, big.NewInt(201)))
+	bxBlock2b, _ := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(block2b, big.NewInt(202)))
+	bxBlock3a, _ := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(block3a, big.NewInt(301)))
+	bxBlock3b, _ := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(block3b, big.NewInt(302)))
+	bxBlock4b, _ := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(block4b, big.NewInt(402)))
 
 	/*
 		sending sequences:
@@ -1049,7 +1049,7 @@ func TestHandler_ConfirmBlockFromWS(t *testing.T) {
 	peer3.ConfirmedHead.Store(core.BlockRef{Hash: ethBlockA.ParentHash()})
 
 	td := big.NewInt(10000)
-	blockA, err := bridge.BlockBlockchainToBDN(core.NewBlockInfo(ethBlockA, td))
+	blockA, err := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(ethBlockA, td))
 	require.NoError(t, err)
 	(*handler)(testHandler).processBDNBlock(blockA)
 
@@ -1080,7 +1080,7 @@ func TestHandler_ConfirmBlockFromWS(t *testing.T) {
 	assertConfirmationBlockSentToGateway(t, bridge, blockA)
 
 	ethBlockB := bxmock.NewEthBlock(height.Uint64(), common.Hash{})
-	blockB, _ := bridge.BlockBlockchainToBDN(core.NewBlockInfo(ethBlockB, td))
+	blockB, _ := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(ethBlockB, td))
 	(*handler)(testHandler).processBDNBlock(blockB)
 	(*handler)(testHandler).confirmBlockFromWS(ethBlockB.Hash(), height, peer2)
 	time.Sleep(time.Millisecond)
@@ -1092,7 +1092,7 @@ func TestHandler_ConfirmBlockFromWS(t *testing.T) {
 
 	height = big.NewInt(2)
 	ethBlockB2 := bxmock.NewEthBlock(height.Uint64(), ethBlockB.Hash())
-	blockB2, _ := bridge.BlockBlockchainToBDN(core.NewBlockInfo(ethBlockB2, td))
+	blockB2, _ := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(ethBlockB2, td))
 	(*handler)(testHandler).processBDNBlock(blockB2)
 	(*handler)(testHandler).confirmBlockFromWS(ethBlockB2.Hash(), height, peer2)
 	time.Sleep(time.Millisecond)
@@ -1267,7 +1267,7 @@ func addBlock(c *core.Chain, block *bxcommoneth.Block) int {
 }
 
 func addBlockWithTD(c *core.Chain, block *bxcommoneth.Block, td *big.Int) int {
-	bi := core.NewBlockInfo(block, td)
+	bi := bxcommoneth.NewBlockInfo(block, td)
 	_ = c.SetTotalDifficulty(bi)
-	return c.AddBlock(bi, core.BSBlockchain)
+	return c.AddBlock(bi, core.BSBlockchain, true)
 }

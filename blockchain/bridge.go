@@ -49,6 +49,7 @@ type Transactions struct {
 type BlockFromNode struct {
 	Block        *types.BxBlock
 	PeerEndpoint types.NodeEndpoint
+	StartTime    time.Time
 }
 
 // BlockAnnouncement represents an available block from a given peer that can be requested
@@ -336,7 +337,7 @@ func (b *BxBridge) ReceiveTransactionHashesRequest() <-chan TransactionAnnouncem
 // SendBlockToBDN sends a block from a node to the BDN
 func (b *BxBridge) SendBlockToBDN(block *types.BxBlock, peerEndpoint types.NodeEndpoint) error {
 	select {
-	case b.blocksFromNode <- BlockFromNode{Block: block, PeerEndpoint: peerEndpoint}:
+	case b.blocksFromNode <- BlockFromNode{Block: block, PeerEndpoint: peerEndpoint, StartTime: time.Now()}:
 		return nil
 	default:
 		return ErrChannelFull

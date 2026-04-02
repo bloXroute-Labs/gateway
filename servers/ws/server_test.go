@@ -10,7 +10,7 @@ import (
 
 	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
-	"github.com/bloXroute-Labs/gateway/v2/metrics"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,6 +21,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
 	"github.com/bloXroute-Labs/gateway/v2/config"
+	"github.com/bloXroute-Labs/gateway/v2/metrics"
 	"github.com/bloXroute-Labs/gateway/v2/services"
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
@@ -82,6 +83,8 @@ func TestAuthorization(t *testing.T) {
 
 	dialer := websocket.DefaultDialer
 	headers := make(http.Header)
+
+	pingWSServer(t, wsURL)
 
 	tests := []struct {
 		name            string
@@ -163,10 +166,46 @@ func TestAuthorization(t *testing.T) {
 			err = json.Unmarshal(b, &res)
 			require.NoError(t, err)
 			assert.NotEmpty(t, res.Pong)
+			err = ws.Close()
+			require.NoError(t, err)
 		})
 	}
 
 	cancel()
 	server.Shutdown()
 	require.NoError(t, eg.Wait())
+}
+
+func pingWSServer(t *testing.T, wsURL string) {
+	headers := make(http.Header)
+	headers.Set("Authorization", "YToxMjM0NTY=")
+
+	retry := backoff.NewExponentialBackOff()
+	retry.MaxInterval = 50 * time.Millisecond
+
+	_, err := backoff.Retry(context.TODO(), func() (struct{}, error) {
+		wsConn, _, err := websocket.DefaultDialer.Dial(wsURL, headers)
+		if err != nil {
+			return struct{}{}, fmt.Errorf("dial error: %w", err)
+		}
+		defer func() {
+			err = wsConn.Close()
+			if err != nil {
+				t.Logf("error closing ws connection: %v", err)
+			}
+		}()
+
+		if err = wsConn.WriteMessage(websocket.TextMessage, []byte(`{"id":"1","method":"ping"}`)); err != nil {
+			return struct{}{}, fmt.Errorf("write message error: %w", err)
+		}
+
+		_, _, err = wsConn.ReadMessage()
+		if err != nil {
+			return struct{}{}, fmt.Errorf("read message error: %w", err)
+		}
+
+		return struct{}{}, nil
+	}, backoff.WithMaxTries(5), backoff.WithBackOff(retry))
+
+	require.NoError(t, err, "websocket server is not responding to ping")
 }

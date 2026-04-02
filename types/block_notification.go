@@ -70,7 +70,7 @@ func NewBeaconBlockNotification(block interfaces.ReadOnlySignedBeaconBlock) (Blo
 	}
 }
 
-// ElectraBlockNotification represents electra beacon block notification
+// ElectraBlockNotification represents Electra beacon block notification
 type ElectraBlockNotification struct {
 	*ethpb.SignedBeaconBlockElectra
 
@@ -167,7 +167,7 @@ func (e *ElectraBlockNotification) Clone() BlockNotification {
 	return &n
 }
 
-// DenebBlockNotification represents deneb beacon block notification
+// DenebBlockNotification represents Deneb beacon block notification
 type DenebBlockNotification struct {
 	*ethpb.SignedBeaconBlockDeneb
 
@@ -178,12 +178,12 @@ type DenebBlockNotification struct {
 }
 
 // WithFields returns notification with specified fields
-func (beaconBlockNotification *DenebBlockNotification) WithFields(fields []string) Notification {
+func (e *DenebBlockNotification) WithFields(fields []string) Notification {
 	block := DenebBlockNotification{}
 	for _, param := range fields {
 		switch param {
 		case "hash":
-			block.Hash = beaconBlockNotification.Hash
+			block.Hash = e.Hash
 		case "header":
 			if block.SignedBeaconBlockDeneb == nil {
 				block.SignedBeaconBlockDeneb = &ethpb.SignedBeaconBlockDeneb{}
@@ -193,10 +193,10 @@ func (beaconBlockNotification *DenebBlockNotification) WithFields(fields []strin
 				block.Block = &ethpb.BeaconBlockDeneb{}
 			}
 
-			block.Block.Slot = beaconBlockNotification.GetBlock().GetSlot()
-			block.Block.ProposerIndex = beaconBlockNotification.GetBlock().GetProposerIndex()
-			block.Block.ParentRoot = beaconBlockNotification.GetBlock().GetParentRoot()
-			block.Block.StateRoot = beaconBlockNotification.GetBlock().GetStateRoot()
+			block.Block.Slot = e.GetBlock().GetSlot()
+			block.Block.ProposerIndex = e.GetBlock().GetProposerIndex()
+			block.Block.ParentRoot = e.GetBlock().GetParentRoot()
+			block.Block.StateRoot = e.GetBlock().GetStateRoot()
 		case "slot":
 			if block.SignedBeaconBlockDeneb == nil {
 				block.SignedBeaconBlockDeneb = &ethpb.SignedBeaconBlockDeneb{}
@@ -206,7 +206,7 @@ func (beaconBlockNotification *DenebBlockNotification) WithFields(fields []strin
 				block.Block = &ethpb.BeaconBlockDeneb{}
 			}
 
-			block.Block.Slot = beaconBlockNotification.GetBlock().GetSlot()
+			block.Block.Slot = e.GetBlock().GetSlot()
 		case "body":
 			if block.SignedBeaconBlockDeneb == nil {
 				block.SignedBeaconBlockDeneb = &ethpb.SignedBeaconBlockDeneb{}
@@ -216,7 +216,7 @@ func (beaconBlockNotification *DenebBlockNotification) WithFields(fields []strin
 				block.Block = &ethpb.BeaconBlockDeneb{}
 			}
 
-			block.Block.Body = beaconBlockNotification.GetBlock().GetBody()
+			block.Block.Body = e.GetBlock().GetBody()
 		}
 	}
 
@@ -224,48 +224,145 @@ func (beaconBlockNotification *DenebBlockNotification) WithFields(fields []strin
 }
 
 // Filters converts filters as field value map
-func (beaconBlockNotification *DenebBlockNotification) Filters() map[string]interface{} {
+func (e *DenebBlockNotification) Filters() map[string]interface{} {
 	return nil
 }
 
 // LocalRegion -
-func (beaconBlockNotification *DenebBlockNotification) LocalRegion() bool {
+func (e *DenebBlockNotification) LocalRegion() bool {
 	return false
 }
 
 // GetHash returns block hash
-func (beaconBlockNotification *DenebBlockNotification) GetHash() string {
-	return beaconBlockNotification.Hash
+func (e *DenebBlockNotification) GetHash() string {
+	return e.Hash
 }
 
 // SetNotificationType - set feed name
-func (beaconBlockNotification *DenebBlockNotification) SetNotificationType(feedName FeedType) {
-	beaconBlockNotification.notificationType = feedName
+func (e *DenebBlockNotification) SetNotificationType(feedName FeedType) {
+	e.notificationType = feedName
 }
 
 // NotificationType - feed name
-func (beaconBlockNotification *DenebBlockNotification) NotificationType() FeedType {
-	return beaconBlockNotification.notificationType
+func (e *DenebBlockNotification) NotificationType() FeedType {
+	return e.notificationType
 }
 
 // SetSource - source blockchain node endpoint
-func (beaconBlockNotification *DenebBlockNotification) SetSource(source *NodeEndpoint) {
-	beaconBlockNotification.source = source
+func (e *DenebBlockNotification) SetSource(source *NodeEndpoint) {
+	e.source = source
 }
 
 // Source - source blockchain node endpoint
-func (beaconBlockNotification *DenebBlockNotification) Source() *NodeEndpoint {
-	return beaconBlockNotification.source
+func (e *DenebBlockNotification) Source() *NodeEndpoint {
+	return e.source
 }
 
 // IsNil returns true if nil
-func (beaconBlockNotification *DenebBlockNotification) IsNil() bool {
-	return beaconBlockNotification == nil
+func (e *DenebBlockNotification) IsNil() bool {
+	return e == nil
 }
 
 // Clone clones notification
-func (beaconBlockNotification *DenebBlockNotification) Clone() BlockNotification {
-	n := *beaconBlockNotification
+func (e *DenebBlockNotification) Clone() BlockNotification {
+	n := *e
+	return &n
+}
+
+// FuluBlockNotification represents Fulu beacon block notification
+type FuluBlockNotification struct {
+	*ethpb.SignedBeaconBlockFulu
+
+	Hash string `json:"hash"`
+
+	notificationType FeedType
+	source           *NodeEndpoint
+}
+
+// WithFields returns notification with specified fields
+func (e *FuluBlockNotification) WithFields(fields []string) Notification {
+	block := FuluBlockNotification{}
+	for _, param := range fields {
+		switch param {
+		case "hash":
+			block.Hash = e.Hash
+		case "header":
+			if block.SignedBeaconBlockFulu == nil {
+				block.SignedBeaconBlockFulu = &ethpb.SignedBeaconBlockFulu{}
+			}
+
+			if block.Block == nil {
+				block.Block = &ethpb.BeaconBlockElectra{}
+			}
+
+			block.Block.Slot = e.GetBlock().GetSlot()
+			block.Block.ProposerIndex = e.GetBlock().GetProposerIndex()
+			block.Block.ParentRoot = e.GetBlock().GetParentRoot()
+			block.Block.StateRoot = e.GetBlock().GetStateRoot()
+		case "slot":
+			if block.SignedBeaconBlockFulu == nil {
+				block.SignedBeaconBlockFulu = &ethpb.SignedBeaconBlockFulu{}
+			}
+
+			if block.SignedBeaconBlockFulu.Block == nil {
+				block.Block = &ethpb.BeaconBlockElectra{}
+			}
+
+			block.Block.Slot = e.GetBlock().GetSlot()
+		case "body":
+			if block.SignedBeaconBlockFulu == nil {
+				block.SignedBeaconBlockFulu = &ethpb.SignedBeaconBlockFulu{}
+			}
+
+			if block.SignedBeaconBlockFulu.Block == nil {
+				block.Block = &ethpb.BeaconBlockElectra{}
+			}
+
+			block.Block.Body = e.GetBlock().GetBody()
+		}
+	}
+
+	return &block
+}
+
+// Filters -
+func (e *FuluBlockNotification) Filters() map[string]interface{} {
+	return nil
+}
+
+// LocalRegion -
+func (e *FuluBlockNotification) LocalRegion() bool {
+	return false
+}
+
+// GetHash returns block hash
+func (e *FuluBlockNotification) GetHash() string {
+	return e.Hash
+}
+
+// NotificationType returns feed name
+func (e *FuluBlockNotification) NotificationType() FeedType {
+	return e.notificationType
+}
+
+// SetNotificationType sets feed name
+func (e *FuluBlockNotification) SetNotificationType(feedType FeedType) {
+	e.notificationType = feedType
+}
+
+// SetSource sets source endpoint
+func (e *FuluBlockNotification) SetSource(endpoint *NodeEndpoint) {
+	e.source = endpoint
+}
+
+// IsNil returns true if nil
+func (e *FuluBlockNotification) IsNil() bool {
+	return e == nil
+}
+
+// Clone clones notification
+func (e *FuluBlockNotification) Clone() BlockNotification {
+	n := *e
 	return &n
 }
 
@@ -352,7 +449,7 @@ func (ethBlockNotification *EthBlockNotification) GetParsedTransactions() []map[
 	return ethBlockNotification.Transactions
 }
 
-func (ethBlockNotification *EthBlockNotification) parseTansactionsWithSenders(senders map[string]Sender) []map[string]interface{} {
+func (ethBlockNotification *EthBlockNotification) parseTransactionsWithSenders(senders map[string]Sender) []map[string]interface{} {
 	ethBlockNotification.txsMu.Lock()
 	defer ethBlockNotification.txsMu.Unlock()
 	if ethBlockNotification.Block != nil {
@@ -579,7 +676,7 @@ func (ethBlockNotification *EthBlockNotification) WithFields(fields []string) No
 
 // GetTxs returns transactions with senders
 func (ethBlockNotification *EthBlockNotification) GetTxs(senders map[string]Sender) []map[string]interface{} {
-	return ethBlockNotification.parseTansactionsWithSenders(senders)
+	return ethBlockNotification.parseTransactionsWithSenders(senders)
 }
 
 // Filters converts filters as field value map
@@ -642,101 +739,4 @@ func (ethBlockNotification *EthBlockNotification) GetRawTxByIndex(index int) []b
 func (ethBlockNotification *EthBlockNotification) SetLocks() {
 	ethBlockNotification.rawTxsMu = &sync.RWMutex{}
 	ethBlockNotification.txsMu = &sync.RWMutex{}
-}
-
-// FuluBlockNotification represents electra beacon block notification
-type FuluBlockNotification struct {
-	*ethpb.SignedBeaconBlockFulu
-
-	Hash string `json:"hash"`
-
-	notificationType FeedType
-	source           *NodeEndpoint
-}
-
-// WithFields returns notification with specified fields
-func (e *FuluBlockNotification) WithFields(fields []string) Notification {
-	block := FuluBlockNotification{}
-	for _, param := range fields {
-		switch param {
-		case "hash":
-			block.Hash = e.Hash
-		case "header":
-			if block.SignedBeaconBlockFulu == nil {
-				block.SignedBeaconBlockFulu = &ethpb.SignedBeaconBlockFulu{}
-			}
-
-			if block.Block == nil {
-				block.Block = &ethpb.BeaconBlockElectra{}
-			}
-
-			block.Block.Slot = e.GetBlock().GetSlot()
-			block.Block.ProposerIndex = e.GetBlock().GetProposerIndex()
-			block.Block.ParentRoot = e.GetBlock().GetParentRoot()
-			block.Block.StateRoot = e.GetBlock().GetStateRoot()
-		case "slot":
-			if block.SignedBeaconBlockFulu == nil {
-				block.SignedBeaconBlockFulu = &ethpb.SignedBeaconBlockFulu{}
-			}
-
-			if block.SignedBeaconBlockFulu.Block == nil {
-				block.Block = &ethpb.BeaconBlockElectra{}
-			}
-
-			block.Block.Slot = e.GetBlock().GetSlot()
-		case "body":
-			if block.SignedBeaconBlockFulu == nil {
-				block.SignedBeaconBlockFulu = &ethpb.SignedBeaconBlockFulu{}
-			}
-
-			if block.SignedBeaconBlockFulu.Block == nil {
-				block.Block = &ethpb.BeaconBlockElectra{}
-			}
-
-			block.Block.Body = e.GetBlock().GetBody()
-		}
-	}
-
-	return &block
-}
-
-// Filters -
-func (e *FuluBlockNotification) Filters() map[string]interface{} {
-	return nil
-}
-
-// LocalRegion -
-func (e *FuluBlockNotification) LocalRegion() bool {
-	return false
-}
-
-// GetHash returns block hash
-func (e *FuluBlockNotification) GetHash() string {
-	return e.Hash
-}
-
-// NotificationType returns feed name
-func (e *FuluBlockNotification) NotificationType() FeedType {
-	return e.notificationType
-}
-
-// SetNotificationType sets feed name
-func (e *FuluBlockNotification) SetNotificationType(feedType FeedType) {
-	e.notificationType = feedType
-}
-
-// SetSource sets source endpoint
-func (e *FuluBlockNotification) SetSource(endpoint *NodeEndpoint) {
-	e.source = endpoint
-}
-
-// IsNil returns true if nil
-func (e *FuluBlockNotification) IsNil() bool {
-	return e == nil
-}
-
-// Clone clones notification
-func (e *FuluBlockNotification) Clone() BlockNotification {
-	n := *e
-	return &n
 }

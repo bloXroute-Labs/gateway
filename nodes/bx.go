@@ -196,7 +196,7 @@ func (bn *Bx) HandleMsg(msg bxmessage.Message, source connections.Conn) error {
 		errorNotification := msg.(*bxmessage.ErrorNotification)
 		source.Log().Warnf("received unexpected error notification: code %v, reason %v", errorNotification.Code, errorNotification.Reason)
 	default:
-		source.Log().Errorf("unknown message type %v received: ", reflect.TypeOf(msg))
+		source.Log().Errorf("unknown message type %v received: %+v", reflect.TypeOf(msg), msg)
 	}
 	return nil
 }

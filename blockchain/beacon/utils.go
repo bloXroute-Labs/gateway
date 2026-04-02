@@ -50,6 +50,7 @@ func (b *WrappedReadOnlySignedBeaconBlock) HashTreeRoot() (common.Hash, error) {
 		blockHash := common.Hash(rawHash)
 		b.hash = &blockHash
 	}
+
 	return *b.hash, nil
 }
 
@@ -123,8 +124,8 @@ func extractDataTypeFromTypeMap[T any](typeMap map[[4]byte]func() (T, error), di
 	return zero, fmt.Errorf("could not extract %T data type, saw digest=%#x", zero, digest)
 }
 
-func currentForkDigest(genesisState state.BeaconState) ([4]byte, error) {
+func currentForkDigest(genesisState state.BeaconState) [4]byte {
 	currentSlot := slots.CurrentSlot(genesisState.GenesisTime())
 	currentEpoch := slots.ToEpoch(currentSlot)
-	return params.ForkDigest(currentEpoch), nil
+	return params.ForkDigest(currentEpoch)
 }

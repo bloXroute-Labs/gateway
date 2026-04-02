@@ -130,6 +130,18 @@ func (c *APIClient) requestBlock(hash string) (interfaces.ReadOnlySignedBeaconBl
 	}
 
 	version := resp.Header.Get("Eth-Consensus-Version")
+	if version == "" {
+		var headers []string
+		for key, values := range resp.Header {
+			for _, value := range values {
+				headers = append(headers, fmt.Sprintf("%s: %s", key, value))
+			}
+		}
+
+		log.Warnf("Eth-Consensus-Version header is missing in response. Response headers: %s", strings.Join(headers, ", "))
+
+		return nil, fmt.Errorf("missing Eth-Consensus-Version header in response")
+	}
 
 	block, err := c.processResponse(respBodyRaw, version, hash)
 	if err != nil {
@@ -311,7 +323,7 @@ func (c *APIClient) blockHeadEventHandler() func(msg *sse.Event) {
 		}
 
 		if err := SendBlockToBDN(c.clock, c.log, wrappedBlock, c.bridge, c.nodeEndpoint); err != nil {
-			c.log.Errorf("could not proccess beacon block[slot=%d,hash=%s] to eth: %v", block.Block().Slot(), blockHash, err)
+			c.log.Errorf("could not process beacon block[slot=%d,hash=%s] to eth: %v", block.Block().Slot(), blockHash, err)
 			return
 		}
 
@@ -380,8 +392,8 @@ func (c *APIClient) BroadcastBlock(block ssz.Marshaler, ethConsensusVersion stri
 	// http.StatusAccepted == 202
 	// {"code":202,"message":"The block failed validation, but was successfully broadcast anyway. It was not integrated into the beacon node's database."}"
 	//
-	// This message on the node side means "Ignoring already known beacon payload"
-	// So it's don't need to drop any error in this case
+	// This message on the node side means "Ignoring already known beacon payload",
+	// so there's no need to drop any error in this case
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 		respBody, err := io.ReadAll(resp.Body)

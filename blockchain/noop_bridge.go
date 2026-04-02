@@ -90,7 +90,7 @@ func (n NoOpBxBridge) ReceiveTransactionHashesRequest() <-chan TransactionAnnoun
 }
 
 // SendBlockToBDN is a no-op
-func (n NoOpBxBridge) SendBlockToBDN(block *types.BxBlock, endpoint types.NodeEndpoint) error {
+func (n NoOpBxBridge) SendBlockToBDN(_ *types.BxBlock, _ types.NodeEndpoint) error {
 	return nil
 }
 

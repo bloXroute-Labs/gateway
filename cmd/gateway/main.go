@@ -229,7 +229,7 @@ func runGateway(c *cli.Context) error {
 	if startupBeaconNode || startupBeaconAPIClients {
 		blobsManager = beacon.NewBlobSidecarCacheManager(ethConfig.GenesisTime)
 		group.Go(func() error {
-			beacon.HandleBDNBeaconMessages(gCtx, bridge, beaconNode, blobsManager)
+			beacon.HandleBDNBeaconMessages(gCtx, bridge, beaconNode)
 			return nil
 		})
 		group.Go(func() error {
