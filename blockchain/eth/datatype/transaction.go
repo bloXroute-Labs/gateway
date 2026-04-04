@@ -1,6 +1,8 @@
 package datatype
 
 import (
+	"sync"
+
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 )
@@ -9,6 +11,8 @@ import (
 type ProcessingETHTransaction struct {
 	txs                 ethtypes.Transactions
 	isAllowedForInbound []bool
+	filteredInbound     ethtypes.Transactions
+	filteredOnce        sync.Once
 }
 
 // NewProcessingETHTransaction return new list with given size
@@ -28,13 +32,15 @@ func (p *ProcessingETHTransaction) Add(tx *ethtypes.Transaction, isAllowedForInb
 // Transactions return list of transactions based on input parameters
 func (p *ProcessingETHTransaction) Transactions(connectionType bxtypes.NodeType, inbound bool) ethtypes.Transactions {
 	if connectionType == bxtypes.Blockchain && inbound {
-		var result ethtypes.Transactions
-		for i, tx := range p.txs {
-			if p.isAllowedForInbound[i] {
-				result = append(result, tx)
+		p.filteredOnce.Do(func() {
+			p.filteredInbound = make(ethtypes.Transactions, 0, len(p.txs))
+			for i, tx := range p.txs {
+				if p.isAllowedForInbound[i] {
+					p.filteredInbound = append(p.filteredInbound, tx)
+				}
 			}
-		}
-		return result
+		})
+		return p.filteredInbound
 	}
 	return p.txs
 }

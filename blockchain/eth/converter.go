@@ -25,12 +25,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
-type bxBlockRLP struct {
-	Header  rlp.RawValue
-	Txs     []rlp.RawValue
-	Trailer rlp.RawValue
-}
-
 // Converter is an Ethereum-BDN converter struct
 type Converter struct{}
 
@@ -269,31 +263,36 @@ func (c Converter) bscSidecarsBDNtoBlockchain(block *types.BxBlock) []*bxcommone
 }
 
 func (c Converter) ethBlockBDNtoBlockchain(block *types.BxBlock) (*core.BlockInfo, error) {
-	txs := make([]rlp.RawValue, 0, len(block.Txs))
+	var header ethtypes.Header
+	if err := rlp.DecodeBytes(block.Header, &header); err != nil {
+		return nil, fmt.Errorf("could not decode block %v header: %v", block.Hash(), err)
+	}
+
+	ethTxs := make([]*ethtypes.Transaction, 0, len(block.Txs))
 	for _, tx := range block.Txs {
-		txs = append(txs, tx.Content())
+		var ethTx ethtypes.Transaction
+		if err := rlp.DecodeBytes(tx.Content(), &ethTx); err != nil {
+			return nil, fmt.Errorf("could not decode transaction in block %v: %v", block.Hash(), err)
+		}
+		ethTxs = append(ethTxs, &ethTx)
 	}
 
-	b, err := rlp.EncodeToBytes(bxBlockRLP{
-		Header:  block.Header,
-		Txs:     txs,
-		Trailer: block.Trailer,
+	var uncles []*ethtypes.Header
+	if err := rlp.DecodeBytes(block.Trailer, &uncles); err != nil {
+		return nil, fmt.Errorf("could not decode block %v uncles: %v", block.Hash(), err)
+	}
+
+	commonBlock := bxcommoneth.NewBlockWithHeader(&header).WithBody(ethtypes.Body{
+		Transactions: ethTxs,
+		Uncles:       uncles,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("could not encode block %v data bxBlockRLP format: %v", block.Hash(), err)
-	}
-
-	var commonBlock bxcommoneth.Block
-	if err = rlp.DecodeBytes(b, &commonBlock); err != nil {
-		return nil, fmt.Errorf("could not convert block %v to blockchain format: %v", block.Hash(), err)
-	}
 
 	if len(block.BlobSidecars) > 0 {
 		sidecars := c.bscSidecarsBDNtoBlockchain(block)
 		commonBlock.SetBlobSidecars(sidecars)
 	}
 
-	return core.NewBlockInfo(&commonBlock, block.TotalDifficulty), nil
+	return core.NewBlockInfo(commonBlock, block.TotalDifficulty), nil
 }
 
 func (c Converter) beaconBlockBDNtoBlockchain(block *types.BxBlock) (interfaces.ReadOnlySignedBeaconBlock, error) {
