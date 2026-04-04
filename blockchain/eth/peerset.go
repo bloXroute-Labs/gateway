@@ -194,3 +194,18 @@ func (ps *peerSet) getAll() []ethPeer {
 	}
 	return peers
 }
+
+func (ps *peerSet) forEach(fn func(ethPeer)) {
+	ps.lock.RLock()
+	defer ps.lock.RUnlock()
+
+	for _, peer := range ps.peers {
+		fn(peer)
+	}
+}
+
+func (ps *peerSet) count() int {
+	ps.lock.RLock()
+	defer ps.lock.RUnlock()
+	return len(ps.peers)
+}

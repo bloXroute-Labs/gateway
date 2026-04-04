@@ -126,12 +126,13 @@ func (m *WSManager) syncedPreferredProvider(preferredEndpoint *types.NodeEndpoin
 }
 
 func (m *WSManager) waitProviderBlock(ctx context.Context, provider blockchain.WSProvider, blockNumber uint64) error {
+	blockNumberHex := fmt.Sprintf("0x%x", blockNumber)
 	for {
 		select {
 		case <-ctx.Done():
 			return errors.New("deadline exceeded")
 		default:
-			response, err := provider.FetchBlock([]interface{}{fmt.Sprintf("0x%x", blockNumber), false}, blockchain.RPCOptions{RetryAttempts: bxgateway.MaxEthOnBlockCallRetries, RetryInterval: bxgateway.EthOnBlockCallRetrySleepInterval})
+			response, err := provider.FetchBlock([]interface{}{blockNumberHex, false}, blockchain.RPCOptions{RetryAttempts: bxgateway.MaxEthOnBlockCallRetries, RetryInterval: bxgateway.EthOnBlockCallRetrySleepInterval})
 			if err != nil {
 				return err
 			}
@@ -151,8 +152,9 @@ func (m *WSManager) firstSyncedProviderWithBlock(ctx context.Context, blockNumbe
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel() // stop all goroutines if one of them finds a provider
 
-	providers := make([]blockchain.WSProvider, 0)
-	for _, provider := range m.Providers() {
+	allProviders := m.Providers()
+	providers := make([]blockchain.WSProvider, 0, len(allProviders))
+	for _, provider := range allProviders {
 		if provider.SyncStatus() != blockchain.Synced {
 			continue
 		}
@@ -194,11 +196,11 @@ func (m *WSManager) Providers() map[string]blockchain.WSProvider {
 func (m *WSManager) SetBlockchainPeer(peer interface{}) bool {
 	peerEndpoint := peer.(*eth2.Peer).IPEndpoint().IPPort()
 	m.log.Debugf("WSManager: SetBlockchainPeer %v  process %v", peerEndpoint, utils.GetGID())
-	for endpoint, ws := range m.wsProviders {
-		if endpoint == peerEndpoint {
-			ws.SetBlockchainPeer(peer)
-			return true
-		}
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	if ws, ok := m.wsProviders[peerEndpoint]; ok {
+		ws.SetBlockchainPeer(peer)
+		return true
 	}
 	return false
 }
@@ -206,11 +208,12 @@ func (m *WSManager) SetBlockchainPeer(peer interface{}) bool {
 // UnsetBlockchainPeer unsets the blockchain peer for corresponding ws provider
 func (m *WSManager) UnsetBlockchainPeer(peerEndpoint types.NodeEndpoint) bool {
 	m.log.Debugf("WSManager: UnsetBlockchainPeer %v process %v", peerEndpoint.String(), utils.GetGID())
-	for endpoint, ws := range m.wsProviders {
-		if endpoint == peerEndpoint.IPPort() {
-			ws.UnsetBlockchainPeer()
-			return true
-		}
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	ipPort := peerEndpoint.IPPort()
+	if ws, ok := m.wsProviders[ipPort]; ok {
+		ws.UnsetBlockchainPeer()
+		return true
 	}
 	return false
 }

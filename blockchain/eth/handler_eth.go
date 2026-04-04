@@ -328,13 +328,13 @@ func (h *ethHandler) broadcastBlock(block *bxcommoneth.Block, totalDifficulty *b
 		return
 	}
 
-	for _, peer := range h.peers.getAll() {
+	h.peers.forEach(func(peer ethPeer) {
 		if peer.Peer == sourceBlockchainPeer {
-			continue
+			return
 		}
 		peer.QueueNewBlock(block, totalDifficulty)
 		peer.Log().Debugf("queuing block %v from %v", block.Hash().String(), source)
-	}
+	})
 }
 
 func (h *ethHandler) awaitBlockResponse(peer *eth2.Peer, blockHash common.Hash, headersCh chan eth.Packet, bodiesCh chan eth.Packet) {
