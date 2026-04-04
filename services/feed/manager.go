@@ -163,7 +163,7 @@ func (f *Manager) Subscribe(feedName types.FeedType, feedConnectionType types.Fe
 	allowed, reason, permissionRespChannel := f.subscriptionServices.SendSubscribeNotification(&subscriptionModel)
 	if !allowed {
 		log.Debugf("subscription %v: allowed %v, reason %v", id, allowed, reason)
-		return nil, fmt.Errorf(reason)
+		return nil, fmt.Errorf("%s", reason)
 	}
 
 	log.Tracef("subscription %v is allowed", id)

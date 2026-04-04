@@ -80,6 +80,9 @@ func TestAuthorization(t *testing.T) {
 	})
 	eg.Go(server.Run)
 
+	err := waitForWebSocketReady(fmt.Sprintf("localhost:%d", wsPort), 2*time.Second)
+	require.NoError(t, err)
+
 	dialer := websocket.DefaultDialer
 	headers := make(http.Header)
 
@@ -129,7 +132,7 @@ func TestAuthorization(t *testing.T) {
 			headers.Set("Authorization", tt.header)
 			ws, _, err := dialer.Dial(wsURL, headers)
 			if err != nil {
-				t.Errorf("dialer.Dial() error = %v", err)
+				t.Fatalf("dialer.Dial() error = %v", err)
 			}
 
 			reqPayload := fmt.Sprintf(`{"id": "1", "method": "blxr_tx", "params": {"transaction": "%s"}}`, fixtures.LegacyTransaction)
