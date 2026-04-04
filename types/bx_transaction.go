@@ -210,7 +210,7 @@ func (bt *BxTransaction) Protobuf() *pbbase.BxTransaction {
 	bt.m.RLock()
 	defer bt.m.RUnlock()
 
-	shortIDs := make([]uint64, 0)
+	shortIDs := make([]uint64, 0, len(bt.shortIDs))
 	for _, shortID := range bt.shortIDs {
 		shortIDs = append(shortIDs, uint64(shortID))
 	}

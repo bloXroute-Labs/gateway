@@ -314,15 +314,21 @@ func (ethBlockNotification *EthBlockNotification) GetTransactions() []map[string
 }
 
 func (ethBlockNotification *EthBlockNotification) parseRawTransactions() [][]byte {
-	ethBlockNotification.rawTxsMu.Lock()
-	defer ethBlockNotification.rawTxsMu.Unlock()
+	// fast path: check with read lock first
+	ethBlockNotification.rawTxsMu.RLock()
 	if ethBlockNotification.RawTransactions != nil {
-		return ethBlockNotification.RawTransactions
+		raw := ethBlockNotification.RawTransactions
+		ethBlockNotification.rawTxsMu.RUnlock()
+		return raw
 	}
+	ethBlockNotification.rawTxsMu.RUnlock()
 
-	rawTransactions := make([][]byte, 0)
+	// serialize outside the lock to avoid blocking readers
+	var rawTransactions [][]byte
 	if ethBlockNotification.Block != nil {
-		for _, tx := range ethBlockNotification.Block.Transactions() {
+		txs := ethBlockNotification.Block.Transactions()
+		rawTransactions = make([][]byte, 0, len(txs))
+		for _, tx := range txs {
 			rawTx, err := tx.MarshalBinary()
 			if err != nil {
 				log.Errorf("failed to marshal transaction: %v", err)
@@ -332,8 +338,15 @@ func (ethBlockNotification *EthBlockNotification) parseRawTransactions() [][]byt
 		}
 	} else {
 		log.Errorf("block is nil, cannot parse raw transactions for block hash: %s", ethBlockNotification.GetHash())
+		rawTransactions = make([][]byte, 0)
 	}
 
+	// store result under write lock; another goroutine may have raced us
+	ethBlockNotification.rawTxsMu.Lock()
+	defer ethBlockNotification.rawTxsMu.Unlock()
+	if ethBlockNotification.RawTransactions != nil {
+		return ethBlockNotification.RawTransactions
+	}
 	ethBlockNotification.RawTransactions = rawTransactions
 	return rawTransactions
 }
@@ -353,45 +366,55 @@ func (ethBlockNotification *EthBlockNotification) GetParsedTransactions() []map[
 }
 
 func (ethBlockNotification *EthBlockNotification) parseTansactionsWithSenders(senders map[string]Sender) []map[string]interface{} {
+	if ethBlockNotification.Block == nil {
+		return nil
+	}
+
+	// parse outside lock to avoid blocking readers
+	blockTxs := ethBlockNotification.Block.Transactions()
+	ethTxs := make([]map[string]interface{}, 0, len(blockTxs))
+	for _, tx := range blockTxs {
+		if sender, ok := senders[tx.Hash().String()]; ok {
+			txFields, err := parseFieldsFromTx(tx, false)
+			if err != nil {
+				log.Errorf("failed to parse fields from txs: %v", err)
+				return nil
+			}
+			txFields["from"] = sender.String()
+			ethTxs = append(ethTxs, txFields)
+		} else {
+			txFields, err := parseFieldsFromTx(tx, true)
+			if err != nil {
+				log.Errorf("failed to parse fields from txs: %v", err)
+				return nil
+			}
+			ethTxs = append(ethTxs, txFields)
+		}
+	}
+
 	ethBlockNotification.txsMu.Lock()
 	defer ethBlockNotification.txsMu.Unlock()
-	if ethBlockNotification.Block != nil {
-		ethTxs := make([]map[string]interface{}, 0)
-		for _, tx := range ethBlockNotification.Block.Transactions() {
-			if sender, ok := senders[tx.Hash().String()]; ok {
-				txFields, err := parseFieldsFromTx(tx, false)
-				if err != nil {
-					log.Errorf("failed to parse fields from txs: %v", err)
-					return nil
-				}
-				txFields["from"] = sender.String()
-				ethTxs = append(ethTxs, txFields)
-			} else {
-				txFields, err := parseFieldsFromTx(tx, true)
-				if err != nil {
-					log.Errorf("failed to parse fields from txs: %v", err)
-					return nil
-				}
-				ethTxs = append(ethTxs, txFields)
-			}
-		}
-		ethBlockNotification.Transactions = ethTxs
-		return ethTxs
-	}
-	return nil
+	ethBlockNotification.Transactions = ethTxs
+	return ethTxs
 }
 
 func (ethBlockNotification *EthBlockNotification) parseTransactions(includeFrom bool) []map[string]interface{} {
-	ethBlockNotification.txsMu.Lock()
-	defer ethBlockNotification.txsMu.Unlock()
+	// fast path: check with read lock first
+	ethBlockNotification.txsMu.RLock()
 	if ethBlockNotification.Transactions != nil {
-		return ethBlockNotification.Transactions
+		txs := ethBlockNotification.Transactions
+		ethBlockNotification.txsMu.RUnlock()
+		return txs
 	}
+	ethBlockNotification.txsMu.RUnlock()
 
+	// parse outside the lock to avoid blocking readers
+	var ethTxs []map[string]interface{}
 	if ethBlockNotification.Block != nil {
-		ethTxs := make([]map[string]interface{}, 0)
+		blockTxs := ethBlockNotification.Block.Transactions()
+		ethTxs = make([]map[string]interface{}, 0, len(blockTxs))
 
-		for _, tx := range ethBlockNotification.Block.Transactions() {
+		for _, tx := range blockTxs {
 			txFields, err := parseFieldsFromTx(tx, includeFrom)
 			if err != nil {
 				log.Errorf("failed to parse fields from txs: %v", err)
@@ -399,24 +422,28 @@ func (ethBlockNotification *EthBlockNotification) parseTransactions(includeFrom 
 			}
 			ethTxs = append(ethTxs, txFields)
 		}
-
-		ethBlockNotification.Transactions = ethTxs
-		return ethTxs
+	} else {
+		ethTxsFromRaw, err := ethBlockNotification.parseTransactionsFromRaw()
+		if err != nil {
+			log.Errorf("failed to parse transactions from raw: %v", err)
+			return nil
+		}
+		ethTxs = ethTxsFromRaw
 	}
 
-	ethTxsFromRaw, err := ethBlockNotification.parseTransactionsFromRaw()
-	if err != nil {
-		log.Errorf("failed to parse transactions from raw: %v", err)
-		return nil
+	// store under write lock; another goroutine may have raced us
+	ethBlockNotification.txsMu.Lock()
+	defer ethBlockNotification.txsMu.Unlock()
+	if ethBlockNotification.Transactions != nil {
+		return ethBlockNotification.Transactions
 	}
-
-	ethBlockNotification.Transactions = ethTxsFromRaw
-	return ethTxsFromRaw
+	ethBlockNotification.Transactions = ethTxs
+	return ethTxs
 }
 
 func (ethBlockNotification *EthBlockNotification) parseTransactionsFromRaw() ([]map[string]any, error) {
 	rawTxs := ethBlockNotification.GetRawTransactions()
-	ethTxs := make([]map[string]any, 0)
+	ethTxs := make([]map[string]any, 0, len(rawTxs))
 
 	for _, rawTx := range rawTxs {
 		var tx ethtypes.Transaction

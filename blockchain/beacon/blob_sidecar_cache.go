@@ -45,12 +45,20 @@ func (m *BlobSidecarCacheManager) AddBlobSidecar(blobSidecar *ethpb.DataColumnSi
 
 	m.log.Tracef("adding blob sidecar to cache, slot %v, block hash: %s index: %d", blobSidecar.SignedBlockHeader.Header.Slot, blockHashStr, blobSidecar.Index)
 
-	value, _ := m.blobSidecars.LoadOrStore(blockHashStr, &BlobCacheValue{
+	newValue := &BlobCacheValue{
 		slot: blobSidecar.SignedBlockHeader.Header.Slot,
 		ch:   make(chan *ethpb.DataColumnSidecar, params.BeaconConfig().NumberOfColumns),
-	})
+	}
 
-	value.closeLock.RLock()
+	// Lock the new value before storing to eliminate the race window between
+	// LoadOrStore and the RLock acquisition where Unsubscribe could close the channel.
+	newValue.closeLock.RLock()
+	value, loaded := m.blobSidecars.LoadOrStore(blockHashStr, newValue)
+	if loaded {
+		// Another goroutine stored first; release our pre-lock and lock the existing value.
+		newValue.closeLock.RUnlock()
+		value.closeLock.RLock()
+	}
 	defer value.closeLock.RUnlock()
 
 	if value.ch == nil {
