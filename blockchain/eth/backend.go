@@ -500,30 +500,31 @@ func (h *handler) processDisconnectEvent(endpoint types.NodeEndpoint) {
 }
 
 func (h *handler) broadcastTransactions(p *datatype.ProcessingETHTransaction, sourceNode types.NodeEndpoint, connectionType bxtypes.NodeType) {
-	for _, peer := range h.peers.getAll() {
-		if sourceNode.IPPort() == peer.IPEndpoint().IPPort() {
-			continue
+	sourceIPPort := sourceNode.IPPort()
+	h.peers.forEach(func(peer ethPeer) {
+		if sourceIPPort == peer.IPEndpoint().IPPort() {
+			return
 		}
 		txs := p.Transactions(connectionType, peer.Dynamic())
 		if err := peer.SendTransactions(txs); err != nil {
 			peer.Log().Errorf("could not send %v transactions: %v", len(txs), err)
 		}
-	}
+	})
 }
 
 func (h *handler) broadcastPooledTransactionHashes(txHashes []ethcommon.Hash, types []byte, sizes []uint32) {
-	for _, peer := range h.peers.getAll() {
+	h.peers.forEach(func(peer ethPeer) {
 		if peer.Version() >= eth.ETH68 {
 			if err := peer.SendPooledTransactionHashes(txHashes, types, sizes); err != nil {
 				peer.Log().Errorf("could not announce %v transaction hashes: %v", len(txHashes), err)
 			}
-			continue
+			return
 		}
 
 		if err := peer.SendPooledTransactionHashes67(txHashes); err != nil {
 			peer.Log().Errorf("could not announce %v transaction hashes: %v", len(txHashes), err)
 		}
-	}
+	})
 }
 
 func (h *handler) broadcastBlock(block *bxcommoneth.Block, totalDifficulty *big.Int, sourceBlockchainPeer *eth2.Peer) {
@@ -536,23 +537,23 @@ func (h *handler) broadcastBlock(block *bxcommoneth.Block, totalDifficulty *big.
 		return
 	}
 
-	for _, peer := range h.peers.getAll() {
+	h.peers.forEach(func(peer ethPeer) {
 		if peer.Peer == sourceBlockchainPeer {
-			continue
+			return
 		}
 		peer.QueueNewBlock(block, totalDifficulty)
 		peer.Log().Debugf("queuing block %v from %v", block.Hash().String(), source)
-	}
+	})
 }
 
 func (h *handler) broadcastBlockAnnouncement(block *bxcommoneth.Block) {
 	blockHash := block.Hash()
 	number := block.NumberU64()
-	for _, peer := range h.peers.getAll() {
+	h.peers.forEach(func(peer ethPeer) {
 		if err := peer.AnnounceBlock(blockHash, number); err != nil {
 			peer.Log().Errorf("could not announce block %v: %v", block.Hash().String(), err)
 		}
-	}
+	})
 }
 
 // confirmBlockFromWS is called when the websocket connection indicates that a block has been accepted
@@ -639,7 +640,7 @@ func (h *handler) storeBDNBlock(bdnBlock *types.BxBlock) (*core.BlockInfo, error
 
 func (h *handler) checkInitialBlockchainLiveliness(initialLivelinessCheckDelay time.Duration) {
 	time.Sleep(initialLivelinessCheckDelay)
-	if len(h.peers.getAll()) == 0 {
+	if h.peers.count() == 0 {
 		err := h.bridge.SendNoActiveBlockchainPeersAlert()
 		if errors.Is(err, blockchain.ErrChannelFull) {
 			log.Warnf("no active blockchain peers alert channel is full")

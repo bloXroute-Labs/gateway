@@ -200,7 +200,7 @@ func (bp *blockProcessor) fetchTxsWithRetry(shortIDs []types.ShortID, interval t
 // initialFetch tries to fetch all shortIDs once and returns the tx slice and indices that were missing
 func (bp *blockProcessor) initialFetch(shortIDs []types.ShortID) ([]*types.BxTransaction, []int) {
 	txs := make([]*types.BxTransaction, len(shortIDs))
-	missingIndices := make([]int, 0)
+	missingIndices := make([]int, 0, len(shortIDs))
 	for i, sid := range shortIDs {
 		bxTransaction, err := bp.txStore.GetTxByShortID(sid, false)
 		if err == nil {
@@ -223,7 +223,7 @@ func (bp *blockProcessor) pollMissing(shortIDs []types.ShortID, txs []*types.BxT
 		select {
 		case <-ticker.C:
 			intervalsMade++
-			var stillMissing []int
+			stillMissing := make([]int, 0, len(missingIndices))
 			for _, idx := range missingIndices {
 				sid := shortIDs[idx]
 				bxTransaction, err := bp.txStore.GetTxByShortID(sid, false)

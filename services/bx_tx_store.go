@@ -208,9 +208,9 @@ func (t *BxTxStore) GetTxByKzgCommitment(kzgCommitment string) (*types.BxTransac
 
 // RemoveHashes deletes a series of transactions by their hash from BxTxStore. RemoveHashes can take a potentially large hash array, so it should be passed by reference.
 func (t *BxTxStore) RemoveHashes(hashes *types.SHA256HashList, reEntryProtection ReEntryProtectionFlags, reason string) types.ShortIDList {
-	shortIDList := make(types.ShortIDList, 0)
+	shortIDList := make(types.ShortIDList, 0, len(*hashes))
 	for _, hash := range *hashes {
-		hashStr := string(hash.Bytes())
+		hashStr := string(hash[:])
 
 		if bxTransaction, ok := t.hashToContent.Load(hashStr); ok {
 			t.remove(hashStr, bxTransaction, reEntryProtection, reason)
@@ -494,8 +494,9 @@ func (t *BxTxStore) totalMaxBlobTxSize(networkNum bxtypes.NetworkNum) uint64 {
 }
 
 func (t *BxTxStore) refreshSeenTx(hash types.SHA256Hash) bool {
-	if t.seenTxs.Exists(string(hash[:])) {
-		t.seenTxs.Add(string(hash[:]), t.timeToAvoidReEntry)
+	hashStr := string(hash[:])
+	if t.seenTxs.Exists(hashStr) {
+		t.seenTxs.Add(hashStr, t.timeToAvoidReEntry)
 		return true
 	}
 	return false

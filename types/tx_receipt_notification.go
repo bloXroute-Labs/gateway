@@ -43,86 +43,96 @@ type TxReceipt struct {
 func NewTxReceipt(receiptMap map[string]interface{}, txsCount string) *TxReceipt {
 	txReceipt := TxReceipt{}
 
-	blockHash, ok := receiptMap["blockHash"]
-	if ok {
-		txReceipt.BlockHash = blockHash.(string)
+	if v, ok := receiptMap["blockHash"]; ok {
+		if s, ok := v.(string); ok {
+			txReceipt.BlockHash = s
+		}
 	}
 
-	blockNumber, ok := receiptMap["blockNumber"]
-	if ok {
-		txReceipt.BlockNumber = blockNumber.(string)
+	if v, ok := receiptMap["blockNumber"]; ok {
+		if s, ok := v.(string); ok {
+			txReceipt.BlockNumber = s
+		}
 	}
 
-	contractAddress, ok := receiptMap["contractAddress"]
-	if ok {
-		txReceipt.ContractAddress = contractAddress
+	if v, ok := receiptMap["contractAddress"]; ok {
+		txReceipt.ContractAddress = v
 	}
 
-	cumulativeGasUsed, ok := receiptMap["cumulativeGasUsed"]
-	if ok {
-		txReceipt.CumulativeGasUsed = cumulativeGasUsed.(string)
+	if v, ok := receiptMap["cumulativeGasUsed"]; ok {
+		if s, ok := v.(string); ok {
+			txReceipt.CumulativeGasUsed = s
+		}
 	}
 
-	effectiveGasPrice, ok := receiptMap["effectiveGasPrice"]
-	if ok {
-		txReceipt.EffectiveGasPrice = effectiveGasPrice.(string)
+	if v, ok := receiptMap["effectiveGasPrice"]; ok {
+		if s, ok := v.(string); ok {
+			txReceipt.EffectiveGasPrice = s
+		}
 	}
 
-	from, ok := receiptMap["from"]
-	if ok {
-		txReceipt.From = from
+	if v, ok := receiptMap["from"]; ok {
+		txReceipt.From = v
 	}
 
-	gasUsed, ok := receiptMap["gasUsed"]
-	if ok {
-		txReceipt.GasUsed = gasUsed.(string)
+	if v, ok := receiptMap["gasUsed"]; ok {
+		if s, ok := v.(string); ok {
+			txReceipt.GasUsed = s
+		}
 	}
 
-	logs, ok := receiptMap["logs"]
-	if ok {
-		txReceipt.Logs = logs.([]interface{})
+	if v, ok := receiptMap["logs"]; ok {
+		if s, ok := v.([]interface{}); ok {
+			txReceipt.Logs = s
+		}
 	}
 
-	logsBloom, ok := receiptMap["logsBloom"]
-	if ok {
-		txReceipt.LogsBloom = logsBloom.(string)
+	if v, ok := receiptMap["logsBloom"]; ok {
+		if s, ok := v.(string); ok {
+			txReceipt.LogsBloom = s
+		}
 	}
 
-	status, ok := receiptMap["status"]
-	if ok {
-		txReceipt.Status = status.(string)
+	if v, ok := receiptMap["status"]; ok {
+		if s, ok := v.(string); ok {
+			txReceipt.Status = s
+		}
 	}
 
-	to, ok := receiptMap["to"]
-	if ok {
-		txReceipt.To = to
+	if v, ok := receiptMap["to"]; ok {
+		txReceipt.To = v
 	}
 
-	transactionHash, ok := receiptMap["transactionHash"]
-	if ok {
-		txReceipt.TransactionHash = transactionHash.(string)
+	if v, ok := receiptMap["transactionHash"]; ok {
+		if s, ok := v.(string); ok {
+			txReceipt.TransactionHash = s
+		}
 	}
 
-	transactionIndex, ok := receiptMap["transactionIndex"]
-	if ok {
-		txReceipt.TransactionIndex = transactionIndex.(string)
+	if v, ok := receiptMap["transactionIndex"]; ok {
+		if s, ok := v.(string); ok {
+			txReceipt.TransactionIndex = s
+		}
 	}
 
-	txType, ok := receiptMap["type"]
-	if ok {
-		txReceipt.TxType = txType.(string)
+	if v, ok := receiptMap["type"]; ok {
+		if s, ok := v.(string); ok {
+			txReceipt.TxType = s
+		}
 	}
 
 	txReceipt.TxsCount = txsCount
 
-	blobGasUsed, ok := receiptMap["blobGasUsed"]
-	if ok {
-		txReceipt.BlobGasUsed = blobGasUsed.(string)
+	if v, ok := receiptMap["blobGasUsed"]; ok {
+		if s, ok := v.(string); ok {
+			txReceipt.BlobGasUsed = s
+		}
 	}
 
-	blobGasPrice, ok := receiptMap["blobGasPrice"]
-	if ok {
-		txReceipt.BlobGasPrice = blobGasPrice.(string)
+	if v, ok := receiptMap["blobGasPrice"]; ok {
+		if s, ok := v.(string); ok {
+			txReceipt.BlobGasPrice = s
+		}
 	}
 
 	return &txReceipt
@@ -135,7 +145,9 @@ func (r *TxReceipt) marshalJSON() ([]byte, error) {
 		return marshalled, err
 	}
 	var mapWithNilToField map[string]interface{}
-	json.Unmarshal(marshalled, &mapWithNilToField)
+	if err = json.Unmarshal(marshalled, &mapWithNilToField); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal receipt for nil-to fixup: %w", err)
+	}
 	mapWithNilToField["to"] = nil
 	return json.Marshal(mapWithNilToField)
 }

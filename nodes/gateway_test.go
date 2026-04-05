@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"net"
 	"os"
 	"sync"
 	"testing"
@@ -1285,6 +1286,17 @@ func TestGateway_Status(t *testing.T) {
 	bxStatus := blockchain.BxStatus{Endpoints: endpoints}
 	err = g.bridge.SubscribeStatus(false).SendBlockchainStatusResponse(bxStatus)
 	assert.NoError(t, err)
+
+	grpcAddr := fmt.Sprintf("127.0.0.1:%d", port)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, dialErr := net.DialTimeout("tcp", grpcAddr, 200*time.Millisecond)
+		if dialErr == nil {
+			conn.Close()
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 
 	clientConfig := config.NewGRPC("127.0.0.1", port, "", "")
 	statusResp, err := rpc.GatewayCall(clientConfig, func(ctx context.Context, client pb.GatewayClient) (interface{}, error) {

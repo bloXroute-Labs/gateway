@@ -163,7 +163,7 @@ func (f *Manager) Subscribe(feedName types.FeedType, feedConnectionType types.Fe
 	allowed, reason, permissionRespChannel := f.subscriptionServices.SendSubscribeNotification(&subscriptionModel)
 	if !allowed {
 		log.Debugf("subscription %v: allowed %v, reason %v", id, allowed, reason)
-		return nil, fmt.Errorf(reason)
+		return nil, fmt.Errorf("%s", reason)
 	}
 
 	log.Tracef("subscription %v is allowed", id)
@@ -201,6 +201,9 @@ func (f *Manager) Unsubscribe(subscriptionID string, closeClientConnection bool,
 		return nil
 	}
 	delete(f.idToClientSubscription, subscriptionID)
+	// close feed channel while still holding the write lock to prevent
+	// notifySubscribers from sending to a closed channel
+	close(clientSub.feed)
 	f.lock.Unlock()
 
 	f.log.WithFields(log.Fields{
@@ -210,7 +213,10 @@ func (f *Manager) Unsubscribe(subscriptionID string, closeClientConnection bool,
 	}).Infof("unsubscribing from feed, closing the connection: %v", closeClientConnection)
 
 	if errMsg != "" {
-		clientSub.errMsgChan <- errMsg
+		select {
+		case clientSub.errMsgChan <- errMsg:
+		default:
+		}
 	}
 
 	subscription := types.SubscriptionModel{
@@ -242,7 +248,6 @@ func (f *Manager) Unsubscribe(subscriptionID string, closeClientConnection bool,
 		clientSub.feedType,
 		f.networkNum,
 		clientSub.AccountID)
-	close(clientSub.feed)
 
 	if closeClientConnection && clientSub.connection != nil {
 		// TODO: need to unsubscribe all other subscriptions on this connection.

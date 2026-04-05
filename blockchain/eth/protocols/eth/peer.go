@@ -37,9 +37,9 @@ const (
 	fastBlockConfirmationInterval   = 200 * time.Millisecond
 	fastBlockConfirmationAttempts   = 5
 	slowBlockConfirmationInterval   = 1 * time.Second
-	headChannelBacklog              = 10
-	blockChannelBacklog             = 10
-	blockConfirmationChannelBacklog = 10
+	headChannelBacklog              = 100
+	blockChannelBacklog             = 100
+	blockConfirmationChannelBacklog = 100
 	blockQueueMaxSize               = 50
 	delayLimit                      = time.Second
 	readStatusTimeout               = 6 * time.Second
@@ -106,7 +106,7 @@ func newPeer(parent context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version 
 		newHeadCh:            make(chan core.BlockRef, headChannelBacklog),
 		newBlockCh:           make(chan NewBlockPacket, blockChannelBacklog),
 		blockConfirmationCh:  make(chan common.Hash, blockConfirmationChannelBacklog),
-		queuedBlocks:         make([]NewBlockPacket, 0),
+		queuedBlocks:         make([]NewBlockPacket, 0, blockQueueMaxSize),
 		ResponseQueue:        syncmap.NewIntegerMapOf[uint64, chan eth.Packet](),
 		RequestConfirmations: true,
 		sendCh:               make(chan sendJob, sendQueueSize),
@@ -343,13 +343,10 @@ func (p *Peer) blockLoop() {
 				p.queuedBlocks = append(p.queuedBlocks, NewBlockPacket{})
 				copy(p.queuedBlocks[insertionPoint+1:], p.queuedBlocks[insertionPoint:])
 				p.queuedBlocks[insertionPoint] = newBlock
-				p.mu.Unlock()
-
-				if len(p.getQueuedBlocks()) > blockQueueMaxSize {
-					p.mu.Lock()
+				if len(p.queuedBlocks) > blockQueueMaxSize {
 					p.queuedBlocks = p.queuedBlocks[len(p.queuedBlocks)-blockQueueMaxSize:]
-					p.mu.Unlock()
 				}
+				p.mu.Unlock()
 			}
 		case <-p.ctx.Done():
 			return
@@ -445,7 +442,11 @@ func (p *Peer) QueueNewBlock(block *bxcommoneth.Block, td *big.Int) {
 		TD:       td,
 		Sidecars: block.Sidecars(),
 	}
-	p.newBlockCh <- packet
+	select {
+	case p.newBlockCh <- packet:
+	default:
+		p.Log().Warnf("block queue full, dropping block %v", block.Hash())
+	}
 }
 
 // AnnounceBlock pushes a new block announcement to the peer. This is used when the total difficult is unknown, and so a new block message would be invalid.

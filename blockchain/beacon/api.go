@@ -102,6 +102,11 @@ func (c *APIClient) requestClientVersion() (string, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("beacon API client version returned status %d: %s", resp.StatusCode, body)
+	}
+
 	var nodeVersionBody nodeVersionResponse
 	err = json.NewDecoder(resp.Body).Decode(&nodeVersionBody)
 	if err != nil {
@@ -127,6 +132,10 @@ func (c *APIClient) requestBlock(hash string) (interfaces.ReadOnlySignedBeaconBl
 	respBodyRaw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("beacon API block request returned status %d: %s", resp.StatusCode, respBodyRaw)
 	}
 
 	version := resp.Header.Get("Eth-Consensus-Version")

@@ -25,12 +25,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
-type bxBlockRLP struct {
-	Header  rlp.RawValue
-	Txs     []rlp.RawValue
-	Trailer rlp.RawValue
-}
-
 // Converter is an Ethereum-BDN converter struct
 type Converter struct{}
 
@@ -269,31 +263,36 @@ func (c Converter) bscSidecarsBDNtoBlockchain(block *types.BxBlock) []*bxcommone
 }
 
 func (c Converter) ethBlockBDNtoBlockchain(block *types.BxBlock) (*core.BlockInfo, error) {
-	txs := make([]rlp.RawValue, 0, len(block.Txs))
-	for _, tx := range block.Txs {
-		txs = append(txs, tx.Content())
+	var header ethtypes.Header
+	if err := rlp.DecodeBytes(block.Header, &header); err != nil {
+		return nil, fmt.Errorf("could not decode block %v header: %v", block.Hash(), err)
 	}
 
-	b, err := rlp.EncodeToBytes(bxBlockRLP{
-		Header:  block.Header,
-		Txs:     txs,
-		Trailer: block.Trailer,
+	txBacking := make([]ethtypes.Transaction, len(block.Txs))
+	ethTxs := make([]*ethtypes.Transaction, len(block.Txs))
+	for i, tx := range block.Txs {
+		if err := rlp.DecodeBytes(tx.Content(), &txBacking[i]); err != nil {
+			return nil, fmt.Errorf("could not decode transaction in block %v: %v", block.Hash(), err)
+		}
+		ethTxs[i] = &txBacking[i]
+	}
+
+	var uncles []*ethtypes.Header
+	if err := rlp.DecodeBytes(block.Trailer, &uncles); err != nil {
+		return nil, fmt.Errorf("could not decode block %v uncles: %v", block.Hash(), err)
+	}
+
+	commonBlock := bxcommoneth.NewBlockWithHeader(&header).WithBody(ethtypes.Body{
+		Transactions: ethTxs,
+		Uncles:       uncles,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("could not encode block %v data bxBlockRLP format: %v", block.Hash(), err)
-	}
-
-	var commonBlock bxcommoneth.Block
-	if err = rlp.DecodeBytes(b, &commonBlock); err != nil {
-		return nil, fmt.Errorf("could not convert block %v to blockchain format: %v", block.Hash(), err)
-	}
 
 	if len(block.BlobSidecars) > 0 {
 		sidecars := c.bscSidecarsBDNtoBlockchain(block)
 		commonBlock.SetBlobSidecars(sidecars)
 	}
 
-	return core.NewBlockInfo(&commonBlock, block.TotalDifficulty), nil
+	return core.NewBlockInfo(commonBlock, block.TotalDifficulty), nil
 }
 
 func (c Converter) beaconBlockBDNtoBlockchain(block *types.BxBlock) (interfaces.ReadOnlySignedBeaconBlock, error) {
@@ -385,14 +384,13 @@ func BeaconBlockToEthBlock(block interfaces.ReadOnlySignedBeaconBlock) (*bxcommo
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch transactions: %v", err)
 	}
+	txBacking := make([]ethtypes.Transaction, len(transactions))
 	txs := make([]*ethtypes.Transaction, len(transactions))
 	for i, tx := range transactions {
-		t := new(ethtypes.Transaction)
-		if err := t.UnmarshalBinary(tx); err != nil {
+		if err := txBacking[i].UnmarshalBinary(tx); err != nil {
 			return nil, fmt.Errorf("invalid transaction %d: %v", i, err)
 		}
-
-		txs[i] = t
+		txs[i] = &txBacking[i]
 	}
 
 	withdrawals, err := execution.Withdrawals()

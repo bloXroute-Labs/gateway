@@ -1026,6 +1026,8 @@ func (g *gateway) notifyBlockFeeds(bxBlock *types.BxBlock, nodeSource *connectio
 		return nil
 	}
 
+	hashStr := bxBlock.Hash().String()
+
 	switch b := block.(type) {
 	case interfaces.ReadOnlySignedBeaconBlock:
 		beaconNotification, err := types.NewBeaconBlockNotification(b)
@@ -1033,7 +1035,7 @@ func (g *gateway) notifyBlockFeeds(bxBlock *types.BxBlock, nodeSource *connectio
 			return err
 		}
 
-		addedBdnBlock = g.bdnBlocks.SetIfAbsent(bxBlock.Hash().String(), 15*time.Minute)
+		addedBdnBlock = g.bdnBlocks.SetIfAbsent(hashStr, 15*time.Minute)
 		if addedBdnBlock {
 			// Send beacon notifications to BDN feed even if source is blockchain
 			notification := beaconNotification.Clone()
@@ -1042,7 +1044,7 @@ func (g *gateway) notifyBlockFeeds(bxBlock *types.BxBlock, nodeSource *connectio
 		}
 
 		if isBlockchainBlock {
-			addedNewBlock = g.newBlocks.SetIfAbsent(bxBlock.Hash().String(), 15*time.Minute)
+			addedNewBlock = g.newBlocks.SetIfAbsent(hashStr, 15*time.Minute)
 			if addedNewBlock {
 				notification := beaconNotification.Clone()
 				notification.SetNotificationType(types.NewBeaconBlocksFeed)
@@ -1059,9 +1061,9 @@ func (g *gateway) notifyBlockFeeds(bxBlock *types.BxBlock, nodeSource *connectio
 			return err
 		}
 	case *core.BlockInfo:
-		addedBdnBlock = g.bdnBlocks.SetIfAbsent(bxBlock.Hash().String(), 15*time.Minute)
+		addedBdnBlock = g.bdnBlocks.SetIfAbsent(hashStr, 15*time.Minute)
 		if isBlockchainBlock {
-			addedNewBlock = g.newBlocks.SetIfAbsent(bxBlock.Hash().String(), 15*time.Minute)
+			addedNewBlock = g.newBlocks.SetIfAbsent(hashStr, 15*time.Minute)
 		}
 		if err := notifyEthBlockFeeds(b.Block, nodeSource, info, isBlockchainBlock); err != nil {
 			return err
