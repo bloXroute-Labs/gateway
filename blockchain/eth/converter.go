@@ -268,13 +268,13 @@ func (c Converter) ethBlockBDNtoBlockchain(block *types.BxBlock) (*core.BlockInf
 		return nil, fmt.Errorf("could not decode block %v header: %v", block.Hash(), err)
 	}
 
-	ethTxs := make([]*ethtypes.Transaction, 0, len(block.Txs))
-	for _, tx := range block.Txs {
-		var ethTx ethtypes.Transaction
-		if err := rlp.DecodeBytes(tx.Content(), &ethTx); err != nil {
+	txBacking := make([]ethtypes.Transaction, len(block.Txs))
+	ethTxs := make([]*ethtypes.Transaction, len(block.Txs))
+	for i, tx := range block.Txs {
+		if err := rlp.DecodeBytes(tx.Content(), &txBacking[i]); err != nil {
 			return nil, fmt.Errorf("could not decode transaction in block %v: %v", block.Hash(), err)
 		}
-		ethTxs = append(ethTxs, &ethTx)
+		ethTxs[i] = &txBacking[i]
 	}
 
 	var uncles []*ethtypes.Header
@@ -384,14 +384,13 @@ func BeaconBlockToEthBlock(block interfaces.ReadOnlySignedBeaconBlock) (*bxcommo
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch transactions: %v", err)
 	}
+	txBacking := make([]ethtypes.Transaction, len(transactions))
 	txs := make([]*ethtypes.Transaction, len(transactions))
 	for i, tx := range transactions {
-		t := new(ethtypes.Transaction)
-		if err := t.UnmarshalBinary(tx); err != nil {
+		if err := txBacking[i].UnmarshalBinary(tx); err != nil {
 			return nil, fmt.Errorf("invalid transaction %d: %v", i, err)
 		}
-
-		txs[i] = t
+		txs[i] = &txBacking[i]
 	}
 
 	withdrawals, err := execution.Withdrawals()

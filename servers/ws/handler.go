@@ -163,12 +163,20 @@ func (h *handlerObj) sendNotification(ctx context.Context, subscriptionID string
 		Subscription: subscriptionID,
 	}
 	// prepare includes: if client requested raw transactions, map "transactions" -> "raw_transactions" for WithFields
-	includes := make([]string, len(clientReq.Includes))
-	copy(includes, clientReq.Includes)
+	// lazy copy — only allocate a new slice when mutation is actually needed
+	includes := clientReq.Includes
 	if !clientReq.ParsedTxs {
-		for i, inc := range includes {
+		for _, inc := range includes {
 			if inc == "transactions" {
-				includes[i] = "raw_transactions"
+				cp := make([]string, len(clientReq.Includes))
+				copy(cp, clientReq.Includes)
+				for j, s := range cp {
+					if s == "transactions" {
+						cp[j] = "raw_transactions"
+					}
+				}
+				includes = cp
+				break
 			}
 		}
 	}
