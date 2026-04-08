@@ -107,7 +107,7 @@ func runGateway(c *cli.Context) error {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Errorf("Panic: %v", r)
-			log.Errorf(string(debug.Stack()))
+			log.Error(string(debug.Stack()))
 		}
 	}()
 	ctx := utils.ContextWithSignal(c.Context)
