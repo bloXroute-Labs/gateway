@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/core"
 	"github.com/bloXroute-Labs/gateway/v2/metrics"
 
 	"github.com/bloXroute-Labs/bxcommon-go/cert"
@@ -30,6 +29,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
+	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	ethtest "github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
@@ -533,7 +533,7 @@ func TestGateway_HandleBlockConfirmationFromBackend(t *testing.T) {
 	g.BxConfig.SendConfirmation = true
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
-	bxBlock, err := bridge.BlockBlockchainToBDN(core.NewBlockInfo(ethBlock, nil))
+	bxBlock, err := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(ethBlock, nil))
 	assert.NoError(t, err)
 
 	bridge.SendConfirmedBlockToGateway(bxBlock, types.NodeEndpoint{IP: "1.1.1.1", Port: 1800})
@@ -819,7 +819,7 @@ func TestGateway_HandleBlockFromBlockchain(t *testing.T) {
 	feedChan := subscribeAll(s1.FeedChan, s2.FeedChan, s3.FeedChan, s4.FeedChan)
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
-	bxBlock, err := bridge.BlockBlockchainToBDN(core.NewBlockInfo(ethBlock, nil))
+	bxBlock, err := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(ethBlock, nil))
 	assert.NoError(t, err)
 
 	// send block over bridge from blockchain connection
@@ -868,7 +868,7 @@ func TestGateway_HandleBlockFromInboundBlockchain(t *testing.T) {
 
 	blockchainIPEndpoint = types.NodeEndpoint{IP: "127.0.0.1", Port: 8001, Dynamic: true}
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
-	bxBlock, err := bridge.BlockBlockchainToBDN(core.NewBlockInfo(ethBlock, nil))
+	bxBlock, err := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(ethBlock, nil))
 	assert.NoError(t, err)
 
 	// send block over bridge from blockchain connection
@@ -909,7 +909,7 @@ func TestGateway_HandleBlockFromBlockchain_TwoRelays(t *testing.T) {
 	}()
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
-	bxBlock, err := bridge.BlockBlockchainToBDN(core.NewBlockInfo(ethBlock, nil))
+	bxBlock, err := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(ethBlock, nil))
 	assert.NoError(t, err)
 
 	// send block over bridge from blockchain connection
@@ -959,7 +959,7 @@ func TestGateway_HandleBlockFromRelay(t *testing.T) {
 	txStore, bp := newBP()
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
-	bxBlock, _ := bridge.BlockBlockchainToBDN(core.NewBlockInfo(ethBlock, nil))
+	bxBlock, _ := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(ethBlock, nil))
 
 	// compress a transaction
 	bxTransaction, _ := bridge.TransactionBlockchainToBDN(ethBlock.Transactions()[0])
@@ -1008,7 +1008,7 @@ func TestGateway_HandleBeaconBlockFromRelay(t *testing.T) {
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
 
-	bxBlock, _ := bridge.BlockBlockchainToBDN(core.NewBlockInfo(ethBlock, ethBlock.Difficulty()))
+	bxBlock, _ := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(ethBlock, ethBlock.Difficulty()))
 
 	// compress a transaction
 	bxTransaction, _ := bridge.TransactionBlockchainToBDN(ethBlock.Transactions()[0])
@@ -1208,7 +1208,7 @@ func TestGateway_TestNoTxReceiptsWithoutSubscription(t *testing.T) {
 	g.blockchainPeers = []types.NodeEndpoint{}
 
 	ethBlock := bxmock.NewEthBlock(uint64(10), common.Hash{})
-	bxBlock, _ := bridge.BlockBlockchainToBDN(core.NewBlockInfo(ethBlock, nil))
+	bxBlock, _ := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(ethBlock, nil))
 	err := g.publishBlock(bxBlock, nil, nil, false)
 	assert.NoError(t, err)
 
@@ -1257,7 +1257,7 @@ func TestGateway_Status(t *testing.T) {
 	}()
 
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
-	bxBlock, err := bridge.BlockBlockchainToBDN(core.NewBlockInfo(ethBlock, nil))
+	bxBlock, err := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(ethBlock, nil))
 	assert.NoError(t, err)
 
 	err = bridge.SendBlockToBDN(bxBlock, blockchainIPEndpoint)
@@ -1461,7 +1461,7 @@ func TestValidatorsList(t *testing.T) {
 
 func expectNoFeedNotification(t *testing.T, bridge blockchain.Bridge, feedsChan <-chan types.Notification, g *gateway, isBDNBlock bool, blockHeight int, expectedBestBlockHeight int, expectedSkipBlockCount int) {
 	ethBlock := bxmock.NewEthBlock(uint64(blockHeight), common.Hash{})
-	bxBlock, _ := bridge.BlockBlockchainToBDN(core.NewBlockInfo(ethBlock, nil))
+	bxBlock, _ := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(ethBlock, nil))
 	err := g.publishBlock(bxBlock, nil, nil, !isBDNBlock)
 	assert.NoError(t, err)
 
@@ -1476,7 +1476,7 @@ func expectNoFeedNotification(t *testing.T, bridge blockchain.Bridge, feedsChan 
 
 func expectFeedNotification(t *testing.T, bridge blockchain.Bridge, feedsChan <-chan types.Notification, g *gateway, isBDNBlock bool, blockHeight int, expectedBestBlockHeight int, expectedSkipBlockCount int) {
 	ethBlock := bxmock.NewEthBlock(uint64(blockHeight), common.Hash{})
-	bxBlock, _ := bridge.BlockBlockchainToBDN(core.NewBlockInfo(ethBlock, nil))
+	bxBlock, _ := bridge.BlockBlockchainToBDN(bxcommoneth.NewBlockInfo(ethBlock, nil))
 	err := g.publishBlock(bxBlock, nil, nil, !isBDNBlock)
 	assert.NoError(t, err)
 

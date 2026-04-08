@@ -131,7 +131,7 @@ func (c *PrysmClient) run() {
 					blockHashHex := ethcommon.BytesToHash(blockHash[:]).String()
 
 					if err := SendBlockToBDN(c.clock, c.log, wrappedBlock, c.bridge, c.endpoint); err != nil {
-						c.log.Errorf("could not proccess beacon block[slot=%d,hash=%s] to eth: %v", blk.Block().Slot(), blockHashHex, err)
+						c.log.Errorf("could not process beacon block[slot=%d,hash=%s] to eth: %v", blk.Block().Slot(), blockHashHex, err)
 						continue
 					}
 

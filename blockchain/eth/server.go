@@ -23,9 +23,8 @@ import (
 
 // Server wraps the Ethereum p2p server, for use with the BDN
 type Server struct {
-	p2pServer           *p2p.Server
-	cancel              context.CancelFunc
-	dynamicPeerDisabled bool
+	p2pServer *p2p.Server
+	cancel    context.CancelFunc
 }
 
 // NewServer return an Ethereum p2p server, configured with BDN friendly defaults
@@ -57,27 +56,25 @@ func NewServer(parent context.Context, port int, externalIP net.IP, config *netw
 
 	ctx, cancel := context.WithCancel(parent)
 	backend := newHandler(ctx, config, chain, bridge, ws)
-
-	var (
-		discovery       = true
-		dynamicDisabled = false
-	)
 	staticEnodes := config.StaticPeers.Enodes()
 
 	server := p2p.Server{
 		Config: p2p.Config{
 			PrivateKey:       privateKey,
 			MaxPeers:         len(staticEnodes),
+			DialRatio:        1,
 			MaxPendingPeers:  0,
 			NoDiscovery:      true,
 			DiscoveryV5:      false,
 			Name:             config.ProgramName,
+			BootstrapNodes:   config.BootstrapNodes,
 			BootstrapNodesV5: nil,
 			StaticNodes:      staticEnodes,
 			TrustedNodes:     nil,
 			NetRestrict:      nil,
 			NodeDatabase:     "",
 			Protocols:        makeProtocols(ctx, backend),
+			ListenAddr:       fmt.Sprintf("0.0.0.0:%d", port),
 			NAT:              nat.ExtIP(externalIP),
 			Dialer:           nil,
 			NoDial:           false,
@@ -86,16 +83,11 @@ func NewServer(parent context.Context, port int, externalIP net.IP, config *netw
 		},
 	}
 
-	if discovery {
-		server.Config.BootstrapNodes = config.BootstrapNodes
-		server.Config.ListenAddr = fmt.Sprintf("0.0.0.0:%d", port)
+	s := &Server{
+		p2pServer: &server,
+		cancel:    cancel,
 	}
 
-	s := &Server{
-		p2pServer:           &server,
-		cancel:              cancel,
-		dynamicPeerDisabled: dynamicDisabled,
-	}
 	return s, nil
 }
 
@@ -104,7 +96,6 @@ func makeProtocols(ctx context.Context, handler *handler) []p2p.Protocol {
 
 	if handler.config.Network == network.BSCMainnetChainID || handler.config.Network == network.BSCTestnetChainID {
 		protos = append(protos, bsc.MakeProtocols(ctx, (*bscHandler)(handler))...)
-
 	}
 
 	return protos
@@ -136,23 +127,15 @@ func (s *Server) Stop() {
 
 // AddEthLoggerFileHandler registers additional file handler by file path
 func (s *Server) AddEthLoggerFileHandler(path string) error {
-	var err error
-	var logOutputFile *os.File
-	if logOutputFile, err = os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err != nil {
+	logOutputFile, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
 		return err
 	}
-	output := io.MultiWriter(logOutputFile)
-	handler := log.LogfmtHandler(output)
 
-	glogger := log.NewGlogHandler(handler)
+	glogger := log.NewGlogHandler(log.LogfmtHandler(io.MultiWriter(logOutputFile)))
+	glogger.Verbosity(log.LevelTrace)
 
-	if s.dynamicPeerDisabled {
-		glogger.Verbosity(log.LevelTrace)
-		err = glogger.Vmodule("p2p=5")
-	} else {
-		glogger.Verbosity(log.LevelInfo)
-		err = glogger.Vmodule("p2p=3")
-	}
+	err = glogger.Vmodule("p2p=5")
 	if err != nil {
 		return fmt.Errorf("failed to set glog verbosity pattern: %w", err)
 	}

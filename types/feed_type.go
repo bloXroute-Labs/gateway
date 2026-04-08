@@ -12,6 +12,7 @@ const (
 	OnBlockFeed           FeedType = "ethOnBlock"
 	TxReceiptsFeed        FeedType = "txReceipts"
 	TransactionStatusFeed FeedType = "transactionStatus"
+	TraceBlocksFeed       FeedType = "traceBlocks" // only for BSC
 )
 
 // FeedConnectionType types of feeds

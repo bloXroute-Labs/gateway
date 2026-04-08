@@ -354,9 +354,12 @@ func (h *handler) notifyResponse(requestID string, data interface{}) error {
 		return eth2.ErrUnknownRequestID
 	}
 
-	responseCh <- data
-
-	return nil
+	select {
+	case responseCh <- data:
+		return nil
+	case <-time.After(5 * time.Second):
+		return fmt.Errorf("timeout sending response for request %s", requestID)
+	}
 }
 
 func (h *handler) processBDNTransactions(bdnTxs blockchain.Transactions) {
@@ -614,26 +617,27 @@ func (h *handler) sendConfirmedBlocksToBDN(count int, peerEndpoint types.NodeEnd
 }
 
 // storeBDNBlock will return a nil block and no error if block is a duplicate
-func (h *handler) storeBDNBlock(bdnBlock *types.BxBlock) (*core.BlockInfo, error) {
+func (h *handler) storeBDNBlock(bdnBlock *types.BxBlock) (*bxcommoneth.BlockInfo, error) {
 	blockHash := ethcommon.BytesToHash(bdnBlock.Hash().Bytes())
 	if h.chain.HasBlock(blockHash) {
 		log.Debugf("duplicate block %v from BDN, skipping", blockHash)
 		return nil, nil
 	}
 
-	blockchainBlock, err := h.bridge.BlockBDNtoBlockchain(bdnBlock)
-	if err != nil {
-		logBlockConverterFailure(err, bdnBlock)
-		return nil, errors.New("could not convert BDN block to Ethereum block")
-	}
-
-	ethBlockInfo, ok := blockchainBlock.(*core.BlockInfo)
+	ethBlockInfo, ok := bdnBlock.Original().(*bxcommoneth.BlockInfo)
 	if !ok {
-		logBlockConverterFailure(err, bdnBlock)
-		return nil, errors.New("could not convert BDN block to Ethereum block")
+		blockchainBlock, err := h.bridge.BlockBDNtoBlockchain(bdnBlock)
+		if err != nil {
+			return nil, fmt.Errorf("could not convert BDN block to Ethereum block: %w", err)
+		}
+
+		ethBlockInfo, ok = blockchainBlock.(*bxcommoneth.BlockInfo)
+		if !ok {
+			return nil, fmt.Errorf("unexpected blockchain block type %T when converting BDN block %v", blockchainBlock, blockHash)
+		}
 	}
 
-	h.chain.AddBlock(ethBlockInfo, core.BSBDN)
+	h.chain.AddBlock(ethBlockInfo, core.BSBDN, true)
 	return ethBlockInfo, nil
 }
 
@@ -653,7 +657,7 @@ func (h *handler) blockAtDepth(chainDepth int) (*types.BxBlock, error) {
 		log.Debugf("cannot retrieve block with chain depth %v, %v", chainDepth, err)
 		return nil, err
 	}
-	blockInfo := core.NewBlockInfo(block, block.Header().Difficulty)
+	blockInfo := bxcommoneth.NewBlockInfo(block, block.Header().Difficulty)
 	bxBlock, err := h.bridge.BlockBlockchainToBDN(blockInfo)
 	if err != nil {
 		log.Debugf("cannot convert eth block to BDN block at the chain depth %v with hash %v, %v", chainDepth, block.Hash(), err)

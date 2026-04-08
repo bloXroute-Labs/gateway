@@ -130,6 +130,8 @@ func (bp *blockProcessor) BxBlockToBroadcast(block *types.BxBlock, networkNum bx
 		bp.markProcessed(block.Hash(), SeenFromNode)
 	case types.BxBlockTypeBeaconDeneb, types.BxBlockTypeBeaconElectra, types.BxBlockTypeBeaconFulu:
 		bp.markProcessed(block.BeaconHash(), SeenFromNode)
+	default:
+		return nil, nil, ErrUnknownBlockType
 	}
 
 	return broadcastMessage, usedShortIDs, nil
@@ -158,14 +160,15 @@ func (bp *blockProcessor) BxBlockFromBroadcast(broadcast *bxmessage.Broadcast) (
 	}
 
 	shortIDs := broadcast.ShortIDs()
-	var err error
 
 	bxTransactions, missingShortIDs := bp.fetchTxsWithRetry(shortIDs, 5*time.Millisecond, 200*time.Millisecond)
 	if len(missingShortIDs) > 0 {
 		return nil, missingShortIDs, ErrMissingShortIDs
 	}
 
+	var err error
 	var block *types.BxBlock
+
 	switch broadcast.BlockType() {
 	case types.BxBlockTypeEth:
 		block, err = bp.newBxBlockFromRLPBroadcast(broadcast, bxTransactions)

@@ -19,6 +19,7 @@ import (
 	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
 
 	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/utils/hasher"
 )
 
@@ -49,6 +50,8 @@ type Chain struct {
 	blockHashToBlobSidecars *syncmap.SyncMap[ethcommon.Hash, bxethcommon.BlobSidecars]
 	blockHashToDifficulty   *syncmap.SyncMap[ethcommon.Hash, *big.Int]
 
+	blockHashToBlock *syncmap.SyncMap[ethcommon.Hash, *types.RawBlock]
+
 	chainState BlockRefChain
 
 	clock clock.RealClock
@@ -62,38 +65,6 @@ const (
 	BSBDN        BlockSource = "BDN"
 	BSBlockchain BlockSource = "Blockchain"
 )
-
-// BlockInfo wraps an Ethereum block with its total difficulty.
-type BlockInfo struct {
-	Block *bxethcommon.Block
-	TD    *big.Int
-}
-
-// NewBlockInfo composes a new BlockInfo. nil is considered a valid total difficulty for constructing this struct
-func NewBlockInfo(block *bxethcommon.Block, totalDifficulty *big.Int) *BlockInfo {
-	info := &BlockInfo{
-		Block: block,
-	}
-	info.SetTotalDifficulty(totalDifficulty)
-	return info
-}
-
-// SetTotalDifficulty sets the total difficulty, filtering nil arguments
-func (e *BlockInfo) SetTotalDifficulty(td *big.Int) {
-	if td == nil {
-		e.TD = big.NewInt(0)
-	} else {
-		e.TD = td
-	}
-}
-
-// TotalDifficulty validates and returns the block's total difficulty. Any value <=0 may be encoded in types.BxBlock, and are considered invalid difficulties that should be treated as "unknown difficulty"
-func (e *BlockInfo) TotalDifficulty() *big.Int {
-	if e.TD.Int64() <= 0 {
-		return nil
-	}
-	return e.TD
-}
 
 type blockMetadata struct {
 	height     uint64
@@ -121,6 +92,7 @@ func newChain(ctx context.Context, ignoreBlockTimeout time.Duration, maxReorg, m
 		blockHashToBody:         syncmap.NewTypedMapOf[ethcommon.Hash, *ethtypes.Body](hasher.EthCommonHasher),
 		blockHashToBlobSidecars: syncmap.NewTypedMapOf[ethcommon.Hash, bxethcommon.BlobSidecars](hasher.EthCommonHasher),
 		blockHashToDifficulty:   syncmap.NewTypedMapOf[ethcommon.Hash, *big.Int](hasher.EthCommonHasher),
+		blockHashToBlock:        syncmap.NewTypedMapOf[ethcommon.Hash, *types.RawBlock](hasher.EthCommonHasher),
 		chainState:              make([]BlockRef, 0),
 		maxReorg:                maxReorg,
 		minValidChain:           minValidChain,
@@ -144,7 +116,7 @@ func (c *Chain) cleanBlockStorage(ctx context.Context, cleanInterval time.Durati
 }
 
 // AddBlock adds the provided block from the source into storage, updating the chainstate if the block comes from a reliable source. AddBlock returns the number of new canonical hashes added to the head if a reorganization happened. TODO: consider computing difficulty in here?
-func (c *Chain) AddBlock(b *BlockInfo, source BlockSource) int {
+func (c *Chain) AddBlock(b *bxethcommon.BlockInfo, source BlockSource, addToChainstate bool) int {
 	c.chainLock.Lock()
 	defer c.chainLock.Unlock()
 
@@ -157,6 +129,26 @@ func (c *Chain) AddBlock(b *BlockInfo, source BlockSource) int {
 		c.storeBlockMetadata(hash, height, source == BSBlockchain, false)
 	} else {
 		c.storeBlock(b.Block, b.TotalDifficulty(), source)
+	}
+
+	if addToChainstate && source != BSBDN {
+		return c.updateChainState(height, hash, parentHash)
+	}
+
+	return 0
+}
+
+// AddBlockRaw adds the provided block from the source into storage, updating the chainstate if the block comes from a reliable source. AddBlockRaw returns the number of new canonical hashes added to the head if a reorganization happened. TODO: consider computing difficulty in here?
+func (c *Chain) AddBlockRaw(b *types.RawBlock, source BlockSource) int {
+	c.chainLock.Lock()
+	defer c.chainLock.Unlock()
+
+	height := b.Number()
+	hash := b.Hash()
+	parentHash := b.ParentHash()
+
+	if !c.HasBlockRaw(hash) {
+		c.storeBlockRaw(b, source)
 	}
 
 	// if source is BDN, then no authority to update chainstate and indicate no new heads to return
@@ -190,11 +182,11 @@ func (c *Chain) ConfirmBlock(hash ethcommon.Hash) int {
 }
 
 // GetNewHeadsForBDN fetches the newest blocks on the chainstate that have not previously been sent to the BDN. In cases of error, as many entries are still returned along with the error. Entries are returned in descending order.
-func (c *Chain) GetNewHeadsForBDN(count int) ([]*BlockInfo, error) {
+func (c *Chain) GetNewHeadsForBDN(count int) ([]*bxethcommon.BlockInfo, error) {
 	c.chainLock.RLock()
 	defer c.chainLock.RUnlock()
 
-	heads := make([]*BlockInfo, 0, count)
+	heads := make([]*bxethcommon.BlockInfo, 0, count)
 
 	for i := 0; i < count; i++ {
 		if len(c.chainState) <= i {
@@ -233,7 +225,43 @@ func (c *Chain) GetNewHeadsForBDN(count int) ([]*BlockInfo, error) {
 			block.SetBlobSidecars(sidecars)
 		}
 
-		heads = append(heads, NewBlockInfo(block, td))
+		heads = append(heads, bxethcommon.NewBlockInfo(block, td))
+	}
+
+	return heads, nil
+}
+
+// GetNewHeadsRawForBDN fetches the newest blocks on the chainstate that have not previously been sent to the BDN. In cases of error, as many entries are still returned along with the error. Entries are returned in descending order.
+func (c *Chain) GetNewHeadsRawForBDN(count int) ([]*types.RawBlock, error) {
+	c.chainLock.RLock()
+	defer c.chainLock.RUnlock()
+
+	heads := make([]*types.RawBlock, 0, count)
+
+	for i := 0; i < count; i++ {
+		if len(c.chainState) <= i {
+			return heads, errors.New("chain state insufficient length")
+		}
+
+		head := c.chainState[i]
+
+		// !ok blocks should never be triggered, as any state cleanup should also cleanup the chain state
+		bm, ok := c.getBlockMetadata(head.Hash)
+		if !ok {
+			return heads, fmt.Errorf("inconsistent chainstate: no metadata stored for %v", head.Hash)
+		}
+
+		// blocks have previously been sent to BDN, ok to stop here
+		if bm.sentToBDN {
+			break
+		}
+
+		block, ok := c.GetBlockRaw(head.Hash)
+		if !ok {
+			return heads, fmt.Errorf("inconsistent chainstate: no block stored for %v", head.Hash)
+		}
+
+		heads = append(heads, block)
 	}
 
 	return heads, nil
@@ -242,9 +270,39 @@ func (c *Chain) GetNewHeadsForBDN(count int) ([]*BlockInfo, error) {
 // ValidateBlock determines if block can potentially be added to the chain
 func (c *Chain) ValidateBlock(block *bxethcommon.Block) error {
 	hash := block.Hash()
-	blockTime := time.Unix(int64(block.Time()), 0)
+	blockTimestamp := block.Time()
+	if blockTimestamp > math.MaxInt64 {
+		return fmt.Errorf("block time %d overflows int64", blockTimestamp)
+	}
+	blockTime := time.Unix(int64(blockTimestamp), 0)
 
 	if c.HasBlock(hash) && c.HasSentToBDN(hash) && c.HasConfirmedBlock(hash) {
+		return ErrAlreadySeen
+	}
+
+	maxBlockTime := time.Now().Add(c.ignoreBlockTimeout)
+	if blockTime.After(maxBlockTime) {
+		return fmt.Errorf("too far in the future, block time: %s, max block time: %s", blockTime, maxBlockTime)
+	}
+
+	minBlockTime := time.Now().Add(-c.ignoreBlockTimeout)
+	if blockTime.Before(minBlockTime) {
+		return fmt.Errorf("too old, block time: %s, min block time: %s", blockTime, minBlockTime)
+	}
+
+	return nil
+}
+
+// ValidateBlockRaw determines if block can potentially be added to the chain
+func (c *Chain) ValidateBlockRaw(block *types.RawBlock) error {
+	hash := block.Hash()
+	blockTimestamp := block.Time()
+	if blockTimestamp > math.MaxInt64 {
+		return fmt.Errorf("block time %d overflows int64", blockTimestamp)
+	}
+	blockTime := time.Unix(int64(blockTimestamp), 0)
+
+	if c.HasBlockRaw(hash) && c.HasBlock(hash) && c.HasSentToBDN(hash) && c.HasConfirmedBlock(hash) {
 		return ErrAlreadySeen
 	}
 
@@ -264,6 +322,11 @@ func (c *Chain) ValidateBlock(block *bxethcommon.Block) error {
 // HasBlock indicates if block has been stored locally
 func (c *Chain) HasBlock(hash ethcommon.Hash) bool {
 	return c.hasHeader(hash) && c.hasBody(hash)
+}
+
+// HasBlockRaw indicates if block has been stored locally
+func (c *Chain) HasBlockRaw(hash ethcommon.Hash) bool {
+	return c.blockHashToBlock.Has(hash)
 }
 
 // HasSentToBDN indicates if the block has been sent to the BDN
@@ -333,7 +396,7 @@ func (c *Chain) InitializeDifficulty(hash ethcommon.Hash, td *big.Int) {
 }
 
 // SetTotalDifficulty computes, sets, and stores the difficulty for a provided block
-func (c *Chain) SetTotalDifficulty(info *BlockInfo) error {
+func (c *Chain) SetTotalDifficulty(info *bxethcommon.BlockInfo) error {
 	totalDifficulty := info.TotalDifficulty()
 	if totalDifficulty != nil {
 		return nil
@@ -655,6 +718,11 @@ func (c *Chain) storeBlock(block *bxethcommon.Block, difficulty *big.Int, source
 	}
 }
 
+func (c *Chain) storeBlockRaw(block *types.RawBlock, source BlockSource) {
+	c.blockHashToBlock.Store(block.Hash(), block)
+	c.storeBlockMetadata(block.Hash(), block.Number(), source == BSBlockchain, false)
+}
+
 // GetBlockHeader returns the block header for a given height and hash.
 func (c *Chain) GetBlockHeader(height uint64, hash ethcommon.Hash) (*ethtypes.Header, bool) {
 	headers, ok := c.getHeadersAtHeight(height)
@@ -767,6 +835,11 @@ func (c *Chain) storeBlockBlobSidecars(hash ethcommon.Hash, blobSidecars bxethco
 	c.blockHashToBlobSidecars.Store(hash, blobSidecars)
 }
 
+// GetBlockRaw returns the block for a given hash.
+func (c *Chain) GetBlockRaw(hash ethcommon.Hash) (*types.RawBlock, bool) {
+	return c.blockHashToBlock.Load(hash)
+}
+
 // GetBlockBody returns the block body for a given hash.
 func (c *Chain) GetBlockBody(hash ethcommon.Hash) (*ethtypes.Body, bool) {
 	body, ok := c.blockHashToBody.Load(hash)
@@ -797,20 +870,27 @@ func (c *Chain) removeBlockBlobSidecars(hash ethcommon.Hash) {
 	c.blockHashToBlobSidecars.Delete(hash)
 }
 
+func (c *Chain) removeHashToBlock(hash ethcommon.Hash) {
+	c.blockHashToBlock.Delete(hash)
+}
+
 // removes all info corresponding to a given block in storage
 func (c *Chain) pruneHash(hash ethcommon.Hash) {
 	c.removeBlockMetadata(hash)
 	c.removeBlockBody(hash)
 	c.removeBlockDifficulty(hash)
 	c.removeBlockBlobSidecars(hash)
+	c.removeHashToBlock(hash)
 }
 
 func (c *Chain) clean(maxSize int) (lowestCleaned int, highestCleaned int, numCleaned int) {
-	c.headerLock.Lock()
-	defer c.headerLock.Unlock()
-
+	// acquire chainLock before headerLock to match the lock order in AddBlock/AddBlockRaw
+	// (which hold chainLock and then acquire headerLock.RLock via storeEthHeaderAtHeight)
 	c.chainLock.Lock()
 	defer c.chainLock.Unlock()
+
+	c.headerLock.Lock()
+	defer c.headerLock.Unlock()
 
 	// Find largest height from headers if chainState is empty
 	// This may happened if no connection to node was established but we receiving blocks from BDN

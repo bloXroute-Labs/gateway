@@ -56,15 +56,12 @@ func (c *Chain) AddBlock(block interfaces.ReadOnlySignedBeaconBlock) error {
 		return nil
 	}
 
-	digest, err := currentForkDigest(c.genesisState)
-	if err != nil {
-		return fmt.Errorf("could not get current fork digest: %v", err)
-	}
-
 	root, err := block.Block().HashTreeRoot()
 	if err != nil {
 		return fmt.Errorf("could not get block hash tree root: %v", err)
 	}
+
+	digest := currentForkDigest(c.genesisState)
 
 	// start of the epoch
 	blockSlot := block.Block().Slot()
@@ -121,10 +118,7 @@ func (c *Chain) initStatus() error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	digest, err := currentForkDigest(c.genesisState)
-	if err != nil {
-		return err
-	}
+	digest := currentForkDigest(c.genesisState)
 
 	stateRoot, err := c.genesisState.HashTreeRoot(context.Background())
 	if err != nil {

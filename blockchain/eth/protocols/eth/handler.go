@@ -40,6 +40,8 @@ type Backend interface {
 	// be forwarded to the backend.
 	Handle(peer *Peer, packet Packet) error
 
+	HandleRaw(peer *Peer, packet p2p.Msg) error
+
 	// RequestTransactions retrieves the transactions for the given hashes.
 	RequestTransactions(hashes []ethcommon.Hash) ([]rlp.RawValue, error)
 }
@@ -97,7 +99,7 @@ type msgHandler func(backend Backend, msg Decoder, peer *Peer) error
 
 var eth66 = map[uint64]msgHandler{
 	eth.NewBlockHashesMsg:             handleNewBlockHashes,
-	eth.NewBlockMsg:                   handleNewBlockMsg,
+	eth.NewBlockMsg:                   handleNewBlockMsgRaw,
 	eth.TransactionsMsg:               handleTransactions,
 	eth.NewPooledTransactionHashesMsg: handleNewPooledTransactionHashes,
 	// eth66 messages have request-id
@@ -115,7 +117,7 @@ var eth66 = map[uint64]msgHandler{
 
 var eth67 = map[uint64]msgHandler{
 	eth.NewBlockHashesMsg:             handleNewBlockHashes,
-	eth.NewBlockMsg:                   handleNewBlockMsg,
+	eth.NewBlockMsg:                   handleNewBlockMsgRaw,
 	eth.TransactionsMsg:               handleTransactions,
 	eth.NewPooledTransactionHashesMsg: handleNewPooledTransactionHashes,
 	eth.GetBlockHeadersMsg:            handleGetBlockHeaders,
@@ -130,7 +132,7 @@ var eth67 = map[uint64]msgHandler{
 
 var eth68 = map[uint64]msgHandler{
 	eth.NewBlockHashesMsg:             handleNewBlockHashes,
-	eth.NewBlockMsg:                   handleNewBlockMsg,
+	eth.NewBlockMsg:                   handleNewBlockMsgRaw,
 	eth.TransactionsMsg:               handleTransactions,
 	eth.NewPooledTransactionHashesMsg: handleNewPooledTransactionHashes68,
 	eth.GetBlockHeadersMsg:            handleGetBlockHeaders,

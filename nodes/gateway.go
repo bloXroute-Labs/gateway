@@ -35,7 +35,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
 	bxcommoneth "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
-	"github.com/bloXroute-Labs/gateway/v2/blockchain/core"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
@@ -283,7 +282,7 @@ func NewGateway(parent context.Context,
 	}
 	g.chainID = int64(bxtypes.NetworkNumToChainID[sdn.NetworkNum()])
 
-	if bxConfig.BlockchainNetwork == bxtypes.BSCMainnet {
+	if bxConfig.BlockchainNetwork == bxtypes.BSCMainnet || bxConfig.BlockchainNetwork == bxtypes.BSCTestnet {
 		g.validatorStatusMap = syncmap.NewStringMapOf[bool]()
 	}
 
@@ -905,13 +904,17 @@ func bscExtractValidatorListFromBlock(b []byte) (validator.List, error) {
 	return validator.List{}, nil
 }
 
-func (g *gateway) generateFutureValidatorInfo(block *types.BxBlock, blockInfo *core.BlockInfo) []*types.FutureValidatorInfo {
+func (g *gateway) generateFutureValidatorInfo(block *types.BxBlock, blockInfo *bxcommoneth.BlockInfo) []*types.FutureValidatorInfo {
+	if g.validatorStatusMap == nil {
+		return nil
+	}
+
 	g.validatorInfoUpdateLock.Lock()
 	defer g.validatorInfoUpdateLock.Unlock()
 
 	blockHeight := block.Number.Uint64()
 
-	if (g.sdn.NetworkNum() == bxtypes.BSCMainnetNum || g.sdn.NetworkNum() == bxtypes.BSCTestnetNum) && blockHeight%bscBlocksPerEpoch == 0 {
+	if blockHeight%bscBlocksPerEpoch == 0 {
 		validatorList, err := bscExtractValidatorListFromBlock(blockInfo.Block.Extra())
 		if err != nil {
 			g.log.Errorf("failed to extract validator list from extra data: %v", err)
@@ -924,15 +927,11 @@ func (g *gateway) generateFutureValidatorInfo(block *types.BxBlock, blockInfo *c
 	if blockHeight <= g.latestValidatorInfoHeight {
 		return g.latestValidatorInfo
 	}
-	g.latestValidatorInfoHeight = blockHeight
 
-	switch g.sdn.NetworkNum() {
-	case bxtypes.BSCMainnetNum, bxtypes.BSCTestnetNum:
-		g.latestValidatorInfo = g.generateBSCValidator(blockHeight)
-		return g.latestValidatorInfo
-	default:
-		return nil
-	}
+	g.latestValidatorInfoHeight = blockHeight
+	g.latestValidatorInfo = g.generateBSCValidator(blockHeight)
+
+	return g.latestValidatorInfo
 }
 
 func (g *gateway) publishBlock(bxBlock *types.BxBlock, nodeSource *connections.Blockchain, info []*types.FutureValidatorInfo, isBlockchainBlock bool) error {
@@ -971,69 +970,48 @@ func (g *gateway) publishBlock(bxBlock *types.BxBlock, nodeSource *connections.B
 		}
 	}
 
-	if err := g.notifyBlockFeeds(bxBlock, nodeSource, info, isBlockchainBlock); err != nil {
-		return fmt.Errorf("cannot notify block feeds: %v", err)
+	addedBdnBlock := g.bdnBlocks.SetIfAbsent(bxBlock.Hash().String(), 15*time.Minute)
+
+	var addedNewBlock bool
+	if isBlockchainBlock {
+		addedNewBlock = g.newBlocks.SetIfAbsent(bxBlock.Hash().String(), 15*time.Minute)
 	}
 
-	return nil
-}
-
-func (g *gateway) notifyBlockFeeds(bxBlock *types.BxBlock, nodeSource *connections.Blockchain, info []*types.FutureValidatorInfo, isBlockchainBlock bool) error {
-	// Not optimal. Block -> BxBlock -> Block
-	// Why not to check already seen before converting to blockchain block?
-	block, err := g.bridge.BlockBDNtoBlockchain(bxBlock)
-	if err != nil {
-		return fmt.Errorf("cannot convert BxBlock to blockchain block: %v", err)
-	}
-	l := g.log.WithFields(log.Fields{
-		"bxBlock": bxBlock,
-		"source":  nodeSource,
-	})
-	var addedNewBlock, addedBdnBlock bool
-
-	notifyEthBlockFeeds := func(block *bxcommoneth.Block, nodeSource *connections.Blockchain, info []*types.FutureValidatorInfo, isBlockchainBlock bool) error {
-		ethNotification, err := types.NewEthBlockNotification(g.BxConfig.BlockchainNetwork, common.Hash(bxBlock.ExecutionHash()), block, info)
-		if err != nil {
-			return err
-		}
-
-		if addedBdnBlock {
-			// Send ETH notifications to BDN feed even if source is blockchain
-			notification := ethNotification.Clone()
-			notification.SetNotificationType(types.BDNBlocksFeed)
-			g.notify(notification)
-
-			// Waits response from node WS provider
-			// Because it is in goroutine time will not be present in handleDuration
-			go g.notifyTxReceiptsAndOnBlockFeeds(nodeSource, ethNotification)
-		} else {
-			l.Trace("duplicate ETH block for bdnBlocks")
-		}
-
-		if isBlockchainBlock {
-			if addedNewBlock {
-				g.bestBlockHeight = int(block.Number().Int64())
-				g.bdnBlocksSkipCount = 0
-
-				notification := ethNotification.Clone()
-				notification.SetNotificationType(types.NewBlocksFeed)
-				g.notify(notification)
-			} else {
-				l.Trace("duplicate ETH block for newBlocks")
-			}
+	if addedBdnBlock || addedNewBlock {
+		if err := g.notifyBlockFeeds(bxBlock, nodeSource, info, addedBdnBlock, addedNewBlock); err != nil {
+			return fmt.Errorf("cannot notify block feeds: %v", err)
 		}
 
 		return nil
 	}
 
+	g.log.WithFields(log.Fields{
+		"bxBlock": bxBlock,
+		"source":  nodeSource,
+	}).Debug("block already published to feeds, skipping")
+
+	return nil
+}
+
+func (g *gateway) notifyBlockFeeds(bxBlock *types.BxBlock, nodeSource *connections.Blockchain, info []*types.FutureValidatorInfo, addedBdnBlock, addedNewBlock bool) error {
+	var err error
+
+	block := bxBlock.Original()
+	if block == nil {
+		block, err = g.bridge.BlockBDNtoBlockchain(bxBlock)
+		if err != nil {
+			return fmt.Errorf("cannot convert BxBlock to blockchain block: %v", err)
+		}
+	}
+
 	switch b := block.(type) {
 	case interfaces.ReadOnlySignedBeaconBlock:
-		beaconNotification, err := types.NewBeaconBlockNotification(b)
+		var beaconNotification types.BlockNotification
+		beaconNotification, err = types.NewBeaconBlockNotification(b)
 		if err != nil {
 			return err
 		}
 
-		addedBdnBlock = g.bdnBlocks.SetIfAbsent(bxBlock.Hash().String(), 15*time.Minute)
 		if addedBdnBlock {
 			// Send beacon notifications to BDN feed even if source is blockchain
 			notification := beaconNotification.Clone()
@@ -1041,31 +1019,61 @@ func (g *gateway) notifyBlockFeeds(bxBlock *types.BxBlock, nodeSource *connectio
 			g.notify(notification)
 		}
 
-		if isBlockchainBlock {
-			addedNewBlock = g.newBlocks.SetIfAbsent(bxBlock.Hash().String(), 15*time.Minute)
-			if addedNewBlock {
-				notification := beaconNotification.Clone()
-				notification.SetNotificationType(types.NewBeaconBlocksFeed)
-				g.notify(notification)
-			}
+		if addedNewBlock {
+			notification := beaconNotification.Clone()
+			notification.SetNotificationType(types.NewBeaconBlocksFeed)
+			g.notify(notification)
 		}
 
-		ethBlock, err := eth.BeaconBlockToEthBlock(b)
+		var ethBlock *bxcommoneth.Block
+
+		ethBlock, err = eth.BeaconBlockToEthBlock(b)
 		if err != nil {
 			return err
 		}
 
-		if err := notifyEthBlockFeeds(ethBlock, nodeSource, info, isBlockchainBlock); err != nil {
-			return err
-		}
-	case *core.BlockInfo:
-		addedBdnBlock = g.bdnBlocks.SetIfAbsent(bxBlock.Hash().String(), 15*time.Minute)
-		if isBlockchainBlock {
-			addedNewBlock = g.newBlocks.SetIfAbsent(bxBlock.Hash().String(), 15*time.Minute)
-		}
-		if err := notifyEthBlockFeeds(b.Block, nodeSource, info, isBlockchainBlock); err != nil {
-			return err
-		}
+		return g.notifyEthBlockFeeds(addedNewBlock, addedBdnBlock, bxBlock, ethBlock, nodeSource, info)
+	case *bxcommoneth.BlockInfo:
+		return g.notifyEthBlockFeeds(addedNewBlock, addedBdnBlock, bxBlock, b.Block, nodeSource, info)
+	default:
+		return fmt.Errorf("notifyBlockFeeds: unexpected block type %T", block)
+	}
+}
+
+func (g *gateway) notifyEthBlockFeeds(addedNewBlock, addedBdnBlock bool, bxBlock *types.BxBlock, block *bxcommoneth.Block, nodeSource *connections.Blockchain, info []*types.FutureValidatorInfo) error {
+	ethNotification, err := types.NewEthBlockNotification(g.BxConfig.BlockchainNetwork, common.Hash(bxBlock.ExecutionHash()), block, info)
+	if err != nil {
+		return err
+	}
+
+	if addedBdnBlock {
+		// Send ETH notifications to BDN feed even if source is blockchain
+		notification := ethNotification.Clone()
+		notification.SetNotificationType(types.BDNBlocksFeed)
+		g.notify(notification)
+
+		// Waits response from node WS provider
+		// Because it is in goroutine time will not be present in handleDuration
+		go g.notifyTxReceiptsAndOnBlockFeeds(nodeSource, ethNotification)
+	} else {
+		g.log.WithFields(log.Fields{
+			"bxBlock": bxBlock,
+			"source":  nodeSource,
+		}).Trace("duplicate ETH block for bdnBlocks")
+	}
+
+	if addedNewBlock {
+		g.bestBlockHeight = int(block.Number().Int64())
+		g.bdnBlocksSkipCount = 0
+
+		notification := ethNotification.Clone()
+		notification.SetNotificationType(types.NewBlocksFeed)
+		g.notify(notification)
+	} else {
+		g.log.WithFields(log.Fields{
+			"bxBlock": bxBlock,
+			"source":  nodeSource,
+		}).Trace("duplicate ETH block for newBlocks")
 	}
 
 	return nil
@@ -1425,7 +1433,7 @@ func (g *gateway) processBroadcast(broadcastMsg *bxmessage.Broadcast, source con
 			g.stats.AddGatewayBlockEvent(eventName, source, broadcastMsg.Hash(), broadcastMsg.BeaconHash(), broadcastMsg.GetNetworkNum(), 1, startTime, 0, 0, len(broadcastMsg.Block()), len(broadcastMsg.ShortIDs()), 0, len(missingShortIDs), bxBlock)
 		case errors.Is(err, services.ErrNotCompatibleBeaconBlock):
 			// Old relay version
-			source.Log().Debugf("received incompitable beacon block %v skipping", broadcastMsg)
+			source.Log().Debugf("received incompatible beacon block %v skipping", broadcastMsg)
 		default:
 			source.Log().Errorf("could not decompress %v, err: %v", broadcastMsg, err)
 			broadcastBlockHex := hex.EncodeToString(broadcastMsg.Block())
@@ -1657,6 +1665,8 @@ const maxBlockAgeSinceNow = time.Minute * 10
 func (g *gateway) handleBlockFromBlockchain(blockchainBlock blockchain.BlockFromNode) {
 	startTime := time.Now()
 
+	source := connections.NewBlockchainConn(blockchainBlock.PeerEndpoint)
+
 	bxBlock := blockchainBlock.Block
 
 	blockInfo, err := g.bxBlockToBlockInfo(bxBlock)
@@ -1664,17 +1674,15 @@ func (g *gateway) handleBlockFromBlockchain(blockchainBlock blockchain.BlockFrom
 		log.Errorf("failed to convert bx block %v to block info: %v", bxBlock, err)
 	}
 
-	source := connections.NewBlockchainConn(blockchainBlock.PeerEndpoint)
-
 	if blockInfo != nil {
-		blockTime := time.Unix(int64(blockInfo.Block.Time()), 0)
+		blockTime := time.Unix(int64(blockInfo.Block.Time()), 0) //nolint:gosec
 		if !blockTime.IsZero() && startTime.Sub(blockTime) > maxBlockAgeSinceNow {
 			source.Log().Warnf("received block %v from blockchain node with time %v, which is older than %v", bxBlock.Hash(), blockTime, maxBlockAgeSinceNow)
 			return
 		}
 	}
 
-	g.bdnStats.LogNewBlockMessageFromNode(source.NodeEndpoint())
+	go g.bdnStats.LogNewBlockMessageFromNode(source.NodeEndpoint())
 
 	broadcastMessage, usedShortIDs, err := g.blockProcessor.BxBlockToBroadcast(bxBlock, g.sdn.NetworkNum(), g.sdn.MinTxAge())
 	if err != nil {
@@ -1711,9 +1719,12 @@ func (g *gateway) handleBlockFromBlockchain(blockchainBlock blockchain.BlockFrom
 		}
 	}
 
-	validatorInfo := g.generateFutureValidatorInfo(bxBlock, blockInfo)
+	var validatorInfo []*types.FutureValidatorInfo
 
-	source.Log().Debugf("generated validator info: %v", validatorInfo)
+	if blockInfo != nil {
+		validatorInfo = g.generateFutureValidatorInfo(bxBlock, blockInfo)
+		source.Log().Debugf("generated validator info: %v", validatorInfo)
+	}
 
 	if err = g.publishBlock(bxBlock, &source, validatorInfo, !blockchainBlock.PeerEndpoint.IsDynamic()); err != nil {
 		source.Log().Errorf("failed to publish block %v from blockchain node: %v", bxBlock, err)
@@ -1734,12 +1745,17 @@ func (g *gateway) processBlockFromBDN(bxBlock *types.BxBlock) {
 		g.log.Errorf("failed to convert bx block %v to block info: %v", bxBlock, err)
 	}
 
-	if err = g.bridge.SendBlockToNode(bxBlock); err != nil {
+	if err := g.bridge.SendBlockToNode(bxBlock); err != nil {
 		g.log.Errorf("unable to send block %v from BDN to node: %v", bxBlock, err)
 	}
 
 	g.bdnStats.LogNewBlockFromBDN(g.BxConfig.BlockchainNetwork)
-	validatorInfo := g.generateFutureValidatorInfo(bxBlock, blockInfo)
+
+	var validatorInfo []*types.FutureValidatorInfo
+	if blockInfo != nil {
+		validatorInfo = g.generateFutureValidatorInfo(bxBlock, blockInfo)
+	}
+
 	err = g.publishBlock(bxBlock, nil, validatorInfo, false)
 	if err != nil {
 		g.log.Errorf("failed to publish BDN block with %v, %v", err, bxBlock)
@@ -1761,10 +1777,15 @@ func (g *gateway) getHeaderFromGateway() string {
 	return base64.StdEncoding.EncodeToString([]byte(accountIDAndHash))
 }
 
-func (g *gateway) bxBlockToBlockInfo(bxBlock *types.BxBlock) (*core.BlockInfo, error) {
+func (g *gateway) bxBlockToBlockInfo(bxBlock *types.BxBlock) (*bxcommoneth.BlockInfo, error) {
 	// We support only types.BxBlockTypeEth. That means BSC block
 	if bxBlock.Type != types.BxBlockTypeEth {
 		return nil, errUnsupportedBlockType
+	}
+
+	block, ok := bxBlock.Original().(*bxcommoneth.BlockInfo)
+	if ok {
+		return block, nil
 	}
 
 	blockSrc, err := g.bridge.BlockBDNtoBlockchain(bxBlock)
@@ -1772,10 +1793,12 @@ func (g *gateway) bxBlockToBlockInfo(bxBlock *types.BxBlock) (*core.BlockInfo, e
 		return nil, fmt.Errorf("failed to convert BDN block (%s) to blockchain block: %w", bxBlock, err)
 	}
 
-	block, ok := blockSrc.(*core.BlockInfo)
+	block, ok = blockSrc.(*bxcommoneth.BlockInfo)
 	if !ok {
-		return nil, fmt.Errorf("failed to convert BDN block (%v) to blockchain block: %v", bxBlock, err)
+		return nil, fmt.Errorf("failed to convert BDN block (%v) to blockchain block: unexpected result type %T", bxBlock, blockSrc)
 	}
+
+	bxBlock.SetOriginal(block)
 
 	return block, nil
 }
