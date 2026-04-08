@@ -100,8 +100,10 @@ golangci-lint: ## # !!IMPORTANT!! force to install it once on the CI when go ver
 	fi
 
 .PHONY: fmt
-fmt: ; $(info $(M) running gofmt) @ ## Run gofmt on all source files
-	$Q $(GO) fmt $(PKGS)
+fmt: ; $(info $(M) running gofmt) @ ## Run gofmt on all source files except protobuf
+	$Q for pkg in $$(echo $(PKGS) | tr ' ' '\n' | grep -v '/protobuf' || true); do \
+		test -n "$$pkg" && $(GO) fmt "$$pkg"; \
+	done
 
 # Misc
 
