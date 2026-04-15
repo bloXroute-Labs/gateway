@@ -41,6 +41,7 @@ const (
 
 	// topics for the event stream
 	topicsNewBlockHead = "head"
+	timesToRetry       = 5
 )
 
 var errUnknownClientVersion = errors.New("unknown client version")
@@ -111,14 +112,33 @@ func (c *APIClient) requestClientVersion() (string, error) {
 	return strings.ToLower(nodeVersionBody.Data.Version), nil
 }
 
-func (c *APIClient) requestBlock(hash string) (interfaces.ReadOnlySignedBeaconBlock, error) {
-	uri := fmt.Sprintf(requestBlockRoute, c.URL, hash)
-	req, err := c.newRequest(uri)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make new request to Beacon API route: %v", err)
+func (c *APIClient) requestBlockWithRetry(uri string) (*http.Response, error) {
+	for i := range timesToRetry {
+		req, err := c.newRequest(uri)
+		if err != nil {
+			return nil, err
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode != http.StatusNotFound {
+			return resp, nil
+		}
+
+		resp.Body.Close()
+		time.Sleep(time.Duration(10*(1<<i)) * time.Millisecond) // 10, 20, 40, 80, 160ms
 	}
 
-	resp, err := c.httpClient.Do(req)
+	return nil, fmt.Errorf("block not found after %d retries (404)", timesToRetry)
+}
+
+func (c *APIClient) requestBlock(hash string) (interfaces.ReadOnlySignedBeaconBlock, error) {
+	uri := fmt.Sprintf(requestBlockRoute, c.URL, hash)
+
+	resp, err := c.requestBlockWithRetry(uri)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +159,6 @@ func (c *APIClient) requestBlock(hash string) (interfaces.ReadOnlySignedBeaconBl
 		}
 
 		log.Warnf("Eth-Consensus-Version header is missing in response. Response headers: %s", strings.Join(headers, ", "))
-
 		return nil, fmt.Errorf("missing Eth-Consensus-Version header in response")
 	}
 
