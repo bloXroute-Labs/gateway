@@ -145,7 +145,6 @@ type gateway struct {
 	relaysToSwitch  *syncmap.SyncMap[string, bool]
 	ofacMap         *types.OFACMap
 	senderExtractor *services.SenderExtractor
-
 }
 
 func (g *gateway) startOFACUpdater() {
