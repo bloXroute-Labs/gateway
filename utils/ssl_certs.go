@@ -11,14 +11,14 @@ import (
 )
 
 // TestCerts uses the test certs specified in constants to return an utils.SSLCerts object for connection testing
-func TestCerts() cert.SSLCerts {
+func TestCerts() *cert.SSLCerts {
 	defer CleanupSSLCerts()
 	SetupSSLFiles("test")
 	return TestCertsWithoutSetup()
 }
 
 // TestCertsWithoutSetup uses the test certs specified in constants to return an utils.SSLCerts object for connection testing. This function does not do any setup/teardown of writing said files temporarily to disk.
-func TestCertsWithoutSetup() cert.SSLCerts {
+func TestCertsWithoutSetup() *cert.SSLCerts {
 	return cert.NewSSLCerts(test.SSLTestPath, test.SSLTestPath, "test")
 }
 

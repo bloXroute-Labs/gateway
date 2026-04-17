@@ -24,6 +24,7 @@ import (
 type MockSDNHTTP struct {
 	ctrl     *gomock.Controller
 	recorder *MockSDNHTTPMockRecorder
+	isgomock struct{}
 }
 
 // MockSDNHTTPMockRecorder is the mock recorder for MockSDNHTTP.
@@ -71,18 +72,32 @@ func (mr *MockSDNHTTPMockRecorder) AccountTier() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AccountTier", reflect.TypeOf((*MockSDNHTTP)(nil).AccountTier))
 }
 
-// DirectRelayConnections mocks base method.
-func (m *MockSDNHTTP) DirectRelayConnections(arg0 string, arg1 uint64, arg2 chan<- sdnsdk.RelayInstruction, arg3 sdnsdk.IgnoredRelaysMap) error {
+// AddInternalGatewaySubscription mocks base method.
+func (m *MockSDNHTTP) AddInternalGatewaySubscription(accountID types.AccountID) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DirectRelayConnections", arg0, arg1, arg2, arg3)
+	ret := m.ctrl.Call(m, "AddInternalGatewaySubscription", accountID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddInternalGatewaySubscription indicates an expected call of AddInternalGatewaySubscription.
+func (mr *MockSDNHTTPMockRecorder) AddInternalGatewaySubscription(accountID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddInternalGatewaySubscription", reflect.TypeOf((*MockSDNHTTP)(nil).AddInternalGatewaySubscription), accountID)
+}
+
+// DirectRelayConnections mocks base method.
+func (m *MockSDNHTTP) DirectRelayConnections(relayHosts string, relayLimit uint64, relayInstructions chan<- sdnsdk.RelayInstruction, ignoredRelays sdnsdk.IgnoredRelaysMap) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DirectRelayConnections", relayHosts, relayLimit, relayInstructions, ignoredRelays)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // DirectRelayConnections indicates an expected call of DirectRelayConnections.
-func (mr *MockSDNHTTPMockRecorder) DirectRelayConnections(arg0, arg1, arg2, arg3 any) *gomock.Call {
+func (mr *MockSDNHTTPMockRecorder) DirectRelayConnections(relayHosts, relayLimit, relayInstructions, ignoredRelays any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DirectRelayConnections", reflect.TypeOf((*MockSDNHTTP)(nil).DirectRelayConnections), arg0, arg1, arg2, arg3)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DirectRelayConnections", reflect.TypeOf((*MockSDNHTTP)(nil).DirectRelayConnections), relayHosts, relayLimit, relayInstructions, ignoredRelays)
 }
 
 // FetchAllBlockchainNetworks mocks base method.
@@ -114,101 +129,101 @@ func (mr *MockSDNHTTPMockRecorder) FetchBlockchainNetwork() *gomock.Call {
 }
 
 // FetchCustomerAccountModel mocks base method.
-func (m *MockSDNHTTP) FetchCustomerAccountModel(arg0 types.AccountID) (message.Account, error) {
+func (m *MockSDNHTTP) FetchCustomerAccountModel(accountID types.AccountID) (message.Account, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FetchCustomerAccountModel", arg0)
+	ret := m.ctrl.Call(m, "FetchCustomerAccountModel", accountID)
 	ret0, _ := ret[0].(message.Account)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // FetchCustomerAccountModel indicates an expected call of FetchCustomerAccountModel.
-func (mr *MockSDNHTTPMockRecorder) FetchCustomerAccountModel(arg0 any) *gomock.Call {
+func (mr *MockSDNHTTPMockRecorder) FetchCustomerAccountModel(accountID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchCustomerAccountModel", reflect.TypeOf((*MockSDNHTTP)(nil).FetchCustomerAccountModel), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchCustomerAccountModel", reflect.TypeOf((*MockSDNHTTP)(nil).FetchCustomerAccountModel), accountID)
 }
 
 // FindFastestRelays mocks base method.
-func (m *MockSDNHTTP) FindFastestRelays(arg0 chan<- sdnsdk.RelayInstruction, arg1 sdnsdk.IgnoredRelaysMap) {
+func (m *MockSDNHTTP) FindFastestRelays(relayInstructions chan<- sdnsdk.RelayInstruction, ignoredRelays sdnsdk.IgnoredRelaysMap) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "FindFastestRelays", arg0, arg1)
+	m.ctrl.Call(m, "FindFastestRelays", relayInstructions, ignoredRelays)
 }
 
 // FindFastestRelays indicates an expected call of FindFastestRelays.
-func (mr *MockSDNHTTPMockRecorder) FindFastestRelays(arg0, arg1 any) *gomock.Call {
+func (mr *MockSDNHTTPMockRecorder) FindFastestRelays(relayInstructions, ignoredRelays any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindFastestRelays", reflect.TypeOf((*MockSDNHTTP)(nil).FindFastestRelays), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindFastestRelays", reflect.TypeOf((*MockSDNHTTP)(nil).FindFastestRelays), relayInstructions, ignoredRelays)
 }
 
 // FindNetwork mocks base method.
-func (m *MockSDNHTTP) FindNetwork(arg0 types.NetworkNum) (*message.BlockchainNetwork, error) {
+func (m *MockSDNHTTP) FindNetwork(networkNum types.NetworkNum) (*message.BlockchainNetwork, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FindNetwork", arg0)
+	ret := m.ctrl.Call(m, "FindNetwork", networkNum)
 	ret0, _ := ret[0].(*message.BlockchainNetwork)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // FindNetwork indicates an expected call of FindNetwork.
-func (mr *MockSDNHTTPMockRecorder) FindNetwork(arg0 any) *gomock.Call {
+func (mr *MockSDNHTTPMockRecorder) FindNetwork(networkNum any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindNetwork", reflect.TypeOf((*MockSDNHTTP)(nil).FindNetwork), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindNetwork", reflect.TypeOf((*MockSDNHTTP)(nil).FindNetwork), networkNum)
 }
 
 // FindNewRelay mocks base method.
-func (m *MockSDNHTTP) FindNewRelay(arg0 context.Context, arg1 string, arg2 int64, arg3 chan sdnsdk.RelayInstruction, arg4 sdnsdk.IgnoredRelaysMap) {
+func (m *MockSDNHTTP) FindNewRelay(ctx context.Context, oldRelayIP string, oldRelayIPPort int64, relayInstructions chan sdnsdk.RelayInstruction, ignoredRelays sdnsdk.IgnoredRelaysMap) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "FindNewRelay", arg0, arg1, arg2, arg3, arg4)
+	m.ctrl.Call(m, "FindNewRelay", ctx, oldRelayIP, oldRelayIPPort, relayInstructions, ignoredRelays)
 }
 
 // FindNewRelay indicates an expected call of FindNewRelay.
-func (mr *MockSDNHTTPMockRecorder) FindNewRelay(arg0, arg1, arg2, arg3, arg4 any) *gomock.Call {
+func (mr *MockSDNHTTPMockRecorder) FindNewRelay(ctx, oldRelayIP, oldRelayIPPort, relayInstructions, ignoredRelays any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindNewRelay", reflect.TypeOf((*MockSDNHTTP)(nil).FindNewRelay), arg0, arg1, arg2, arg3, arg4)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindNewRelay", reflect.TypeOf((*MockSDNHTTP)(nil).FindNewRelay), ctx, oldRelayIP, oldRelayIPPort, relayInstructions, ignoredRelays)
 }
 
 // Get mocks base method.
-func (m *MockSDNHTTP) Get(arg0 string, arg1 []byte) ([]byte, error) {
+func (m *MockSDNHTTP) Get(endpoint string, requestBody []byte) ([]byte, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Get", arg0, arg1)
+	ret := m.ctrl.Call(m, "Get", endpoint, requestBody)
 	ret0, _ := ret[0].([]byte)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Get indicates an expected call of Get.
-func (mr *MockSDNHTTPMockRecorder) Get(arg0, arg1 any) *gomock.Call {
+func (mr *MockSDNHTTPMockRecorder) Get(endpoint, requestBody any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockSDNHTTP)(nil).Get), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockSDNHTTP)(nil).Get), endpoint, requestBody)
 }
 
 // GetQuotaUsage mocks base method.
-func (m *MockSDNHTTP) GetQuotaUsage(arg0 string) (*sdnsdk.QuotaResponseBody, error) {
+func (m *MockSDNHTTP) GetQuotaUsage(accountID string) (*sdnsdk.QuotaResponseBody, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetQuotaUsage", arg0)
+	ret := m.ctrl.Call(m, "GetQuotaUsage", accountID)
 	ret0, _ := ret[0].(*sdnsdk.QuotaResponseBody)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetQuotaUsage indicates an expected call of GetQuotaUsage.
-func (mr *MockSDNHTTPMockRecorder) GetQuotaUsage(arg0 any) *gomock.Call {
+func (mr *MockSDNHTTPMockRecorder) GetQuotaUsage(accountID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetQuotaUsage", reflect.TypeOf((*MockSDNHTTP)(nil).GetQuotaUsage), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetQuotaUsage", reflect.TypeOf((*MockSDNHTTP)(nil).GetQuotaUsage), accountID)
 }
 
 // InitGateway mocks base method.
-func (m *MockSDNHTTP) InitGateway(arg0, arg1 string) error {
+func (m *MockSDNHTTP) InitGateway(protocol, network string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "InitGateway", arg0, arg1)
+	ret := m.ctrl.Call(m, "InitGateway", protocol, network)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // InitGateway indicates an expected call of InitGateway.
-func (mr *MockSDNHTTPMockRecorder) InitGateway(arg0, arg1 any) *gomock.Call {
+func (mr *MockSDNHTTPMockRecorder) InitGateway(protocol, network any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitGateway", reflect.TypeOf((*MockSDNHTTP)(nil).InitGateway), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitGateway", reflect.TypeOf((*MockSDNHTTP)(nil).InitGateway), protocol, network)
 }
 
 // MinTxAge mocks base method.
@@ -309,6 +324,34 @@ func (mr *MockSDNHTTPMockRecorder) Register() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Register", reflect.TypeOf((*MockSDNHTTP)(nil).Register))
 }
 
+// RemoveInternalGatewaySubscription mocks base method.
+func (m *MockSDNHTTP) RemoveInternalGatewaySubscription(accountID types.AccountID) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveInternalGatewaySubscription", accountID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RemoveInternalGatewaySubscription indicates an expected call of RemoveInternalGatewaySubscription.
+func (mr *MockSDNHTTPMockRecorder) RemoveInternalGatewaySubscription(accountID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveInternalGatewaySubscription", reflect.TypeOf((*MockSDNHTTP)(nil).RemoveInternalGatewaySubscription), accountID)
+}
+
+// RotateCertificate mocks base method.
+func (m *MockSDNHTTP) RotateCertificate(ctx context.Context) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RotateCertificate", ctx)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RotateCertificate indicates an expected call of RotateCertificate.
+func (mr *MockSDNHTTPMockRecorder) RotateCertificate(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RotateCertificate", reflect.TypeOf((*MockSDNHTTP)(nil).RotateCertificate), ctx)
+}
+
 // SDNURL mocks base method.
 func (m *MockSDNHTTP) SDNURL() string {
 	m.ctrl.T.Helper()
@@ -324,67 +367,39 @@ func (mr *MockSDNHTTPMockRecorder) SDNURL() *gomock.Call {
 }
 
 // SendNodeEvent mocks base method.
-func (m *MockSDNHTTP) SendNodeEvent(arg0 message.NodeEvent, arg1 types.NodeID) {
+func (m *MockSDNHTTP) SendNodeEvent(event message.NodeEvent, id types.NodeID) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "SendNodeEvent", arg0, arg1)
+	m.ctrl.Call(m, "SendNodeEvent", event, id)
 }
 
 // SendNodeEvent indicates an expected call of SendNodeEvent.
-func (mr *MockSDNHTTPMockRecorder) SendNodeEvent(arg0, arg1 any) *gomock.Call {
+func (mr *MockSDNHTTPMockRecorder) SendNodeEvent(event, id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendNodeEvent", reflect.TypeOf((*MockSDNHTTP)(nil).SendNodeEvent), arg0, arg1)
-}
-
-// SetNetworks mocks base method.
-func (m *MockSDNHTTP) SetNetworks(arg0 message.BlockchainNetworks) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "SetNetworks", arg0)
-}
-
-// SetNetworks indicates an expected call of SetNetworks.
-func (mr *MockSDNHTTPMockRecorder) SetNetworks(arg0 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetNetworks", reflect.TypeOf((*MockSDNHTTP)(nil).SetNetworks), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendNodeEvent", reflect.TypeOf((*MockSDNHTTP)(nil).SendNodeEvent), event, id)
 }
 
 // SetInternalGateway mocks base method.
-func (m *MockSDNHTTP) SetInternalGateway(arg0 *message.InternalGateway) error {
+func (m *MockSDNHTTP) SetInternalGateway(state *message.InternalGateway) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetInternalGateway")
+	ret := m.ctrl.Call(m, "SetInternalGateway", state)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SetInternalGateway indicates an expected call of SetInternalGateway.
-func (mr *MockSDNHTTPMockRecorder) SetInternalGateway(arg0 any) *gomock.Call {
+func (mr *MockSDNHTTPMockRecorder) SetInternalGateway(state any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetInternalGateway", reflect.TypeOf((*MockSDNHTTP)(nil).SetInternalGateway), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetInternalGateway", reflect.TypeOf((*MockSDNHTTP)(nil).SetInternalGateway), state)
 }
 
-// AddInternalGatewaySubscription mocks base method.
-func (m *MockSDNHTTP) AddInternalGatewaySubscription(arg0 types.AccountID) error {
+// SetNetworks mocks base method.
+func (m *MockSDNHTTP) SetNetworks(networks message.BlockchainNetworks) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AddInternalGatewaySubscription")
-	ret0, _ := ret[0].(error)
-	return ret0
+	m.ctrl.Call(m, "SetNetworks", networks)
 }
 
-// AddInternalGatewaySubscription indicates an expected call of AddInternalGatewaySubscription.
-func (mr *MockSDNHTTPMockRecorder) AddInternalGatewaySubscription(arg0 any) *gomock.Call {
+// SetNetworks indicates an expected call of SetNetworks.
+func (mr *MockSDNHTTPMockRecorder) SetNetworks(networks any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddInternalGatewaySubscription", reflect.TypeOf((*MockSDNHTTP)(nil).AddInternalGatewaySubscription), arg0)
-}
-
-// RemoveInternalGatewaySubscription mocks base method.
-func (m *MockSDNHTTP) RemoveInternalGatewaySubscription(arg0 types.AccountID) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RemoveInternalGatewaySubscription")
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// RemoveInternalGatewaySubscription indicates an expected call of RemoveInternalGatewaySubscription.
-func (mr *MockSDNHTTPMockRecorder) RemoveInternalGatewaySubscription(arg0 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveInternalGatewaySubscription", reflect.TypeOf((*MockSDNHTTP)(nil).RemoveInternalGatewaySubscription), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetNetworks", reflect.TypeOf((*MockSDNHTTP)(nil).SetNetworks), networks)
 }
