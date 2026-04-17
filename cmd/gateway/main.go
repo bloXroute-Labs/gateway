@@ -27,6 +27,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	"github.com/bloXroute-Labs/gateway/v2/nodes"
+	"github.com/bloXroute-Labs/gateway/v2/services/cert"
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 	httputils "github.com/bloXroute-Labs/gateway/v2/utils/http"
 )
@@ -145,6 +146,10 @@ func runGateway(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
+
+	group.Go(func() error {
+		return cert.Rotate(gCtx, sdn)
+	})
 
 	// set node ID for fluentd logging
 	log.SetNodeID(string(sdn.NodeID()))

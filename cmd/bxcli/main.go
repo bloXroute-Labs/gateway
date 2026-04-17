@@ -396,7 +396,7 @@ func extractHeaderFromCerts() (string, error) {
 	sslCerts := cert.NewSSLCertsFromFiles(privateCertFile, privateKeyFile, registrationOnlyCertFile, registrationOnlyKeyFile)
 
 	// IP is set to dummy because we don't care about nodeModel, and we want to avoid the call to determine it
-	sdn := sdnsdk.NewSDNHTTP(&sslCerts, gatewayEnv.SDNURL, sdnmessage.NodeModel{ExternalIP: "dummy"}, gatewayEnv.DataDir)
+	sdn := sdnsdk.NewSDNHTTP(sslCerts, gatewayEnv.SDNURL, sdnmessage.NodeModel{ExternalIP: "dummy"}, gatewayEnv.DataDir)
 
 	accountID, err := sslCerts.GetAccountID()
 	if err != nil {

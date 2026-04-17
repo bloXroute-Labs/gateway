@@ -145,6 +145,7 @@ type gateway struct {
 	relaysToSwitch  *syncmap.SyncMap[string, bool]
 	ofacMap         *types.OFACMap
 	senderExtractor *services.SenderExtractor
+
 }
 
 func (g *gateway) startOFACUpdater() {
@@ -391,7 +392,7 @@ func InitSDN(bxConfig *config.Bx, blockchainPeers []types.NodeEndpoint, gatewayP
 		BlockchainRPCEnabled: bxConfig.EnableBlockchainRPC,
 	}
 
-	sdn := sdnsdk.NewSDNHTTP(&sslCerts, bxConfig.SDNURL, nodeModel, bxConfig.DataDir)
+	sdn := sdnsdk.NewSDNHTTP(sslCerts, bxConfig.SDNURL, nodeModel, bxConfig.DataDir)
 
 	err = sdn.InitGateway(bxtypes.EthereumProtocol, bxConfig.BlockchainNetwork)
 	if err != nil {
@@ -421,7 +422,7 @@ func InitSDN(bxConfig *config.Bx, blockchainPeers []types.NodeEndpoint, gatewayP
 		)
 	}
 
-	return &sslCerts, sdn, nil
+	return sslCerts, sdn, nil
 }
 
 func (g *gateway) Run() error {
@@ -532,7 +533,7 @@ func (g *gateway) Run() error {
 	go g.PingLoop()
 
 	relayInstructions := make(chan sdnsdk.RelayInstruction)
-	go g.updateRelayConnections(relayInstructions, *sslCert, networkNum)
+	go g.updateRelayConnections(relayInstructions, sslCert, networkNum)
 	err = g.sdn.DirectRelayConnections(g.BxConfig.Relays, uint64(accountModel.RelayLimit.MsgQuota.Limit), relayInstructions, g.ignoredRelays)
 	go g.checkForFastestRelays(relayInstructions)
 	go g.cleanupRelayMap()
@@ -555,7 +556,7 @@ func (g *gateway) Close() error {
 	return nil
 }
 
-func (g *gateway) updateRelayConnections(relayInstructions chan sdnsdk.RelayInstruction, sslCerts cert.SSLCerts, networkNum bxtypes.NetworkNum) {
+func (g *gateway) updateRelayConnections(relayInstructions chan sdnsdk.RelayInstruction, sslCerts *cert.SSLCerts, networkNum bxtypes.NetworkNum) {
 	for {
 		instruction := <-relayInstructions
 
@@ -570,7 +571,7 @@ func (g *gateway) updateRelayConnections(relayInstructions chan sdnsdk.RelayInst
 	}
 }
 
-func (g *gateway) switchRelay(instruction sdnsdk.RelayInstruction, relayInstructions chan sdnsdk.RelayInstruction, sslCerts cert.SSLCerts, networkNum bxtypes.NetworkNum) {
+func (g *gateway) switchRelay(instruction sdnsdk.RelayInstruction, relayInstructions chan sdnsdk.RelayInstruction, sslCerts *cert.SSLCerts, networkNum bxtypes.NetworkNum) {
 	for _, newRelay := range instruction.RelaysToSwitch {
 		// add relay to ignore relays so if we have 2 relays connected we will not connect to same relay
 		if _, ok := g.ignoredRelays.LoadOrStore(newRelay.IP, bxtypes.RelayInfo{TimeAdded: time.Now(), IsConnected: true, Port: newRelay.Port}); ok {
@@ -600,8 +601,8 @@ func (g *gateway) disconnectRelay(relayIP string) error {
 	return nil
 }
 
-func (g *gateway) tryToConnectToAutoRelay(instruction sdnsdk.RelayInstruction, sslCerts cert.SSLCerts, networkNum bxtypes.NetworkNum, relayInstructions chan sdnsdk.RelayInstruction) bool {
-	relay := handler.NewOutboundRelay(g, &sslCerts, instruction.IP, instruction.Port, g.sdn.NodeID(), bxtypes.RelayProxy,
+func (g *gateway) tryToConnectToAutoRelay(instruction sdnsdk.RelayInstruction, sslCerts *cert.SSLCerts, networkNum bxtypes.NetworkNum, relayInstructions chan sdnsdk.RelayInstruction) bool {
+	relay := handler.NewOutboundRelay(g, sslCerts, instruction.IP, instruction.Port, g.sdn.NodeID(), bxtypes.RelayProxy,
 		g.sdn.Networks(), true, false, clock.RealClock{}, false)
 	relay.SetNetworkNum(networkNum)
 
@@ -623,8 +624,8 @@ func (g *gateway) tryToConnectToAutoRelay(instruction sdnsdk.RelayInstruction, s
 	return false
 }
 
-func (g *gateway) connectRelay(instruction sdnsdk.RelayInstruction, sslCerts cert.SSLCerts, networkNum bxtypes.NetworkNum, relayInstructions chan sdnsdk.RelayInstruction) {
-	relay := handler.NewOutboundRelay(g, &sslCerts, instruction.IP, instruction.Port, g.sdn.NodeID(), bxtypes.RelayProxy,
+func (g *gateway) connectRelay(instruction sdnsdk.RelayInstruction, sslCerts *cert.SSLCerts, networkNum bxtypes.NetworkNum, relayInstructions chan sdnsdk.RelayInstruction) {
+	relay := handler.NewOutboundRelay(g, sslCerts, instruction.IP, instruction.Port, g.sdn.NodeID(), bxtypes.RelayProxy,
 		g.sdn.Networks(), true, false, clock.RealClock{}, false)
 	relay.SetNetworkNum(networkNum)
 
@@ -870,7 +871,7 @@ func bscExtractValidatorListFromBlock(b []byte) (validator.List, error) {
 	// parse Validators and Vote Attestation
 	if dataLength > 0 {
 		// parse Validators
-		if data[0] != '\xf8' { // rlp format of attestation begin with 'f8'
+		if data[0] != 0xf8 { // rlp format of attestation begin with 'f8'
 			validatorNum := int(data[0])
 			validatorBytesTotalLength := validatorNumberSize + validatorNum*validatorBytesLength
 			if dataLength < validatorBytesTotalLength {
@@ -889,7 +890,7 @@ func bscExtractValidatorListFromBlock(b []byte) (validator.List, error) {
 
 			turnLength := uint8(1)
 			// parse TurnLength
-			if dataLength > 0 && data[0] != '\xf8' {
+			if dataLength > 0 && data[0] != 0xf8 {
 				turnLength = data[0]
 			}
 

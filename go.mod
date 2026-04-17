@@ -1,12 +1,12 @@
 module github.com/bloXroute-Labs/gateway/v2
 
-go 1.25.1
+go 1.26.1
 
 require (
 	github.com/OffchainLabs/go-bitfield v0.0.0-20251031151322-f427d04d8506
 	github.com/OffchainLabs/prysm/v7 v7.0.0
 	github.com/bits-and-blooms/bloom/v3 v3.7.1
-	github.com/bloXroute-Labs/bxcommon-go v1.2.2
+	github.com/bloXroute-Labs/bxcommon-go v1.3.1
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/ethereum/go-ethereum v1.16.8
 	github.com/expr-lang/expr v1.17.7
@@ -29,7 +29,7 @@ require (
 	go.uber.org/mock v0.6.0
 	golang.org/x/crypto v0.49.0
 	golang.org/x/sync v0.20.0
-	google.golang.org/grpc v1.79.2
+	google.golang.org/grpc v1.80.0
 	google.golang.org/protobuf v1.36.11
 )
 
@@ -90,7 +90,6 @@ require (
 	github.com/ipfs/go-log/v2 v2.6.0 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect
-	github.com/jinzhu/copier v0.4.0 // indirect
 	github.com/k0kubun/go-ansi v0.0.0-20180517002512-3bf9e2903213 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/koron/go-ssdp v0.0.6 // indirect
@@ -170,7 +169,7 @@ require (
 	github.com/quic-go/webtransport-go v0.10.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
-	github.com/rs/zerolog v1.34.0 // indirect
+	github.com/rs/zerolog v1.35.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/schollz/progressbar/v3 v3.3.4 // indirect
 	github.com/shirou/gopsutil v3.21.11+incompatible // indirect
