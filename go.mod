@@ -6,7 +6,7 @@ require (
 	github.com/OffchainLabs/go-bitfield v0.0.0-20251031151322-f427d04d8506
 	github.com/OffchainLabs/prysm/v7 v7.0.0
 	github.com/bits-and-blooms/bloom/v3 v3.7.1
-	github.com/bloXroute-Labs/bxcommon-go v1.3.1
+	github.com/bloXroute-Labs/bxcommon-go v1.3.2
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/ethereum/go-ethereum v1.16.8
 	github.com/expr-lang/expr v1.17.7

@@ -120,7 +120,7 @@ func (h *handler) runEthPeer(peer *eth2.Peer, handler func(peer *eth2.Peer) erro
 		l.Debugf("adding BSC extension for peer %v", peer.IPEndpoint().IPPort())
 	}
 
-	peerStatus, err := peer.Handshake(h.config.Network, h.config.TotalDifficulty, h.config.Head, h.config.Genesis, h.config.ExecutionLayerForks)
+	err = peer.Handshake(h.chain, h.config.Network, h.config.TotalDifficulty, h.config.Head, h.config.Genesis, h.config.ExecutionLayerForks)
 	if err != nil {
 		l.Errorf("peer %v handshake failed with error: %v", peer.IPEndpoint(), err)
 		return err
@@ -133,9 +133,6 @@ func (h *handler) runEthPeer(peer *eth2.Peer, handler func(peer *eth2.Peer) erro
 		l.Errorf("failed to send blockchain connect status for %v: %v", peer.IPEndpoint(), err)
 		return err
 	}
-
-	// set initial total difficulty
-	h.chain.InitializeDifficulty(peerStatus.Head, peerStatus.TD)
 
 	endpoint := peer.IPEndpoint()
 

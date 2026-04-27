@@ -56,7 +56,7 @@ var (
 type Peer struct {
 	*p2p.Peer
 	rw       p2p.MsgReadWriter
-	version  uint
+	version  uint32
 	chainID  uint64
 	endpoint types.NodeEndpoint
 	clock    clock.Clock
@@ -89,11 +89,11 @@ type sendJob struct {
 }
 
 // NewPeer returns a wrapped Ethereum peer
-func NewPeer(ctx context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version uint, chainID uint64) *Peer {
+func NewPeer(ctx context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version uint32, chainID uint64) *Peer {
 	return newPeer(ctx, p, rw, version, clock.RealClock{}, chainID)
 }
 
-func newPeer(parent context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version uint, clock clock.Clock, chainID uint64) *Peer {
+func newPeer(parent context.Context, p *p2p.Peer, rw p2p.MsgReadWriter, version uint32, clock clock.Clock, chainID uint64) *Peer {
 	ctx, cancel := context.WithCancel(parent)
 	peer := &Peer{
 		Peer:                 p,
@@ -166,7 +166,7 @@ func (p *Peer) ReceiveNewBlock() <-chan NewBlockPacket {
 }
 
 // Version returns the negotiated Ethereum protocol version of the peer
-func (p *Peer) Version() uint {
+func (p *Peer) Version() uint32 {
 	return p.version
 }
 
@@ -672,14 +672,59 @@ func (p *Peer) send(msgCode uint64, data interface{}) error {
 }
 
 // Handshake executes the Ethereum protocol Handshake. Unlike Geth, the gateway waits for the peer status message before sending its own, to replicate some peer status fields.
-func (p *Peer) Handshake(networkChain uint64, totalDifficulty *big.Int, head common.Hash, genesis common.Hash, executionLayerForks []string) (*eth.StatusPacket68, error) {
-	var peerStatus eth.StatusPacket68
-	err := p.readStatusMessage(&peerStatus, eth.StatusMsg)
+func (p *Peer) Handshake(chain *core.Chain, networkChain uint64, totalDifficulty *big.Int, head common.Hash, genesis common.Hash, executionLayerForks []string) error {
+	switch p.version {
+	case eth.ETH69:
+		return p.handshake69(networkChain, genesis, executionLayerForks)
+	case ETH66, ETH67, eth.ETH68:
+		return p.handshake68(chain, networkChain, totalDifficulty, head, genesis, executionLayerForks)
+	default:
+		return fmt.Errorf("unsupported protocol version: %v", p.version)
+	}
+}
+
+func (p *Peer) handshake69(networkChain uint64, genesis common.Hash, executionLayerForks []string) error {
+	peerStatus, err := p.readStatus69(networkChain, genesis, executionLayerForks)
 	if err != nil {
-		return nil, err
+		return err
+	}
+
+	p.ConfirmedHead.Store(core.BlockRef{Hash: peerStatus.LatestBlockHash})
+
+	// used the same fork ID as received from peer; gateway is expected to usually be compatible with Ethereum peer
+	err = p.send(eth.StatusMsg, &eth.StatusPacket69{
+		ProtocolVersion: p.version,
+		NetworkID:       networkChain,
+		Genesis:         genesis,
+		ForkID:          peerStatus.ForkID,
+		EarliestBlock:   peerStatus.EarliestBlock,
+		LatestBlock:     peerStatus.LatestBlock,
+		LatestBlockHash: peerStatus.LatestBlockHash,
+	})
+	if err != nil {
+		return err
+	}
+
+	p.endpoint.Version = int(peerStatus.ProtocolVersion)
+	p.endpoint.Name = p.Peer.Fullname()
+	p.endpoint.ConnectedAt = time.Now().Format(time.RFC3339)
+
+	// send Empty NewPooledTransactionHashes based on the protocol
+	if err = p.send(eth.NewPooledTransactionHashesMsg, &eth.NewPooledTransactionHashesPacket{}); err != nil {
+		p.Log().Errorf("error sending empty NewPooledTransactionHashesMsg message after handshake %v", err)
+	}
+
+	return nil
+}
+
+func (p *Peer) handshake68(chain *core.Chain, networkChain uint64, totalDifficulty *big.Int, head common.Hash, genesis common.Hash, executionLayerForks []string) error {
+	peerStatus, err := p.readStatus68(networkChain, genesis, executionLayerForks)
+	if err != nil {
+		return err
 	}
 
 	p.ConfirmedHead.Store(core.BlockRef{Hash: head})
+	chain.InitializeDifficulty(peerStatus.Head, peerStatus.TD)
 
 	// for ethereum override the TD and the Head as get from the peer
 	// Nethermind checks reject connections that bring old value
@@ -689,7 +734,7 @@ func (p *Peer) Handshake(networkChain uint64, totalDifficulty *big.Int, head com
 	}
 	// used the same fork ID as received from peer; gateway is expected to usually be compatible with Ethereum peer
 	err = p.send(eth.StatusMsg, &eth.StatusPacket68{
-		ProtocolVersion: uint32(p.version),
+		ProtocolVersion: p.version,
 		NetworkID:       networkChain,
 		TD:              totalDifficulty,
 		Head:            head,
@@ -697,53 +742,13 @@ func (p *Peer) Handshake(networkChain uint64, totalDifficulty *big.Int, head com
 		ForkID:          peerStatus.ForkID,
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	if p.version >= eth.ETH68 && (networkChain == network.BSCMainnetChainID || networkChain == network.BSCTestnetChainID) {
+	if networkChain == network.BSCMainnetChainID || networkChain == network.BSCTestnetChainID {
 		_, err = p.upgradeStatus()
 		if err != nil {
 			p.Log().Errorf("failed to upgrade status: %v", err)
-		}
-	}
-
-	if peerStatus.NetworkID != networkChain {
-		if !p.Dynamic() {
-			p.Log().Infof("network ID does not match: expected %v, but got %v", networkChain, peerStatus.NetworkID)
-		} else {
-			p.Log().Tracef("network ID does not match: expected %v, but got %v", networkChain, peerStatus.NetworkID)
-		}
-		return nil, fmt.Errorf("network ID does not match: expected %v, but got %v", networkChain, peerStatus.NetworkID)
-	}
-
-	if peerStatus.ProtocolVersion != uint32(p.version) {
-		if !p.Dynamic() {
-			p.Log().Infof("protocol version does not match: expected %v, but got %v", p.version, peerStatus.ProtocolVersion)
-		} else {
-			p.Log().Tracef("protocol version does not match: expected %v, but got %v", p.version, peerStatus.ProtocolVersion)
-		}
-		return nil, fmt.Errorf("protocol version does not match: expected %v, but got %v", p.version, peerStatus.ProtocolVersion)
-	}
-
-	if peerStatus.Genesis != genesis {
-		if !p.Dynamic() {
-			p.Log().Infof("genesis block does not match: expected %v, but got %v", genesis, peerStatus.Genesis)
-		} else {
-			p.Log().Tracef("genesis block does not match: expected %v, but got %v", genesis, peerStatus.Genesis)
-		}
-		return nil, fmt.Errorf("genesis block does not match: expected %v, but got %v", genesis, peerStatus.Genesis)
-	}
-
-	if len(executionLayerForks) > 0 {
-		b64ForkID := b64.StdEncoding.EncodeToString(peerStatus.ForkID.Hash[:])
-
-		if !utils.Exists(b64ForkID, executionLayerForks) {
-			if !p.Dynamic() {
-				p.Log().Infof("fork ID does not match: expected %v, but got %v", executionLayerForks, b64ForkID)
-			} else {
-				p.Log().Tracef("fork ID does not match: expected %v, but got %v", executionLayerForks, b64ForkID)
-			}
-			return nil, fmt.Errorf("fork ID does not match: expected %v, but got %v", executionLayerForks, b64ForkID)
 		}
 	}
 
@@ -751,7 +756,7 @@ func (p *Peer) Handshake(networkChain uint64, totalDifficulty *big.Int, head com
 	p.endpoint.Name = p.Peer.Fullname()
 	p.endpoint.ConnectedAt = time.Now().Format(time.RFC3339)
 
-	// send Empty NewPooledTransactionHashes based the protocol
+	// send Empty NewPooledTransactionHashes based on the protocol
 	var msg interface{}
 	switch p.version {
 	case eth.ETH68:
@@ -759,8 +764,62 @@ func (p *Peer) Handshake(networkChain uint64, totalDifficulty *big.Int, head com
 	default:
 		msg = NewPooledTransactionHashesPacket66{}
 	}
-	if err := p.send(eth.NewPooledTransactionHashesMsg, &msg); err != nil {
+	if err = p.send(eth.NewPooledTransactionHashesMsg, &msg); err != nil {
 		p.Log().Errorf("error sending empty NewPooledTransactionHashesMsg message after handshake %v", err)
+	}
+
+	return nil
+}
+
+func (p *Peer) readStatus69(networkChain uint64, genesis common.Hash, executionLayerForks []string) (*eth.StatusPacket69, error) {
+	var peerStatus eth.StatusPacket69
+	err := p.readStatusMessage(&peerStatus, eth.StatusMsg)
+	if err != nil {
+		return nil, err
+	}
+
+	if peerStatus.NetworkID != networkChain {
+		return nil, fmt.Errorf("network ID does not match: expected %v, but got %v", networkChain, peerStatus.NetworkID)
+	}
+	if peerStatus.ProtocolVersion != p.version {
+		return nil, fmt.Errorf("protocol version does not match: expected %v, but got %v", p.version, peerStatus.ProtocolVersion)
+	}
+	if peerStatus.Genesis != genesis {
+		return nil, fmt.Errorf("genesis block does not match: expected %v, but got %v", genesis, peerStatus.Genesis)
+	}
+	if len(executionLayerForks) > 0 {
+		b64ForkID := b64.StdEncoding.EncodeToString(peerStatus.ForkID.Hash[:])
+
+		if !utils.Exists(b64ForkID, executionLayerForks) {
+			return nil, fmt.Errorf("fork ID does not match: expected %v, but got %v", executionLayerForks, b64ForkID)
+		}
+	}
+
+	return &peerStatus, nil
+}
+
+func (p *Peer) readStatus68(networkChain uint64, genesis common.Hash, executionLayerForks []string) (*eth.StatusPacket68, error) {
+	var peerStatus eth.StatusPacket68
+	err := p.readStatusMessage(&peerStatus, eth.StatusMsg)
+	if err != nil {
+		return nil, err
+	}
+
+	if peerStatus.NetworkID != networkChain {
+		return nil, fmt.Errorf("network ID does not match: expected %v, but got %v", networkChain, peerStatus.NetworkID)
+	}
+	if peerStatus.ProtocolVersion != p.version {
+		return nil, fmt.Errorf("protocol version does not match: expected %v, but got %v", p.version, peerStatus.ProtocolVersion)
+	}
+	if peerStatus.Genesis != genesis {
+		return nil, fmt.Errorf("genesis block does not match: expected %v, but got %v", genesis, peerStatus.Genesis)
+	}
+	if len(executionLayerForks) > 0 {
+		b64ForkID := b64.StdEncoding.EncodeToString(peerStatus.ForkID.Hash[:])
+
+		if !utils.Exists(b64ForkID, executionLayerForks) {
+			return nil, fmt.Errorf("fork ID does not match: expected %v, but got %v", executionLayerForks, b64ForkID)
+		}
 	}
 
 	return &peerStatus, nil
