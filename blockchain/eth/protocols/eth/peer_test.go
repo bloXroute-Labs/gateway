@@ -61,11 +61,17 @@ func TestPeer_Handshake(t *testing.T) {
 		ForkID:          forkid.ID{Hash: forkID1},
 	}
 
+	chain := core.NewChain(context.Background(), 30*time.Second)
+
 	// matching parameters
 	rw.QueueIncomingMessage(eth.StatusMsg, peerStatus)
-	ps, err := peer.Handshake(1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
+	err := peer.Handshake(chain, 1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
 	require.NoError(t, err)
-	assert.Equal(t, peerStatus, *ps)
+
+	td, ok := chain.BlockDifficulty(common.Hash{1, 2, 3})
+	require.True(t, ok)
+	assert.Equal(t, big.NewInt(10), td)
+
 	require.Eventually(t,
 		func() bool { return rw.SentCount.Load() >= 2 },
 		100*time.Millisecond,
@@ -80,7 +86,7 @@ func TestPeer_Handshake(t *testing.T) {
 
 	// version mismatch
 	rw.QueueIncomingMessage(eth.StatusMsg, peerStatus)
-	_, err = peer.Handshake(0, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
+	err = peer.Handshake(chain, 0, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
 	assert.NotNil(t, err)
 
 	peerStatus.ProtocolVersion = ETH66
@@ -88,19 +94,19 @@ func TestPeer_Handshake(t *testing.T) {
 	// network mismatch
 	peerStatus.NetworkID = 2
 	rw.QueueIncomingMessage(eth.StatusMsg, peerStatus)
-	_, err = peer.Handshake(1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
+	err = peer.Handshake(chain, 1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
 	assert.NotNil(t, err)
 
 	peerStatus.NetworkID = 1
 
 	// head mismatch is ok
 	rw.QueueIncomingMessage(eth.StatusMsg, peerStatus)
-	_, err = peer.Handshake(1, new(big.Int), common.Hash{3, 4, 5}, common.Hash{2, 3, 4}, executionLayerForks)
+	err = peer.Handshake(chain, 1, new(big.Int), common.Hash{3, 4, 5}, common.Hash{2, 3, 4}, executionLayerForks)
 	assert.NoError(t, err)
 
 	// genesis mismatch
 	rw.QueueIncomingMessage(eth.StatusMsg, peerStatus)
-	_, err = peer.Handshake(1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{3, 3, 4}, executionLayerForks)
+	err = peer.Handshake(chain, 1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{3, 3, 4}, executionLayerForks)
 	assert.NotNil(t, err)
 
 	// forkID missmatch
@@ -112,16 +118,19 @@ func TestPeer_Handshake(t *testing.T) {
 		Genesis:         common.Hash{2, 3, 4},
 		ForkID:          forkid.ID{Hash: forkID3},
 	})
-	_, err = peer.Handshake(1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
+	err = peer.Handshake(chain, 1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
 	assert.NotNil(t, err)
 
 	go rw.QueueIncomingMessageWithDelay(eth.StatusMsg, peerStatus, time.Second)
-	ps, err = peer.Handshake(1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
+	err = peer.Handshake(chain, 1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
 	assert.NoError(t, err)
-	assert.Equal(t, peerStatus, *ps)
+
+	td, ok = chain.BlockDifficulty(common.Hash{1, 2, 3})
+	require.True(t, ok)
+	assert.Equal(t, big.NewInt(10), td)
 
 	go rw.QueueIncomingMessageWithDelay(eth.StatusMsg, peerStatus, time.Second*7)
-	_, err = peer.Handshake(1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
+	err = peer.Handshake(chain, 1, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
 	assert.Error(t, err)
 }
 

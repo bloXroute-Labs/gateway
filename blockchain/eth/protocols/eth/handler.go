@@ -60,7 +60,7 @@ func MakeProtocols(ctx context.Context, backend Backend, network uint64) []p2p.P
 	for _, version := range netProtocols {
 		protocols = append(protocols, p2p.Protocol{
 			Name:    ProtocolName,
-			Version: version,
+			Version: uint(version),
 			Length:  protocolLengths[version],
 			Run: func(p *p2p.Peer, rw p2p.MsgReadWriter) error {
 				peer := NewPeer(ctx, p, rw, version, network)
@@ -145,6 +145,20 @@ var eth68 = map[uint64]msgHandler{
 	eth.PooledTransactionsMsg:         handlePooledTransactions,
 }
 
+var eth69 = map[uint64]msgHandler{
+	eth.TransactionsMsg:               handleTransactions,
+	eth.NewPooledTransactionHashesMsg: handleNewPooledTransactionHashes68,
+	eth.GetBlockHeadersMsg:            handleGetBlockHeaders,
+	eth.BlockHeadersMsg:               handleBlockHeaders,
+	eth.GetBlockBodiesMsg:             handleGetBlockBodies,
+	eth.BlockBodiesMsg:                handleBlockBodies,
+	eth.GetReceiptsMsg:                handleUnimplemented,
+	eth.ReceiptsMsg:                   handleUnimplemented,
+	eth.GetPooledTransactionsMsg:      handleGetPooledTransactions,
+	eth.PooledTransactionsMsg:         handlePooledTransactions,
+	eth.BlockRangeUpdateMsg:           handleUnimplemented,
+}
+
 // ReadAndHandle is invoked whenever an inbound message is received from a remote peer
 func ReadAndHandle(backend Backend, peer *Peer) error {
 	msg, err := peer.rw.ReadMsg()
@@ -169,6 +183,8 @@ func HandleMassage(backend Backend, msg p2p.Msg, peer *Peer) error {
 		handlers = eth67
 	case eth.ETH68:
 		handlers = eth68
+	case eth.ETH69:
+		handlers = eth69
 	}
 
 	handler, ok := handlers[msg.Code]

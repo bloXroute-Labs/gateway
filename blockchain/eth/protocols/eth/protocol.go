@@ -102,15 +102,15 @@ func (*NewPooledTransactionHashesPacket66) Name() string { return "NewPooledTran
 func (*NewPooledTransactionHashesPacket66) Kind() byte { return eth.NewPooledTransactionHashesMsg }
 
 // supportedProtocols is the map of networks to devp2p protocols supported by this client
-var supportedProtocols = map[uint64][]uint{
+var supportedProtocols = map[uint64][]uint32{
 	network.BSCMainnetChainID: {eth.ETH68},
 	network.BSCTestnetChainID: {eth.ETH68},
-	network.EthMainnetChainID: {ETH66, ETH67, eth.ETH68},
-	network.HoleskyChainID:    {ETH67, eth.ETH68},
+	network.EthMainnetChainID: {ETH66, ETH67, eth.ETH68, eth.ETH69},
+	network.HoleskyChainID:    {ETH67, eth.ETH68, eth.ETH69},
 }
 
 // protocolLengths is a mapping of each supported devp2p protocol to its message version length
-var protocolLengths = map[uint]uint64{ETH66: 17, ETH67: 17, eth.ETH68: 17}
+var protocolLengths = map[uint32]uint64{ETH66: 17, ETH67: 17, eth.ETH68: 17, eth.ETH69: 18}
 
 // Decoder represents any struct that can be decoded into an Ethereum message type
 type Decoder interface {

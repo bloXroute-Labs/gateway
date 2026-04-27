@@ -287,19 +287,26 @@ func (g *server) handleTransactions(req *pb.TxsRequest, stream pb.Gateway_NewTxs
 	containsInclude := slices.Contains(includes, "tx_contents.from")
 
 	var txsResponse []*pb.Tx
-	for notification := range sub.FeedChan {
-		processTx(clReq, notification, &txsResponse, ci.RemoteAddress, account.AccountID, feedType, containsInclude)
-
-		if (len(sub.FeedChan) == 0 || len(txsResponse) == maxTxsInSingleResponse) && len(txsResponse) > 0 {
-			err = stream.Send(&pb.TxsReply{Tx: txsResponse})
-			if err != nil {
-				return status.Error(codes.Internal, err.Error())
+	for {
+		select {
+		case <-stream.Context().Done():
+			log.Debugf("stream cancelled: remoteAddress: %s", ci.RemoteAddress)
+			return nil
+		case notification, ok := <-sub.FeedChan:
+			if !ok {
+				return status.Error(codes.Internal, "error when reading new notification for gRPC newTxs")
 			}
+			processTx(clReq, notification, &txsResponse, ci.RemoteAddress, account.AccountID, feedType, containsInclude)
 
-			txsResponse = txsResponse[:0]
+			if (len(sub.FeedChan) == 0 || len(txsResponse) == maxTxsInSingleResponse) && len(txsResponse) > 0 {
+				err = stream.Send(&pb.TxsReply{Tx: txsResponse})
+				if err != nil {
+					return status.Error(codes.Internal, err.Error())
+				}
+				txsResponse = txsResponse[:0]
+			}
 		}
 	}
-	return nil
 }
 
 func generateTxReceiptReply(n *types.TxReceipt) *pb.TxReceiptsReply {

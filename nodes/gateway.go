@@ -145,6 +145,7 @@ type gateway struct {
 	relaysToSwitch  *syncmap.SyncMap[string, bool]
 	ofacMap         *types.OFACMap
 	senderExtractor *services.SenderExtractor
+
 }
 
 func (g *gateway) startOFACUpdater() {
@@ -1668,19 +1669,6 @@ func (g *gateway) handleBlockFromBlockchain(blockchainBlock blockchain.BlockFrom
 
 	bxBlock := blockchainBlock.Block
 
-	blockInfo, err := g.bxBlockToBlockInfo(bxBlock)
-	if err != nil && !errors.Is(err, errUnsupportedBlockType) {
-		log.Errorf("failed to convert bx block %v to block info: %v", bxBlock, err)
-	}
-
-	if blockInfo != nil {
-		blockTime := time.Unix(int64(blockInfo.Block.Time()), 0) //nolint:gosec
-		if !blockTime.IsZero() && startTime.Sub(blockTime) > maxBlockAgeSinceNow {
-			source.Log().Warnf("received block %v from blockchain node with time %v, which is older than %v", bxBlock.Hash(), blockTime, maxBlockAgeSinceNow)
-			return
-		}
-	}
-
 	go g.bdnStats.LogNewBlockMessageFromNode(source.NodeEndpoint())
 
 	broadcastMessage, usedShortIDs, err := g.blockProcessor.BxBlockToBroadcast(bxBlock, g.sdn.NetworkNum(), g.sdn.MinTxAge())
@@ -1716,6 +1704,11 @@ func (g *gateway) handleBlockFromBlockchain(blockchainBlock blockchain.BlockFrom
 
 			g.stats.AddGatewayBlockEvent(gatewayBlockEventName(source.NodeEndpoint().Name, bxBlock.IsBeaconBlock()), source, bxBlock.Hash(), bxBlock.BeaconHash(), g.sdn.NetworkNum(), 1, startTime, 0, bxBlock.Size(), int(broadcastMessage.Size(bxmessage.CurrentProtocol)), len(broadcastMessage.ShortIDs()), len(bxBlock.Txs), len(usedShortIDs), bxBlock)
 		}
+	}
+
+	blockInfo, err := g.bxBlockToBlockInfo(bxBlock)
+	if err != nil && !errors.Is(err, errUnsupportedBlockType) {
+		log.Errorf("failed to convert bx block %v to block info: %v", bxBlock, err)
 	}
 
 	var validatorInfo []*types.FutureValidatorInfo

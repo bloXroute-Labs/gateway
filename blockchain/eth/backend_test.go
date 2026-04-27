@@ -56,7 +56,7 @@ func setupNet(networkName string) (blockchain.Bridge, *ethHandler) {
 	return bridge, (*ethHandler)(testHandler)
 }
 
-func testPeer(writeChannelSize int, peerCount int, version uint) (*eth2.Peer, *test.MsgReadWriter) {
+func testPeer(writeChannelSize int, peerCount int, version uint32) (*eth2.Peer, *test.MsgReadWriter) {
 	rw := test.NewMsgReadWriter(100, writeChannelSize, time.Second)
 	peer := eth2.NewPeer(context.Background(), p2p.NewPeerPipe(test.GenerateEnodeID(), fmt.Sprintf("test peer_%v", peerCount), []p2p.Cap{}, nil), rw, version, 1)
 	return peer, rw

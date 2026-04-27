@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/core"
 )
 
