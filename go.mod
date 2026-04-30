@@ -6,7 +6,7 @@ require (
 	github.com/OffchainLabs/go-bitfield v0.0.0-20251031151322-f427d04d8506
 	github.com/OffchainLabs/prysm/v7 v7.0.0
 	github.com/bits-and-blooms/bloom/v3 v3.7.1
-	github.com/bloXroute-Labs/bxcommon-go v1.3.2
+	github.com/bloXroute-Labs/bxcommon-go v1.3.4
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/ethereum/go-ethereum v1.16.8
 	github.com/expr-lang/expr v1.17.7
@@ -169,7 +169,7 @@ require (
 	github.com/quic-go/webtransport-go v0.10.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
-	github.com/rs/zerolog v1.35.0 // indirect
+	github.com/rs/zerolog v1.35.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/schollz/progressbar/v3 v3.3.4 // indirect
 	github.com/shirou/gopsutil v3.21.11+incompatible // indirect
