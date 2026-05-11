@@ -7,8 +7,6 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
-
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // InterceptPeerDial tests whether we're permitted to Dial the specified peer.
@@ -36,26 +34,12 @@ func (n *Node) InterceptSecured(_ network.Direction, _ libp2pPeer.ID, _ network.
 // InterceptUpgraded tests whether a fully capable connection is allowed.
 func (n *Node) InterceptUpgraded(conn network.Conn) (bool, control.DisconnectReason) {
 	n.log.WithFields(log.Fields{
-		"inboundLimit": n.inboundLimit,
-		"peerID":       conn.RemotePeer(),
-		"peerAddr":     conn.RemoteMultiaddr(),
+		"peerID":   conn.RemotePeer(),
+		"peerAddr": conn.RemoteMultiaddr(),
 	}).Tracef("got new inbound connection request")
+
 	if conn.Stat().Direction == network.DirOutbound {
 		return true, 0
-	}
-
-	inboundConns := utils.Filter(n.host.Network().Conns(), func(c network.Conn) bool {
-		return c.Stat().Direction == network.DirInbound
-	})
-
-	if len(inboundConns) >= n.inboundLimit {
-		n.log.WithFields(log.Fields{
-			"inboundConnections": len(inboundConns),
-			"inboundLimit":       n.inboundLimit,
-			"peerID":             conn.RemotePeer(),
-			"peerAddr":           conn.RemoteMultiaddr(),
-		}).Infof("connection rejected: inbound connection limit reached")
-		return false, control.DisconnectReason(1)
 	}
 
 	if n.enableAnyIncomingConnection {

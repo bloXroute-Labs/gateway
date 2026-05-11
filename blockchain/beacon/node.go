@@ -143,7 +143,6 @@ type Node struct {
 	trustedPeers                trustedPeers
 	enableAnyIncomingConnection bool
 	topicMap                    *syncmap.SyncMap[string, *topicSubscription]
-	inboundLimit                int
 	port                        int
 	externalIP                  string
 	enableQUIC                  bool
@@ -166,7 +165,6 @@ type NodeParams struct {
 	Port                 int
 	ExternalIP           string
 	EnableQUIC           bool
-	InboundLimit         int
 }
 
 // NewNode creates beacon node
@@ -232,7 +230,6 @@ func newNode(params NodeParams, clock clock.Clock) (*Node, error) {
 		trustedPeers:                newTrustedPeers(),
 		enableAnyIncomingConnection: params.TrustedPeersFilePath == "",
 		topicMap:                    syncmap.NewStringMapOf[*topicSubscription](),
-		inboundLimit:                params.InboundLimit,
 		encoding:                    encoder.SszNetworkEncoder{},
 		cancel:                      cancel,
 		log:                         logCtx,
