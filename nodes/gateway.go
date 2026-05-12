@@ -145,7 +145,6 @@ type gateway struct {
 	relaysToSwitch  *syncmap.SyncMap[string, bool]
 	ofacMap         *types.OFACMap
 	senderExtractor *services.SenderExtractor
-
 }
 
 func (g *gateway) startOFACUpdater() {
@@ -413,15 +412,6 @@ func InitSDN(bxConfig *config.Bx, blockchainPeers []types.NodeEndpoint, gatewayP
 		)
 	}
 
-	if uint64(staticEnodesCount) > uint64(accountModel.MaxAllowedNodes.MsgQuota.Limit) {
-		return nil, nil, fmt.Errorf(
-			"account %v is not allowed to run %d blockchain nodes. Maximum is %d",
-			accountModel.AccountID,
-			staticEnodesCount,
-			accountModel.MaxAllowedNodes.MsgQuota.Limit,
-		)
-	}
-
 	return sslCerts, sdn, nil
 }
 
@@ -470,9 +460,8 @@ func (g *gateway) Run() error {
 		return fmt.Errorf("could process initial blockchain configuration: %v", err)
 	}
 
-	// start workers for handlingBridgeMessage per the number of dynamicDial connections + static connections
-	// workers should be 75% of the connections + 1 worker to support block processing in parallel
-	bridgeWorkers := int(math.Ceil(float64(g.staticEnodesCount)+float64(g.sdn.AccountModel().InboundNodeConnections.MsgQuota.Limit)*0.75)) + 1
+	// start workers for handlingBridgeMessage based on the number of static connections + 1 worker to support block processing in parallel
+	bridgeWorkers := g.staticEnodesCount + 1
 	for i := 0; i < bridgeWorkers; i++ {
 		group.Go(func() error {
 			return g.handleBridgeMessages(ctx)

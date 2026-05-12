@@ -209,7 +209,6 @@ func runGateway(c *cli.Context) error {
 			Port:                 c.Int(utils.BeaconPort.Name),
 			ExternalIP:           sdn.NodeModel().ExternalIP,
 			EnableQUIC:           c.Bool(utils.EnableQuicFlag.Name),
-			InboundLimit:         int(sdn.AccountModel().InboundNodeConnections.MsgQuota.Limit),
 		})
 		if err != nil {
 			return err
