@@ -5,8 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/eth/protocols/eth"
-
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/protocols/bsc"
 	eth2 "github.com/bloXroute-Labs/gateway/v2/blockchain/eth/protocols/eth"
 )
@@ -76,7 +74,7 @@ func (ps *peerSet) register(peer *eth2.Peer, bscExt *bsc.Peer) error {
 func (ps *peerSet) registerBscExtension(peer *bsc.Peer) error {
 	// reject the peer if it advertises `bsc` without `eth` as `bsc` is only a
 	// satellite protocol meaningful with the chain selection of `eth`
-	if !peer.RunningCap(eth.ProtocolName, eth.ProtocolVersions) {
+	if !peer.RunningCap(eth2.ProtocolName, eth2.ProtocolVersions) {
 		return errBscWithoutEth
 	}
 

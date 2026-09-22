@@ -954,7 +954,7 @@ func (n *Node) hostOptions(port int, enableQUIC bool) ([]libp2p.Option, error) {
 	}
 
 	opts := []libp2p.Option{
-		libp2p.UserAgent("Prysm/6.0.2/2ec1ef53dcb114da22698e8ccd9bc1e3aa8e3870"),
+		libp2p.UserAgent("Prysm/7.1.4/442069ba22bf8492f0307174e4465d2336353810"),
 		libp2p.Identity(ifaceKey),
 		libp2p.Transport(tcp.NewTCPTransport),
 		libp2p.Transport(quic.NewTransport),

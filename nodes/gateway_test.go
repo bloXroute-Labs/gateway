@@ -117,8 +117,6 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 		0,
 		false,
 		false,
-		"",
-		"",
 	)
 
 	g := node.(*gateway)
@@ -132,7 +130,7 @@ func setup(t *testing.T, numPeers int) (blockchain.Bridge, *gateway) {
 	g.txTrace = loggers.NewTxTrace(nil)
 	g.setSyncWithRelay()
 	g.feedManager = feed.NewManager(g.sdn, services.NewNoOpSubscriptionServices(),
-		g.sdn.AccountModel(), g.stats, networkNum, true, &metrics.NoOpExporter{})
+		g.sdn.AccountModel(), g.stats, networkNum, true, &metrics.NoOpExporter{}, types.AllFeedTypes, 1)
 
 	go g.feedManager.Start(g.context)
 
@@ -1243,7 +1241,7 @@ func TestGateway_Status(t *testing.T) {
 	g.clientHandler = servers.NewClientHandler(&g.Bx, g.BxConfig, g, g.sdn, accService, g.bridge,
 		g.blockchainPeers, services.NewNoOpSubscriptionServices(), g.wsManager, g.bdnStats,
 		g.timeStarted, g.gatewayPublicKey, g.feedManager, g.stats, g.TxStore,
-		false, "", "", nil, nil,
+		false, "", "", nil,
 	)
 
 	go g.clientHandler.ManageServers(context.Background(), g.BxConfig.ManageWSServer)
@@ -1344,6 +1342,7 @@ func TestGateway_ConnectionStatus(t *testing.T) {
 	wg.Wait()
 	require.True(t, g.bdnStats.NodeStats()["123.45.6.78 1234"].IsConnected)
 }
+
 
 func createPeerData(timeNodeConnected string) ([]*types.NodeEndpoint, map[string]*bxmessage.BdnPerformanceStatsData) {
 	endpoints := []*types.NodeEndpoint{
@@ -1469,8 +1468,8 @@ func expectNoFeedNotification(t *testing.T, bridge blockchain.Bridge, feedsChan 
 		assert.Fail(t, "received unexpected feed notification")
 	default:
 	}
-	assert.Equal(t, expectedBestBlockHeight, g.bestBlockHeight)
-	assert.Equal(t, expectedSkipBlockCount, g.bdnBlocksSkipCount)
+	assert.Equal(t, int64(expectedBestBlockHeight), g.bestBlockHeight.Load())
+	assert.Equal(t, int64(expectedSkipBlockCount), g.bdnBlocksSkipCount.Load())
 }
 
 func expectFeedNotification(t *testing.T, bridge blockchain.Bridge, feedsChan <-chan types.Notification, g *gateway, isBDNBlock bool, blockHeight int, expectedBestBlockHeight int, expectedSkipBlockCount int) {
@@ -1506,8 +1505,8 @@ func expectFeedNotification(t *testing.T, bridge blockchain.Bridge, feedsChan <-
 		}
 	}
 
-	assert.Equal(t, expectedBestBlockHeight, g.bestBlockHeight)
-	assert.Equal(t, expectedSkipBlockCount, g.bdnBlocksSkipCount)
+	assert.Equal(t, int64(expectedBestBlockHeight), g.bestBlockHeight.Load())
+	assert.Equal(t, int64(expectedSkipBlockCount), g.bdnBlocksSkipCount.Load())
 }
 
 func expectFeedNotificationCount(t *testing.T, feedChan <-chan types.Notification, expCount int) {
@@ -1565,6 +1564,63 @@ func subscribeAll(cs ...<-chan types.Notification) <-chan types.Notification {
 	}()
 
 	return out
+}
+
+type mockSubscriptionServices struct {
+	services.NoOpSubscriptionServices
+	subscribeCalled bool
+}
+
+func (m *mockSubscriptionServices) SendSubscribeNotification(_ *types.SubscriptionModel) (bool, string, chan *types.SubscriptionPermissionMessage) {
+	m.subscribeCalled = true
+	return true, "", nil
+}
+
+func TestGateway_Subscribe_BloxrouteAccountID_SkipsPermissionCheck(t *testing.T) {
+	_, g := setup(t, 1)
+	mockTLS, relayConn := addRelayConn(g)
+
+	go func() {
+		err := g.handleBridgeMessages(context.Background())
+		assert.NoError(t, err)
+	}()
+
+	mockSubServices := &mockSubscriptionServices{}
+	g.feedManager = feed.NewManager(g.sdn, mockSubServices,
+		g.sdn.AccountModel(), g.stats, networkNum, true, &metrics.NoOpExporter{}, types.AllFeedTypes, 1)
+	go g.feedManager.Start(g.context)
+
+	ci := types.ClientInfo{AccountID: bxtypes.BloxrouteAccountID}
+	result, err := g.feedManager.Subscribe(types.NewBlocksFeed, types.WebSocketFeed, nil, ci, types.ReqOptions{}, false)
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Nil(t, result.PermissionRespChan)
+	assert.False(t, mockSubServices.subscribeCalled)
+	_ = mockTLS
+	_ = relayConn
+}
+
+func TestGateway_Subscribe_NonBloxrouteAccountID_CallsPermissionCheck(t *testing.T) {
+	_, g := setup(t, 1)
+	mockTLS, relayConn := addRelayConn(g)
+
+	go func() {
+		err := g.handleBridgeMessages(context.Background())
+		assert.NoError(t, err)
+	}()
+
+	mockSubServices := &mockSubscriptionServices{}
+	g.feedManager = feed.NewManager(g.sdn, mockSubServices,
+		g.sdn.AccountModel(), g.stats, networkNum, true, &metrics.NoOpExporter{}, types.AllFeedTypes, 1)
+	go g.feedManager.Start(g.context)
+
+	ci := types.ClientInfo{AccountID: "some-other-account"}
+	result, err := g.feedManager.Subscribe(types.NewBlocksFeed, types.WebSocketFeed, nil, ci, types.ReqOptions{}, false)
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.True(t, mockSubServices.subscribeCalled)
+	_ = mockTLS
+	_ = relayConn
 }
 
 func ipport(ip string, port int) string { return fmt.Sprintf("%s:%d", ip, port) }

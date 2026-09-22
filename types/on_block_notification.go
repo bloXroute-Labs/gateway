@@ -39,8 +39,8 @@ func (n *OnBlockNotification) WithFields(fields []string) Notification {
 }
 
 // Filters -
-func (n *OnBlockNotification) Filters() map[string]interface{} {
-	return nil
+func (n *OnBlockNotification) Filters() (map[string]interface{}, error) {
+	return nil, nil
 }
 
 // LocalRegion -

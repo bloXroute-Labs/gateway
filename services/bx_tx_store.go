@@ -441,7 +441,7 @@ func (t *BxTxStore) Summarize() *pbbase.TxStoreReply {
 			networkData = &pbbase.TxStoreNetworkData{}
 			networkData.OldestTx = bxTransaction.Protobuf()
 			networkData.TxCount++
-			networkData.SizeBytes += uint64(len(bxTransaction.Content()))
+			networkData.SizeBytes += uint64(bxTransaction.Size()) //nolint:gosec // Size() is non-negative
 			networkData.Network = uint64(bxTransaction.NetworkNum())
 			networkData.ShortIdCount += uint64(len(bxTransaction.ShortIDs()))
 			networks[bxTransaction.NetworkNum()] = networkData
@@ -455,13 +455,14 @@ func (t *BxTxStore) Summarize() *pbbase.TxStoreReply {
 			networkData.OldestTx = bxTransaction.Protobuf()
 		}
 		networkData.TxCount++
-		networkData.SizeBytes += uint64(len(bxTransaction.Content()))
+		networkData.SizeBytes += uint64(bxTransaction.Size()) //nolint:gosec // Size() is non-negative
 		networkData.ShortIdCount += uint64(len(bxTransaction.ShortIDs()))
 
 		return true
 	})
 
 	for _, netData := range networks {
+		netData.SizeMb = netData.SizeBytes / (1024 * 1024)
 		res.NetworkData = append(res.NetworkData, netData)
 	}
 

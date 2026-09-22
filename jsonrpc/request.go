@@ -20,7 +20,6 @@ const (
 	RPCQuotaUsage                 RPCRequestType = "quota_usage"
 	RPCBundleSubmission           RPCRequestType = "blxr_submit_bundle"
 	RPCBundleSimulation           RPCRequestType = "blxr_simulate_bundle"
-	RPCFeeBumpTx                  RPCRequestType = "blxr_tx_fee_bump"
 	RPCChangeNewPendingTxFromNode RPCRequestType = "new_pending_txs_source_from_node"
 	RPCEthSubscribe               RPCRequestType = "eth_subscribe"
 	RPCEthSendRawTransaction      RPCRequestType = "eth_sendRawTransaction"

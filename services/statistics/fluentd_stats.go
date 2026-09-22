@@ -46,6 +46,7 @@ type Stats interface {
 		ip string, networkNum bxtypes.NetworkNum, feedInclude []string, feedFilter string)
 	LogUnsubscribeStats(subscriptionID string, feedName types.FeedType, networkNum bxtypes.NetworkNum, accountID bxtypes.AccountID)
 	LogSubscriptionsStats(accountID bxtypes.AccountID, feedName types.FeedType, count int, networkNum bxtypes.NetworkNum)
+	LogSubscriptionsSnapshot(accountID bxtypes.AccountID, feedName types.FeedType, count int, networkNum bxtypes.NetworkNum, network string)
 	LogSDKInfo(blockchain, method, sourceCode, version string, accountID bxtypes.AccountID, feed types.FeedConnectionType, start, end time.Time)
 	AddBlobEvent(name, eventSubjectID string, sourceID bxtypes.NodeID, networkNum bxtypes.NetworkNum, startTime, endTime time.Time, originalSize, compressSize int, blobIndex uint32, blockHash string)
 }
@@ -77,6 +78,10 @@ func (NoStats) LogUnsubscribeStats(string, types.FeedType, bxtypes.NetworkNum, b
 func (NoStats) LogSubscriptionsStats(bxtypes.AccountID, types.FeedType, int, bxtypes.NetworkNum) {
 }
 
+// LogSubscriptionsSnapshot does nothing
+func (NoStats) LogSubscriptionsSnapshot(bxtypes.AccountID, types.FeedType, int, bxtypes.NetworkNum, string) {
+}
+
 // LogSDKInfo does nothing
 func (NoStats) LogSDKInfo(_, _, _, _ string, _ bxtypes.AccountID, _ types.FeedConnectionType, _, _ time.Time) {
 }
@@ -92,6 +97,9 @@ type FluentdStats struct {
 	Networks          map[bxtypes.NetworkNum]sdnmessage.BlockchainNetwork
 	Lock              *sync.RWMutex
 	logNetworkContent bool
+	// OnStatsDropped is called once when a STATS record cannot be encoded or enqueued.
+	// Configure it before use; the callback must be safe for concurrent calls. Nil disables it.
+	OnStatsDropped func(logName string, err error)
 }
 
 // AddTxsByShortIDsEvent generates a fluentd STATS event
@@ -257,6 +265,9 @@ func (s FluentdStats) LogToFluentD(record interface{}, ts time.Time, logName str
 
 	err := s.FluentD.EncodeAndPostData("bx.go.log", ts, d)
 	if err != nil {
+		if s.OnStatsDropped != nil {
+			s.OnStatsDropped(logName, err)
+		}
 		log.Errorf("Failed to send STATS to fluentd - %v", err)
 	}
 }
@@ -362,6 +373,25 @@ func (s FluentdStats) LogSubscriptionsStats(accountID bxtypes.AccountID, feed ty
 	}
 
 	s.LogToFluentD(record, now, "stats.subscriptions.current")
+}
+
+// LogSubscriptionsSnapshot generates a fluentd STATS event with a periodic snapshot of active subscriptions per account and feed
+func (s FluentdStats) LogSubscriptionsSnapshot(accountID bxtypes.AccountID, feed types.FeedType, count int, networkNum bxtypes.NetworkNum, network string) {
+	// data.timestamp makes each emit unique so the data-etl dedup cache keeps it
+	now := time.Now()
+	record := Record{
+		Type: "GatewaySubscriptionsSnapshot",
+		Data: GatewaySubscriptionsSnapshotRecord{
+			Timestamp:  now.Format(DateFormat),
+			AccountID:  accountID,
+			FeedName:   feed,
+			Count:      count,
+			NetworkNum: networkNum,
+			Network:    network,
+		},
+	}
+
+	s.LogToFluentD(record, now, "stats.gw_subscriptions")
 }
 
 // LogSDKInfo generates a fluentd STATS event

@@ -229,10 +229,6 @@ func (p *Peer) getQueuedBlocks() []NewBlockPacket {
 	return p.queuedBlocks
 }
 
-func (p *Peer) isVersion66() bool {
-	return p.version >= ETH66
-}
-
 func (p *Peer) blockLoop() {
 	for {
 		select {
@@ -454,15 +450,10 @@ func (p *Peer) QueueNewBlock(block *bxcommoneth.Block, td *big.Int) {
 
 // AnnounceBlock pushes a new block announcement to the peer. This is used when the total difficult is unknown, and so a new block message would be invalid.
 func (p *Peer) AnnounceBlock(hash common.Hash, number uint64) error {
-	packet := eth.NewBlockHashesPacket{
+	packet := NewBlockHashesPacket{
 		{Hash: hash, Number: number},
 	}
 	return p.send(eth.NewBlockHashesMsg, packet)
-}
-
-// SendBlockBodies sends a batch of block bodies to the peer
-func (p *Peer) SendBlockBodies(bodies []*eth.BlockBody) error {
-	return p.send(eth.BlockBodiesMsg, eth.BlockBodiesResponse(bodies))
 }
 
 // ReplyBlockBodies sends a batch of requested block bodies to the peer
@@ -473,11 +464,11 @@ func (p *Peer) ReplyBlockBodies(id uint64, bodies []*BlockBody) error {
 	})
 }
 
-// ReplyBlockHeaders sends batch of requested block headers to the peer
-func (p *Peer) ReplyBlockHeaders(id uint64, headers []*ethtypes.Header) error {
-	return p.send(eth.BlockHeadersMsg, eth.BlockHeadersPacket{
-		RequestId:           id,
-		BlockHeadersRequest: headers,
+// ReplyBlockHeadersRLP sends batch of requested block headers to the peer
+func (p *Peer) ReplyBlockHeadersRLP(id uint64, headers []rlp.RawValue) error {
+	return p.send(eth.BlockHeadersMsg, eth.BlockHeadersRLPPacket{
+		RequestId:               id,
+		BlockHeadersRLPResponse: headers,
 	})
 }
 
@@ -493,11 +484,6 @@ func (p *Peer) RequestTransactions(txHashes []common.Hash) error {
 		RequestId:                    generateUint64(),
 		GetPooledTransactionsRequest: packet,
 	})
-}
-
-// SendPooledTransactionHashes67 sends transaction hashes to the peer
-func (p *Peer) SendPooledTransactionHashes67(txHashes []common.Hash) error {
-	return p.send(eth.NewPooledTransactionHashesMsg, NewPooledTransactionHashesPacket66(txHashes))
 }
 
 // SendPooledTransactionHashes sends transaction hashes to the peer
@@ -517,12 +503,8 @@ func (p *Peer) ReplyPooledTransaction(id uint64, txs []rlp.RawValue) error {
 	})
 }
 
-// RequestBlock fetches the specified block from the ETH66 peer, pushing the components to the channels upon request/response completion.
+// RequestBlock fetches the specified block from the ETH68 peer, pushing the components to the channels upon request/response completion.
 func (p *Peer) RequestBlock(blockHash common.Hash, headersCh chan eth.Packet, bodiesCh chan eth.Packet) error {
-	if !p.isVersion66() {
-		panic("unexpected call to request block 66 for a <ETH66 peer")
-	}
-
 	getHeadersPacket := &eth.GetBlockHeadersRequest{
 		Origin:  eth.HashOrNumber{Hash: blockHash},
 		Amount:  1,
@@ -676,7 +658,7 @@ func (p *Peer) Handshake(chain *core.Chain, networkChain uint64, totalDifficulty
 	switch p.version {
 	case eth.ETH69:
 		return p.handshake69(networkChain, genesis, executionLayerForks)
-	case ETH66, ETH67, eth.ETH68:
+	case ETH68:
 		return p.handshake68(chain, networkChain, totalDifficulty, head, genesis, executionLayerForks)
 	default:
 		return fmt.Errorf("unsupported protocol version: %v", p.version)
@@ -692,7 +674,7 @@ func (p *Peer) handshake69(networkChain uint64, genesis common.Hash, executionLa
 	p.ConfirmedHead.Store(core.BlockRef{Hash: peerStatus.LatestBlockHash})
 
 	// used the same fork ID as received from peer; gateway is expected to usually be compatible with Ethereum peer
-	err = p.send(eth.StatusMsg, &eth.StatusPacket69{
+	err = p.send(eth.StatusMsg, &eth.StatusPacket{
 		ProtocolVersion: p.version,
 		NetworkID:       networkChain,
 		Genesis:         genesis,
@@ -733,7 +715,7 @@ func (p *Peer) handshake68(chain *core.Chain, networkChain uint64, totalDifficul
 		head = peerStatus.Head
 	}
 	// used the same fork ID as received from peer; gateway is expected to usually be compatible with Ethereum peer
-	err = p.send(eth.StatusMsg, &eth.StatusPacket68{
+	err = p.send(eth.StatusMsg, &StatusPacket68{
 		ProtocolVersion: p.version,
 		NetworkID:       networkChain,
 		TD:              totalDifficulty,
@@ -756,23 +738,16 @@ func (p *Peer) handshake68(chain *core.Chain, networkChain uint64, totalDifficul
 	p.endpoint.Name = p.Peer.Fullname()
 	p.endpoint.ConnectedAt = time.Now().Format(time.RFC3339)
 
-	// send Empty NewPooledTransactionHashes based on the protocol
-	var msg interface{}
-	switch p.version {
-	case eth.ETH68:
-		msg = eth.NewPooledTransactionHashesPacket{}
-	default:
-		msg = NewPooledTransactionHashesPacket66{}
-	}
-	if err = p.send(eth.NewPooledTransactionHashesMsg, &msg); err != nil {
+	// send Empty NewPooledTransactionHashes
+	if err = p.send(eth.NewPooledTransactionHashesMsg, &eth.NewPooledTransactionHashesPacket{}); err != nil {
 		p.Log().Errorf("error sending empty NewPooledTransactionHashesMsg message after handshake %v", err)
 	}
 
 	return nil
 }
 
-func (p *Peer) readStatus69(networkChain uint64, genesis common.Hash, executionLayerForks []string) (*eth.StatusPacket69, error) {
-	var peerStatus eth.StatusPacket69
+func (p *Peer) readStatus69(networkChain uint64, genesis common.Hash, executionLayerForks []string) (*eth.StatusPacket, error) {
+	var peerStatus eth.StatusPacket
 	err := p.readStatusMessage(&peerStatus, eth.StatusMsg)
 	if err != nil {
 		return nil, err
@@ -798,8 +773,8 @@ func (p *Peer) readStatus69(networkChain uint64, genesis common.Hash, executionL
 	return &peerStatus, nil
 }
 
-func (p *Peer) readStatus68(networkChain uint64, genesis common.Hash, executionLayerForks []string) (*eth.StatusPacket68, error) {
-	var peerStatus eth.StatusPacket68
+func (p *Peer) readStatus68(networkChain uint64, genesis common.Hash, executionLayerForks []string) (*StatusPacket68, error) {
+	var peerStatus StatusPacket68
 	err := p.readStatusMessage(&peerStatus, eth.StatusMsg)
 	if err != nil {
 		return nil, err

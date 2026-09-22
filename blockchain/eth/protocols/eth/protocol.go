@@ -4,6 +4,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/forkid"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 
@@ -15,18 +16,8 @@ import (
 // devp2p capability negotiation.
 const ProtocolName = "eth"
 
-// ETH66, ETH67 are the protocols that dropped by the 'go-ethereum' which still should be supported
-const (
-	ETH66 = 66
-	ETH67 = 67
-)
-
-const (
-	// GetNodeDataMsg is the code of the GetNodeData message that was dropped by go-ethereum
-	GetNodeDataMsg = 0x0d
-	// NodeDataMsg is the code of the NodeData message that was dropped by go-ethereum
-	NodeDataMsg = 0x0e
-)
+// ETH68 is the protocol dropped by go-ethereum that still needs to be supported.
+const ETH68 = 68
 
 // Packet represents a p2p message in the `eth` protocol.
 type Packet interface {
@@ -34,7 +25,7 @@ type Packet interface {
 	Kind() byte   // Kind returns the message type.
 }
 
-// Custom protocol message structures that covers cases for ETH and BSC after EIP-4844
+// Custom protocol message structures that cover cases for ETH and BSC for eth68
 
 // NewBlockPacket is the network packet for the block propagation message.
 type NewBlockPacket struct {
@@ -89,28 +80,50 @@ func (p *BlockBodiesResponse) Unpack() ([][]*ethtypes.Transaction, [][]*ethtypes
 	return txset, uncleset, withdrawalset, sidecarset
 }
 
-// end of custom protocol message structures
-
-// NewPooledTransactionHashesPacket66 represents a transaction announcement packet on eth/66.
-// Used for both eth/66 and eth/67.
-type NewPooledTransactionHashesPacket66 []common.Hash
+// NewBlockHashesPacket is the network packet for the block announcements.
+type NewBlockHashesPacket []struct {
+	Hash   common.Hash // Hash of one particular block being announced
+	Number uint64      // Number of one particular block being announced
+}
 
 // Name implements the eth.Packet interface.
-func (*NewPooledTransactionHashesPacket66) Name() string { return "NewPooledTransactionHashes" }
+func (*NewBlockHashesPacket) Name() string { return "NewBlockHashes" }
 
 // Kind implements the eth.Packet interface.
-func (*NewPooledTransactionHashesPacket66) Kind() byte { return eth.NewPooledTransactionHashesMsg }
+func (*NewBlockHashesPacket) Kind() byte { return eth.NewBlockHashesMsg }
+
+// StatusPacket68 is the network packet for the status message.
+type StatusPacket68 struct {
+	ProtocolVersion uint32
+	NetworkID       uint64
+	TD              *big.Int
+	Head            common.Hash
+	Genesis         common.Hash
+	ForkID          forkid.ID
+}
+
+// Name implements the eth.Packet interface.
+func (*StatusPacket68) Name() string { return "Status" }
+
+// Kind implements the eth.Packet interface.
+func (*StatusPacket68) Kind() byte { return eth.StatusMsg }
+
+// end of custom protocol message structures
+
+// ProtocolVersions are the supported versions of the `eth` protocol (first
+// is primary). This includes ETH68 which is still used by BSC peers.
+var ProtocolVersions = []uint{ETH68, uint(eth.ETH69)}
 
 // supportedProtocols is the map of networks to devp2p protocols supported by this client
 var supportedProtocols = map[uint64][]uint32{
-	network.BSCMainnetChainID: {eth.ETH68},
-	network.BSCTestnetChainID: {eth.ETH68},
-	network.EthMainnetChainID: {ETH66, ETH67, eth.ETH68, eth.ETH69},
-	network.HoleskyChainID:    {ETH67, eth.ETH68, eth.ETH69},
+	network.BSCMainnetChainID: {ETH68, eth.ETH69},
+	network.BSCTestnetChainID: {ETH68, eth.ETH69},
+	network.EthMainnetChainID: {ETH68, eth.ETH69},
+	network.HoleskyChainID:    {ETH68, eth.ETH69},
 }
 
 // protocolLengths is a mapping of each supported devp2p protocol to its message version length
-var protocolLengths = map[uint32]uint64{ETH66: 17, ETH67: 17, eth.ETH68: 17, eth.ETH69: 18}
+var protocolLengths = map[uint32]uint64{ETH68: 17, eth.ETH69: 18}
 
 // Decoder represents any struct that can be decoded into an Ethereum message type
 type Decoder interface {

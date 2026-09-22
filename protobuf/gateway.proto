@@ -287,6 +287,7 @@ message TxStoreNetworkData{
   uint64 short_id_count = 2;
   BxTransaction oldest_tx = 3;
   uint64 sizeBytes = 5;
+  uint64 size_mb = 6;
 }
 
 message TxStoreReply {
@@ -314,13 +315,15 @@ message BlxrBatchTXRequest {
 
 message BlxrTxRequest {
   string transaction = 1;
-  bool nonce_monitoring = 2;
+  bool nonce_monitoring = 2 [deprecated = true];
   bool next_validator = 3 [deprecated = true];
   string auth_header = 4 [deprecated = true];
   bool validators_only = 5 [deprecated = true];
   int32 fallback = 6 [deprecated = true];
   bool node_validation = 7;
   bool frontrunning_protection = 8 [deprecated = true];
+  string backrunme_reward_address = 9;
+  bool rpc_mode = 10;
 }
 
 message BlxrTxReply {

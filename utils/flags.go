@@ -320,18 +320,6 @@ var (
 		Hidden: true,
 		Value:  false,
 	}
-	OFACEndpoint = &cli.StringFlag{
-		Name:   "ofac-endpoint",
-		Usage:  "ofac endpoint url",
-		Hidden: true,
-		Value:  "",
-	}
-	OFACBackupEndpoint = &cli.StringFlag{
-		Name:   "ofac-backup-endpoint",
-		Usage:  "ofac backup endpoint url",
-		Hidden: true,
-		Value:  "",
-	}
 	SubmitBeaconBlockToAPI = &cli.BoolFlag{
 		Name:   "submit-beacon-block-to-api",
 		Usage:  "submit beacon block to api",
@@ -339,3 +327,4 @@ var (
 		Value:  true,
 	}
 )
+

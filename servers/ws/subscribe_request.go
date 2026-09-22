@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 
 	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
 
@@ -41,8 +42,7 @@ func (h *handlerObj) createClientReq(req Request, feed types.FeedType, rpcParams
 
 	// Set default value for ParsedTxs if not provided
 	if request.options.ParsedTxs == nil {
-		defaultParsedTxs := true
-		request.options.ParsedTxs = &defaultParsedTxs
+		request.options.ParsedTxs = new(true)
 	}
 	if request.options.Include == nil {
 		h.log.Debugf("invalid param from request id: %v. method: %v. params: %s. remote address: %v account id: %v.",
@@ -114,8 +114,22 @@ func (h *handlerObj) createClientReq(req Request, feed types.FeedType, rpcParams
 		}
 	}
 
+	// pre-normalize "transactions" include for block feeds once at subscription time,
+	// so sendNotification pays zero cost per notification (mirrors gRPC handleBlocks).
+	includes := request.options.Include
+	switch request.feed {
+	case types.NewBlocksFeed, types.BDNBlocksFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed:
+		if i := slices.Index(includes, "transactions"); i >= 0 {
+			if !*request.options.ParsedTxs {
+				includes = slices.Replace(includes, i, i+1, "raw_transactions")
+			} else {
+				includes = slices.Replace(includes, i, i+1, "transactions_without_sender")
+			}
+		}
+	}
+
 	return &ClientReq{
-		Includes:  request.options.Include,
+		Includes:  includes,
 		Feed:      request.feed,
 		Expr:      expr,
 		calls:     &calls,

@@ -14,7 +14,6 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -513,14 +512,7 @@ func (h *handler) broadcastTransactions(p *datatype.ProcessingETHTransaction, so
 
 func (h *handler) broadcastPooledTransactionHashes(txHashes []ethcommon.Hash, types []byte, sizes []uint32) {
 	for _, peer := range h.peers.getAll() {
-		if peer.Version() >= eth.ETH68 {
-			if err := peer.SendPooledTransactionHashes(txHashes, types, sizes); err != nil {
-				peer.Log().Errorf("could not announce %v transaction hashes: %v", len(txHashes), err)
-			}
-			continue
-		}
-
-		if err := peer.SendPooledTransactionHashes67(txHashes); err != nil {
+		if err := peer.SendPooledTransactionHashes(txHashes, types, sizes); err != nil {
 			peer.Log().Errorf("could not announce %v transaction hashes: %v", len(txHashes), err)
 		}
 	}

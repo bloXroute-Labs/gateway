@@ -2,6 +2,7 @@ package feed
 
 import (
 	"io"
+	"sync/atomic"
 	"time"
 
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
@@ -21,6 +22,7 @@ type ClientSubscription struct {
 	timeOpenedFeed     time.Time
 	messagesSent       uint64
 	errMsgChan         chan string
+	unsubscribing      *atomic.Bool
 }
 
 // ClientSubscriptionHandlingInfo contains all info needed by subscription handler

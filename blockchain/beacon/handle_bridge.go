@@ -206,8 +206,6 @@ func retrieveBlobsFromDataColumns(blobsManager *BlobSidecarCacheManager, block i
 
 	expectedBlobs := len(kgzCommitments)
 
-	kzgProofs = make([][]byte, 0, len(kgzCommitments))
-	blobs = make([][]byte, 0, len(kgzCommitments))
 	var receivedBlobSidecarAmount int
 
 	log.Tracef("waiting for %d blob sidecars for block hash %s", expectedBlobs, blockHash)
@@ -215,7 +213,7 @@ func retrieveBlobsFromDataColumns(blobsManager *BlobSidecarCacheManager, block i
 	waitingStartingTime := time.Now()
 	blobsCh := blobsManager.SubscribeToBlobByBlockHash(blockHash, block.Block().Slot())
 
-	columnSidecar := make([]blocks.VerifiedRODataColumn, 0)
+	columnSidecars := make([]blocks.VerifiedRODataColumn, 0)
 	for blob := range blobsCh {
 		log.Tracef("received blob sidecar for block hash %s, index: %d", blockHash, blob.Index)
 
@@ -226,7 +224,7 @@ func retrieveBlobsFromDataColumns(blobsManager *BlobSidecarCacheManager, block i
 
 		receivedBlobSidecarAmount++
 
-		columnSidecar = append(columnSidecar, blocks.NewVerifiedRODataColumn(roDataColumn))
+		columnSidecars = append(columnSidecars, blocks.NewVerifiedRODataColumn(roDataColumn))
 
 		minColumnCount := peerdas.MinimumColumnCountToReconstruct()
 		if receivedBlobSidecarAmount >= 0 && uint64(receivedBlobSidecarAmount) == minColumnCount {
@@ -239,30 +237,19 @@ func retrieveBlobsFromDataColumns(blobsManager *BlobSidecarCacheManager, block i
 		return nil, nil, fmt.Errorf("received only %d blob sidecars, need at least %d to reconstruct blobs", receivedBlobSidecarAmount, peerdas.MinimumColumnCountToReconstruct())
 	}
 
-	slices.SortFunc(columnSidecar, func(a, b blocks.VerifiedRODataColumn) int {
-		//nolint:gosec
+	slices.SortFunc(columnSidecars, func(a, b blocks.VerifiedRODataColumn) int {
 		// G115: safe, max value is 128
-		return int(a.GetIndex() - b.GetIndex())
+		return int(a.GetIndex() - b.GetIndex()) //nolint:gosec
 	})
-
-	roBlock, err := blocks.NewROBlock(block)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create ROBlock from block: %v", err)
-	}
 
 	indexes := make([]int, 0, len(kgzCommitments))
 	for i := range kgzCommitments {
 		indexes = append(indexes, i)
 	}
 
-	verifiedBlobs, err := peerdas.ReconstructBlobs(roBlock, columnSidecar, indexes)
+	blobs, err = peerdas.ReconstructBlobs(columnSidecars, indexes, len(kgzCommitments))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to reconstruct blobs from column sidecars: %v", err)
-	}
-
-	// Extract blobs from verified blobs
-	for _, verifiedBlob := range verifiedBlobs {
-		blobs = append(blobs, verifiedBlob.GetBlob())
 	}
 
 	// Prysm expects flat array of cell proofs: [blob0_cell0_proof, blob0_cell1_proof, ..., blob1_cell0_proof, ...]
@@ -272,14 +259,14 @@ func retrieveBlobsFromDataColumns(blobsManager *BlobSidecarCacheManager, block i
 			return nil, nil, fmt.Errorf("wrong blob size during cell proof computation")
 		}
 
-		// Compute cells and their KZG proofs for this blob
-		cellsAndProofs, err := kzg.ComputeCellsAndKZGProofs(&kzgBlob)
+		// compute cells and their KZG proofs for this blob
+		_, proofs, err := kzg.ComputeCellsAndKZGProofs(&kzgBlob)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to compute cells and proofs for blob: %v", err)
 		}
 
-		// Append all cell proofs for this blob (128 proofs)
-		for _, cellProof := range cellsAndProofs.Proofs {
+		// append all cell proofs for this blob (128 proofs)
+		for _, cellProof := range proofs {
 			kzgProofs = append(kzgProofs, cellProof[:])
 		}
 	}
@@ -287,7 +274,7 @@ func retrieveBlobsFromDataColumns(blobsManager *BlobSidecarCacheManager, block i
 	blobsManager.UnsubscribeFromBlobByBlockHash(blockHash)
 
 	if len(blobs) != expectedBlobs {
-		// not all blob sidecars were received and the block should not be broadcasted
+		// not all blob sidecars were received, and the block should not be broadcasted
 		// also it means that received channel for blobs was closed, so we don't need to unsubscribe
 		err = fmt.Errorf("received %d blob sidecars, expected %d", receivedBlobSidecarAmount, expectedBlobs)
 

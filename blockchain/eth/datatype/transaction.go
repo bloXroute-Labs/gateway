@@ -19,8 +19,15 @@ func NewProcessingETHTransaction(size int) *ProcessingETHTransaction {
 	}
 }
 
-// Add new transaction to list
+// Add new transaction to list, skipping a hash that was already added
 func (p *ProcessingETHTransaction) Add(tx *ethtypes.Transaction, isAllowedForInbound bool) {
+	hash := tx.Hash()
+	for _, added := range p.txs {
+		if added.Hash() == hash {
+			return
+		}
+	}
+
 	p.txs = append(p.txs, tx)
 	p.isAllowedForInbound = append(p.isAllowedForInbound, isAllowedForInbound)
 }

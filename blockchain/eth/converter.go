@@ -38,8 +38,7 @@ func (c Converter) TransactionBDNToBlockchain(transaction *types.BxTransaction) 
 }
 
 // TransactionBlockchainToBDN converts an Ethereum transaction to a BDN transaction
-func (c Converter) TransactionBlockchainToBDN(i interface{}) (*types.BxTransaction, error) {
-	transaction := i.(*ethtypes.Transaction)
+func (c Converter) TransactionBlockchainToBDN(transaction *ethtypes.Transaction) (*types.BxTransaction, error) {
 	hash := NewSHA256Hash(transaction.Hash())
 
 	content, err := rlp.EncodeToBytes(transaction)
@@ -287,6 +286,31 @@ func (c Converter) bscSidecarsBDNtoBlockchain(block *types.BxBlock) []*bxcommone
 	}
 
 	return sidecars
+}
+
+// RawTransactionsFromBxBlock slices the canonical (MarshalBinary) encoding of every block transaction out of the BxBlock contents
+func RawTransactionsFromBxBlock(block *types.BxBlock) ([][]byte, error) {
+	raw := make([][]byte, 0, len(block.Txs))
+	for i, tx := range block.Txs {
+		content := tx.Content()
+		kind, data, _, err := rlp.Split(content)
+		if err != nil {
+			return nil, fmt.Errorf("could not split transaction %v of block %v: %w", i, block.Hash(), err)
+		}
+
+		switch {
+		case kind == rlp.List:
+			// legacy transactions are RLP lists, already in canonical form
+			raw = append(raw, content)
+		case kind == rlp.String && len(data) > 0 && data[0] <= 0x7f:
+			// typed transactions are wrapped in an RLP string holding type||payload
+			raw = append(raw, data)
+		default:
+			return nil, fmt.Errorf("transaction %v of block %v is not in in-block RLP form", i, block.Hash())
+		}
+	}
+
+	return raw, nil
 }
 
 func (c Converter) ethBlockBDNtoBlockchain(block *types.BxBlock) (*bxcommoneth.BlockInfo, error) {

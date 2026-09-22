@@ -1,13 +1,13 @@
+version: "2"
+
 # full list: https://golangci-lint.run/usage/linters/
 linters:
-  disable-all: true
+  default: none
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
     - staticcheck
-    - typecheck
     - unused
     - bodyclose
     - contextcheck
@@ -15,63 +15,67 @@ linters:
     - dupl
     - goconst
     - gocritic
-    - gofmt
-    - goimports
     - gosec
     - noctx
     - nolintlint
     - prealloc
     - revive
-    - stylecheck
     - unconvert
     - usestdlibvars
 
-# full list: https://golangci-lint.run/usage/configuration/
-linters-settings:
-  staticcheck:
-    checks: [ "all" ]
-  stylecheck:
-    # ignore package comment and naming recommendations
-    checks: [ "all", "-ST1000", "-ST1003", "-ST10016"]
-  errcheck:
-    check-blank: true
-  govet:
-    shadow: true
-  dupl:
-    threshold: 500
+  # full list: https://golangci-lint.run/usage/configuration/
+  settings:
+    staticcheck:
+      # gosimple and stylecheck were folded into staticcheck in golangci-lint v2; "all" plus the
+      # excludes below (previously stylecheck-only) reproduces the old staticcheck+stylecheck union.
+      checks: [ "all", "-ST1000", "-ST1003", "-ST10016" ]
+    errcheck:
+      check-blank: true
+    govet:
+      enable:
+        - shadow
+    dupl:
+      threshold: 500
 
+  exclusions:
+    presets:
+      - comments
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - govet
+          - gomnd
+          - bodyclose
+          - ineffassign
+    paths:
+      - ".*\\.pb\\.go$" # skip protobuf generated code
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    paths:
+      - ".*\\.pb\\.go$" # skip protobuf generated code
+
+# full list: https://golangci-lint.run/usage/configuration/
 issues:
   new: true
   new-from-rev: develop
 
-  # Validates whole file instead of changed lines only, but produces many errors
+  # Validates the whole file instead of changed lines only, but produces many errors
   # on large files. We might consider enabling this flag to start improving the
-  # source code file by file. Also, with `whole-files` turned off validators don't
-  # check unchanged lines, even if the change leaded to an issue in other place.
+  # source code file by file. Also, with `whole-files` turned-off validators don't
+  # check unchanged lines, even if the change leaded to an issue in another place.
   whole-files: false
-
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck
-        - gosec
-        - govet
-        - gomnd
-        - bodyclose
-        - ineffassign
-
-  include:
-    - EXC0011
-    - EXC0012
-    - EXC0014
 
 run:
   go: "1.25.1"
   allow-parallel-runners: true
-  exclude-files:
-    - ".*\\.pb\\.go$" # skip protobuf generated code
 
 output:
   formats:
-    - format: tab
+    tab:
       path: stderr

@@ -37,5 +37,10 @@ type SubscriptionPermissionMessage struct {
 	ErrorReason    string          `json:"error_reason"`
 }
 
+// SubscriptionUnsubscribeSuccessMessage represents SDN response to subscription unsubscribe request
+type SubscriptionUnsubscribeSuccessMessage struct {
+	SubscriptionID string `json:"subscription_id"`
+}
+
 // SubscriptionRequestAllMessage represents SDN request for subscriptions
 type SubscriptionRequestAllMessage struct{}

@@ -174,10 +174,10 @@ func TestFilterTransaction(t *testing.T) {
 	tx := types.NewBxTransaction(hash, bxtypes.NetworkNum(5), types.TFPaidTx, time.Now())
 	tx.SetContent(content)
 
-	blockchainTx, err := tx.MakeAndSetEthTransaction(types.EmptySender)
-	require.NoError(t, err)
+	blockchainTx := types.NewEthTransactionFromBytes(tx.Content(), types.EmptySender)
 
-	filters := blockchainTx.Filters()
+	filters, err := blockchainTx.Filters()
+	require.NoError(t, err)
 
 	var testCases = []struct {
 		filter   string

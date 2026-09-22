@@ -369,7 +369,12 @@ func shouldSendTx(clientReq *ws.ClientReq, tx *types.NewTransactionNotification,
 		return true
 	}
 
-	txFilters := tx.Filters()
+	txFilters, err := tx.Filters()
+	if err != nil {
+		log.Errorf("error getting Filters. Feed: %v. filters: %s. remote address: %v. account id: %v error - %v",
+			clientReq.Feed, clientReq.Expr, remoteAddress, accountID, err)
+		return false
+	}
 
 	// evaluate if we should send the tx
 	shouldSend, err := clientReq.Expr.Evaluate(txFilters)
@@ -383,19 +388,18 @@ func shouldSendTx(clientReq *ws.ClientReq, tx *types.NewTransactionNotification,
 }
 
 func makeTransaction(transaction *types.NewTransactionNotification, txFromFieldIncludable bool) *pb.Tx {
+	rawTx, err := transaction.RawTx()
+	if err != nil {
+		log.Errorf("error getting raw tx: %v", err)
+	}
+
 	tx := &pb.Tx{
 		LocalRegion: transaction.LocalRegion(),
 		Time:        time.Now().UnixNano(),
-		RawTx:       transaction.RawTx(),
+		RawTx:       rawTx,
 	}
 
 	if txFromFieldIncludable {
-		// need to have entire transaction to get sender
-		if err := transaction.MakeEthTransaction(); err != nil {
-			log.Errorf("error making blockchain transaction: %v", err)
-			return tx
-		}
-
 		sender, err := transaction.EthTransaction.Sender()
 		if err != nil {
 			log.Errorf("error getting sender from blockchain transaction: %v", err)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"runtime"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -66,7 +67,7 @@ func newEthereumMainnetConfig() EthConfig {
 		IgnoreBlockTimeout:      150 * time.Second,
 		IgnoreSlotCount:         10,
 		BootstrapNodes:          bootNodes,
-		ProgramName:             "Geth/v1.16.8/linux-amd64/go1.25.1",
+		ProgramName:             "Geth/v1.17.3/" + runtime.GOOS + "-" + runtime.GOARCH + "/" + runtime.Version(),
 	}
 }
 
@@ -108,7 +109,7 @@ func newBSCMainnetConfig() EthConfig {
 		Genesis:                 common.HexToHash("0x0d21840abff46b96c84b2ac9e10e4f5cdaeb5693cb665db62a2f3b02d2d57b5b"),
 		IgnoreBlockTimeout:      30 * time.Second,
 		BootstrapNodes:          bootNodes,
-		ProgramName:             "Geth/v1.16.8/linux-amd64/go1.25.1",
+		ProgramName:             "Geth/v1.17.3/" + runtime.GOOS + "-" + runtime.GOARCH + "/" + runtime.Version(),
 	}
 }
 
@@ -142,7 +143,7 @@ func newBSCTestnetConfig() EthConfig {
 		Genesis:                 common.HexToHash("6d3c66c5357ec91d5c43af47e234a939b22557cbb552dc45bebbceeed90fbe34"),
 		IgnoreBlockTimeout:      30 * time.Second,
 		BootstrapNodes:          bootNodes,
-		ProgramName:             "Geth/v1.16.8/linux-amd64/go1.25.1",
+		ProgramName:             "Geth/v1.17.3/" + runtime.GOOS + "-" + runtime.GOARCH + "/" + runtime.Version(),
 	}
 }
 
@@ -174,7 +175,7 @@ func newHoleskyConfig() EthConfig {
 		IgnoreBlockTimeout:      30 * time.Second,
 		BootstrapNodes:          bootNodes,
 		IgnoreSlotCount:         10,
-		ProgramName:             "Geth/v1.16.8/linux-amd64/go1.25.1",
+		ProgramName:             "Geth/v1.17.3/" + runtime.GOOS + "-" + runtime.GOARCH + "/" + runtime.Version(),
 	}
 }
 

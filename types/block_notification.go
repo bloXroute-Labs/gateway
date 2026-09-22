@@ -127,8 +127,8 @@ func (e *ElectraBlockNotification) WithFields(fields []string) Notification {
 }
 
 // Filters -
-func (e *ElectraBlockNotification) Filters() map[string]interface{} {
-	return nil
+func (e *ElectraBlockNotification) Filters() (map[string]interface{}, error) {
+	return nil, nil
 }
 
 // LocalRegion -
@@ -224,8 +224,8 @@ func (e *DenebBlockNotification) WithFields(fields []string) Notification {
 }
 
 // Filters converts filters as field value map
-func (e *DenebBlockNotification) Filters() map[string]interface{} {
-	return nil
+func (e *DenebBlockNotification) Filters() (map[string]interface{}, error) {
+	return nil, nil
 }
 
 // LocalRegion -
@@ -326,8 +326,8 @@ func (e *FuluBlockNotification) WithFields(fields []string) Notification {
 }
 
 // Filters -
-func (e *FuluBlockNotification) Filters() map[string]interface{} {
-	return nil
+func (e *FuluBlockNotification) Filters() (map[string]interface{}, error) {
+	return nil, nil
 }
 
 // LocalRegion -
@@ -380,6 +380,9 @@ type EthBlockNotification struct {
 	source           *NodeEndpoint
 	rawTxsMu         *sync.RWMutex
 	txsMu            *sync.RWMutex
+	// shared by every clone/WithFields copy, so transactions are encoded once per block, not per
+	// subscriber; unexported so copies that did not ask for raw transactions do not serialize them
+	rawTxsCache *[][]byte
 }
 
 // NewEthBlockNotification creates ETH block notification
@@ -400,9 +403,21 @@ func NewEthBlockNotification(blockchainNetwork string, hash ethcommon.Hash, bloc
 		ValidatorInfo: info,
 		Withdrawals:   block.Withdrawals(),
 		// to parse raw transactions and transactions separately, we need to lock the mutexes
-		rawTxsMu: &sync.RWMutex{},
-		txsMu:    &sync.RWMutex{},
+		rawTxsMu:    &sync.RWMutex{},
+		txsMu:       &sync.RWMutex{},
+		rawTxsCache: new([][]byte),
 	}, nil
+}
+
+// SeedRawTransactions stores pre-encoded canonical transactions, so subscribers do not re-encode them
+func (ethBlockNotification *EthBlockNotification) SeedRawTransactions(raw [][]byte) {
+	if ethBlockNotification.rawTxsCache == nil {
+		return
+	}
+
+	ethBlockNotification.rawTxsMu.Lock()
+	defer ethBlockNotification.rawTxsMu.Unlock()
+	*ethBlockNotification.rawTxsCache = raw
 }
 
 // GetTransactions returns a shallow copy of the transactions slice
@@ -414,6 +429,11 @@ func (ethBlockNotification *EthBlockNotification) parseRawTransactions() [][]byt
 	ethBlockNotification.rawTxsMu.Lock()
 	defer ethBlockNotification.rawTxsMu.Unlock()
 	if ethBlockNotification.RawTransactions != nil {
+		return ethBlockNotification.RawTransactions
+	}
+
+	if ethBlockNotification.rawTxsCache != nil && *ethBlockNotification.rawTxsCache != nil {
+		ethBlockNotification.RawTransactions = *ethBlockNotification.rawTxsCache
 		return ethBlockNotification.RawTransactions
 	}
 
@@ -432,6 +452,10 @@ func (ethBlockNotification *EthBlockNotification) parseRawTransactions() [][]byt
 	}
 
 	ethBlockNotification.RawTransactions = rawTransactions
+	if ethBlockNotification.rawTxsCache != nil {
+		*ethBlockNotification.rawTxsCache = rawTransactions
+	}
+
 	return rawTransactions
 }
 
@@ -533,17 +557,26 @@ func (ethBlockNotification *EthBlockNotification) parseTransactionsFromRaw() ([]
 }
 
 func parseFieldsFromTx(tx *ethtypes.Transaction, includeFrom bool) (map[string]any, error) {
-	ethTx, err := NewEthTransaction(tx, EmptySender)
+	ethTx := NewEthTransaction(tx, EmptySender)
+	var fields map[string]interface{}
+	if includeFrom {
+		var err error
+		fields, err = ethTx.Fields(AllFieldsWithFrom)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		var err error
+		fields, err = ethTx.Fields(AllFields)
+		if err != nil {
+			return nil, err
+		}
+	}
+	txType, err := ethTx.Type()
 	if err != nil {
 		return nil, err
 	}
-	var fields map[string]interface{}
-	if includeFrom {
-		fields = ethTx.Fields(AllFieldsWithFrom)
-	} else {
-		fields = ethTx.Fields(AllFields)
-	}
-	if ethTx.Type() >= ethtypes.DynamicFeeTxType {
+	if txType >= ethtypes.DynamicFeeTxType {
 		fields["gasPrice"] = fields["maxFeePerGas"]
 	}
 
@@ -649,7 +682,12 @@ func ConvertEthHeaderToBlockNotificationHeader(blockchainNetwork string, ethHead
 
 // WithFields returns notification with specified fields
 func (ethBlockNotification *EthBlockNotification) WithFields(fields []string) Notification {
-	block := EthBlockNotification{txsMu: ethBlockNotification.txsMu, rawTxsMu: ethBlockNotification.rawTxsMu, Block: ethBlockNotification.Block}
+	block := EthBlockNotification{
+		txsMu:       ethBlockNotification.txsMu,
+		rawTxsMu:    ethBlockNotification.rawTxsMu,
+		rawTxsCache: ethBlockNotification.rawTxsCache,
+		Block:       ethBlockNotification.Block,
+	}
 
 	for _, param := range fields {
 		switch param {
@@ -680,8 +718,8 @@ func (ethBlockNotification *EthBlockNotification) GetTxs(senders map[string]Send
 }
 
 // Filters converts filters as field value map
-func (ethBlockNotification *EthBlockNotification) Filters() map[string]interface{} {
-	return nil
+func (ethBlockNotification *EthBlockNotification) Filters() (map[string]interface{}, error) {
+	return nil, nil
 }
 
 // LocalRegion -
@@ -739,4 +777,5 @@ func (ethBlockNotification *EthBlockNotification) GetRawTxByIndex(index int) []b
 func (ethBlockNotification *EthBlockNotification) SetLocks() {
 	ethBlockNotification.rawTxsMu = &sync.RWMutex{}
 	ethBlockNotification.txsMu = &sync.RWMutex{}
+	ethBlockNotification.rawTxsCache = new([][]byte)
 }

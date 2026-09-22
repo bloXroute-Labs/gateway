@@ -47,18 +47,16 @@ func (h *ethHandler) PeerInfo(id enode.ID) interface{} {
 	return nil
 }
 
-// Handle processes Ethereum message packets that update internal backend state.
+// Handle processes Ethereum message packets that update the internal backend state.
 // In general, messages that require responses should not reach this function.
 func (h *ethHandler) Handle(peer *eth2.Peer, packet eth2.Packet) error {
 	switch p := packet.(type) {
-	case *eth.StatusPacket68:
+	case *eth2.StatusPacket68, *eth.StatusPacket:
 		return nil
 	case *eth.TransactionsPacket:
-		return h.processTransactions(peer, *p)
-	case *eth.PooledTransactionsResponse:
-		return h.processTransactions(peer, *p)
-	case *eth2.NewPooledTransactionHashesPacket66:
-		return h.processTransactionHashes(peer, *p)
+		return h.processTransactions(peer, p, false)
+	case *eth.PooledTransactionsPacket:
+		return h.processTransactions(peer, &eth.TransactionsPacket{RawList: p.List}, true)
 	case *eth.NewPooledTransactionHashesPacket:
 		return h.processTransactionHashes(peer, p.Hashes)
 	case *eth2.NewBlockPacket:
@@ -67,7 +65,7 @@ func (h *ethHandler) Handle(peer *eth2.Peer, packet eth2.Packet) error {
 			block.SetBlobSidecars(p.Sidecars)
 		}
 		return h.processBlock(peer, bxcommoneth.NewBlockInfo(block, p.TD))
-	case *eth.NewBlockHashesPacket:
+	case *eth2.NewBlockHashesPacket:
 		return h.processBlockAnnouncement(peer, *p)
 	case *eth.BlockHeadersRequest:
 		return h.processBlockHeaders(peer, *p)
@@ -119,30 +117,54 @@ func (h *ethHandler) RequestTransactions(hashes []common.Hash) ([]rlp.RawValue, 
 	}
 }
 
-func (h *ethHandler) processTransactions(peer *eth2.Peer, txs []*ethtypes.Transaction) error {
+func (h *ethHandler) processTransactions(peer *eth2.Peer, p *eth.TransactionsPacket, isPool bool) error {
+	txs := make([]*ethtypes.Transaction, p.Len())
+	rawTxs := make([][]byte, p.Len())
+	it := p.ContentIterator()
+
+	for i := 0; it.Next(); i++ {
+		v := it.Value()
+		rawTxs[i] = v
+
+		if err := rlp.DecodeBytes(v, &txs[i]); err != nil {
+			return err
+		}
+	}
+
+	hashes := make([]common.Hash, len(txs))
 	bdnTxs := make([]*types.BxTransaction, 0, len(txs))
-	for _, tx := range txs {
-		if tx.Type() == ethtypes.BlobTxType && tx.BlobTxSidecar() == nil {
-			log.Debugf("blob tx %v from blockchain peer %v has no sidecar data", tx.Hash().String(), peer.IPEndpoint().IPPort())
+
+	for i := range txs {
+		hashes[i] = txs[i].Hash()
+
+		if txs[i].Type() == ethtypes.BlobTxType && txs[i].BlobTxSidecar() == nil {
+			log.Debugf("blob tx %v from blockchain peer %v has no sidecar data", hashes[i].String(), peer.IPEndpoint().IPPort())
 			continue
 		}
 
 		// the transaction is considered invalid if the length of authorization_list is zero.
-		if tx.Type() == ethtypes.SetCodeTxType && tx.SetCodeAuthorizations() == nil {
-			log.Debugf("set code tx %v from blockchain peer %v has no authorization list", tx.Hash().String(), peer.IPEndpoint().IPPort())
+		if txs[i].Type() == ethtypes.SetCodeTxType && txs[i].SetCodeAuthorizations() == nil {
+			log.Debugf("set code tx %v from blockchain peer %v has no authorization list", hashes[i].String(), peer.IPEndpoint().IPPort())
 			continue
 		}
 
-		if !h.isChainIDMatch(tx.ChainId().Uint64()) {
-			log.Debugf("tx %v from blockchain peer %v has invalid chain id", tx.Hash().String(), peer.IPEndpoint().IPPort())
+		if !h.isChainIDMatch(txs[i].ChainId().Uint64()) {
+			log.Debugf("tx %v from blockchain peer %v has invalid chain id", hashes[i].String(), peer.IPEndpoint().IPPort())
 			continue
 		}
-		bdnTx, err := h.bridge.TransactionBlockchainToBDN(tx)
-		if err != nil {
-			return err
-		}
-		bdnTxs = append(bdnTxs, bdnTx)
+
+		// TransactionBlockchainToBDN takes *ethtypes.Transaction and calls rlp.EncodeToBytes(transaction) internally,
+		// but since we already have the raw RLP bytes from the packet, we can skip re-encoding and directly create
+		// the BxTransaction with the raw bytes to save time and resources.
+		bdnTxs = append(bdnTxs, types.NewRawBxTransaction(NewSHA256Hash(hashes[i]), rawTxs[i]))
 	}
+
+	if isPool {
+		log.Tracef("%v: received pooled txs %v", peer, len(hashes))
+	} else {
+		log.Tracef("%v: receive tx %v", peer, hashes)
+	}
+
 	err := h.bridge.SendTransactionsToBDN(bdnTxs, peer.IPEndpoint())
 	if errors.Is(err, blockchain.ErrChannelFull) {
 		log.Warnf("transaction channel for sending to the BDN is full; dropping %v transactions...", len(txs))
@@ -222,7 +244,7 @@ func (h *ethHandler) processBlockRaw(peer *eth2.Peer, block *types.RawBlock) err
 	return nil
 }
 
-func (h *ethHandler) processBlockAnnouncement(peer *eth2.Peer, newBlocks eth.NewBlockHashesPacket) error {
+func (h *ethHandler) processBlockAnnouncement(peer *eth2.Peer, newBlocks eth2.NewBlockHashesPacket) error {
 	for _, block := range newBlocks {
 		peer.Log().Debugf("processing new block announcement %v (height %v)", block.Hash, block.Number)
 

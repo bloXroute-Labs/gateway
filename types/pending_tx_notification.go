@@ -1,19 +1,18 @@
 package types
 
-import "sync"
-
-// PendingTransactionNotification - contains BxTransaction which contains the local region of the ethereum transaction and all its fields.
+// PendingTransactionNotification represents a pending transaction notification.
 type PendingTransactionNotification struct {
 	NewTransactionNotification
 }
 
-// CreatePendingTransactionNotification -  creates PendingTransactionNotification object which contains bxTransaction and local region
-func CreatePendingTransactionNotification(bxTx *BxTransaction) Notification {
+// CreatePendingTransactionNotification creates PendingTransactionNotification.
+// ethTx is the shared parsed transaction; it must not be nil.
+func CreatePendingTransactionNotification(hash SHA256Hash, flags TxFlags, ethTx *EthTransaction) Notification {
 	return &PendingTransactionNotification{
 		NewTransactionNotification: NewTransactionNotification{
-			BxTransaction:    bxTx,
-			validationStatus: TxPendingValidation,
-			lock:             &sync.Mutex{},
+			EthTransaction: ethTx,
+			hash:           hash,
+			localRegion:    TFLocalRegion&flags != 0,
 		},
 	}
 }

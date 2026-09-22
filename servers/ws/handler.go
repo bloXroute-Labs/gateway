@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"time"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
@@ -28,12 +27,6 @@ var (
 	errFDifferentAccAuth    = "%s is not allowed when account authentication is different from the node account"
 )
 
-// include field constants
-const (
-	includeTransactions              = "transactions"
-	includeTransactionsWithoutSender = "transactions_without_sender"
-)
-
 type handlerObj struct {
 	sdn                      sdnsdk.SDNHTTP
 	node                     connections.BxListener
@@ -51,7 +44,6 @@ type handlerObj struct {
 	pendingTxsSourceFromNode bool
 	enableBlockchainRPC      bool
 	txFromFieldIncludable    bool
-	oFACList                 *types.OFACMap
 	senderExtractor          *services.SenderExtractor
 }
 
@@ -141,11 +133,9 @@ func (h *handlerObj) Handle(ctx context.Context, conn *conn, req Request) {
 }
 
 func (h *handlerObj) buildNotificationContent(notification types.Notification, includes []string) types.Notification {
-	// for block feeds, replace 'transactions' with 'transactions_without_sender' for WithFields
 	switch notification.NotificationType() {
 	case types.NewBlocksFeed, types.BDNBlocksFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed:
-		newIncludes := replaceTransactionsWithourSenderIfNeeded(includes)
-		content := notification.WithFields(newIncludes)
+		content := notification.WithFields(includes)
 		if blockContent, ok := content.(*types.EthBlockNotification); ok {
 			senders := h.senderExtractor.GetSendersFromBlockTxs(blockContent.Block)
 			blockContent.GetTxs(senders)
@@ -162,18 +152,7 @@ func (h *handlerObj) sendNotification(ctx context.Context, subscriptionID string
 	response := BlockResponse{
 		Subscription: subscriptionID,
 	}
-	// prepare includes: if client requested raw transactions, map "transactions" -> "raw_transactions" for WithFields
-	includes := make([]string, len(clientReq.Includes))
-	copy(includes, clientReq.Includes)
-	if !clientReq.ParsedTxs {
-		for i, inc := range includes {
-			if inc == "transactions" {
-				includes[i] = "raw_transactions"
-			}
-		}
-	}
-
-	response.Result = h.buildNotificationContent(notification, includes)
+	response.Result = h.buildNotificationContent(notification, clientReq.Includes)
 	err := conn.Notify(ctx, "subscribe", response)
 	if err != nil {
 		if !errors.Is(err, ErrClosed) {
@@ -182,19 +161,4 @@ func (h *handlerObj) sendNotification(ctx context.Context, subscriptionID string
 		return err
 	}
 	return nil
-}
-
-func replaceTransactionsWithourSenderIfNeeded(includes []string) []string {
-	if !slices.Contains(includes, includeTransactions) {
-		return includes
-	}
-	newIncludes := make([]string, 0, len(includes))
-	for _, inc := range includes {
-		if inc == includeTransactions {
-			continue
-		}
-		newIncludes = append(newIncludes, inc)
-	}
-	newIncludes = append(newIncludes, includeTransactionsWithoutSender)
-	return newIncludes
 }

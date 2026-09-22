@@ -7,6 +7,7 @@ import (
 	"time"
 
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
@@ -74,7 +75,7 @@ type BeaconMessageFromNode struct {
 
 // Converter defines an interface for converting between blockchain and BDN transactions
 type Converter interface {
-	TransactionBlockchainToBDN(interface{}) (*types.BxTransaction, error)
+	TransactionBlockchainToBDN(*ethtypes.Transaction) (*types.BxTransaction, error)
 	TransactionBDNToBlockchain(*types.BxTransaction) (interface{}, error)
 	BlockBlockchainToBDN(interface{}) (*types.BxBlock, error)
 	BlockBDNtoBlockchain(block *types.BxBlock) (interface{}, error)

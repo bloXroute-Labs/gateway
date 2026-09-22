@@ -51,7 +51,6 @@ type Server struct {
 	stats                 statistics.Stats
 	wsConnDelayOnErr      time.Duration // wsConnDelayOnErr amount of time to sleep before closing a bad connection. This is configured by tests to a shorted value
 	txFromFieldIncludable bool
-	oFACList              *types.OFACMap
 	senderExtractor       *services.SenderExtractor
 }
 
@@ -67,7 +66,6 @@ func NewWSServer(
 	nodeWSManager blockchain.WSManager,
 	stats statistics.Stats,
 	txFromFieldIncludable bool,
-	oFACList *types.OFACMap,
 	senderExtractor *services.SenderExtractor) *Server {
 
 	networkNum := sdn.NetworkNum()
@@ -88,7 +86,6 @@ func NewWSServer(
 		stats:                 stats,
 		wsConnDelayOnErr:      10 * time.Second,
 		txFromFieldIncludable: txFromFieldIncludable,
-		oFACList:              oFACList,
 		senderExtractor:       senderExtractor,
 	}
 
@@ -256,7 +253,6 @@ func (s *Server) wsHandler(w http.ResponseWriter, r *http.Request) {
 		enableBlockchainRPC:      s.cfg.EnableBlockchainRPC,
 		txFromFieldIncludable:    s.txFromFieldIncludable,
 		pendingTxsSourceFromNode: s.cfg.PendingTxsSourceFromNode,
-		oFACList:                 s.oFACList,
 		senderExtractor:          s.senderExtractor,
 	}
 

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/gorilla/websocket"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
@@ -301,7 +300,12 @@ func shouldSendTx(clientReq *ClientReq, tx *types.NewTransactionNotification, re
 		return true
 	}
 
-	txFilters := tx.Filters()
+	txFilters, err := tx.Filters()
+	if err != nil {
+		log.Errorf("error getting Filters. Feed: %v. filters: %s. remote address: %v. account id: %v error - %v",
+			clientReq.Feed, clientReq.Expr, remoteAddress, accountID, err)
+		return false
+	}
 
 	// evaluate if we should send the tx
 	shouldSend, err := clientReq.Expr.Evaluate(txFilters)
@@ -329,7 +333,11 @@ func includeTx(clientReq *ClientReq, tx *types.NewTransactionNotification) *TxRe
 			localRegion := tx.LocalRegion()
 			response.LocalRegion = &localRegion
 		case "raw_tx":
-			rawTx := hexutil.Encode(tx.RawTx())
+			rawTx, err := tx.RawTxHex()
+			if err != nil {
+				log.Errorf("error getting raw tx hex: %v", err)
+				return nil
+			}
 			response.RawTx = &rawTx
 		default:
 			if !hasTxContent && strings.HasPrefix(param, "tx_contents.") {
@@ -339,7 +347,11 @@ func includeTx(clientReq *ClientReq, tx *types.NewTransactionNotification) *TxRe
 	}
 
 	if hasTxContent {
-		fields := tx.Fields(clientReq.Includes)
+		fields, err := tx.Fields(clientReq.Includes)
+		if err != nil {
+			log.Errorf("error getting tx fields: %v", err)
+			return nil
+		}
 		if fields == nil {
 			log.Errorf("Got nil from tx.Fields - need to be checked")
 			return nil
