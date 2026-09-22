@@ -141,6 +141,16 @@ type SubscriptionsRecord struct {
 	NetworkNum bxtypes.NetworkNum `json:"network_num"`
 }
 
+// GatewaySubscriptionsSnapshotRecord is a periodic snapshot of active subscriptions per account and feed
+type GatewaySubscriptionsSnapshotRecord struct {
+	Timestamp  string             `json:"timestamp"`
+	AccountID  bxtypes.AccountID  `json:"account_id"`
+	FeedName   types.FeedType     `json:"feed_name"`
+	Count      int                `json:"count"`
+	NetworkNum bxtypes.NetworkNum `json:"network_num"`
+	Network    string             `json:"network"`
+}
+
 type sdkInfoRecord struct {
 	Blockchain string            `json:"blockchain"`
 	Method     string            `json:"method"`

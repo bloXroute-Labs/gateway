@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
@@ -50,6 +51,8 @@ type Bx struct {
 	NoTxsToBlockchain        bool
 	NoBlocks                 bool
 	NoStats                  bool
+
+	StartupArgs string
 
 	*GRPC
 	*Env
@@ -108,13 +111,27 @@ func NewBxFromCLI(ctx *cli.Context) (*Bx, error) {
 		Env:        env,
 		Config:     log,
 		TxTraceLog: txTraceLog,
+
+		StartupArgs: startupArgs(ctx),
 	}
 
 	if bxConfig.BlocksOnly && bxConfig.AllTransactions {
-		return bxConfig, errors.New("cannot set both --blocks-only and --all-txs")
+		return nil, errors.New("cannot set both --blocks-only and --all-txs")
 	}
 
 	return bxConfig, nil
+}
+
+func startupArgs(ctx *cli.Context) string {
+	var args []string
+
+	for _, flag := range ctx.Command.Flags {
+		if ctx.IsSet(flag.Names()[0]) {
+			args = append(args, "--"+flag.Names()[0]+"="+ctx.String(flag.Names()[0]))
+		}
+	}
+
+	return strings.Join(args, " ")
 }
 
 // GRPC represents Go RPC configuration details

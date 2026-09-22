@@ -3,6 +3,7 @@ package eth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
@@ -97,44 +98,11 @@ func handle(backend Backend, peer *Peer) error {
 
 type msgHandler func(backend Backend, msg Decoder, peer *Peer) error
 
-var eth66 = map[uint64]msgHandler{
-	eth.NewBlockHashesMsg:             handleNewBlockHashes,
-	eth.NewBlockMsg:                   handleNewBlockMsgRaw,
-	eth.TransactionsMsg:               handleTransactions,
-	eth.NewPooledTransactionHashesMsg: handleNewPooledTransactionHashes,
-	// eth66 messages have request-id
-	eth.GetBlockHeadersMsg:       handleGetBlockHeaders,
-	eth.BlockHeadersMsg:          handleBlockHeaders,
-	eth.GetBlockBodiesMsg:        handleGetBlockBodies,
-	eth.BlockBodiesMsg:           handleBlockBodies,
-	GetNodeDataMsg:               handleUnimplemented,
-	NodeDataMsg:                  handleUnimplemented,
-	eth.GetReceiptsMsg:           handleUnimplemented,
-	eth.ReceiptsMsg:              handleUnimplemented,
-	eth.GetPooledTransactionsMsg: handleGetPooledTransactions,
-	eth.PooledTransactionsMsg:    handlePooledTransactions,
-}
-
-var eth67 = map[uint64]msgHandler{
-	eth.NewBlockHashesMsg:             handleNewBlockHashes,
-	eth.NewBlockMsg:                   handleNewBlockMsgRaw,
-	eth.TransactionsMsg:               handleTransactions,
-	eth.NewPooledTransactionHashesMsg: handleNewPooledTransactionHashes,
-	eth.GetBlockHeadersMsg:            handleGetBlockHeaders,
-	eth.BlockHeadersMsg:               handleBlockHeaders,
-	eth.GetBlockBodiesMsg:             handleGetBlockBodies,
-	eth.BlockBodiesMsg:                handleBlockBodies,
-	eth.GetReceiptsMsg:                handleUnimplemented,
-	eth.ReceiptsMsg:                   handleUnimplemented,
-	eth.GetPooledTransactionsMsg:      handleGetPooledTransactions,
-	eth.PooledTransactionsMsg:         handlePooledTransactions,
-}
-
 var eth68 = map[uint64]msgHandler{
 	eth.NewBlockHashesMsg:             handleNewBlockHashes,
 	eth.NewBlockMsg:                   handleNewBlockMsgRaw,
 	eth.TransactionsMsg:               handleTransactions,
-	eth.NewPooledTransactionHashesMsg: handleNewPooledTransactionHashes68,
+	eth.NewPooledTransactionHashesMsg: handleNewPooledTransactionHashes,
 	eth.GetBlockHeadersMsg:            handleGetBlockHeaders,
 	eth.BlockHeadersMsg:               handleBlockHeaders,
 	eth.GetBlockBodiesMsg:             handleGetBlockBodies,
@@ -147,7 +115,7 @@ var eth68 = map[uint64]msgHandler{
 
 var eth69 = map[uint64]msgHandler{
 	eth.TransactionsMsg:               handleTransactions,
-	eth.NewPooledTransactionHashesMsg: handleNewPooledTransactionHashes68,
+	eth.NewPooledTransactionHashesMsg: handleNewPooledTransactionHashes,
 	eth.GetBlockHeadersMsg:            handleGetBlockHeaders,
 	eth.BlockHeadersMsg:               handleBlockHeaders,
 	eth.GetBlockBodiesMsg:             handleGetBlockBodies,
@@ -177,14 +145,14 @@ func HandleMassage(backend Backend, msg p2p.Msg, peer *Peer) error {
 		peer.log.Tracef("%v: handling message with code: %v took %v", peer, msg.Code, time.Since(startTime))
 	}()
 
-	handlers := eth66
+	var handlers map[uint64]msgHandler
 	switch peer.version {
-	case ETH67:
-		handlers = eth67
-	case eth.ETH68:
+	case ETH68:
 		handlers = eth68
 	case eth.ETH69:
 		handlers = eth69
+	default:
+		return fmt.Errorf("unknown eth protocol version: %v", peer.version)
 	}
 
 	handler, ok := handlers[msg.Code]

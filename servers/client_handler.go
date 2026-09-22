@@ -55,7 +55,6 @@ func NewClientHandler(
 	txFromFieldIncludable bool,
 	certFile,
 	keyFile string,
-	oFACList *types.OFACMap,
 	senderExtractor *services.SenderExtractor,
 ) *ClientHandler {
 	var websocketServer *ws.Server
@@ -63,12 +62,12 @@ func NewClientHandler(
 
 	if config.WebsocketEnabled || config.WebsocketTLSEnabled {
 		websocketServer = ws.NewWSServer(config, certFile, keyFile,
-			sdn, node, accService, feedManager, nodeWSManager, stats, txFromFieldIncludable, oFACList, senderExtractor)
+			sdn, node, accService, feedManager, nodeWSManager, stats, txFromFieldIncludable, senderExtractor)
 	}
 
 	if config.GRPC.Enabled {
 		gRPCServer = grpc.NewGRPCServer(config, stats, node, sdn, accService, bridge, blockchainPeers,
-			nodeWSManager, bdnStats, timeStarted, gatewayPublicKey, bx, feedManager, txStore, txFromFieldIncludable, oFACList, senderExtractor,
+			nodeWSManager, bdnStats, timeStarted, gatewayPublicKey, bx, feedManager, txStore, txFromFieldIncludable, senderExtractor,
 		)
 	}
 
@@ -94,6 +93,7 @@ func (ch *ClientHandler) ManageServers(ctx context.Context, activeManagement boo
 		}()
 	} else {
 		ch.log.Info("active management of servers started")
+		ch.runGRPCServer()
 	}
 
 	var wait func() error
@@ -110,15 +110,14 @@ func (ch *ClientHandler) ManageServers(ctx context.Context, activeManagement boo
 
 			switch syncStatus {
 			case blockchain.Synced:
-				wait = ch.runServers()
+				wait = ch.runWSServer()
 			case blockchain.Unsynced:
-				ch.shutdownServers()
-				// in case the 'unsynced' status comes first, check if the servers were even started
+				// the WS server's graceful Shutdown intentionally uses its own timeout context
+				ch.shutdownWSServer() //nolint:contextcheck
 				if wait != nil {
-					// wait for the servers to stop
 					err := wait()
 					if err != nil {
-						ch.log.Errorf("error running servers: %v", err)
+						ch.log.Errorf("error running ws server: %v", err)
 					}
 				}
 				ch.subscriptionServices.SendSubscriptionResetNotification(make([]types.SubscriptionModel, 0))
@@ -127,10 +126,18 @@ func (ch *ClientHandler) ManageServers(ctx context.Context, activeManagement boo
 	}
 }
 
+// runServers starts both the gRPC and websocket servers, returning a function that blocks
+// until the websocket server stops. Used when the servers are not actively managed by the
+// node sync status; the gRPC server runs detached for the lifetime of the gateway.
 func (ch *ClientHandler) runServers() (wait func() error) {
+	ch.runGRPCServer()
+	return ch.runWSServer()
+}
+
+func (ch *ClientHandler) runWSServer() (wait func() error) {
 	eg := &errgroup.Group{}
 
-	ch.log.Info("starting servers")
+	ch.log.Info("starting ws server")
 
 	if ch.websocketServer != nil {
 		eg.Go(func() error {
@@ -143,18 +150,20 @@ func (ch *ClientHandler) runServers() (wait func() error) {
 		})
 	}
 
-	if ch.gRPCServer != nil {
-		eg.Go(func() error {
-			err := ch.gRPCServer.Run()
-			if err != nil {
-				log.Errorf("error running grpc server, err: %v", err)
-				return err
-			}
-			return nil
-		})
+	return eg.Wait
+}
+
+func (ch *ClientHandler) runGRPCServer() {
+	if ch.gRPCServer == nil {
+		return
 	}
 
-	return eg.Wait
+	go func() {
+		ch.log.Info("starting grpc server")
+		if err := ch.gRPCServer.Run(); err != nil {
+			log.Errorf("error running grpc server, err: %v", err)
+		}
+	}()
 }
 
 func (ch *ClientHandler) shutdownServers() {
@@ -171,8 +180,19 @@ func (ch *ClientHandler) shutdownServers() {
 	ch.feedManager.CloseAllClientConnections()
 }
 
+func (ch *ClientHandler) shutdownWSServer() {
+	ch.log.Info("shutting down ws server")
+
+	if ch.websocketServer != nil {
+		ch.websocketServer.Shutdown()
+	}
+
+	ch.feedManager.CloseAllClientConnections()
+}
+
 // Stop stops the servers
 func (ch *ClientHandler) Stop() error {
 	ch.shutdownServers()
-	return nil
+
+	return ch.feedManager.Close()
 }

@@ -69,7 +69,7 @@ func TestNewTxs(t *testing.T) {
 	}
 
 	// notify the feed manager about the new transaction
-	testServer.gatewayServer.(*server).params.feedManager.Notify(types.CreateNewTransactionNotification(tx))
+	testServer.gatewayServer.(*server).params.feedManager.Notify(types.CreateNewTransactionNotification(hash, types.TFPaidTx, types.NewEthTransactionFromBytes(content, types.EmptySender)))
 
 	var txNotification *pb.TxsReply
 	txNotification, err = newTxsStream.Recv()
@@ -120,7 +120,7 @@ func TestPendingTxs(t *testing.T) {
 	}
 
 	// notify the feed manager about the pending transaction
-	testServer.gatewayServer.(*server).params.feedManager.Notify(types.CreatePendingTransactionNotification(tx))
+	testServer.gatewayServer.(*server).params.feedManager.Notify(types.CreatePendingTransactionNotification(hash, types.TFPaidTx, types.NewEthTransactionFromBytes(content, types.EmptySender)))
 
 	var txNotification *pb.TxsReply
 	txNotification, err = pendingTxsStream.Recv()
@@ -175,7 +175,7 @@ func TestBlxrTx(t *testing.T) {
 			description: "Wrong chainID",
 			setupFeedManagerFunc: func(g *server) {
 				g.params.feedManager = feed.NewManager(g.params.sdn, services.NewNoOpSubscriptionServices(),
-					g.params.sdn.AccountModel(), statistics.NoStats{}, networkNum, true, &metrics.NoOpExporter{})
+					g.params.sdn.AccountModel(), statistics.NoStats{}, networkNum, true, &metrics.NoOpExporter{}, types.AllFeedTypes, 1)
 			},
 			request:           &pb.BlxrTxRequest{},
 			generateTxAndHash: generateLegacyTxAndHash,

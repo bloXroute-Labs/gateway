@@ -45,22 +45,21 @@ type server struct {
 
 // grpcParams server params
 type grpcParams struct {
-	node                  connections.BxListener
-	sdn                   sdnsdk.SDNHTTP
-	accService            account.Accounter
-	bridge                blockchain.Bridge
-	blockchainPeers       []types.NodeEndpoint
-	wsManager             blockchain.WSManager
-	bdnStats              *bxmessage.BdnPerformanceStats
-	timeStarted           time.Time
-	gatewayPublicKey      string
-	connector             Connector
-	txFromFieldIncludable bool
-	feedManager           feedManager
-	txStore               services.TxStore
-	chainID               bxtypes.NetworkID
-	oFACList              *types.OFACMap
-	senderExtractor       *services.SenderExtractor
+	node                           connections.BxListener
+	sdn                            sdnsdk.SDNHTTP
+	accService                     account.Accounter
+	bridge                         blockchain.Bridge
+	blockchainPeers                []types.NodeEndpoint
+	wsManager                      blockchain.WSManager
+	bdnStats                       *bxmessage.BdnPerformanceStats
+	timeStarted                    time.Time
+	gatewayPublicKey               string
+	connector                      Connector
+	txFromFieldIncludable          bool
+	feedManager                    feedManager
+	txStore                        services.TxStore
+	chainID                        bxtypes.NetworkID
+	senderExtractor                *services.SenderExtractor
 }
 
 // newServer return new server object
@@ -86,6 +85,17 @@ func (g *server) DisconnectInboundPeer(ctx context.Context, req *pb.DisconnectIn
 		return &pb.DisconnectInboundPeerReply{Status: err.Error()}, status.Error(codes.Internal, err.Error())
 	}
 	return &pb.DisconnectInboundPeerReply{Status: fmt.Sprintf("Sent request to disconnect peer %v %v %v", req.PublicKey, req.PeerIp, req.PeerPort)}, nil
+}
+
+// TxStoreSummary returns a summary of the gateway's TxStore
+func (g *server) TxStoreSummary(ctx context.Context, req *pb.TxStoreRequest) (*pb.TxStoreReply, error) {
+	authHeader := retrieveAuthHeader(ctx, req.GetAuthHeader()) //nolint:staticcheck
+	_, err := g.validateAuthHeader(authHeader, false, true, getPeerAddr(ctx))
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+
+	return g.params.txStore.Summarize(), nil
 }
 
 // Version return current gw version

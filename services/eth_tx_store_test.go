@@ -392,7 +392,7 @@ func newEthTransaction(nonce uint64, gasFee, gasTip int64) (*types.EthTransactio
 		return nil, err
 	}
 
-	return types.NewEthTransaction(signedTx, types.EmptySender)
+	return types.NewEthTransaction(signedTx, types.EmptySender), nil
 }
 
 func newBlobTypeTransaction(nonce uint64, gasFee, gasTip, blobFeeCap uint64) (*types.EthTransaction, error) {
@@ -420,7 +420,7 @@ func newBlobTypeTransaction(nonce uint64, gasFee, gasTip, blobFeeCap uint64) (*t
 		return nil, err
 	}
 
-	return types.NewEthTransaction(signedTx, types.EmptySender)
+	return types.NewEthTransaction(signedTx, types.EmptySender), nil
 }
 
 func newSetCodeTransaction(nonce uint64, gasFee, gasTip uint64) (*types.EthTransaction, error) {
@@ -458,7 +458,7 @@ func newSetCodeTransaction(nonce uint64, gasFee, gasTip uint64) (*types.EthTrans
 		return nil, err
 	}
 
-	return types.NewEthTransaction(signedTx, types.EmptySender)
+	return types.NewEthTransaction(signedTx, types.EmptySender), nil
 }
 
 func TestNonceTracker_track(t *testing.T) {
@@ -658,21 +658,24 @@ func TestNonceTracker_clean(t *testing.T) {
 	require.NoError(t, err)
 
 	rtx, ok = n.getTransaction(fromTx2, 2)
-	assert.Equal(t, tx2.Hash(), rtx.hash)
+	h2, _ := tx2.Hash()
+	assert.Equal(t, h2, rtx.hash)
 	assert.True(t, ok)
 
 	fromTx3, err := tx3.From()
 	require.NoError(t, err)
 
 	rtx, ok = n.getTransaction(fromTx3, 3)
-	assert.Equal(t, tx3.Hash(), rtx.hash)
+	h3, _ := tx3.Hash()
+	assert.Equal(t, h3, rtx.hash)
 	assert.True(t, ok)
 
 	fromTx4, err := tx4.From()
 	require.NoError(t, err)
 
 	rtx, ok = n.getTransaction(fromTx4, 4)
-	assert.Equal(t, tx4.Hash(), rtx.hash)
+	h4, _ := tx4.Hash()
+	assert.Equal(t, h4, rtx.hash)
 	assert.True(t, ok)
 
 	c.IncTime(500 * time.Millisecond)
@@ -683,11 +686,13 @@ func TestNonceTracker_clean(t *testing.T) {
 	assert.False(t, ok)
 
 	rtx, ok = n.getTransaction(fromTx3, 3)
-	assert.Equal(t, tx3.Hash(), rtx.hash)
+	h3b, _ := tx3.Hash()
+	assert.Equal(t, h3b, rtx.hash)
 	assert.True(t, ok)
 
 	rtx, ok = n.getTransaction(fromTx4, 4)
-	assert.Equal(t, tx4.Hash(), rtx.hash)
+	h4b, _ := tx4.Hash()
+	assert.Equal(t, h4b, rtx.hash)
 	assert.True(t, ok)
 
 	c.IncTime(500 * time.Millisecond)

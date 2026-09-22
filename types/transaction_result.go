@@ -8,6 +8,7 @@ type TransactionResult struct {
 	Reprocess        bool
 	FailedValidation bool
 	Transaction      *BxTransaction
+	EthTx            *EthTransaction
 	AssignedShortID  ShortID
 	DebugData        interface{}
 	AlreadySeen      bool

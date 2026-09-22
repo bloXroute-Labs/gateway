@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/ethereum/go-ethereum/common"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/rlp"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/logger"
 
@@ -36,27 +36,40 @@ func handleGetBlockHeaders(backend Backend, msg Decoder, peer *Peer) error {
 			headersResponse := (<-headerCh).(*eth.BlockHeadersRequest)
 			peer.Log().Debugf("successfully fetched %v ancient headers from blockchain node (id: %v)", len(*headersResponse), query.RequestId)
 
-			err = peer.ReplyBlockHeaders(query.RequestId, *headersResponse)
+			resp := make([]rlp.RawValue, len(*headersResponse))
+			for i := range *headersResponse {
+				rlpData, err := rlp.EncodeToBytes((*headersResponse)[i])
+				if err != nil {
+					peer.Log().Errorf("could not encode header to rlp: %v", err)
+					return
+				}
+				resp[i] = rlpData
+			}
+
+			err = peer.ReplyBlockHeadersRLP(query.RequestId, resp)
 			if err != nil {
 				peer.Log().Errorf("could not send headers to peer: %v", err)
 			}
 		}()
+
 		return nil
 	}
+
 	if err != nil {
 		return nil
 	}
-	return peer.ReplyBlockHeaders(query.RequestId, headers)
+
+	return peer.ReplyBlockHeadersRLP(query.RequestId, headers)
 }
 
-func answerGetBlockHeaders(backend Backend, query *eth.GetBlockHeadersPacket, peer *Peer) ([]*ethtypes.Header, error) {
+func answerGetBlockHeaders(backend Backend, query *eth.GetBlockHeadersPacket, peer *Peer) ([]rlp.RawValue, error) {
 	if !peer.checkpointPassed {
 		peer.checkpointPassed = true
-		return []*ethtypes.Header{}, nil
+		return []rlp.RawValue{}, nil
 	}
 	if query.Amount > math.MaxInt32 {
 		peer.Log().Warnf("could not retrieve all %v headers, maximum query amount is %v", query.Amount, math.MaxInt32)
-		return []*ethtypes.Header{}, nil
+		return []rlp.RawValue{}, nil
 	}
 
 	headers, err := backend.Chain().GetHeaders(query.Origin, int(query.Amount), int(query.Skip), query.Reverse) //nolint:gosec
@@ -64,12 +77,21 @@ func answerGetBlockHeaders(backend Backend, query *eth.GetBlockHeadersPacket, pe
 	case errors.Is(err, core.ErrInvalidRequest) || errors.Is(err, core.ErrAncientHeaders):
 		return nil, err
 	case errors.Is(err, core.ErrFutureHeaders):
-		return []*ethtypes.Header{}, nil
+		return []rlp.RawValue{}, nil
 	case err != nil:
 		peer.Log().Warnf("could not retrieve all %v headers starting at %v, err: %v", int(query.Amount), query.Origin, err)
-		return []*ethtypes.Header{}, nil
+		return []rlp.RawValue{}, nil
 	default:
-		return headers, nil
+		var res []rlp.RawValue
+		for i := range headers {
+			rlpData, err := rlp.EncodeToBytes(headers[i])
+			if err != nil {
+				return nil, err
+			}
+			res = append(res, rlpData)
+		}
+
+		return res, nil
 	}
 }
 
@@ -124,11 +146,6 @@ func handleTransactions(backend Backend, msg Decoder, peer *Peer) error {
 	if err := msg.Decode(&txs); err != nil {
 		return fmt.Errorf("could not decode message: %v: %v", msg, err)
 	}
-	hashes := make([]common.Hash, len(txs))
-	for idx, tx := range txs {
-		hashes[idx] = tx.Hash()
-	}
-	log.Tracef("%v: receive tx %v", peer, hashes)
 
 	return backend.Handle(peer, &txs)
 }
@@ -139,30 +156,14 @@ func handlePooledTransactions(backend Backend, msg Decoder, peer *Peer) error {
 		return fmt.Errorf("could not decode message: %v: %v", msg, err)
 	}
 
-	hashes := make([]common.Hash, len(pooledTxsResponse.PooledTransactionsResponse))
-	for idx, tx := range pooledTxsResponse.PooledTransactionsResponse {
-		hashes[idx] = tx.Hash()
-	}
-
-	log.Tracef("%v: received pooled txs %v", peer, len(hashes))
-	return backend.Handle(peer, &pooledTxsResponse.PooledTransactionsResponse)
-}
-
-func handleNewPooledTransactionHashes(backend Backend, msg Decoder, peer *Peer) error {
-	var txHashes NewPooledTransactionHashesPacket66
-	if err := msg.Decode(&txHashes); err != nil {
-		return fmt.Errorf("could not decode message: %v: %v", msg, err)
-	}
-	log.Tracef("%v: received tx announcement of %v transactions", peer, len(txHashes))
-
-	return backend.Handle(peer, &txHashes)
+	return backend.Handle(peer, &pooledTxsResponse)
 }
 
 func handleGetPooledTransactions(backend Backend, msg Decoder, peer *Peer) error {
 	// Decode the pooled transactions retrieval message
 	var query eth.GetPooledTransactionsPacket
 	if err := msg.Decode(&query); err != nil {
-		return fmt.Errorf("could not decode mesage: %v: %v", msg, err)
+		return fmt.Errorf("could not decode message: %v: %v", msg, err)
 	}
 
 	txs, err := backend.RequestTransactions(query.GetPooledTransactionsRequest)
@@ -173,7 +174,7 @@ func handleGetPooledTransactions(backend Backend, msg Decoder, peer *Peer) error
 	return peer.ReplyPooledTransaction(query.RequestId, txs)
 }
 
-func handleNewPooledTransactionHashes68(backend Backend, msg Decoder, peer *Peer) error {
+func handleNewPooledTransactionHashes(backend Backend, msg Decoder, peer *Peer) error {
 	var txs eth.NewPooledTransactionHashesPacket
 	if err := msg.Decode(&txs); err != nil {
 		return fmt.Errorf("could not decode message: %v: %v", msg, err)
@@ -185,7 +186,7 @@ func handleNewPooledTransactionHashes68(backend Backend, msg Decoder, peer *Peer
 }
 
 func handleNewBlockHashes(backend Backend, msg Decoder, peer *Peer) error {
-	var blockHashes eth.NewBlockHashesPacket
+	var blockHashes NewBlockHashesPacket
 	if err := msg.Decode(&blockHashes); err != nil {
 		return fmt.Errorf("could not decode message: %v: %v", msg, err)
 	}
@@ -200,8 +201,14 @@ func handleBlockHeaders(backend Backend, msg Decoder, peer *Peer) error {
 		return fmt.Errorf("could not decode message: %v: %v", msg, err)
 	}
 
-	UpdatePeerHeadFromHeaders(blockHeaders, peer)
-	handled, err := peer.NotifyResponse(blockHeaders.RequestId, &blockHeaders.BlockHeadersRequest)
+	headers, err := blockHeaders.List.Items()
+	if err != nil {
+		return fmt.Errorf("BlockHeaders: %w", err)
+	}
+
+	UpdatePeerHeadFromHeaders(headers, peer)
+
+	handled, err := peer.NotifyResponse(blockHeaders.RequestId, new(eth.BlockHeadersRequest(headers)))
 	if err != nil {
 		return err
 	}
@@ -210,7 +217,7 @@ func handleBlockHeaders(backend Backend, msg Decoder, peer *Peer) error {
 		return nil
 	}
 
-	return backend.Handle(peer, &blockHeaders.BlockHeadersRequest)
+	return backend.Handle(peer, new(eth.BlockHeadersRequest(headers)))
 }
 
 func handleBlockBodies(_ Backend, msg Decoder, peer *Peer) error {
@@ -224,8 +231,7 @@ func handleBlockBodies(_ Backend, msg Decoder, peer *Peer) error {
 }
 
 // UpdatePeerHeadFromHeaders updates the peer's head based on the block headers received.
-func UpdatePeerHeadFromHeaders(headersPacket eth.BlockHeadersPacket, peer *Peer) {
-	headers := headersPacket.BlockHeadersRequest
+func UpdatePeerHeadFromHeaders(headers []*types.Header, peer *Peer) {
 	if len(headers) > 0 {
 		maxHeight := headers[0].Number
 		hash := headers[0].Hash()
@@ -240,7 +246,7 @@ func UpdatePeerHeadFromHeaders(headersPacket eth.BlockHeadersPacket, peer *Peer)
 	}
 }
 
-func updatePeerHeadFromNewHashes(newBlocks eth.NewBlockHashesPacket, peer *Peer) {
+func updatePeerHeadFromNewHashes(newBlocks NewBlockHashesPacket, peer *Peer) {
 	if len(newBlocks) > 0 {
 		maxHeight := newBlocks[0].Number
 		hash := newBlocks[0].Hash
@@ -255,6 +261,6 @@ func updatePeerHeadFromNewHashes(newBlocks eth.NewBlockHashesPacket, peer *Peer)
 	}
 }
 
-func handleUnimplemented(Backend, Decoder, *Peer) error {
+func handleUnimplemented(_ Backend, _ Decoder, _ *Peer) error {
 	return nil
 }

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"strconv"
-	"sync"
+	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -62,71 +62,97 @@ var AllFields = []string{
 // AllFieldsWithFrom is used with the transactions feeds
 var AllFieldsWithFrom = append(AllFields, "tx_contents.from")
 
-// EthTransaction represents the JSON encoding of an Ethereum transaction
+// EthTransaction represents the JSON encoding of an Ethereum transaction.
+// All fields are lazily loaded to minimize allocation cost.
+// Thread-safe via atomic.Pointer — no mutex.
 type EthTransaction struct {
-	tx *ethtypes.Transaction
-
-	// lazy loaded and excluded from 'all' fields
-	from *common.Address
-
-	// binary is the raw transaction bytes
-	binary []byte
-
-	lock    *sync.Mutex
-	filters map[string]interface{}
-	fields  map[string]interface{}
+	content TxContent
+	tx      atomic.Pointer[ethtypes.Transaction]
+	from    atomic.Pointer[common.Address]
+	binary  atomic.Pointer[[]byte]
+	hexTx   atomic.Pointer[string]
+	filters atomic.Pointer[map[string]interface{}]
+	fields  atomic.Pointer[map[string]interface{}]
 }
 
-// NewEthTransaction converts a canonic Ethereum transaction to EthTransaction
-func NewEthTransaction(rawEthTx *ethtypes.Transaction, sender Sender) (*EthTransaction, error) {
+// NewEthTransaction creates an EthTransaction from an already-decoded *ethtypes.Transaction.
+// Returns no error; binary is computed lazily on first RawTx() call.
+func NewEthTransaction(rawEthTx *ethtypes.Transaction, sender Sender) *EthTransaction {
+	ethTx := &EthTransaction{}
+	ethTx.tx.Store(rawEthTx)
+
+	if sender != EmptySender {
+		ethTx.from.Store((*common.Address)(sender[:]))
+	}
+
+	return ethTx
+}
+
+// NewEthTransactionFromBytes creates an EthTransaction that will lazily decode from TxContent.
+func NewEthTransactionFromBytes(content TxContent, sender Sender) *EthTransaction {
 	ethTx := &EthTransaction{
-		tx:      rawEthTx,
-		lock:    &sync.Mutex{},
-		filters: make(map[string]interface{}),
-		fields:  make(map[string]interface{}),
+		content: content,
 	}
 
 	if sender != EmptySender {
-		ethTx.from = (*common.Address)(sender[:])
+		ethTx.from.Store((*common.Address)(sender[:]))
 	}
 
-	binary, err := rawEthTx.MarshalBinary()
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal tx binary: %v", err)
-	}
-	ethTx.binary = binary
-
-	return ethTx, nil
+	return ethTx
 }
 
-// Tx returns the underlying Ethereum transaction
-func (et *EthTransaction) Tx() *ethtypes.Transaction {
-	return et.tx
+// loadOrDecodeTx returns the underlying Ethereum transaction, decoding lazily if needed.
+// Uses CAS so only one goroutine decodes; losers read the winner's value.
+func (et *EthTransaction) loadOrDecodeTx() (*ethtypes.Transaction, error) {
+	if tx := et.tx.Load(); tx != nil {
+		return tx, nil
+	}
+
+	if len(et.content) == 0 {
+		return nil, ErrEmptyTransaction
+	}
+
+	var raw ethtypes.Transaction
+	if err := rlp.DecodeBytes(et.content, &raw); err != nil {
+		return nil, err
+	}
+	tx := &raw
+	if !et.tx.CompareAndSwap(nil, tx) {
+		return et.tx.Load(), nil
+	}
+	return tx, nil
+}
+
+// Tx returns the underlying Ethereum transaction, decoding lazily if needed.
+func (et *EthTransaction) Tx() (*ethtypes.Transaction, error) {
+	return et.loadOrDecodeTx()
+}
+
+// loadOrComputeFrom computes the sender address if not already cached.
+func (et *EthTransaction) loadOrComputeFrom() (*common.Address, error) {
+	if from := et.from.Load(); from != nil {
+		return from, nil
+	}
+
+	tx, err := et.loadOrDecodeTx()
+	if err != nil {
+		return nil, err
+	}
+
+	from, err := ethtypes.Sender(LatestSignerForChainID(tx.ChainId()), tx)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse Ethereum transaction from: %v", err)
+	}
+	p := &from
+	if !et.from.CompareAndSwap(nil, p) {
+		return et.from.Load(), nil
+	}
+	return p, nil
 }
 
 // From returns the sender of the transaction
 func (et *EthTransaction) From() (*common.Address, error) {
-	et.lock.Lock()
-	defer et.lock.Unlock()
-
-	return et.sender()
-}
-
-func (et *EthTransaction) sender() (*common.Address, error) {
-	// cached
-	if et.from != nil {
-		return et.from, nil
-	}
-
-	from, err := ethtypes.Sender(LatestSignerForChainID(et.tx.ChainId()), et.tx)
-	if err != nil {
-		return nil, fmt.Errorf("could not parse Ethereum transaction from: %v", err)
-	}
-
-	// cache
-	et.from = &from
-
-	return &from, nil
+	return et.loadOrComputeFrom()
 }
 
 // Sender returns the sender of the transaction
@@ -140,212 +166,285 @@ func (et *EthTransaction) Sender() (Sender, error) {
 }
 
 // Type provides the transaction type
-func (et *EthTransaction) Type() uint8 {
-	return et.tx.Type()
+func (et *EthTransaction) Type() (uint8, error) {
+	tx, err := et.Tx()
+	if err != nil {
+		return 0, err
+	}
+	return tx.Type(), nil
 }
 
 // Hash provides the transaction hash
-func (et *EthTransaction) Hash() SHA256Hash {
-	var hash SHA256Hash
-	var err error
-	if et.tx != nil {
-		hash, err = NewSHA256Hash(et.tx.Hash().Bytes())
-		if err != nil {
-			log.Panic("failed to extract hash from a validated eth transaction")
-		}
+func (et *EthTransaction) Hash() (SHA256Hash, error) {
+	tx, err := et.Tx()
+	if err != nil {
+		return SHA256Hash{}, err
 	}
-	return hash
+	hash, err := NewSHA256Hash(tx.Hash().Bytes())
+	if err != nil {
+		log.Panic("failed to extract hash from a validated eth transaction")
+	}
+	return hash, nil
 }
 
 // AccessList returns access list
-func (et *EthTransaction) AccessList() ethtypes.AccessList {
-	return et.tx.AccessList()
+func (et *EthTransaction) AccessList() (ethtypes.AccessList, error) {
+	tx, err := et.Tx()
+	if err != nil {
+		return nil, err
+	}
+	return tx.AccessList(), nil
 }
 
-func (et *EthTransaction) createFilters() {
-	et.lock.Lock()
-	defer et.lock.Unlock()
-
-	if len(et.filters) > 0 {
-		return
+// buildFilters constructs the full filters map from decoded tx data.
+func (et *EthTransaction) buildFilters() (map[string]interface{}, error) {
+	tx, err := et.loadOrDecodeTx()
+	if err != nil {
+		return nil, err
 	}
 
-	tx := et.tx
-	et.filters["chain_id"] = int(tx.ChainId().Int64())
+	filters := make(map[string]interface{})
+	filters["chain_id"] = int(tx.ChainId().Int64())
 
 	switch tx.Type() {
 	case ethtypes.BlobTxType: // 3
-		et.filters["max_fee_per_gas"] = int(tx.GasFeeCap().Int64())
-		et.filters["max_priority_fee_per_gas"] = int(tx.GasTipCap().Int64())
-		et.filters["max_fee_per_blob_gas"] = int(tx.BlobGasFeeCap().Int64())
+		filters["max_fee_per_gas"] = int(tx.GasFeeCap().Int64())
+		filters["max_priority_fee_per_gas"] = int(tx.GasTipCap().Int64())
+		filters["max_fee_per_blob_gas"] = int(tx.BlobGasFeeCap().Int64())
 	case ethtypes.DynamicFeeTxType, ethtypes.SetCodeTxType: // 2, 4
-		et.filters["max_fee_per_gas"] = int(tx.GasFeeCap().Int64())
-		et.filters["max_priority_fee_per_gas"] = int(tx.GasTipCap().Int64())
+		filters["max_fee_per_gas"] = int(tx.GasFeeCap().Int64())
+		filters["max_priority_fee_per_gas"] = int(tx.GasTipCap().Int64())
 	case ethtypes.AccessListTxType, ethtypes.LegacyTxType: // 1, 0
-		et.filters["gas_price"] = BigIntAsFloat64(tx.GasPrice())
+		filters["gas_price"] = BigIntAsFloat64(tx.GasPrice())
 	}
 
-	et.filters["type"] = strconv.Itoa(int(tx.Type()))
-	et.filters["value"] = BigIntAsFloat64(tx.Value())
-	et.filters["gas"] = float64(tx.Gas())
+	filters["type"] = strconv.Itoa(int(tx.Type()))
+	filters["value"] = BigIntAsFloat64(tx.Value())
+	filters["gas"] = float64(tx.Gas())
 
 	if tx.To() != nil {
-		et.filters["to"] = AddressAsString(tx.To())
+		filters["to"] = AddressAsString(tx.To())
 	} else {
-		et.filters["to"] = "0x0"
+		filters["to"] = "0x0"
 	}
 
 	// note: from some reason method_id is only a filter field
 	methodID := hexutil.Encode(tx.Data())
 	if len(methodID) >= 10 {
-		et.filters["method_id"] = "0x" + methodID[2:10]
+		filters["method_id"] = "0x" + methodID[2:10]
 	} else {
-		et.filters["method_id"] = methodID
+		filters["method_id"] = methodID
 	}
 
-	from, err := et.sender()
+	from, err := et.loadOrComputeFrom()
 	if err == nil {
-		et.filters["from"] = AddressAsString(from)
+		filters["from"] = AddressAsString(from)
 	}
+
+	return filters, nil
 }
 
-func (et *EthTransaction) createFields() {
-	et.lock.Lock()
-	defer et.lock.Unlock()
-
-	if len(et.fields) > 0 {
-		return
+// createFilters lazily builds and caches the filters map via CAS.
+func (et *EthTransaction) createFilters() error {
+	if et.filters.Load() != nil {
+		return nil
 	}
 
-	tx := et.tx
+	filters, err := et.buildFilters()
+	if err != nil {
+		return err
+	}
 
-	et.fields["hash"] = tx.Hash().String()
-	et.fields["nonce"] = hexutil.EncodeUint64(tx.Nonce())
-	et.fields["input"] = hexutil.Encode(tx.Data())
+	if !et.filters.CompareAndSwap(nil, &filters) {
+		return nil
+	}
+	return nil
+}
+
+// buildFields constructs the full fields map from decoded tx data.
+func (et *EthTransaction) buildFields() (map[string]interface{}, error) {
+	tx, err := et.loadOrDecodeTx()
+	if err != nil {
+		return nil, err
+	}
+
+	fields := make(map[string]interface{})
+
+	fields["hash"] = tx.Hash().String()
+	fields["nonce"] = hexutil.EncodeUint64(tx.Nonce())
+	fields["input"] = hexutil.Encode(tx.Data())
 	v, r, s := tx.RawSignatureValues()
-	et.fields["v"] = BigIntAsString(v)
-	et.fields["r"] = BigIntAsString(r)
-	et.fields["s"] = BigIntAsString(s)
+	fields["v"] = BigIntAsString(v)
+	fields["r"] = BigIntAsString(r)
+	fields["s"] = BigIntAsString(s)
 
 	if tx.AccessList() != nil {
-		et.fields["accessList"] = tx.AccessList()
+		fields["accessList"] = tx.AccessList()
 	}
 
 	if tx.Type() != ethtypes.LegacyTxType {
-		et.fields["chainId"] = hexutil.EncodeUint64(tx.ChainId().Uint64())
-		et.fields["yParity"] = hexutil.Uint64(v.Sign()).String()
+		fields["chainId"] = hexutil.EncodeUint64(tx.ChainId().Uint64())
+		fields["yParity"] = hexutil.Uint64(uint64(v.Sign())).String() //nolint:gosec // v.Sign() returns -1, 0, or 1; always non-negative for valid signatures
 	}
 
-	et.fields["blobVersionedHashes"] = []string{}
+	fields["blobVersionedHashes"] = []string{}
 	if tx.Type() == ethtypes.BlobTxType {
-		et.fields["blobVersionedHashes"] = tx.BlobHashes()
-		et.fields["maxFeePerGas"] = hexutil.EncodeBig(tx.GasFeeCap())
-		et.fields["maxPriorityFeePerGas"] = hexutil.EncodeBig(tx.GasTipCap())
-		et.fields["maxFeePerBlobGas"] = hexutil.EncodeBig(tx.BlobGasFeeCap())
-		et.fields["gasPrice"] = nil
+		fields["blobVersionedHashes"] = tx.BlobHashes()
+		fields["maxFeePerGas"] = hexutil.EncodeBig(tx.GasFeeCap())
+		fields["maxPriorityFeePerGas"] = hexutil.EncodeBig(tx.GasTipCap())
+		fields["maxFeePerBlobGas"] = hexutil.EncodeBig(tx.BlobGasFeeCap())
+		fields["gasPrice"] = nil
 	} else if tx.Type() == ethtypes.DynamicFeeTxType || tx.Type() == ethtypes.SetCodeTxType {
-		et.fields["maxFeePerGas"] = hexutil.EncodeBig(tx.GasFeeCap())
-		et.fields["maxPriorityFeePerGas"] = hexutil.EncodeBig(tx.GasTipCap())
-		et.fields["gasPrice"] = nil
+		fields["maxFeePerGas"] = hexutil.EncodeBig(tx.GasFeeCap())
+		fields["maxPriorityFeePerGas"] = hexutil.EncodeBig(tx.GasTipCap())
+		fields["gasPrice"] = nil
 	} else {
-		et.fields["gasPrice"] = hexutil.EncodeBig(tx.GasPrice())
+		fields["gasPrice"] = hexutil.EncodeBig(tx.GasPrice())
 	}
 
-	et.fields["type"] = hexutil.EncodeUint64(uint64(tx.Type()))
+	fields["type"] = hexutil.EncodeUint64(uint64(tx.Type()))
 
-	et.fields["value"] = hexutil.EncodeBig(tx.Value())
+	fields["value"] = hexutil.EncodeBig(tx.Value())
 
-	et.fields["gas"] = hexutil.EncodeUint64(tx.Gas())
+	fields["gas"] = hexutil.EncodeUint64(tx.Gas())
 
 	if tx.To() != nil {
-		et.fields["to"] = AddressAsString(tx.To())
+		fields["to"] = AddressAsString(tx.To())
 	}
 
 	if len(tx.SetCodeAuthorizations()) != 0 {
-		et.fields["authorizationList"] = tx.SetCodeAuthorizations()
+		fields["authorizationList"] = tx.SetCodeAuthorizations()
 	}
+
+	return fields, nil
 }
 
-// EthTransactionFromBytes parses and constructs an Ethereum transaction from bytes
-func ethTransactionFromBytes(tc TxContent, sender Sender) (*EthTransaction, error) {
-	var rawEthTx ethtypes.Transaction
-
-	err := rlp.DecodeBytes(tc, &rawEthTx)
-	if err != nil {
-		return nil, fmt.Errorf("could not decode Ethereum transaction: %v", err)
+// createFields lazily builds and caches the fields map via CAS.
+func (et *EthTransaction) createFields() error {
+	if et.fields.Load() != nil {
+		return nil
 	}
 
-	return NewEthTransaction(&rawEthTx, sender)
+	fields, err := et.buildFields()
+	if err != nil {
+		return err
+	}
+
+	if !et.fields.CompareAndSwap(nil, &fields) {
+		return nil
+	}
+	return nil
 }
 
 // EffectiveGasFeeCap returns a common "gas fee cap" that can be used for all types of transactions
-func (et *EthTransaction) EffectiveGasFeeCap() *big.Int {
-	if et.Type() == ethtypes.DynamicFeeTxType || et.Type() == ethtypes.BlobTxType || et.Type() == ethtypes.SetCodeTxType {
-		return et.tx.GasFeeCap()
+func (et *EthTransaction) EffectiveGasFeeCap() (*big.Int, error) {
+	tx, err := et.Tx()
+	if err != nil {
+		return nil, err
 	}
-
-	return et.tx.GasPrice()
+	txType := tx.Type()
+	if txType == ethtypes.DynamicFeeTxType || txType == ethtypes.BlobTxType || txType == ethtypes.SetCodeTxType {
+		return tx.GasFeeCap(), nil
+	}
+	return tx.GasPrice(), nil
 }
 
 // EffectiveGasTipCap returns a common "gas tip cap" that can be used for all types of transactions
-func (et *EthTransaction) EffectiveGasTipCap() *big.Int {
-	if et.Type() == ethtypes.DynamicFeeTxType || et.Type() == ethtypes.BlobTxType || et.Type() == ethtypes.SetCodeTxType {
-		return et.tx.GasTipCap()
+func (et *EthTransaction) EffectiveGasTipCap() (*big.Int, error) {
+	tx, err := et.Tx()
+	if err != nil {
+		return nil, err
 	}
-
-	return et.tx.GasPrice()
+	txType := tx.Type()
+	if txType == ethtypes.DynamicFeeTxType || txType == ethtypes.BlobTxType || txType == ethtypes.SetCodeTxType {
+		return tx.GasTipCap(), nil
+	}
+	return tx.GasPrice(), nil
 }
 
 // EffectiveBlobGasFeeCap returns a common "gas fee per blob gas" that can be used for all types of transactions
-func (et *EthTransaction) EffectiveBlobGasFeeCap() *big.Int {
-	if et.Type() == ethtypes.BlobTxType {
-		return et.tx.BlobGasFeeCap()
+func (et *EthTransaction) EffectiveBlobGasFeeCap() (*big.Int, error) {
+	txType, err := et.Type()
+	if err != nil {
+		return big.NewInt(0), err
 	}
-
-	return big.NewInt(0)
+	if txType == ethtypes.BlobTxType {
+		tx, err := et.Tx()
+		if err != nil {
+			return big.NewInt(0), err
+		}
+		return tx.BlobGasFeeCap(), nil
+	}
+	return big.NewInt(0), nil
 }
 
 // EffectiveBlobGasFeeCapIntCmp make a compare for "blob gas fee cap" that can be used for all types of transactions
-func (et *EthTransaction) EffectiveBlobGasFeeCapIntCmp(other *big.Int) int {
-	if et.Type() == ethtypes.BlobTxType {
-		return et.tx.BlobGasFeeCap().Cmp(other)
+func (et *EthTransaction) EffectiveBlobGasFeeCapIntCmp(other *big.Int) (int, error) {
+	txType, err := et.Type()
+	if err != nil {
+		return 1, err
 	}
-
-	// Legacy and dynamic fee transactions have no blob gas fee cap
-	return 1
+	if txType == ethtypes.BlobTxType {
+		tx, err := et.Tx()
+		if err != nil {
+			return 1, err
+		}
+		return tx.BlobGasFeeCap().Cmp(other), nil
+	}
+	return 1, nil
 }
 
 // ChainID returns the chain ID of the transaction
-func (et *EthTransaction) ChainID() *big.Int {
-	return et.tx.ChainId()
+func (et *EthTransaction) ChainID() (*big.Int, error) {
+	tx, err := et.Tx()
+	if err != nil {
+		return nil, err
+	}
+	return tx.ChainId(), nil
 }
 
 // Nonce returns the nonce of the transaction
-func (et *EthTransaction) Nonce() uint64 {
-	return et.tx.Nonce()
+func (et *EthTransaction) Nonce() (uint64, error) {
+	tx, err := et.Tx()
+	if err != nil {
+		return 0, err
+	}
+	return tx.Nonce(), nil
 }
 
 // Filters returns a map of key,value that can be used to filter transactions
-func (et *EthTransaction) Filters() map[string]interface{} {
-	et.createFilters()
-
-	return et.filters
+func (et *EthTransaction) Filters() (map[string]interface{}, error) {
+	if err := et.createFilters(); err != nil {
+		return nil, err
+	}
+	p := et.filters.Load()
+	if p == nil {
+		return nil, ErrEmptyTransaction
+	}
+	return *p, nil
 }
 
 // Fields - creates a map with selected fields
-func (et *EthTransaction) Fields(fields []string) map[string]interface{} {
-	et.createFields()
+func (et *EthTransaction) Fields(fields []string) (map[string]interface{}, error) {
+	if err := et.createFields(); err != nil {
+		return nil, err
+	}
 
+	p := et.fields.Load()
+	if p == nil {
+		return nil, ErrEmptyTransaction
+	}
+	cached := *p
 	transactionContent := make(map[string]interface{})
 	for _, param := range fields {
 		if v, ok := paramToName[param]; ok {
 			param = v
 		}
 
-		if v, ok := et.fields[param]; ok {
+		if v, ok := cached[param]; ok {
 			transactionContent[param] = v
 		} else if param == "from" {
-			from, err := et.From()
+			from, err := et.loadOrComputeFrom()
 			if err != nil {
 				continue
 			}
@@ -353,12 +452,63 @@ func (et *EthTransaction) Fields(fields []string) map[string]interface{} {
 		}
 	}
 
-	return transactionContent
+	return transactionContent, nil
 }
 
-// RawTx returns the raw transaction bytes
-func (et *EthTransaction) RawTx() []byte {
-	return et.binary
+// SetRawTx seeds the raw transaction bytes from a pre-encoded hex string.
+// This is used by cloud-api with type 3 txs: the feed txContents is missing the blob
+// sidecar, so the raw tx provided by the feed must be used verbatim instead of
+// being re-marshaled from the (sidecar-less) decoded content.
+func (et *EthTransaction) SetRawTx(rawTx string) {
+	et.hexTx.Store(&rawTx)
+	if binary, err := hexutil.Decode(rawTx); err == nil {
+		et.binary.Store(&binary)
+	}
+}
+
+// RawTx returns the raw transaction bytes, computed lazily.
+func (et *EthTransaction) RawTx() ([]byte, error) {
+	if b := et.binary.Load(); b != nil {
+		return *b, nil
+	}
+
+	tx, err := et.loadOrDecodeTx()
+	if err != nil {
+		return nil, err
+	}
+
+	binary, err := tx.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+
+	if !et.binary.CompareAndSwap(nil, &binary) {
+		// another goroutine won (or SetRawTx seeded it); use its value
+		return *et.binary.Load(), nil
+	}
+	return binary, nil
+}
+
+// RawTxHex returns the hex-encoded raw transaction, computed lazily.
+// hexTx is derived from RawTx here (not in RawTx) so that a concurrent
+// caller can never observe binary set but hexTx still unset.
+func (et *EthTransaction) RawTxHex() (string, error) {
+	if h := et.hexTx.Load(); h != nil {
+		return *h, nil
+	}
+
+	b, err := et.RawTx()
+	if err != nil {
+		return "", err
+	}
+	if b == nil {
+		return "", ErrEmptyTransaction
+	}
+
+	h := hexutil.Encode(b)
+	et.hexTx.CompareAndSwap(nil, &h)
+	// reload to honor a SetRawTx seed or concurrent winner
+	return *et.hexTx.Load(), nil
 }
 
 // AddressAsString converts address to string
@@ -378,7 +528,7 @@ func BigIntAsFloat64(bigint *big.Int) float64 {
 // BigIntAsString converts BigInt to string
 func BigIntAsString(bi *big.Int) string {
 	var b bytes.Buffer
-	var negative = ""
+	negative := ""
 
 	if bi == nil {
 		b.WriteString("\"\"")

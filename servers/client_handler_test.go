@@ -45,13 +45,13 @@ func TestManageServers(t *testing.T) {
 	wsManager := &mockNodeWSManager{
 		syncChan: make(chan blockchain.NodeSyncStatus, 1),
 	}
-	fm := feed.NewManager(sdn, nil, sdnmessage.Account{}, nil, 1, false, &metrics.NoOpExporter{})
+	fm := feed.NewManager(sdn, nil, sdnmessage.Account{}, nil, 1, false, &metrics.NoOpExporter{}, types.AllFeedTypes, 1)
 
 	clientHandler := NewClientHandler(nil, bxConfig, nil, sdn, nil, nil,
 		nil, services.NewNoOpSubscriptionServices(), wsManager, nil,
 		time.Now(), "", fm,
 		statistics.NoStats{}, nil,
-		false, "", "", nil, nil,
+		false, "", "", nil,
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -61,8 +61,10 @@ func TestManageServers(t *testing.T) {
 		return clientHandler.ManageServers(gCtx, true)
 	})
 
+	// the websocket server is managed by the node sync status and starts only once synced,
+	// while the gRPC server is independent of sync status and comes up immediately
 	test.WaitServerStopped(t, "localhost:28333")
-	test.WaitServerStopped(t, "localhost:9100")
+	test.WaitServerStarted(t, "localhost:9100")
 
 	// test if the first sync status is 'unsynced'
 	wsManager.syncChan <- blockchain.Unsynced
@@ -74,8 +76,9 @@ func TestManageServers(t *testing.T) {
 
 	wsManager.syncChan <- blockchain.Unsynced
 
+	// only the websocket server is shut down on unsync; the gRPC server keeps running
 	test.WaitServerStopped(t, "localhost:28333")
-	test.WaitServerStopped(t, "localhost:9100")
+	test.WaitServerStarted(t, "localhost:9100")
 
 	wsManager.syncChan <- blockchain.Synced
 

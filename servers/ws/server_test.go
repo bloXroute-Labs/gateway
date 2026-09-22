@@ -28,6 +28,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/test/fixtures"
 	"github.com/bloXroute-Labs/gateway/v2/test/mock"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 func TestAuthorization(t *testing.T) {
@@ -54,7 +55,7 @@ func TestAuthorization(t *testing.T) {
 	stats := statistics.NoStats{}
 
 	feedManager := feed.NewManager(sdn, services.NewNoOpSubscriptionServices(),
-		accountIDToAccountModel["gw"], stats, bxtypes.NetworkNum(5), true, &metrics.NoOpExporter{})
+		accountIDToAccountModel["gw"], stats, bxtypes.NetworkNum(5), true, &metrics.NoOpExporter{}, types.AllFeedTypes, 1)
 
 	accService := &mockAccountService{}
 
@@ -72,7 +73,7 @@ func TestAuthorization(t *testing.T) {
 
 	nodeWSManager := eth.NewEthWSManager(blockchainPeersInfo, eth.NewMockWSProvider, bxgateway.WSProviderTimeout, false)
 
-	server := NewWSServer(cfg, "", "", sdn, g, accService, feedManager, nodeWSManager, stats, true, nil, nil)
+	server := NewWSServer(cfg, "", "", sdn, g, accService, feedManager, nodeWSManager, stats, true, nil)
 	server.wsConnDelayOnErr = 10 * time.Millisecond // set a shorted delay for tests
 
 	eg.Go(func() error {

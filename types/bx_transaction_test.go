@@ -28,10 +28,13 @@ func TestValidContentParsing(t *testing.T) {
 
 	tx := NewBxTransaction(hash, testNetworkNum, TFPaidTx, time.Now())
 	tx.SetContent(content)
-	ethTx, err := tx.MakeAndSetEthTransaction(EmptySender)
+	ethTx := NewEthTransactionFromBytes(content, EmptySender)
+
+	_, err := ethTx.Tx()
 	require.NoError(t, err)
 
-	fields := ethTx.Fields(AllFieldsWithFrom)
+	fields, err := ethTx.Fields(AllFieldsWithFrom)
+	require.NoError(t, err)
 
 	assert.Equal(t, "0x0", fields["type"])
 	assert.Nil(t, fields["AccessList"])
@@ -40,7 +43,9 @@ func TestValidContentParsing(t *testing.T) {
 	assert.Equal(t, "0x6441659feba08d7d13bf097ed896b0f5d0f4ece350086c1417e28c236f350edf", fields["r"])
 	assert.Equal(t, "0x2d", fields["v"])
 	assert.Equal(t, "0x50b32f902486000", fields["value"])
-	assert.Equal(t, uint64(0x1b7f8), ethTx.Nonce())
+	nonce, err := ethTx.Nonce()
+	require.NoError(t, err)
+	assert.Equal(t, uint64(0x1b7f8), nonce)
 	assert.Equal(t, "0x", fields["input"])
 	assert.Equal(t, "0x620e581229b29042720613415fd5dceef0a94980118927e93855b80232c7ccc4", fields["hash"])
 	assert.Equal(t, "0x6b37a3e540bb4091b35719ead4ce07954a22eb95", fields["from"])
@@ -80,17 +85,12 @@ func TestNotValidContentParsing(t *testing.T) {
 
 	content, _ := hex.DecodeString("aaaa510e8516d1415400830283f9947a250d5630b4cf539739df2c5dacb4c659f2488d87b1a2bc2ec50000b8e47ff36ab5000000000000000000000000000000000000000000000010ee3c5d3728912a5d0000000000000000000000000000000000000000000000000000000000000080000000000000000000000000fd4d885c79fe72447239f50372940926b88017f5000000000000000000000000000000000000000000000000000000006024dfbb0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000009ed8e7c9604790f7ec589f99b94361d8aab64e5e26a076c06c21ac0d27d2866af4f344538f695b1729b54b764a32a758b5849df3b418a0229f5f935a60d4ef051c074ab49de8270f6ce949ba5e758d8de08923ff087cad")
 
-	tx := &BxTransaction{
-		hash:       hash,
-		content:    content,
-		shortIDs:   make(ShortIDList, 0),
-		addTime:    time.Now(),
-		networkNum: testNetworkNum,
-	}
+	_ = hash
 
-	blockchainTx, err := tx.MakeAndSetEthTransaction(EmptySender)
+	ethTx := NewEthTransactionFromBytes(content, EmptySender)
+
+	_, err := ethTx.Tx()
 	assert.NotNil(t, err)
-	assert.Nil(t, blockchainTx)
 }
 
 func TestHasContent(t *testing.T) {
@@ -115,4 +115,24 @@ func TestHasContent(t *testing.T) {
 
 	txNoContent.SetContent(content)
 	assert.True(t, txNoContent.HasContent())
+}
+
+func TestEthTransactionLazyDecoding(t *testing.T) {
+	var hash SHA256Hash
+	hashRes, _ := hex.DecodeString("620e581229b29042720613415fd5dceef0a94980118927e93855b80232c7ccc4")
+	copy(hash[:], hashRes)
+
+	content, _ := hex.DecodeString("f8708301b7f8851bf08eb0008301388094b877c7e556d50b0027053336b90f36becf67b3dd88050b32f902486000802da06441659feba08d7d13bf097ed896b0f5d0f4ece350086c1417e28c236f350edfa03aa7ac259f3e39328cb2c7f605d239ed41b81d743604105fc21ef93cba636fd3")
+
+	_ = hash
+
+	ethTx := NewEthTransactionFromBytes(content, EmptySender)
+
+	tx, err := ethTx.Tx()
+	require.NoError(t, err)
+	assert.NotNil(t, tx)
+
+	tx2, err := ethTx.Tx()
+	require.NoError(t, err)
+	assert.Same(t, tx, tx2)
 }

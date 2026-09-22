@@ -226,7 +226,7 @@ func main() {
 				Action: cmdListPeers,
 			},
 			{
-				Name:  "txservice",
+				Name:  "txstore",
 				Usage: "query information related to the TxStore",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
@@ -234,7 +234,7 @@ func main() {
 					},
 				},
 				Before: beforeBxCli,
-				Action: cmdTxService,
+				Action: cmdTxStore,
 			},
 			{
 				Name: "stop",
@@ -925,8 +925,16 @@ func cmdGetInfo(*cli.Context) error {
 	return nil
 }
 
-func cmdTxService(*cli.Context) error {
-	fmt.Printf("left to do:")
+func cmdTxStore(ctx *cli.Context) error {
+	err := rpc.GatewayConsoleCall(
+		config.NewGRPCFromCLI(ctx),
+		func(callCtx context.Context, client pb.GatewayClient) (interface{}, error) {
+			return client.TxStoreSummary(callCtx, &pb.TxStoreRequest{})
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("could not get tx store: %v", err)
+	}
 	return nil
 }
 

@@ -19,9 +19,10 @@ const SubscriptionBlacklistTimeout = time.Second * 15
 
 // SubscriptionManager manages and stores all subscription requests to SDN and permission responses from SDN
 type SubscriptionManager struct {
-	subscribeRequests *syncmap.SyncMap[string, chan *types.SubscriptionPermissionMessage]
-	blacklistCache    *syncmap.SyncMap[bxtypes.AccountID, time.Time]
-	clock             clock.Clock
+	subscribeRequests   *syncmap.SyncMap[string, chan *types.SubscriptionPermissionMessage]
+	unsubscribeRequests *syncmap.SyncMap[string, unsubscribeEvent]
+	blacklistCache      *syncmap.SyncMap[bxtypes.AccountID, time.Time]
+	clock               clock.Clock
 }
 
 // SubscriptionLimitsEnforced - checks if a feedType has subscription limits
@@ -38,9 +39,10 @@ func SubscriptionLimitsEnforced(field types.FeedType) bool {
 // NewSubscriptionManager returns a new instance
 func NewSubscriptionManager(clock clock.Clock) SubscriptionManager {
 	return SubscriptionManager{
-		subscribeRequests: syncmap.NewStringMapOf[chan *types.SubscriptionPermissionMessage](),
-		blacklistCache:    syncmap.NewTypedMapOf[bxtypes.AccountID, time.Time](syncmap.AccountIDHasher),
-		clock:             clock,
+		subscribeRequests:   syncmap.NewStringMapOf[chan *types.SubscriptionPermissionMessage](),
+		unsubscribeRequests: syncmap.NewStringMapOf[unsubscribeEvent](),
+		blacklistCache:      syncmap.NewTypedMapOf[bxtypes.AccountID, time.Time](syncmap.AccountIDHasher),
+		clock:               clock,
 	}
 }
 
@@ -91,4 +93,37 @@ func (m SubscriptionManager) IsAccountBlacklisted(accountID bxtypes.AccountID) (
 
 func (m SubscriptionManager) clean(accountID bxtypes.AccountID) {
 	m.blacklistCache.Delete(accountID)
+}
+
+type unsubscribeEvent struct {
+	sub       *types.SubscriptionModel
+	createdAt time.Time
+}
+
+// RecordUnsubscribeRequest stores the subscription ID for the unsubscribe request.
+func (m SubscriptionManager) RecordUnsubscribeRequest(sub *types.SubscriptionModel) {
+	m.unsubscribeRequests.Store(sub.SubscriptionID, unsubscribeEvent{
+		sub:       sub,
+		createdAt: m.clock.Now(),
+	})
+}
+
+// UnsubscribeEventsOlderThan returns all subscriptions that have been requested to unsubscribe and are older than the provided duration.
+func (m SubscriptionManager) UnsubscribeEventsOlderThan(duration time.Duration) []types.SubscriptionModel {
+	var resp []types.SubscriptionModel
+
+	m.unsubscribeRequests.Range(func(_ string, value unsubscribeEvent) bool {
+		if value.createdAt.Add(duration).Before(m.clock.Now()) {
+			resp = append(resp, *value.sub)
+		}
+
+		return true
+	})
+
+	return resp
+}
+
+// ConfirmUnsubscribe removes the subscription ID from the unsubscribe request storage.
+func (m SubscriptionManager) ConfirmUnsubscribe(subscriptionID string) {
+	m.unsubscribeRequests.Delete(subscriptionID)
 }

@@ -23,9 +23,14 @@ type BxTransaction struct {
 	flags      TxFlags
 	networkNum bxtypes.NetworkNum
 	sender     Sender
-	rawTx      string
+}
 
-	tx *EthTransaction
+// Size returns an estimate of the heap memory held by this BxTransaction.
+func (bt *BxTransaction) Size() int {
+	bt.m.RLock()
+	defer bt.m.RUnlock()
+
+	return len(bt.content)
 }
 
 // NewBxTransaction creates a new transaction to be stored. Transactions are not expected to be initialized with content or shortIDs; they should be added via AddShortID and SetContent.
@@ -134,22 +139,6 @@ func (bt *BxTransaction) SetAddTime(t time.Time) {
 	bt.addTime = t
 }
 
-// GetRawTx returns preconfigured raw tx string, normally the raw tx is calculated base on tx content
-func (bt *BxTransaction) GetRawTx() string {
-	bt.m.RLock()
-	defer bt.m.RUnlock()
-
-	return bt.rawTx
-}
-
-// SetRawTx sets the raw_tx, this is used by cloud-api with type 3 tx due to missing sidecar in txContent
-func (bt *BxTransaction) SetRawTx(rawTx string) {
-	bt.m.Lock()
-	defer bt.m.Unlock()
-
-	bt.rawTx = rawTx
-}
-
 // AddShortID adds an assigned shortID, indicating whether it was actually new. Should be called with Lock()
 func (bt *BxTransaction) AddShortID(shortID ShortID) bool {
 	bt.m.Lock()
@@ -188,21 +177,6 @@ func (bt *BxTransaction) setContent(content TxContent) bool {
 	}
 
 	return false
-}
-
-// MakeAndSetEthTransaction parses and returns a transaction
-func (bt *BxTransaction) MakeAndSetEthTransaction(sender Sender) (*EthTransaction, error) {
-	bt.m.Lock()
-	defer bt.m.Unlock()
-
-	if bt.tx != nil {
-		return bt.tx, nil
-	}
-
-	var err error
-	bt.tx, err = ethTransactionFromBytes(bt.content, sender)
-
-	return bt.tx, err
 }
 
 // Protobuf formats transaction info as a protobuf response struct

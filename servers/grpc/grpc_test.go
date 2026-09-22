@@ -30,6 +30,7 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 	"github.com/bloXroute-Labs/gateway/v2/test/mock"
+	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/version"
 )
 
@@ -124,7 +125,7 @@ func testGRPCServer(t *testing.T, port int, user string, password string) (*Serv
 	bx := mock.NewMockConnector(ctl)
 
 	feedMngr := feed.NewManager(sdn, services.NewNoOpSubscriptionServices(),
-		accountIDToAccountModel["gw"], stats, bxtypes.NetworkNum(5), true, &metrics.NoOpExporter{})
+		accountIDToAccountModel["gw"], stats, bxtypes.NetworkNum(5), true, &metrics.NoOpExporter{}, types.AllFeedTypes, 1)
 
 	grpcServer := NewGRPCServer(
 		cfg,
@@ -142,7 +143,6 @@ func testGRPCServer(t *testing.T, port int, user string, password string) (*Serv
 		feedMngr,
 		nil,
 		false,
-		nil,
 		services.NewSenderExtractor(),
 	)
 

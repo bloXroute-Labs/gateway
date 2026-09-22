@@ -2491,6 +2491,7 @@ type TxStoreNetworkData struct {
 	ShortIdCount  uint64                 `protobuf:"varint,2,opt,name=short_id_count,json=shortIdCount,proto3" json:"short_id_count,omitempty"`
 	OldestTx      *BxTransaction         `protobuf:"bytes,3,opt,name=oldest_tx,json=oldestTx,proto3" json:"oldest_tx,omitempty"`
 	SizeBytes     uint64                 `protobuf:"varint,5,opt,name=sizeBytes,proto3" json:"sizeBytes,omitempty"`
+	SizeMb        uint64                 `protobuf:"varint,6,opt,name=size_mb,json=sizeMb,proto3" json:"size_mb,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2556,6 +2557,13 @@ func (x *TxStoreNetworkData) GetOldestTx() *BxTransaction {
 func (x *TxStoreNetworkData) GetSizeBytes() uint64 {
 	if x != nil {
 		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *TxStoreNetworkData) GetSizeMb() uint64 {
+	if x != nil {
+		return x.SizeMb
 	}
 	return 0
 }
@@ -2791,9 +2799,10 @@ func (x *BlxrBatchTXRequest) GetFrontrunningProtection() bool {
 }
 
 type BlxrTxRequest struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Transaction     string                 `protobuf:"bytes,1,opt,name=transaction,proto3" json:"transaction,omitempty"`
-	NonceMonitoring bool                   `protobuf:"varint,2,opt,name=nonce_monitoring,json=nonceMonitoring,proto3" json:"nonce_monitoring,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Transaction string                 `protobuf:"bytes,1,opt,name=transaction,proto3" json:"transaction,omitempty"`
+	// Deprecated: Marked as deprecated in gateway.proto.
+	NonceMonitoring bool `protobuf:"varint,2,opt,name=nonce_monitoring,json=nonceMonitoring,proto3" json:"nonce_monitoring,omitempty"`
 	// Deprecated: Marked as deprecated in gateway.proto.
 	NextValidator bool `protobuf:"varint,3,opt,name=next_validator,json=nextValidator,proto3" json:"next_validator,omitempty"`
 	// Deprecated: Marked as deprecated in gateway.proto.
@@ -2804,7 +2813,9 @@ type BlxrTxRequest struct {
 	Fallback       int32 `protobuf:"varint,6,opt,name=fallback,proto3" json:"fallback,omitempty"`
 	NodeValidation bool  `protobuf:"varint,7,opt,name=node_validation,json=nodeValidation,proto3" json:"node_validation,omitempty"`
 	// Deprecated: Marked as deprecated in gateway.proto.
-	FrontrunningProtection bool `protobuf:"varint,8,opt,name=frontrunning_protection,json=frontrunningProtection,proto3" json:"frontrunning_protection,omitempty"`
+	FrontrunningProtection bool   `protobuf:"varint,8,opt,name=frontrunning_protection,json=frontrunningProtection,proto3" json:"frontrunning_protection,omitempty"`
+	BackrunmeRewardAddress string `protobuf:"bytes,9,opt,name=backrunme_reward_address,json=backrunmeRewardAddress,proto3" json:"backrunme_reward_address,omitempty"`
+	RpcMode                bool   `protobuf:"varint,10,opt,name=rpc_mode,json=rpcMode,proto3" json:"rpc_mode,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -2846,6 +2857,7 @@ func (x *BlxrTxRequest) GetTransaction() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in gateway.proto.
 func (x *BlxrTxRequest) GetNonceMonitoring() bool {
 	if x != nil {
 		return x.NonceMonitoring
@@ -2896,6 +2908,20 @@ func (x *BlxrTxRequest) GetNodeValidation() bool {
 func (x *BlxrTxRequest) GetFrontrunningProtection() bool {
 	if x != nil {
 		return x.FrontrunningProtection
+	}
+	return false
+}
+
+func (x *BlxrTxRequest) GetBackrunmeRewardAddress() string {
+	if x != nil {
+		return x.BackrunmeRewardAddress
+	}
+	return ""
+}
+
+func (x *BlxrTxRequest) GetRpcMode() bool {
+	if x != nil {
+		return x.RpcMode
 	}
 	return false
 }
@@ -4719,13 +4745,14 @@ const file_gateway_proto_rawDesc = "" +
 	"\x02tx\x18\x01 \x01(\v2\x16.gateway.BxTransactionR\x02tx\"5\n" +
 	"\x0eTxStoreRequest\x12#\n" +
 	"\vauth_header\x18\x01 \x01(\tB\x02\x18\x01R\n" +
-	"authHeader\"\xc2\x01\n" +
+	"authHeader\"\xdb\x01\n" +
 	"\x12TxStoreNetworkData\x12\x18\n" +
 	"\anetwork\x18\x04 \x01(\x04R\anetwork\x12\x19\n" +
 	"\btx_count\x18\x01 \x01(\x04R\atxCount\x12$\n" +
 	"\x0eshort_id_count\x18\x02 \x01(\x04R\fshortIdCount\x123\n" +
 	"\toldest_tx\x18\x03 \x01(\v2\x16.gateway.BxTransactionR\boldestTx\x12\x1c\n" +
-	"\tsizeBytes\x18\x05 \x01(\x04R\tsizeBytes\"\x8f\x01\n" +
+	"\tsizeBytes\x18\x05 \x01(\x04R\tsizeBytes\x12\x17\n" +
+	"\asize_mb\x18\x06 \x01(\x04R\x06sizeMb\"\x8f\x01\n" +
 	"\fTxStoreReply\x12\x19\n" +
 	"\btx_count\x18\x01 \x01(\x04R\atxCount\x12$\n" +
 	"\x0eshort_id_count\x18\x02 \x01(\x04R\fshortIdCount\x12>\n" +
@@ -4743,17 +4770,20 @@ const file_gateway_proto_rawDesc = "" +
 	"\fsending_time\x18\a \x01(\x03R\vsendingTime\x12#\n" +
 	"\vauth_header\x18\b \x01(\tB\x02\x18\x01R\n" +
 	"authHeader\x12;\n" +
-	"\x17frontrunning_protection\x18\t \x01(\bB\x02\x18\x01R\x16frontrunningProtection\"\xdf\x02\n" +
+	"\x17frontrunning_protection\x18\t \x01(\bB\x02\x18\x01R\x16frontrunningProtection\"\xb8\x03\n" +
 	"\rBlxrTxRequest\x12 \n" +
-	"\vtransaction\x18\x01 \x01(\tR\vtransaction\x12)\n" +
-	"\x10nonce_monitoring\x18\x02 \x01(\bR\x0fnonceMonitoring\x12)\n" +
+	"\vtransaction\x18\x01 \x01(\tR\vtransaction\x12-\n" +
+	"\x10nonce_monitoring\x18\x02 \x01(\bB\x02\x18\x01R\x0fnonceMonitoring\x12)\n" +
 	"\x0enext_validator\x18\x03 \x01(\bB\x02\x18\x01R\rnextValidator\x12#\n" +
 	"\vauth_header\x18\x04 \x01(\tB\x02\x18\x01R\n" +
 	"authHeader\x12+\n" +
 	"\x0fvalidators_only\x18\x05 \x01(\bB\x02\x18\x01R\x0evalidatorsOnly\x12\x1e\n" +
 	"\bfallback\x18\x06 \x01(\x05B\x02\x18\x01R\bfallback\x12'\n" +
 	"\x0fnode_validation\x18\a \x01(\bR\x0enodeValidation\x12;\n" +
-	"\x17frontrunning_protection\x18\b \x01(\bB\x02\x18\x01R\x16frontrunningProtection\"&\n" +
+	"\x17frontrunning_protection\x18\b \x01(\bB\x02\x18\x01R\x16frontrunningProtection\x128\n" +
+	"\x18backrunme_reward_address\x18\t \x01(\tR\x16backrunmeRewardAddress\x12\x19\n" +
+	"\brpc_mode\x18\n" +
+	" \x01(\bR\arpcMode\"&\n" +
 	"\vBlxrTxReply\x12\x17\n" +
 	"\atx_hash\x18\x01 \x01(\tR\x06txHash\"4\n" +
 	"\aTxIndex\x12\x10\n" +

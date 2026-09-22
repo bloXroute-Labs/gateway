@@ -26,7 +26,7 @@ import (
 
 func testPeer(writeChannelSize int, peerCount int) (*Peer, *test.MsgReadWriter) {
 	rw := test.NewMsgReadWriter(100, writeChannelSize, time.Second*5)
-	peer := newPeer(context.Background(), p2p.NewPeerPipe(test.GenerateEnodeID(), fmt.Sprintf("test peer_%v", peerCount), []p2p.Cap{}, nil), rw, ETH66, &clock.MockClock{}, 1)
+	peer := newPeer(context.Background(), p2p.NewPeerPipe(test.GenerateEnodeID(), fmt.Sprintf("test peer_%v", peerCount), []p2p.Cap{}, nil), rw, ETH68, &clock.MockClock{}, 1)
 	return peer, rw
 }
 
@@ -52,8 +52,8 @@ func TestPeer_Handshake(t *testing.T) {
 
 	peer, rw := testPeer(-1, 1)
 
-	peerStatus := eth.StatusPacket68{
-		ProtocolVersion: ETH66,
+	peerStatus := StatusPacket68{
+		ProtocolVersion: ETH68,
 		NetworkID:       1,
 		TD:              big.NewInt(10),
 		Head:            common.Hash{1, 2, 3},
@@ -89,7 +89,7 @@ func TestPeer_Handshake(t *testing.T) {
 	err = peer.Handshake(chain, 0, new(big.Int), common.Hash{1, 2, 3}, common.Hash{2, 3, 4}, executionLayerForks)
 	assert.NotNil(t, err)
 
-	peerStatus.ProtocolVersion = ETH66
+	peerStatus.ProtocolVersion = ETH68
 
 	// network mismatch
 	peerStatus.NetworkID = 2
@@ -110,7 +110,7 @@ func TestPeer_Handshake(t *testing.T) {
 	assert.NotNil(t, err)
 
 	// forkID missmatch
-	rw.QueueIncomingMessage(eth.StatusMsg, eth.StatusPacket68{
+	rw.QueueIncomingMessage(eth.StatusMsg, StatusPacket68{
 		ProtocolVersion: 1,
 		NetworkID:       1,
 		TD:              big.NewInt(10),
@@ -315,8 +315,7 @@ func TestPeer_RequestBlockHeaderNonBlocking(t *testing.T) {
 
 	requestID := getHeaders.RequestId
 	rw.QueueIncomingMessage(eth.BlockHeadersMsg, eth.BlockHeadersPacket{
-		RequestId:           requestID,
-		BlockHeadersRequest: nil,
+		RequestId: requestID,
 	})
 
 	// should not block, since no response needed

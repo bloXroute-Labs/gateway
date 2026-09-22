@@ -5,8 +5,9 @@ import (
 	"time"
 
 	"github.com/bloXroute-Labs/bxcommon-go/clock"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 func TestSubscriptionManager_RequestSubscriptionLifecycle(t *testing.T) {
@@ -55,6 +56,39 @@ func TestSubscriptionManager_BlacklistLifecycle(t *testing.T) {
 
 	blacklisted, _ = manager.IsAccountBlacklisted("account1")
 	assert.False(t, blacklisted)
+}
+
+func TestSubscriptionManager_UnsubscribeLifecycle(t *testing.T) {
+	mc := clock.MockClock{}
+	manager := NewSubscriptionManager(&mc)
+
+	sub1 := &types.SubscriptionModel{SubscriptionID: "sub1"}
+	sub2 := &types.SubscriptionModel{SubscriptionID: "sub2"}
+
+	manager.RecordUnsubscribeRequest(sub1)
+	manager.RecordUnsubscribeRequest(sub2)
+
+	// nothing is older than 10s yet
+	expired := manager.UnsubscribeEventsOlderThan(10 * time.Second)
+	assert.Empty(t, expired)
+
+	// advance time so both events are older than 10s
+	mc.IncTime(11 * time.Second)
+
+	expired = manager.UnsubscribeEventsOlderThan(10 * time.Second)
+	assert.Len(t, expired, 2)
+
+	// confirm one unsubscribe and verify only the other remains
+	manager.ConfirmUnsubscribe(sub1.SubscriptionID)
+
+	expired = manager.UnsubscribeEventsOlderThan(10 * time.Second)
+	assert.Len(t, expired, 1)
+	assert.Equal(t, sub2.SubscriptionID, expired[0].SubscriptionID)
+
+	manager.ConfirmUnsubscribe(sub2.SubscriptionID)
+
+	expired = manager.UnsubscribeEventsOlderThan(10 * time.Second)
+	assert.Empty(t, expired)
 }
 
 func TestSubscriptionManager_BlacklistExpiredAndTimeReset(t *testing.T) {

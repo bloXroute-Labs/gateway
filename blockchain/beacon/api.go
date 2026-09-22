@@ -129,7 +129,7 @@ func (c *APIClient) requestBlockWithRetry(uri string) (*http.Response, error) {
 		}
 
 		resp.Body.Close()
-		time.Sleep(time.Duration(10*(1<<i)) * time.Millisecond) // 10, 20, 40, 80, 160ms
+		time.Sleep(time.Duration(16*(1<<i)) * time.Millisecond) // 16, 32, 64, 128, 256ms (~500ms total)
 	}
 
 	return nil, fmt.Errorf("block not found after %d retries (404)", timesToRetry)
@@ -318,7 +318,7 @@ func (c *APIClient) blockHeadEventHandler() func(msg *sse.Event) {
 			}
 		}
 
-		if c.sharedSync.isKnownSlot(data.Slot, true) {
+		if c.sharedSync.isKnownSlot(data.Slot, false) {
 			c.log.Tracef("skip processing already processed block[slot=%d]", data.Slot)
 			return
 		}
@@ -338,6 +338,11 @@ func (c *APIClient) blockHeadEventHandler() func(msg *sse.Event) {
 		blockHash, err := c.hashOfBlock(wrappedBlock)
 		if (err != nil) || (blockHash != data.Block) {
 			c.log.Errorf("could not approve beacon block[slot=%d,hash=%s]: %v", block.Block().Slot(), data.Block, err)
+			return
+		}
+
+		if c.sharedSync.isKnownSlot(data.Slot, true) {
+			c.log.Tracef("another client already processed block[slot=%d]", block.Block().Slot())
 			return
 		}
 

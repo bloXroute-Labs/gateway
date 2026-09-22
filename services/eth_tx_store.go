@@ -68,54 +68,66 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 	network bxtypes.NetworkNum, validate bool, flags types.TxFlags, timestamp time.Time, networkChainID int64, sender types.Sender,
 ) types.TransactionResult {
 	transaction := types.NewBxTransaction(hash, network, flags, timestamp)
-	var ethTx *types.EthTransaction
 	var err error
 
-	if validate && !t.HasContent(hash) {
-		// If validate is true we got the tx from gw or cloud-api (with content).
-		// If we don't know this hash, or we don't have its content we should validate
-		// it and extract the sender (so we pass EmptySender)
+	needsValidation := validate && !t.HasContent(hash)
+
+	// sender is only trusted when the tx does not require validation (e.g. comes from a relay);
+	// otherwise it is extracted from the signature on demand
+	ethTxSender := sender
+	if needsValidation {
+		ethTxSender = types.EmptySender
+	}
+	ethTx := types.NewEthTransactionFromBytes(content, ethTxSender)
+
+	if needsValidation {
 		transaction.SetContent(content)
-		ethTx, err = transaction.MakeAndSetEthTransaction(types.EmptySender)
-		if err != nil {
-			return types.TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: err}
+
+		tx, decodeErr := ethTx.Tx()
+		if decodeErr != nil {
+			return types.TransactionResult{Transaction: transaction, EthTx: ethTx, FailedValidation: true, DebugData: decodeErr}
 		}
 
-		txChainID := ethTx.ChainID().Int64()
-		if networkChainID != 0 && txChainID != 0 && networkChainID != txChainID {
+		txChainID, err := ethTx.ChainID()
+		if err != nil {
+			return types.TransactionResult{Transaction: transaction, EthTx: ethTx, FailedValidation: true, DebugData: err}
+		}
+		if networkChainID != 0 && txChainID.Int64() != 0 && networkChainID != txChainID.Int64() {
 			errChainIDMismatch := fmt.Errorf("chainID mismatch for hash %v - content chainID %v networkNum %v networkChainID %v", hash, txChainID, network, networkChainID)
 			log.Error(errChainIDMismatch)
-			return types.TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: errChainIDMismatch}
+			return types.TransactionResult{Transaction: transaction, EthTx: ethTx, FailedValidation: true, DebugData: errChainIDMismatch}
 		}
 
 		sender = types.EmptySender
 
-		// If this is not trusted source(external gateway) and network requires, then we extract sender
 		if t.isReuseNonceActive(network) {
 			sender, err = ethTx.Sender()
 			if err != nil {
 				errExtractionFailed := fmt.Errorf("failed to extract sender from transaction %v", hash)
 				log.Error(errExtractionFailed)
-				return types.TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: errExtractionFailed}
+				return types.TransactionResult{Transaction: transaction, EthTx: ethTx, FailedValidation: true, DebugData: errExtractionFailed}
 			}
 		}
 
-		if ethTx.Type() == ethtypes.BlobTxType {
-			if ethTx.Tx().BlobTxSidecar() == nil {
+		txType, err := ethTx.Type()
+		if err != nil {
+			return types.TransactionResult{Transaction: transaction, EthTx: ethTx, FailedValidation: true, DebugData: err}
+		}
+		if txType == ethtypes.BlobTxType {
+			if tx.BlobTxSidecar() == nil {
 				errEmptySidecar := fmt.Errorf("missing sidecar for hash %v", hash)
 				log.Error(errEmptySidecar)
-				return types.TransactionResult{Transaction: transaction, FailedValidation: true, DebugData: errEmptySidecar}
+				return types.TransactionResult{Transaction: transaction, EthTx: ethTx, FailedValidation: true, DebugData: errEmptySidecar}
 			}
 			log.Tracef("adding flag TFWithSidecar for transaction %v", hash)
 
 			transaction.AddFlags(types.TFWithSidecar)
 		}
-
 	}
 
 	result := t.BxTxStore.Add(hash, content, shortID, network, false, transaction.Flags(), timestamp, networkChainID, sender)
+	result.EthTx = ethTx
 
-	// if no new content we can leave
 	if !result.NewContent {
 		return result
 	}
@@ -127,24 +139,23 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 		return result
 	}
 
-	// sender should already be populated here (not EMPTY) so we will not extract it
-	if ethTx == nil {
-		ethTx, err = result.Transaction.MakeAndSetEthTransaction(sender)
+	result.Nonce, err = ethTx.Nonce()
+	if err != nil {
+		log.Errorf("unable to get nonce for transaction %v", result.Transaction.Hash())
+		result.FailedValidation = true
+		return result
+	}
+
+	if result.Transaction.Flags().IsWithSidecar() {
+		tx, err := ethTx.Tx()
 		if err != nil {
 			log.Errorf("unable to parse already validated transaction %v with content %v", result.Transaction.Hash(), result.Transaction.Content())
 			result.FailedValidation = true
 			return result
 		}
+		t.blobCompressorStorage.StoreKzgCommitmentToTxHashRecords(tx)
 	}
 
-	result.Nonce = ethTx.Nonce()
-
-	if result.Transaction.Flags().IsWithSidecar() {
-		// this function is NoOp on Relays
-		t.blobCompressorStorage.StoreKzgCommitmentToTxHashRecords(ethTx.Tx())
-	}
-
-	// if reuseNonce is disabled or network disables sender extraction, we can leave
 	if !t.isReuseNonceActive(network) || sender == types.EmptySender {
 		return result
 	}
@@ -157,10 +168,10 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 	}
 
 	if seenNonce {
-		// mark tx as reuse nonce
 		result.Transaction.AddFlags(types.TFReusedNonce)
-		from, _ := ethTx.From() // we already validated this transaction so we can ignore the error
-		result.DebugData = fmt.Sprintf("reuse nonce detected. New transaction %v from %v with nonce %v is reusing nonce with existing tx %v on network %v", result.Transaction.Hash(), from, ethTx.Nonce(), otherTx, networkChainID)
+		from, _ := ethTx.From()   //nolint:errcheck // from used for debug message only; error path is non-critical
+		nonce, _ := ethTx.Nonce() //nolint:errcheck // nonce used for debug message only; error path is non-critical
+		result.DebugData = fmt.Sprintf("reuse nonce detected. New transaction %v from %v with nonce %v is reusing nonce with existing tx %v on network %v", result.Transaction.Hash(), from, nonce, otherTx, networkChainID)
 		return result
 	}
 
@@ -168,7 +179,7 @@ func (t *EthTxStore) add(hash types.SHA256Hash, content types.TxContent, shortID
 }
 
 func (t *EthTxStore) submitTxsToSenderExtractor(result types.TransactionResult) {
-	t.senderExtractor.submitEth(result.Transaction)
+	t.senderExtractor.submitEth(result.EthTx)
 }
 
 // Stop halts the nonce tracker in addition to regular tx service cleanup
@@ -231,26 +242,53 @@ func (nt *nonceTracker) setTransaction(tx *types.EthTransaction, from *common.Ad
 	reuseNonceGasChange := new(big.Float).SetFloat64(nt.networkConfig[network].AllowGasPriceChangeReuseSenderNonce)
 	reuseNonceDelay := time.Duration(nt.networkConfig[network].AllowTimeReuseSenderNonce) * time.Second
 
+	gasFeeCap, err := tx.EffectiveGasFeeCap()
+	if err != nil {
+		log.Errorf("unable to get gas fee cap for transaction: %v", err)
+		return
+	}
 	intGasFeeCap := new(big.Int)
-	gasFeeCap := new(big.Float).SetInt(tx.EffectiveGasFeeCap())
-	gasFeeCap.Mul(gasFeeCap, reuseNonceGasChange).Int(intGasFeeCap)
+	gasFeeCapF := new(big.Float).SetInt(gasFeeCap)
+	gasFeeCapF.Mul(gasFeeCapF, reuseNonceGasChange).Int(intGasFeeCap)
 
+	gasTipCap, err := tx.EffectiveGasTipCap()
+	if err != nil {
+		log.Errorf("unable to get gas tip cap for transaction: %v", err)
+		return
+	}
 	intGasTipCap := new(big.Int)
-	gasTipCap := new(big.Float).SetInt(tx.EffectiveGasTipCap())
-	gasTipCap.Mul(gasTipCap, reuseNonceGasChange).Int(intGasTipCap)
+	gasTipCapF := new(big.Float).SetInt(gasTipCap)
+	gasTipCapF.Mul(gasTipCapF, reuseNonceGasChange).Int(intGasTipCap)
 
+	blobGasCap, err := tx.EffectiveBlobGasFeeCap()
+	if err != nil {
+		log.Errorf("unable to get blob gas fee cap for transaction: %v", err)
+		return
+	}
 	intBlobGasCap := new(big.Int)
-	blobGasCap := new(big.Float).SetInt(tx.EffectiveBlobGasFeeCap())
-	blobGasCap.Mul(blobGasCap, reuseNonceGasChange).Int(intBlobGasCap)
+	blobGasCapF := new(big.Float).SetInt(blobGasCap)
+	blobGasCapF.Mul(blobGasCapF, reuseNonceGasChange).Int(intBlobGasCap)
+
+	txHash, err := tx.Hash()
+	if err != nil {
+		log.Errorf("unable to get hash for transaction: %v", err)
+		return
+	}
+
+	nonce, err := tx.Nonce()
+	if err != nil {
+		log.Errorf("unable to get nonce for transaction: %v", err)
+		return
+	}
 
 	tracked := trackedTx{
-		hash:       tx.Hash(),
+		hash:       txHash,
 		expireTime: nt.clock.Now().Add(reuseNonceDelay),
 		gasFeeCap:  intGasFeeCap,
 		gasTipCap:  intGasTipCap,
 		blobGasCap: intBlobGasCap,
 	}
-	nt.addressNonceToTx.Store(fromNonceKey(from, tx.Nonce()), tracked)
+	nt.addressNonceToTx.Store(fromNonceKey(from, nonce), tracked)
 }
 
 // isReuseNonceActive returns whether reuse nonce tracking is active
@@ -266,13 +304,31 @@ func (nt *nonceTracker) track(tx *types.EthTransaction, network bxtypes.NetworkN
 		return false, nil, err
 	}
 
-	oldTx, ok := nt.getTransaction(from, tx.Nonce())
+	nonce, err := tx.Nonce()
+	if err != nil {
+		return false, nil, err
+	}
+
+	oldTx, ok := nt.getTransaction(from, nonce)
 	if !ok {
 		nt.setTransaction(tx, from, network)
 		return false, nil, nil
 	}
 
-	if (tx.EffectiveGasFeeCap().Cmp(oldTx.gasFeeCap) >= 0 && tx.EffectiveGasTipCap().Cmp(oldTx.gasTipCap) >= 0 && tx.EffectiveBlobGasFeeCapIntCmp(oldTx.blobGasCap) >= 0) || nt.clock.Now().After(oldTx.expireTime) {
+	gasFeeCap, err := tx.EffectiveGasFeeCap()
+	if err != nil {
+		return false, nil, err
+	}
+	gasTipCap, err := tx.EffectiveGasTipCap()
+	if err != nil {
+		return false, nil, err
+	}
+	blobGasCmp, err := tx.EffectiveBlobGasFeeCapIntCmp(oldTx.blobGasCap)
+	if err != nil {
+		return false, nil, err
+	}
+
+	if (gasFeeCap.Cmp(oldTx.gasFeeCap) >= 0 && gasTipCap.Cmp(oldTx.gasTipCap) >= 0 && blobGasCmp >= 0) || nt.clock.Now().After(oldTx.expireTime) {
 		nt.setTransaction(tx, from, network)
 		return false, nil, nil
 	}

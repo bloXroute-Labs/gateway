@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OffchainLabs/prysm/v7/config/params"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
 	prysmTypes "github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
 	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 
@@ -47,7 +47,7 @@ func (m *BlobSidecarCacheManager) AddBlobSidecar(blobSidecar *ethpb.DataColumnSi
 
 	value, _ := m.blobSidecars.LoadOrStore(blockHashStr, &BlobCacheValue{
 		slot: blobSidecar.SignedBlockHeader.Header.Slot,
-		ch:   make(chan *ethpb.DataColumnSidecar, params.BeaconConfig().NumberOfColumns),
+		ch:   make(chan *ethpb.DataColumnSidecar, fieldparams.NumberOfColumns),
 	})
 
 	value.closeLock.RLock()
@@ -71,7 +71,7 @@ func (m *BlobSidecarCacheManager) SubscribeToBlobByBlockHash(blockHash string, s
 	blockHash = strings.TrimPrefix(blockHash, "0x")
 	value, _ := m.blobSidecars.LoadOrStore(blockHash, &BlobCacheValue{
 		slot: slot,
-		ch:   make(chan *ethpb.DataColumnSidecar, params.BeaconConfig().NumberOfColumns),
+		ch:   make(chan *ethpb.DataColumnSidecar, fieldparams.NumberOfColumns),
 	})
 
 	value.closeLock.RLock()

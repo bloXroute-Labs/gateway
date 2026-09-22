@@ -217,8 +217,8 @@ func (r *TxReceiptsNotification) WithFields(fields []string) Notification {
 }
 
 // Filters -
-func (r *TxReceiptsNotification) Filters() map[string]interface{} {
-	return nil
+func (r *TxReceiptsNotification) Filters() (map[string]interface{}, error) {
+	return nil, nil
 }
 
 // LocalRegion -

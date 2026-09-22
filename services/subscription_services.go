@@ -4,6 +4,7 @@ import (
 	"maps"
 
 	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	baseutils "github.com/bloXroute-Labs/gateway/v2/utils"
 )
@@ -14,6 +15,7 @@ type SubscriptionServices interface {
 	SendUnsubscribeNotification(*types.SubscriptionModel)
 	SendSubscriptionResetNotification([]types.SubscriptionModel)
 	GenerateSubscriptionID(bool) string
+	Close(reason string) error
 }
 
 // NoOpSubscriptionServices no-op implementation of SubscriptionServices interface
@@ -43,6 +45,11 @@ func (n NoOpSubscriptionServices) SendSubscriptionResetNotification([]types.Subs
 // GenerateSubscriptionID generate uuid
 func (n NoOpSubscriptionServices) GenerateSubscriptionID(ethSubscribe bool) string {
 	return generateSubscriptionID(ethSubscribe)
+}
+
+// Close - no-op
+func (n NoOpSubscriptionServices) Close(string) error {
+	return nil
 }
 
 func generateSubscriptionID(ethSubscribe bool) string {

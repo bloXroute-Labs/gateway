@@ -6,6 +6,8 @@
 *.dylib
 .idea/
 bin/
+# stray binary from `go build ./cmd/gateway` at module root (make builds into bin/)
+/gateway
 datadir/
 ssl/
 logs/

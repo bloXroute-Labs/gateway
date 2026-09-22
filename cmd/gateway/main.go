@@ -88,8 +88,6 @@ func main() {
 			utils.NoStats,
 			utils.EnableBloomFilter,
 			utils.TxIncludeSenderInFeed,
-			utils.OFACEndpoint,
-			utils.OFACBackupEndpoint,
 			utils.BeaconTrustedPeersFileFlag,
 			utils.BeaconPort,
 			utils.EnableQuicFlag,
@@ -255,8 +253,6 @@ func runGateway(c *cli.Context) error {
 		len(ethConfig.StaticPeers.Enodes()),
 		c.Bool(utils.EnableBloomFilter.Name),
 		c.Bool(utils.TxIncludeSenderInFeed.Name),
-		c.String(utils.OFACEndpoint.Name),
-		c.String(utils.OFACBackupEndpoint.Name),
 	)
 	if err != nil {
 		return err
