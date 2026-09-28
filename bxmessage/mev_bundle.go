@@ -14,7 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
-	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage/utils"
 	"github.com/bloXroute-Labs/gateway/v2/types"

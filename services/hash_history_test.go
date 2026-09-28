@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/clock"
 
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )

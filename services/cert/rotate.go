@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
-	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk"
 )
 
 const rotateInterval = 24 * time.Hour

@@ -21,13 +21,13 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/bloXroute-Labs/bxcommon-go/cert"
-	"github.com/bloXroute-Labs/bxcommon-go/clock"
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
-	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
-	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
-	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/cert"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/clock"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/syncmap"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
@@ -139,7 +139,6 @@ type gateway struct {
 	ignoredRelays   *syncmap.SyncMap[string, bxtypes.RelayInfo]
 	relaysToSwitch  *syncmap.SyncMap[string, bool]
 	senderExtractor *services.SenderExtractor
-
 }
 
 // GeneratePeers generate string peers separated by comma
@@ -417,7 +416,6 @@ func (g *gateway) Run() error {
 		types.AllFeedTypes,
 		feedFanOutWorkers,
 	)
-
 
 	txFromFieldIncludable := blockchainNetwork.EnableCheckSenderNonce || g.txIncludeSenderInFeed
 

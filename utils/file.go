@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
 )
 
 // TriggerOnFileChanged triggers the given function when the file changes

@@ -9,13 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
-	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
@@ -45,21 +45,21 @@ type server struct {
 
 // grpcParams server params
 type grpcParams struct {
-	node                           connections.BxListener
-	sdn                            sdnsdk.SDNHTTP
-	accService                     account.Accounter
-	bridge                         blockchain.Bridge
-	blockchainPeers                []types.NodeEndpoint
-	wsManager                      blockchain.WSManager
-	bdnStats                       *bxmessage.BdnPerformanceStats
-	timeStarted                    time.Time
-	gatewayPublicKey               string
-	connector                      Connector
-	txFromFieldIncludable          bool
-	feedManager                    feedManager
-	txStore                        services.TxStore
-	chainID                        bxtypes.NetworkID
-	senderExtractor                *services.SenderExtractor
+	node                  connections.BxListener
+	sdn                   sdnsdk.SDNHTTP
+	accService            account.Accounter
+	bridge                blockchain.Bridge
+	blockchainPeers       []types.NodeEndpoint
+	wsManager             blockchain.WSManager
+	bdnStats              *bxmessage.BdnPerformanceStats
+	timeStarted           time.Time
+	gatewayPublicKey      string
+	connector             Connector
+	txFromFieldIncludable bool
+	feedManager           feedManager
+	txStore               services.TxStore
+	chainID               bxtypes.NetworkID
+	senderExtractor       *services.SenderExtractor
 }
 
 // newServer return new server object
@@ -169,7 +169,7 @@ func (g *server) Status(ctx context.Context, req *pb.StatusRequest) (*pb.StatusR
 		Relays: g.relays(),
 		AccountInfo: &pb.AccountInfo{
 			AccountId:  string(accountModel.AccountID),
-			ExpireDate: accountModel.ExpireDate,
+			ExpireDate: accountModel.ExpireDate.Format(bxtypes.TimeDateLayoutISO),
 		},
 	}
 

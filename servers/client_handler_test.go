@@ -5,14 +5,14 @@ import (
 	"testing"
 	"time"
 
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/metrics"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/sync/errgroup"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
-	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/config"

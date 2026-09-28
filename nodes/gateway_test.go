@@ -20,11 +20,11 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2/metrics"
 
-	"github.com/bloXroute-Labs/bxcommon-go/cert"
-	"github.com/bloXroute-Labs/bxcommon-go/clock"
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
-	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/cert"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/clock"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
@@ -1343,7 +1343,6 @@ func TestGateway_ConnectionStatus(t *testing.T) {
 	require.True(t, g.bdnStats.NodeStats()["123.45.6.78 1234"].IsConnected)
 }
 
-
 func createPeerData(timeNodeConnected string) ([]*types.NodeEndpoint, map[string]*bxmessage.BdnPerformanceStatsData) {
 	endpoints := []*types.NodeEndpoint{
 		{
@@ -1530,14 +1529,14 @@ func mockAccountBurstRateLimit(g *gateway, limit sdnmessage.BDNServiceLimit) *sd
 			AccountID: g.accountID,
 		},
 		UnpaidTransactionBurstLimit: sdnmessage.BDNQuotaService{
-			ExpireDateTime: time.Now().Add(12 * time.Hour),
+			ExpireDate: bxtypes.NewISODate(time.Now().Add(12 * time.Hour)),
 			MsgQuota: sdnmessage.BDNService{
 				Limit:             limit,
 				BehaviorLimitFail: sdnmessage.BehaviorBlock,
 			},
 		},
 		PaidTransactionBurstLimit: sdnmessage.BDNQuotaService{
-			ExpireDateTime: time.Now().Add(12 * time.Hour),
+			ExpireDate: bxtypes.NewISODate(time.Now().Add(12 * time.Hour)),
 			MsgQuota: sdnmessage.BDNService{
 				Limit:             limit,
 				BehaviorLimitFail: sdnmessage.BehaviorBlock,

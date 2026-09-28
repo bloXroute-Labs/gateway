@@ -14,16 +14,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bloXroute-Labs/bxcommon-go/cert"
-	bxcli "github.com/bloXroute-Labs/bxcommon-go/cli"
-	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/cert"
+	bxcli "github.com/bloXroute-Labs/bxcommon-go/v2/cli"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/urfave/cli/v2"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
-	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
 
 	"github.com/bloXroute-Labs/gateway/v2/config"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"

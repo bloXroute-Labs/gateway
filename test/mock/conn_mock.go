@@ -13,8 +13,8 @@ import (
 	reflect "reflect"
 	time "time"
 
-	logger "github.com/bloXroute-Labs/bxcommon-go/logger"
-	types "github.com/bloXroute-Labs/bxcommon-go/types"
+	logger "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
+	types "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	bxmessage "github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	connections "github.com/bloXroute-Labs/gateway/v2/connections"
 	types0 "github.com/bloXroute-Labs/gateway/v2/types"

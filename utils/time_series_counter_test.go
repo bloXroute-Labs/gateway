@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bloXroute-Labs/bxcommon-go/clock"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/clock"
 	"github.com/stretchr/testify/assert"
 )
 

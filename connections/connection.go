@@ -3,12 +3,12 @@ package connections
 import (
 	"time"
 
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
-//go:generate mockgen -destination ../../bxgateway/test/mock/mock_sdnhttp.go -package mock github.com/bloXroute-Labs/bxcommon-go/sdnsdk SDNHTTP
+//go:generate mockgen -destination ../../bxgateway/test/mock/mock_sdnhttp.go -package mock github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk SDNHTTP
 
 // ConnectionDetails interface of base details for all connections
 type ConnectionDetails interface {

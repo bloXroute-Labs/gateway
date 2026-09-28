@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bloXroute-Labs/bxcommon-go/clock"
-	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/clock"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/bloXroute-Labs/gateway/v2/utils"

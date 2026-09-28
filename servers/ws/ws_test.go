@@ -18,9 +18,9 @@ import (
 	"go.uber.org/mock/gomock"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
-	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
@@ -40,6 +40,7 @@ var (
 	errAuth = fmt.Errorf("some error")
 	wsPort  = 28332
 	wsURL   = fmt.Sprintf("ws://localhost:%v/ws", wsPort)
+	expDate = bxtypes.NewISODate(time.Date(2999, 12, 31, 0, 0, 0, 0, time.UTC))
 
 	accountIDToAccountModel = map[bxtypes.AccountID]sdnmessage.Account{
 		"a": {AccountInfo: sdnmessage.AccountInfo{AccountID: "a", TierName: sdnmessage.ATierElite}, SecretHash: "123456"},
@@ -49,26 +50,26 @@ var (
 		"gw": {
 			AccountInfo: sdnmessage.AccountInfo{
 				AccountID:  "gw",
-				ExpireDate: "2999-12-31",
+				ExpireDate: expDate,
 				TierName:   sdnmessage.ATierEnterprise,
 			},
 			SecretHash: "secret",
 			NewTransactionStreaming: sdnmessage.BDNFeedService{
-				ExpireDate: "2999-12-31",
+				ExpireDate: expDate,
 				Feed: sdnmessage.FeedProperties{
 					AllowFiltering:  true,
 					AvailableFields: []string{"all"},
 				},
 			},
 			TransactionReceiptFeed: sdnmessage.BDNFeedService{
-				ExpireDate: "2999-12-31",
+				ExpireDate: expDate,
 				Feed: sdnmessage.FeedProperties{
 					AllowFiltering:  true,
 					AvailableFields: []string{"all"},
 				},
 			},
 			OnBlockFeed: sdnmessage.BDNFeedService{
-				ExpireDate: "2999-12-31",
+				ExpireDate: expDate,
 				Feed: sdnmessage.FeedProperties{
 					AllowFiltering:  true,
 					AvailableFields: []string{"all"},

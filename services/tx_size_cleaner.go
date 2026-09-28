@@ -5,8 +5,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
-	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/syncmap"
 
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )

@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
 
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	"github.com/stretchr/testify/require"
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"

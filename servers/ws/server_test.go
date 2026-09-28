@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	"github.com/cenkalti/backoff/v5"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"

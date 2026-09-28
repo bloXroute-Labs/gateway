@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bloXroute-Labs/bxcommon-go/cert"
-	"github.com/bloXroute-Labs/bxcommon-go/clock"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/cert"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/clock"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/utils"

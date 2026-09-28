@@ -15,10 +15,10 @@ import (
 
 	"github.com/sourcegraph/jsonrpc2"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
-	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
-	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/metrics"
@@ -727,13 +727,7 @@ func (f *Manager) midnightCleanup(ctx context.Context) {
 					continue
 				}
 
-				expireDateTime, err := time.Parse(bxgateway.TimeDateLayoutISO, accountModel.ExpireDate)
-				if err != nil {
-					log.Debugf("can't parse account model expiration date for %v, while account has active feed subscription (%v), feed type: %v with %v since %s", sub.AccountID, subID, sub.feedType, sub.feedConnectionType, sub.timeOpenedFeed)
-					continue
-				}
-
-				if time.Now().UTC().After(expireDateTime.UTC()) {
+				if accountModel.IsExpired() {
 					// if account expires, disconnect client connection
 					log.Debugf("removing feed subscription for %v because account expires on %v, the feed subscription was (%v), feed type: %v with %v since %s", sub.AccountID, accountModel.ExpireDate, subID, sub.feedType, sub.feedConnectionType, sub.timeOpenedFeed)
 					subToRemove = append(subToRemove, subID)

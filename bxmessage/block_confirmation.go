@@ -1,7 +1,7 @@
 package bxmessage
 
 import (
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
 )
 
 // BlockConfirmation represents a transactions that can be cleaned from tx-service due to block confirmation

@@ -1,6 +1,6 @@
 package types
 
-import "github.com/bloXroute-Labs/bxcommon-go/types"
+import "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 
 // SubscriptionNotificationType represents the available feed subscription notification types
 type SubscriptionNotificationType string
