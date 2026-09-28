@@ -139,7 +139,6 @@ type gateway struct {
 	ignoredRelays   *syncmap.SyncMap[string, bxtypes.RelayInfo]
 	relaysToSwitch  *syncmap.SyncMap[string, bool]
 	senderExtractor *services.SenderExtractor
-
 }
 
 // GeneratePeers generate string peers separated by comma
@@ -417,7 +416,6 @@ func (g *gateway) Run() error {
 		types.AllFeedTypes,
 		feedFanOutWorkers,
 	)
-
 
 	txFromFieldIncludable := blockchainNetwork.EnableCheckSenderNonce || g.txIncludeSenderInFeed
 
