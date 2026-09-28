@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/syncmap"
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"

@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bloXroute-Labs/bxcommon-go/clock"
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/clock"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 )
 
 // RateLimiter represents any struct that can be used to limit the amount of calls per time period

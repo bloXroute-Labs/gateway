@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	bxclock "github.com/bloXroute-Labs/bxcommon-go/clock"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	bxclock "github.com/bloXroute-Labs/bxcommon-go/v2/clock"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	"github.com/stretchr/testify/assert"
 )
 

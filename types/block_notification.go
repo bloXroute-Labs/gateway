@@ -14,8 +14,8 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/holiman/uint256"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
-	"github.com/bloXroute-Labs/bxcommon-go/types"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/types"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/bdn"
 	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
@@ -380,9 +380,8 @@ type EthBlockNotification struct {
 	source           *NodeEndpoint
 	rawTxsMu         *sync.RWMutex
 	txsMu            *sync.RWMutex
-	// shared by every clone/WithFields copy, so transactions are encoded once per block, not per
-	// subscriber; unexported so copies that did not ask for raw transactions do not serialize them
-	rawTxsCache *[][]byte
+	rawTxsCache      *[][]byte
+	txsWithoutSender []map[string]interface{}
 }
 
 // NewEthBlockNotification creates ETH block notification
@@ -505,8 +504,15 @@ func (ethBlockNotification *EthBlockNotification) parseTransactionsWithSenders(s
 func (ethBlockNotification *EthBlockNotification) parseTransactions(includeFrom bool) []map[string]interface{} {
 	ethBlockNotification.txsMu.Lock()
 	defer ethBlockNotification.txsMu.Unlock()
-	if ethBlockNotification.Transactions != nil {
-		return ethBlockNotification.Transactions
+
+	// Separate caches, or the first caller decides whether "from" is there for everyone. Without a
+	// Block the raw path always includes it, so both variants share Transactions.
+	cache := &ethBlockNotification.Transactions
+	if !includeFrom && ethBlockNotification.Block != nil {
+		cache = &ethBlockNotification.txsWithoutSender
+	}
+	if *cache != nil {
+		return *cache
 	}
 
 	if ethBlockNotification.Block != nil {
@@ -521,7 +527,7 @@ func (ethBlockNotification *EthBlockNotification) parseTransactions(includeFrom 
 			ethTxs = append(ethTxs, txFields)
 		}
 
-		ethBlockNotification.Transactions = ethTxs
+		*cache = ethTxs
 		return ethTxs
 	}
 
@@ -531,7 +537,7 @@ func (ethBlockNotification *EthBlockNotification) parseTransactions(includeFrom 
 		return nil
 	}
 
-	ethBlockNotification.Transactions = ethTxsFromRaw
+	*cache = ethTxsFromRaw
 	return ethTxsFromRaw
 }
 

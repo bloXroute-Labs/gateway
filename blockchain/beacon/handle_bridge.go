@@ -16,7 +16,7 @@ import (
 	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	ssz "github.com/prysmaticlabs/fastssz"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/types"

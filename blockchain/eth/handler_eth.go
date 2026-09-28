@@ -6,7 +6,7 @@ import (
 	"math/big"
 	"time"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"

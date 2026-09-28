@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 

@@ -3,7 +3,7 @@ package bxmessage
 import (
 	"bytes"
 
-	bxclock "github.com/bloXroute-Labs/bxcommon-go/clock"
+	bxclock "github.com/bloXroute-Labs/bxcommon-go/v2/clock"
 
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )

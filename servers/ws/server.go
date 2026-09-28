@@ -10,12 +10,12 @@ import (
 
 	jsoniter "github.com/json-iterator/go"
 
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	"github.com/gorilla/websocket"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
-	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
-	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/config"

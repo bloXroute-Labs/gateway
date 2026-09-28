@@ -14,7 +14,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 	ssz "github.com/prysmaticlabs/fastssz"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
 )
 
 func (n *Node) subscribeRPC(topic string, handler libp2pNetwork.StreamHandler) {

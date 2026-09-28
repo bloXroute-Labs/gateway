@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	bxclock "github.com/bloXroute-Labs/bxcommon-go/clock"
+	bxclock "github.com/bloXroute-Labs/bxcommon-go/v2/clock"
 
 	bxethcommon "github.com/bloXroute-Labs/gateway/v2/blockchain/common"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"

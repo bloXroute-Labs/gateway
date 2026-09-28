@@ -1,8 +1,8 @@
 package bxmock
 
 import (
-	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 )
 
 // MockNetwork creates a mock network

@@ -11,7 +11,7 @@ import (
 
 	"github.com/struCoder/pidusage"
 
-	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
 
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )

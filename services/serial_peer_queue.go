@@ -1,9 +1,9 @@
 package services
 
 import (
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
-	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/syncmap"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"

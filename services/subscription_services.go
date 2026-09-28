@@ -3,7 +3,7 @@ package services
 import (
 	"maps"
 
-	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
 
 	"github.com/bloXroute-Labs/gateway/v2/types"
 	baseutils "github.com/bloXroute-Labs/gateway/v2/utils"

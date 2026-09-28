@@ -1,6 +1,6 @@
 package types
 
-import bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+import bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 
 // SubscriptionResponse struct that represent subscription response from the node
 type SubscriptionResponse struct {

@@ -4,8 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	"github.com/google/uuid"
 
 	"github.com/bloXroute-Labs/gateway/v2/types"

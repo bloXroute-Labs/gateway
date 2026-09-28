@@ -12,9 +12,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
-	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	pb "github.com/bloXroute-Labs/gateway/v2/protobuf"

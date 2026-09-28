@@ -3,10 +3,10 @@ package services
 import (
 	"time"
 
-	"github.com/bloXroute-Labs/bxcommon-go/clock"
-	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
-	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/clock"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/syncmap"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 
 	"github.com/bloXroute-Labs/gateway/v2/utils"
 )

@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"slices"
 
-	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/sdnsdk/message"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
 
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler/filter"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler/validator"

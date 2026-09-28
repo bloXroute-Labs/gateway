@@ -16,8 +16,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	ssz "github.com/prysmaticlabs/fastssz"
 
-	"github.com/bloXroute-Labs/bxcommon-go/clock"
-	"github.com/bloXroute-Labs/bxcommon-go/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/clock"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/logger"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"
 	"github.com/bloXroute-Labs/gateway/v2/types"

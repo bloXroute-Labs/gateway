@@ -13,7 +13,7 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
 )
 
 // ErrEmptyTransaction is returned when the tx is not set

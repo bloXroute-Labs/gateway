@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/bloXroute-Labs/bxcommon-go/sdnsdk"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain"

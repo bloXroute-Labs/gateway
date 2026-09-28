@@ -3,7 +3,7 @@ package bxmessage
 import (
 	"testing"
 
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	"github.com/stretchr/testify/assert"
 )
 

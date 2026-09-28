@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/google/uuid"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
 )
 
 // Abs returns the absolute value of an integer

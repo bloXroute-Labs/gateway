@@ -11,8 +11,8 @@ import (
 	prysmTypes "github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
 	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
-	"github.com/bloXroute-Labs/bxcommon-go/syncmap"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/syncmap"
 )
 
 const (

@@ -6,7 +6,7 @@ import (
 	libp2pPeer "github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
 )
 
 // InterceptPeerDial tests whether we're permitted to Dial the specified peer.

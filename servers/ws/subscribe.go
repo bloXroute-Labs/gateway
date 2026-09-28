@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	"github.com/gorilla/websocket"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
 
 	"github.com/bloXroute-Labs/gateway/v2"
 	"github.com/bloXroute-Labs/gateway/v2/jsonrpc"

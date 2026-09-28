@@ -36,9 +36,6 @@ const TimeDateLayoutISO = "2006-01-02"
 // TimeLayoutISO - used to parse ISO time format string
 const TimeLayoutISO = "2006-01-02 15:04:05-0700"
 
-// ExpiredDate - constant for an expired date
-const ExpiredDate = "1970-01-01"
-
 // AsyncMsgChannelSize - size of async message channel
 const AsyncMsgChannelSize = 500
 

@@ -12,7 +12,7 @@ package mock
 import (
 	reflect "reflect"
 
-	types "github.com/bloXroute-Labs/bxcommon-go/types"
+	types "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	bxmessage "github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	connections "github.com/bloXroute-Labs/gateway/v2/connections"
 	types0 "github.com/bloXroute-Labs/gateway/v2/types"

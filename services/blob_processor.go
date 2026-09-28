@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/beacon"
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"

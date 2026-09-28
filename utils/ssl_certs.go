@@ -5,7 +5,7 @@ import (
 	"os"
 	"path"
 
-	"github.com/bloXroute-Labs/bxcommon-go/cert"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/cert"
 
 	"github.com/bloXroute-Labs/gateway/v2/test"
 )

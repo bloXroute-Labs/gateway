@@ -116,8 +116,8 @@ var ProtocolVersions = []uint{ETH68, uint(eth.ETH69)}
 
 // supportedProtocols is the map of networks to devp2p protocols supported by this client
 var supportedProtocols = map[uint64][]uint32{
-	network.BSCMainnetChainID: {ETH68, eth.ETH69},
-	network.BSCTestnetChainID: {ETH68, eth.ETH69},
+	network.BSCMainnetChainID: {ETH68},
+	network.BSCTestnetChainID: {ETH68},
 	network.EthMainnetChainID: {ETH68, eth.ETH69},
 	network.HoleskyChainID:    {ETH68, eth.ETH69},
 }

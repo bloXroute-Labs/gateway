@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"sync"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
 	"github.com/gorilla/websocket"
 	jsoniter "github.com/json-iterator/go"
 )

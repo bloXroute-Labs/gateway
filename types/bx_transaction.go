@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pbbase "github.com/bloXroute-Labs/gateway/v2/protobuf"

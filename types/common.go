@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 )
 
 // UInt32Len is the byte length of unsigned 32bit integers

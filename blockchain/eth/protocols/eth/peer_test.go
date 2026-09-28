@@ -16,11 +16,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bloXroute-Labs/bxcommon-go/clock"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/types"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/clock"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/core"
 	"github.com/bloXroute-Labs/gateway/v2/blockchain/eth/test"
+	"github.com/bloXroute-Labs/gateway/v2/blockchain/network"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
 )
 
@@ -364,4 +365,55 @@ func TestPeer_BSC_SendFutureBlock_Delay(t *testing.T) {
 	// block 1a will be sent with delay
 	assert.True(t, rw.ExpectWrite(maxWriteTimeout))
 	assert.Equal(t, 1, len(rw.WriteMessages))
+}
+
+func indexOfCode(codes []uint64, want uint64) int {
+	for i, c := range codes {
+		if c == want {
+			return i
+		}
+	}
+	return len(codes)
+}
+
+// TestPeer_Handshake68BSCUpgradeStatus pins the BSC UpgradeStatus exchange on eth/68, the version
+// every BSC peer negotiates with the gateway.
+func TestPeer_Handshake68BSCUpgradeStatus(t *testing.T) {
+	forkID := genForkID(t)
+	executionLayerForks := []string{base64.StdEncoding.EncodeToString(forkID[:])}
+
+	genesis := common.Hash{2, 3, 4}
+	head := common.Hash{1, 2, 3}
+
+	rw := test.NewMsgReadWriter(100, -1, time.Second*5)
+	peer := newPeer(context.Background(), p2p.NewPeerPipe(test.GenerateEnodeID(), "bsc test peer", []p2p.Cap{}, nil), rw, ETH68, &clock.MockClock{}, network.BSCMainnetChainID)
+
+	rw.QueueIncomingMessage(eth.StatusMsg, StatusPacket68{
+		ProtocolVersion: ETH68,
+		NetworkID:       network.BSCMainnetChainID,
+		TD:              big.NewInt(10),
+		Head:            head,
+		Genesis:         genesis,
+		ForkID:          forkid.ID{Hash: forkID},
+	})
+	rw.QueueIncomingMessage(UpgradeStatusMsg, UpgradeStatusPacket{})
+
+	chain := core.NewChain(context.Background(), 30*time.Second)
+	err := peer.Handshake(chain, network.BSCMainnetChainID, new(big.Int), head, genesis, executionLayerForks)
+	require.NoError(t, err)
+
+	require.Eventually(t,
+		func() bool { return rw.SentCount.Load() >= 3 },
+		time.Second,
+		5*time.Millisecond,
+		"expected Status, UpgradeStatus and NewPooledTransactionHashes to be sent",
+	)
+
+	codes := make([]uint64, 0, len(rw.WriteMessages))
+	for _, m := range rw.WriteMessages {
+		codes = append(codes, m.Code)
+	}
+	require.Contains(t, codes, uint64(UpgradeStatusMsg), "sent codes were %v", codes)
+	assert.Less(t, indexOfCode(codes, UpgradeStatusMsg), indexOfCode(codes, eth.NewPooledTransactionHashesMsg),
+		"UpgradeStatus must be sent before NewPooledTransactionHashes")
 }

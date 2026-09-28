@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"regexp"
 
-	log "github.com/bloXroute-Labs/bxcommon-go/logger"
+	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
 )
 
 const publicIPResolver = "http://checkip.dyndns.org/"
