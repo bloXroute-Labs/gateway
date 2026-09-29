@@ -32,14 +32,6 @@ type WSProvider struct {
 	syncStatus    blockchain.NodeSyncStatus
 }
 
-// RPCResponse represents the Ethereum RPC response
-type RPCResponse struct {
-	JSONRPC string      `json:"jsonrpc"`
-	ID      interface{} `json:"id"`
-	Method  string      `json:"method"`
-	Params  interface{} `json:"params"`
-}
-
 var validRPCCallPayloadFields = []string{"data", "from", "to", "gasPrice", "gas", "address", "pos"}
 
 var validRPCCallMethods = []string{"eth_call", "eth_getBalance", "eth_getTransactionCount", "eth_getCode", "eth_getStorageAt", "eth_blockNumber"}

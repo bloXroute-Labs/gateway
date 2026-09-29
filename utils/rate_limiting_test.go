@@ -6,7 +6,6 @@ import (
 	"time"
 
 	bxclock "github.com/bloXroute-Labs/bxcommon-go/v2/clock"
-	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -130,63 +129,3 @@ func TestLeakyBucketRateLimiter_Take_BucketCounterSameWhenOutOfCalls(t *testing.
 	}
 }
 
-func TestTxTraceLeakyBucketRateLimiter_Take_HasCorrectLogging(t *testing.T) {
-	mockClock := &bxclock.MockClock{}
-	startTime := time.Unix(0, 0)
-	mockClock.SetTime(startTime)
-	l := NewTxToolsLeakyBucketRateLimiter(mockClock, 2, PerSecond, "abc")
-
-	hook := log.NewGlobal()
-
-	res, counter := l.Take()
-	if len(hook.AllEntries()) != 1 {
-		t.FailNow()
-	}
-	assert.True(t, res)
-	assert.Equal(t, "Account ID abc has 1 / 2 tx trace calls left per second", hook.LastEntry().Message)
-	assert.Equal(t, float32(1), counter)
-
-	res, counter = l.Take()
-	if len(hook.AllEntries()) != 2 {
-		t.FailNow()
-	}
-	assert.True(t, res)
-	assert.Equal(t, "Account ID abc has 0 / 2 tx trace calls left per second", hook.LastEntry().Message)
-	assert.Equal(t, float32(0), counter)
-
-	mockClock.SetTime(startTime.Add(time.Millisecond * 300))
-	res, counter = l.Take()
-	if len(hook.AllEntries()) != 3 {
-		t.FailNow()
-	}
-	assert.False(t, res)
-	assert.Equal(t, "Account ID abc has 0.6 / 2 tx trace calls left per second", hook.LastEntry().Message)
-	assert.Equal(t, float32(0.6), counter)
-
-	mockClock.SetTime(startTime.Add(time.Millisecond * 450))
-	res, counter = l.Take()
-	if len(hook.AllEntries()) != 4 {
-		t.FailNow()
-	}
-	assert.False(t, res)
-	assert.Equal(t, "Account ID abc has 0.90000004 / 2 tx trace calls left per second", hook.LastEntry().Message)
-	assert.Equal(t, float32(0.90000004), counter)
-
-	mockClock.SetTime(startTime.Add(time.Millisecond * 500))
-	res, counter = l.Take()
-	if len(hook.AllEntries()) != 5 {
-		t.FailNow()
-	}
-	assert.True(t, res)
-	assert.Equal(t, "Account ID abc has 0 / 2 tx trace calls left per second", hook.LastEntry().Message)
-	assert.Equal(t, float32(0), counter)
-
-	mockClock.SetTime(startTime.Add(time.Second * 2))
-	res, counter = l.Take()
-	if len(hook.AllEntries()) != 6 {
-		t.FailNow()
-	}
-	assert.True(t, res)
-	assert.Equal(t, "Account ID abc has 1 / 2 tx trace calls left per second", hook.LastEntry().Message)
-	assert.Equal(t, float32(1), counter)
-}

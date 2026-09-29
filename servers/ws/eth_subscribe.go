@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/gorilla/websocket"
 
@@ -56,11 +57,11 @@ func (h *handlerObj) handleRPCEthSubscribe(ctx context.Context, conn *conn, req 
 }
 
 func (h *handlerObj) handleEthSubscribeNewPendingTxs(ctx context.Context, conn *conn, req Request, ci types.ClientInfo) {
-	var feed types.FeedType
+	var feed bxtypes.FeedType
 	if h.pendingTxsSourceFromNode {
-		feed = types.PendingTxsFeed
+		feed = bxtypes.PendingTxsFeed
 	} else {
-		feed = types.NewTxsFeed
+		feed = bxtypes.NewTxsFeed
 	}
 
 	request := &ClientReq{
@@ -73,7 +74,7 @@ func (h *handlerObj) handleEthSubscribeNewPendingTxs(ctx context.Context, conn *
 	}
 	// since we are replacing newPendingTransactions with newTxs/pendingTx, any existing newTxs/pendingTxs suppose to make newPendingTransactions a duplicate subscription.
 	// But this is used only in external gateway where gateway account id is the same with request account id, so this is avoided
-	sub, errSubscribe := h.feedManager.Subscribe(request.Feed, types.WebSocketFeed, conn, ci, ro, true)
+	sub, errSubscribe := h.feedManager.Subscribe(request.Feed, bxtypes.WebSocketFeed, conn, ci, ro, true)
 	if errSubscribe != nil {
 		sendErrorMsg(ctx, jsonrpc.InvalidParams, errSubscribe.Error(), conn, req.ID)
 		return
@@ -109,12 +110,12 @@ func (h *handlerObj) handleEthSubscribeNewPendingTxs(ctx context.Context, conn *
 			}
 
 			switch request.Feed {
-			case types.NewTxsFeed:
+			case bxtypes.NewTxsFeed:
 				tx := (notification).(*types.NewTransactionNotification)
 				if h.sendTxNotificationEthFormat(ctx, subscriptionID, request, conn, tx) != nil {
 					return
 				}
-			case types.PendingTxsFeed:
+			case bxtypes.PendingTxsFeed:
 				tx := (notification).(*types.PendingTransactionNotification)
 				if h.sendTxNotificationEthFormat(ctx, subscriptionID, request, conn, &tx.NewTransactionNotification) != nil {
 					return
@@ -126,7 +127,7 @@ func (h *handlerObj) handleEthSubscribeNewPendingTxs(ctx context.Context, conn *
 
 func (h *handlerObj) handleEthSubscribeNewHeads(ctx context.Context, conn *conn, req Request, ci types.ClientInfo) {
 	request := &ClientReq{
-		Feed:     types.NewBlocksFeed,
+		Feed:     bxtypes.NewBlocksFeed,
 		Includes: []string{"header", "hash", "tx_contents.nonce"},
 	}
 
@@ -135,7 +136,7 @@ func (h *handlerObj) handleEthSubscribeNewHeads(ctx context.Context, conn *conn,
 	}
 	// since we are replacing newPendingTransactions with newTxs/pendingTx, any existing newTxs/pendingTxs suppose to make newPendingTransactions a duplicate subscription.
 	// But this is used only in external gateway where gateway account id is the same with request account id, so this is avoided
-	sub, errSubscribe := h.feedManager.Subscribe(request.Feed, types.WebSocketFeed, conn, ci, ro, true)
+	sub, errSubscribe := h.feedManager.Subscribe(request.Feed, bxtypes.WebSocketFeed, conn, ci, ro, true)
 	if errSubscribe != nil {
 		sendErrorMsg(ctx, jsonrpc.InvalidParams, errSubscribe.Error(), conn, req.ID)
 		return

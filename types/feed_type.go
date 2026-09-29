@@ -1,55 +1,21 @@
 package types
 
-// FeedType types of feeds
-type FeedType string
+import bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 
-// FeedType enumeration
-const (
-	NewTxsFeed      FeedType = "newTxs"
-	PendingTxsFeed  FeedType = "pendingTxs"
-	BDNBlocksFeed   FeedType = "bdnBlocks"
-	NewBlocksFeed   FeedType = "newBlocks"
-	OnBlockFeed     FeedType = "ethOnBlock"
-	TxReceiptsFeed  FeedType = "txReceipts"
-	TraceBlocksFeed FeedType = "traceBlocks" // only for BSC
-)
-
-// FeedConnectionType types of feeds
-type FeedConnectionType string
-
-// FeedConnectionType enumeration
-const (
-	WebSocketFeed FeedConnectionType = "ws"
-	GRPCFeed      FeedConnectionType = "grpc"
-)
-
-// Beacon blocks
-const (
-	NewBeaconBlocksFeed FeedType = "newBeaconBlocks"
-	BDNBeaconBlocksFeed FeedType = "bdnBeaconBlocks"
-)
+// TraceBlocksFeed is the trace blocks feed type (only for BSC)
+const TraceBlocksFeed bxtypes.FeedType = "traceBlocks"
 
 // AllFeedTypes lists every feed type declared in this package. Components pass it (optionally
 // extended with their own feed types) to the feed manager, which gives every listed type its own
 // notification channel so that a burst on one feed cannot starve the others.
-var AllFeedTypes = []FeedType{
-	NewTxsFeed,
-	PendingTxsFeed,
-	BDNBlocksFeed,
-	NewBlocksFeed,
-	OnBlockFeed,
-	TxReceiptsFeed,
+var AllFeedTypes = []bxtypes.FeedType{
+	bxtypes.NewTxsFeed,
+	bxtypes.PendingTxsFeed,
+	bxtypes.BDNBlocksFeed,
+	bxtypes.NewBlocksFeed,
+	bxtypes.OnBlockFeed,
+	bxtypes.TxReceiptsFeed,
 	TraceBlocksFeed,
-	NewBeaconBlocksFeed,
-	BDNBeaconBlocksFeed,
-}
-
-// Exists - checks if a field exists in feedType list
-func Exists(field FeedType, slice []FeedType) bool {
-	for _, valid := range slice {
-		if field == valid {
-			return true
-		}
-	}
-	return false
+	bxtypes.NewBeaconBlocksFeed,
+	bxtypes.BDNBeaconBlocksFeed,
 }

@@ -284,17 +284,6 @@ func (c *APIClient) subscribeToEvents(eventsURL string, handler func(msg *sse.Ev
 	}
 }
 
-func (c *APIClient) retry(fn func() error, maxTry int, sleep time.Duration) (attempt int, err error) {
-	for ; attempt < maxTry; attempt++ {
-		err = fn()
-		if err == nil {
-			break
-		}
-		time.Sleep(sleep)
-	}
-	return attempt + 1, err
-}
-
 // blockHeadEventHandler returns a function to handle server-sent events.
 // The returned function processes head events, gets blocks and sends them to BDN.
 func (c *APIClient) blockHeadEventHandler() func(msg *sse.Event) {

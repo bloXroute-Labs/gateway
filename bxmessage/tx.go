@@ -12,8 +12,7 @@ import (
 )
 
 const (
-	nanosInSecond        = 1e9
-	invalidWalletAddress = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+	nanosInSecond = 1e9
 )
 
 // Tx is the bloxroute message struct that carries a transaction from a specific blockchain
@@ -89,10 +88,6 @@ func (m *Tx) SetContent(content []byte) {
 	m.content = content
 }
 
-// SetShortID sets the assigned short ID
-func (m *Tx) SetShortID(sid types.ShortID) {
-	m.shortID = sid
-}
 
 // SetTimestamp sets the message creation timestamp
 func (m *Tx) SetTimestamp(timestamp time.Time) {
@@ -104,28 +99,6 @@ func (m *Tx) SetSender(sender types.Sender) {
 	copy(m.sender[:], sender[:])
 }
 
-// ClearProtectedAttributes unsets and validates fields that are restricted for gateways
-func (m *Tx) ClearProtectedAttributes() {
-	// Don't clear m.timestamp - GW should set it for relay to analyze
-	m.shortID = types.ShortIDEmpty
-	m.sourceID = [SourceIDLen]byte{}
-
-	m.flags &= ^types.TFDeliverToNode
-
-	// account ID should only be set on paid txs
-	if !m.Flags().IsPaid() {
-		m.accountID = [AccountIDLen]byte{}
-	}
-}
-
-// ClearInternalAttributes unsets fields that should not be seen by gateways
-func (m *Tx) ClearInternalAttributes() {
-	// not reset timestamp. Gateways use it to see if transaction is old or not
-	m.sourceID = [SourceIDLen]byte{}
-	m.accountID = [AccountIDLen]byte{}
-
-	m.flags &= ^types.TFPaidTx
-}
 
 // Flags returns the transaction flags
 func (m *Tx) Flags() (flags types.TxFlags) {
@@ -152,34 +125,6 @@ func (m *Tx) Sender() types.Sender {
 	return m.sender
 }
 
-// CompactClone returns a shallow clone of the current transaction, with the content omitted
-func (m *Tx) CompactClone() Tx {
-	return Tx{
-		BroadcastHeader: m.BroadcastHeader,
-		shortID:         m.shortID,
-		timestamp:       m.timestamp,
-		flags:           m.flags,
-		accountID:       m.accountID,
-		content:         nil,
-		quota:           m.quota,
-	}
-}
-
-// CleanClone returns a shallow clone of the current transaction, with the internal attributes removed
-func (m *Tx) CleanClone() Tx {
-	tx := Tx{
-		BroadcastHeader: m.BroadcastHeader,
-		shortID:         m.shortID,
-		timestamp:       m.timestamp,
-		flags:           m.flags,
-		accountID:       m.accountID,
-		content:         m.content,
-		quota:           m.quota,
-		sender:          m.sender,
-	}
-	tx.ClearInternalAttributes()
-	return tx
-}
 
 // Clone clones the caller Tx object and return cloned tx
 func (m Tx) Clone() *Tx {

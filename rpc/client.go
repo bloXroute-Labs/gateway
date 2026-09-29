@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/bloXroute-Labs/bxcommon-go/v2/auth"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -19,9 +20,9 @@ func AuthOption(grpcConfig *config.GRPC) (authOption grpc.DialOption, included b
 		included = true
 
 		if grpcConfig.EncodedAuthSet {
-			authOption = NewBLXRCredentials(grpcConfig.EncodedAuth)
+			authOption = auth.NewBLXRCredentials(grpcConfig.EncodedAuth)
 		} else {
-			authOption = NewBLXRCredentialsFromUserPassword(grpcConfig.User, grpcConfig.Password)
+			authOption = auth.NewBLXRCredentialsFromUserPassword(grpcConfig.User, grpcConfig.Password)
 		}
 	}
 	return

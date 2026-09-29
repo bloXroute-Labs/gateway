@@ -53,13 +53,6 @@ type BlockFromNode struct {
 	StartTime    time.Time
 }
 
-// BlockAnnouncement represents an available block from a given peer that can be requested
-type BlockAnnouncement struct {
-	Hash         types.SHA256Hash
-	PeerID       string
-	PeerEndpoint types.NodeEndpoint
-}
-
 // ConnectionStatus represents blockchain connection status
 type ConnectionStatus struct {
 	PeerEndpoint types.NodeEndpoint

@@ -55,10 +55,6 @@ func NewDefaultExpression(filters string, txFromFieldIncludable bool) (*Expressi
 	return newExpression(filters, txFromFieldIncludable, defaultEnv)
 }
 
-// NewExpression creates a new Expression with the provided env map.
-func NewExpression(filters string, txFromFieldIncludable bool, env map[string]interface{}) (*Expression, error) {
-	return newExpression(filters, txFromFieldIncludable, env)
-}
 
 // NewExpression creates and validates filters from a user's request
 func newExpression(filters string, txFromFieldIncludable bool, env map[string]interface{}) (*Expression, error) {
@@ -118,10 +114,6 @@ func (e *Expression) Evaluate(fields map[string]interface{}) (bool, error) {
 	return boolResult, nil
 }
 
-// Args returns the arguments used in the expression.
-func (e *Expression) Args() []string {
-	return e.args
-}
 
 // String returns the string representation of the expression.
 func (e *Expression) String() string {

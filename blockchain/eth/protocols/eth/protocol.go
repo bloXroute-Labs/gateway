@@ -3,6 +3,7 @@ package eth
 import (
 	"math/big"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/forkid"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -119,7 +120,7 @@ var supportedProtocols = map[uint64][]uint32{
 	network.BSCMainnetChainID: {ETH68},
 	network.BSCTestnetChainID: {ETH68},
 	network.EthMainnetChainID: {ETH68, eth.ETH69},
-	network.HoleskyChainID:    {ETH68, eth.ETH69},
+	bxtypes.HoleskyChainID:    {ETH68, eth.ETH69},
 }
 
 // protocolLengths is a mapping of each supported devp2p protocol to its message version length

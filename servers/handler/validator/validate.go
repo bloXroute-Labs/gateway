@@ -3,7 +3,7 @@ package validator
 import (
 	"fmt"
 
-	"github.com/bloXroute-Labs/gateway/v2/types"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 )
 
 const (
@@ -29,37 +29,37 @@ var (
 	validOnBlockParams     = []string{"name", "response", "block_height", "tag"}
 	validBeaconBlockParams = []string{"hash", "header", "slot", "body"}
 
-	validParamsMap = make(map[types.FeedType]map[string]struct{})
+	validParamsMap = make(map[bxtypes.FeedType]map[string]struct{})
 )
 
 func init() {
-	validParamsMap = map[types.FeedType]map[string]struct{}{
-		types.NewTxsFeed:          stringSliceToSet(validTxParams),
-		types.PendingTxsFeed:      stringSliceToSet(validTxParams),
-		types.BDNBlocksFeed:       stringSliceToSet(validBlockParams),
-		types.NewBlocksFeed:       stringSliceToSet(validBlockParams),
-		types.OnBlockFeed:         stringSliceToSet(validOnBlockParams),
-		types.TxReceiptsFeed:      stringSliceToSet(validTxReceiptParams),
-		types.NewBeaconBlocksFeed: stringSliceToSet(validBeaconBlockParams),
-		types.BDNBeaconBlocksFeed: stringSliceToSet(validBeaconBlockParams),
+	validParamsMap = map[bxtypes.FeedType]map[string]struct{}{
+		bxtypes.NewTxsFeed:          stringSliceToSet(validTxParams),
+		bxtypes.PendingTxsFeed:      stringSliceToSet(validTxParams),
+		bxtypes.BDNBlocksFeed:       stringSliceToSet(validBlockParams),
+		bxtypes.NewBlocksFeed:       stringSliceToSet(validBlockParams),
+		bxtypes.OnBlockFeed:         stringSliceToSet(validOnBlockParams),
+		bxtypes.TxReceiptsFeed:      stringSliceToSet(validTxReceiptParams),
+		bxtypes.NewBeaconBlocksFeed: stringSliceToSet(validBeaconBlockParams),
+		bxtypes.BDNBeaconBlocksFeed: stringSliceToSet(validBeaconBlockParams),
 	}
 }
 
 // ValidateIncludeParam validate params from request
-func ValidateIncludeParam(feed types.FeedType, include []string, txFromFieldIncludable bool) ([]string, error) {
+func ValidateIncludeParam(feed bxtypes.FeedType, include []string, txFromFieldIncludable bool) ([]string, error) {
 	var requestedFields []string
 
 	if len(include) == 0 {
 		switch feed {
-		case types.BDNBlocksFeed, types.NewBlocksFeed:
+		case bxtypes.BDNBlocksFeed, bxtypes.NewBlocksFeed:
 			requestedFields = validBlockParams
-		case types.BDNBeaconBlocksFeed, types.NewBeaconBlocksFeed:
+		case bxtypes.BDNBeaconBlocksFeed, bxtypes.NewBeaconBlocksFeed:
 			requestedFields = validBeaconBlockParams
-		case types.NewTxsFeed, types.PendingTxsFeed:
+		case bxtypes.NewTxsFeed, bxtypes.PendingTxsFeed:
 			requestedFields = defaultTxParams
-		case types.OnBlockFeed:
+		case bxtypes.OnBlockFeed:
 			requestedFields = validOnBlockParams
-		case types.TxReceiptsFeed:
+		case bxtypes.TxReceiptsFeed:
 			requestedFields = validTxReceiptParams
 		}
 

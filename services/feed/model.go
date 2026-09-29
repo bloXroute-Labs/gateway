@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 
 	"github.com/bloXroute-Labs/gateway/v2/types"
@@ -15,8 +16,8 @@ type ClientSubscription struct {
 	types.ClientInfo
 	types.ReqOptions
 	feed               chan types.Notification
-	feedType           types.FeedType
-	feedConnectionType types.FeedConnectionType
+	feedType           bxtypes.FeedType
+	feedConnectionType bxtypes.FeedConnectionType
 	connection         io.Closer
 	network            bxtypes.NetworkNum
 	timeOpenedFeed     time.Time
@@ -30,24 +31,24 @@ type ClientSubscriptionHandlingInfo struct {
 	SubscriptionID     string
 	FeedChan           chan types.Notification
 	ErrMsgChan         chan string
-	PermissionRespChan chan *types.SubscriptionPermissionMessage
+	PermissionRespChan chan *sdnmessage.SubscriptionPermissionMessage
 }
 
 // ClientSubscriptionFullInfo contains full info about client subscription
 type ClientSubscriptionFullInfo struct {
 	AccountID    bxtypes.AccountID
-	FeedName     types.FeedType
+	FeedName     bxtypes.FeedType
 	Network      bxtypes.NetworkNum
 	RemoteAddr   string
 	Include      string
 	Filter       string
 	Age          uint64
 	MessagesSent uint64
-	ConnType     types.FeedConnectionType
+	ConnType     bxtypes.FeedConnectionType
 }
 
 // ErrorNotification info about error notification
 type ErrorNotification struct {
 	ErrorMsg string
-	FeedType types.FeedType
+	FeedType bxtypes.FeedType
 }

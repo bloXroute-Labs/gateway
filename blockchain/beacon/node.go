@@ -521,25 +521,6 @@ func (n *Node) CanSubscribe(topic string) bool {
 	return parts[4] == encoder.ProtocolSuffixSSZSnappy
 }
 
-func (n *Node) unsubscribeAll(digest [4]byte) {
-	n.topicMap.Range(func(k string, sub *topicSubscription) bool {
-		// Skip if the topic does not contain the digest
-		if !strings.Contains(k, fmt.Sprintf("%x", digest)) {
-			return true
-		}
-
-		if err := sub.close(); err != nil {
-			n.log.Warnf("could not close subscription, topic: %v: %v", k, err)
-		} else {
-			n.log.Infof("closed subscription, topic: %v", k)
-		}
-
-		return true
-	})
-
-	n.topicMap.Clear()
-}
-
 func dataColumnSubnetToTopic(subnet uint64, forkDigest [4]byte) string {
 	return fmt.Sprintf(p2p.DataColumnSubnetTopicFormat, forkDigest, subnet)
 }
@@ -611,41 +592,6 @@ func (n *Node) BroadcastBlob(blobSidecar *ethpb.BlobSidecar) error {
 	}
 
 	return err
-}
-
-func (n *Node) blobSubscriber(msg *pubsub.Message) {
-	blobSidecar := new(ethpb.BlobSidecar)
-
-	if err := n.encoding.DecodeGossip(msg.Data, blobSidecar); err != nil {
-		n.log.Errorf("could not decode blob: %v", err)
-		return
-	}
-
-	bxSidecar, err := n.bridge.BeaconMessageToBDN(blobSidecar)
-	if err != nil {
-		n.log.Errorf("could not convert beacon blob to BDN blob: %v", err)
-		return
-	}
-
-	endpoint, err := n.loadNodeEndpointFromPeerID(msg.ReceivedFrom)
-	if err != nil {
-		n.log.Errorf("could not load peer endpoint: %v", err)
-
-		return
-	}
-
-	if err := n.bridge.SendBeaconMessageToBDN(bxSidecar, *endpoint); err != nil {
-		n.log.Errorf("could not send beacon message to BDN: %v", err)
-		return
-	}
-
-	blockHash, err := blobSidecar.SignedBlockHeader.Header.HashTreeRoot()
-	if err != nil {
-		n.log.Errorf("could not get block hash: %v", err)
-		return
-	}
-
-	n.log.Tracef("Received blob message from %v, index %v, block hash: %v, slot %v, kzg commitment: %v", msg.ReceivedFrom, blobSidecar.Index, hex.EncodeToString(blockHash[:]), blobSidecar.SignedBlockHeader.Header.Slot, hex.EncodeToString(blobSidecar.KzgCommitment))
 }
 
 func (n *Node) subscribeAll(digest [4]byte) error {

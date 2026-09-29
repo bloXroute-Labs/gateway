@@ -12,16 +12,15 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler/filter"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler/validator"
-	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
 var (
-	availableFeeds = []types.FeedType{
-		types.NewTxsFeed, types.NewBlocksFeed, types.BDNBlocksFeed, types.PendingTxsFeed,
-		types.OnBlockFeed, types.TxReceiptsFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed,
+	availableFeeds = []bxtypes.FeedType{
+		bxtypes.NewTxsFeed, bxtypes.NewBlocksFeed, bxtypes.BDNBlocksFeed, bxtypes.PendingTxsFeed,
+		bxtypes.OnBlockFeed, bxtypes.TxReceiptsFeed, bxtypes.NewBeaconBlocksFeed, bxtypes.BDNBeaconBlocksFeed,
 	}
 
-	availableFeedsMap = make(map[types.FeedType]struct{})
+	availableFeedsMap = make(map[bxtypes.FeedType]struct{})
 )
 
 func init() {
@@ -30,7 +29,7 @@ func init() {
 	}
 }
 
-func (h *handlerObj) createClientReq(req Request, feed types.FeedType, rpcParams json.RawMessage) (*ClientReq, error) {
+func (h *handlerObj) createClientReq(req Request, feed bxtypes.FeedType, rpcParams json.RawMessage) (*ClientReq, error) {
 	request := subscriptionRequest{
 		feed: feed,
 	}
@@ -73,21 +72,21 @@ func (h *handlerObj) createClientReq(req Request, feed types.FeedType, rpcParams
 		feedStreaming := sdnmessage.BDNQuotaService{}
 
 		switch request.feed {
-		case types.NewTxsFeed, types.PendingTxsFeed:
+		case bxtypes.NewTxsFeed, bxtypes.PendingTxsFeed:
 			switch h.networkNum {
 			case bxtypes.MainnetNum:
 				feedStreaming = h.connectionAccount.EthMempoolStreaming
 			case bxtypes.BSCMainnetNum:
 				feedStreaming = h.connectionAccount.BscMempoolStreaming
 			}
-		case types.BDNBlocksFeed, types.NewBlocksFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed, types.OnBlockFeed:
+		case bxtypes.BDNBlocksFeed, bxtypes.NewBlocksFeed, bxtypes.NewBeaconBlocksFeed, bxtypes.BDNBeaconBlocksFeed, bxtypes.OnBlockFeed:
 			switch h.networkNum {
 			case bxtypes.MainnetNum:
 				feedStreaming = h.connectionAccount.EthBlocksStreaming
 			case bxtypes.BSCMainnetNum:
 				feedStreaming = h.connectionAccount.BscBlocksStreaming
 			}
-		case types.TxReceiptsFeed:
+		case bxtypes.TxReceiptsFeed:
 			switch h.networkNum {
 			case bxtypes.MainnetNum:
 				feedStreaming = h.connectionAccount.EthTxReceiptsStreaming
@@ -102,7 +101,7 @@ func (h *handlerObj) createClientReq(req Request, feed types.FeedType, rpcParams
 	}
 
 	calls := make(map[string]*handler.RPCCall)
-	if request.feed == types.OnBlockFeed {
+	if request.feed == bxtypes.OnBlockFeed {
 		for idx, callParams := range request.options.CallParams {
 			if callParams == nil {
 				return nil, errors.New("call-params cannot be nil")
@@ -118,7 +117,7 @@ func (h *handlerObj) createClientReq(req Request, feed types.FeedType, rpcParams
 	// so sendNotification pays zero cost per notification (mirrors gRPC handleBlocks).
 	includes := request.options.Include
 	switch request.feed {
-	case types.NewBlocksFeed, types.BDNBlocksFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed:
+	case bxtypes.NewBlocksFeed, bxtypes.BDNBlocksFeed, bxtypes.NewBeaconBlocksFeed, bxtypes.BDNBeaconBlocksFeed:
 		if i := slices.Index(includes, "transactions"); i >= 0 {
 			if !*request.options.ParsedTxs {
 				includes = slices.Replace(includes, i, i+1, "raw_transactions")
@@ -138,7 +137,7 @@ func (h *handlerObj) createClientReq(req Request, feed types.FeedType, rpcParams
 	}, nil
 }
 
-func (h *handlerObj) parseSubscriptionRequest(req Request) (types.FeedType, json.RawMessage, error) {
+func (h *handlerObj) parseSubscriptionRequest(req Request) (bxtypes.FeedType, json.RawMessage, error) {
 	if req.Params == nil {
 		return "", nil, errors.New(errParamsValueIsMissing)
 	}
@@ -154,7 +153,7 @@ func (h *handlerObj) parseSubscriptionRequest(req Request) (types.FeedType, json
 		return "", nil, fmt.Errorf("received invalid number of params: expected 2, got %d, params %s", len(rpcParams), string(*req.Params))
 	}
 
-	var feed types.FeedType
+	var feed bxtypes.FeedType
 	err = json.Unmarshal(rpcParams[0], &feed)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to unmarshal Feed name: %w", err)
@@ -167,7 +166,7 @@ func (h *handlerObj) parseSubscriptionRequest(req Request) (types.FeedType, json
 	}
 
 	if h.connectionAccount.AccountID != h.serverAccountID &&
-		(feed == types.OnBlockFeed || feed == types.TxReceiptsFeed) {
+		(feed == bxtypes.OnBlockFeed || feed == bxtypes.TxReceiptsFeed) {
 		err = fmt.Errorf("%v Feed is not available via cloud services. %v Feed is only supported on gateways", feed, feed)
 		h.log.Errorf("%v. caller account ID: %v, node account ID: %v", err, h.connectionAccount.AccountID, h.serverAccountID)
 		return "", nil, err

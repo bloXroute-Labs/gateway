@@ -1,5 +1,7 @@
 package types
 
+import bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
+
 // NewTransactionNotification represents a transaction notification with lazily evaluated fields.
 type NewTransactionNotification struct {
 	*EthTransaction
@@ -48,6 +50,6 @@ func (n *NewTransactionNotification) RawTx() ([]byte, error) {
 }
 
 // NotificationType - returns the feed name notification
-func (n *NewTransactionNotification) NotificationType() FeedType {
-	return NewTxsFeed
+func (n *NewTransactionNotification) NotificationType() bxtypes.FeedType {
+	return bxtypes.NewTxsFeed
 }

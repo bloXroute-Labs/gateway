@@ -64,15 +64,15 @@ type Manager struct {
 	// high volume feed (newTxs/pendingTxs) cannot fill up the channel shared with low volume
 	// feeds and get their notifications dropped as collateral. Written only by NewManager and
 	// read-only afterwards, so it needs no locking.
-	feeds map[types.FeedType]chan types.Notification
+	feeds map[bxtypes.FeedType]chan types.Notification
 	// shardsByType holds the fan-out worker pool of every registered feed type: the subscribers of
 	// that feed type are split across the shards by subscription ID, so several notifications can
 	// be delivered concurrently while each subscriber still gets its own notifications in order
 	// (one shard owns a subscriber, and one goroutine drains that shard in FIFO order). Empty when
 	// the pool is disabled (fanOutWorkers <= 1), in which case the fan-out stays inline. Written
 	// only by NewManager and read-only afterwards, so the map itself needs no locking.
-	shardsByType           map[types.FeedType][]*fanOutShard
-	subscriberCounts       map[types.FeedType]*atomic.Int64
+	shardsByType           map[bxtypes.FeedType][]*fanOutShard
+	subscriberCounts       map[bxtypes.FeedType]*atomic.Int64
 	errFeed                chan ErrorNotification
 	idToClientSubscription map[string]ClientSubscription
 	subscriptionServices   services.SubscriptionServices
@@ -102,24 +102,24 @@ func NewManager(sdn sdnsdk.SDNHTTP,
 	blockchainNum bxtypes.NetworkNum,
 	sendNotifications bool,
 	metricsExporter metrics.Exporter,
-	feedTypes []types.FeedType,
+	feedTypes []bxtypes.FeedType,
 	fanOutWorkers int,
 ) *Manager {
 	logger := log.WithFields(log.Fields{
 		"component": "feedManager",
 	})
 
-	feeds := make(map[types.FeedType]chan types.Notification, len(feedTypes))
+	feeds := make(map[bxtypes.FeedType]chan types.Notification, len(feedTypes))
 	for _, feedType := range feedTypes {
 		feeds[feedType] = make(chan types.Notification, bxgateway.BxFeedChannelSize)
 	}
 
-	subscriberCounts := make(map[types.FeedType]*atomic.Int64, len(feedTypes))
+	subscriberCounts := make(map[bxtypes.FeedType]*atomic.Int64, len(feedTypes))
 	for _, feedType := range feedTypes {
 		subscriberCounts[feedType] = &atomic.Int64{}
 	}
 
-	shardsByType := make(map[types.FeedType][]*fanOutShard, len(feedTypes))
+	shardsByType := make(map[bxtypes.FeedType][]*fanOutShard, len(feedTypes))
 	if fanOutWorkers > 1 {
 		for _, feedType := range feedTypes {
 			shards := make([]*fanOutShard, fanOutWorkers)
@@ -256,9 +256,9 @@ func (f *Manager) Notify(notification types.Notification) {
 	}
 }
 
-func isBlockFeed(feedType types.FeedType) bool {
+func isBlockFeed(feedType bxtypes.FeedType) bool {
 	switch feedType {
-	case types.NewBlocksFeed, types.BDNBlocksFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed:
+	case bxtypes.NewBlocksFeed, bxtypes.BDNBlocksFeed, bxtypes.NewBeaconBlocksFeed, bxtypes.BDNBeaconBlocksFeed:
 		return true
 	default:
 		return false
@@ -279,7 +279,7 @@ func (f *Manager) NotifyError(notification ErrorNotification) {
 }
 
 // Subscribe - subscribe a client to a desired feed
-func (f *Manager) Subscribe(feedName types.FeedType, feedConnectionType types.FeedConnectionType,
+func (f *Manager) Subscribe(feedName bxtypes.FeedType, feedConnectionType bxtypes.FeedConnectionType,
 	conn io.Closer, ci types.ClientInfo, ro types.ReqOptions, ethSubscribe bool,
 ) (*ClientSubscriptionHandlingInfo, error) {
 	id := f.subscriptionServices.GenerateSubscriptionID(ethSubscribe)
@@ -301,7 +301,7 @@ func (f *Manager) Subscribe(feedName types.FeedType, feedConnectionType types.Fe
 		return nil, err
 	}
 
-	subscriptionModel := types.SubscriptionModel{
+	subscriptionModel := sdnmessage.SubscriptionModel{
 		SubscriptionID: id,
 		SubscriberIP:   strings.Split(ci.RemoteAddress, ":")[0],
 		NodeID:         string(f.nodeID),
@@ -310,7 +310,7 @@ func (f *Manager) Subscribe(feedName types.FeedType, feedConnectionType types.Fe
 		FeedType:       feedName,
 	}
 
-	var permissionRespChannel chan *types.SubscriptionPermissionMessage
+	var permissionRespChannel chan *sdnmessage.SubscriptionPermissionMessage
 	if ci.AccountID != bxtypes.BloxrouteAccountID {
 		allowed, reason, ch := f.subscriptionServices.SendSubscribeNotification(&subscriptionModel)
 		if !allowed {
@@ -372,7 +372,7 @@ func (f *Manager) Unsubscribe(subscriptionID string, closeClientConnection bool,
 	}
 
 	if clientSub.AccountID != bxtypes.BloxrouteAccountID {
-		subscription := types.SubscriptionModel{
+		subscription := sdnmessage.SubscriptionModel{
 			SubscriptionID: subscriptionID,
 			SubscriberIP:   strings.Split(clientSub.RemoteAddress, ":")[0],
 			NodeID:         string(f.nodeID),
@@ -391,7 +391,7 @@ func (f *Manager) Unsubscribe(subscriptionID string, closeClientConnection bool,
 			clientSub.MetaInfo[types.SDKCodeLanguageHeaderKey],
 			clientSub.MetaInfo[types.SDKVersionHeaderKey],
 			clientSub.AccountID,
-			types.WebSocketFeed,
+			bxtypes.WebSocketFeed,
 			clientSub.timeOpenedFeed,
 			time.Now(),
 		)
@@ -428,7 +428,7 @@ func (f *Manager) SubscriptionExists(subscriptionID string) bool {
 }
 
 // SubscriptionTypeExists - check if subscription with specific type exists
-func (f *Manager) SubscriptionTypeExists(feedType types.FeedType) bool {
+func (f *Manager) SubscriptionTypeExists(feedType bxtypes.FeedType) bool {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 	for _, clientSub := range f.idToClientSubscription {
@@ -444,28 +444,11 @@ func (f *Manager) NeedBlocks() bool {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 	for _, clientSub := range f.idToClientSubscription {
-		if clientSub.feedType != types.NewTxsFeed && clientSub.feedType != types.PendingTxsFeed {
+		if clientSub.feedType != bxtypes.NewTxsFeed && clientSub.feedType != bxtypes.PendingTxsFeed {
 			return true
 		}
 	}
 	return false
-}
-
-// GetClientSubscriptionHandlingInfo returns all client subscriptions with channels
-func (f *Manager) GetClientSubscriptionHandlingInfo() map[string]ClientSubscriptionHandlingInfo {
-	f.lock.RLock()
-	defer f.lock.RUnlock()
-
-	subscriptions := make(map[string]ClientSubscriptionHandlingInfo)
-	for id, clientSub := range f.idToClientSubscription {
-		subscriptions[id] = ClientSubscriptionHandlingInfo{
-			SubscriptionID: id,
-			FeedChan:       clientSub.feed,
-			ErrMsgChan:     clientSub.errMsgChan,
-		}
-	}
-
-	return subscriptions
 }
 
 // GetGrpcSubscriptionReply - return gRPC subscription reply
@@ -491,26 +474,6 @@ func (f *Manager) GetGrpcSubscriptionReply() []ClientSubscriptionFullInfo {
 	return resp
 }
 
-// GetAllSubscriptions returns all subscriptions
-func (f *Manager) GetAllSubscriptions() []types.SubscriptionModel {
-	f.lock.RLock()
-	defer f.lock.RUnlock()
-	subscriptionModels := make([]types.SubscriptionModel, len(f.idToClientSubscription))
-	i := 0
-	for id, sub := range f.idToClientSubscription {
-		subscriptionModel := types.SubscriptionModel{
-			SubscriptionID: id,
-			SubscriberIP:   strings.Split(sub.RemoteAddress, ":")[0],
-			NodeID:         string(f.nodeID),
-			AccountID:      sub.AccountID,
-			NetworkNum:     sub.network,
-			FeedType:       sub.feedType,
-		}
-		subscriptionModels[i] = subscriptionModel
-		i++
-	}
-	return subscriptionModels
-}
 
 // CloseAllClientConnections - unsubscribes all client subscriptions and closes all client ws connections
 func (f *Manager) CloseAllClientConnections() {
@@ -604,7 +567,7 @@ func (f *Manager) runFanOutShard(ctx context.Context, shard *fanOutShard) {
 // shardFor returns the shard owning subscriptionID inside feedType's pool, or nil when that feed
 // type has no pool. Hashing the subscription ID pins a subscriber to one shard, which is what
 // preserves the delivery order for that subscriber.
-func (f *Manager) shardFor(feedType types.FeedType, subscriptionID string) *fanOutShard {
+func (f *Manager) shardFor(feedType bxtypes.FeedType, subscriptionID string) *fanOutShard {
 	shards, ok := f.shardsByType[feedType]
 	if !ok || len(shards) == 0 {
 		return nil
@@ -618,7 +581,7 @@ func (f *Manager) shardFor(feedType types.FeedType, subscriptionID string) *fanO
 }
 
 // trackSubscriber moves feedType's subscriber count by delta.
-func (f *Manager) trackSubscriber(feedType types.FeedType, delta int64) {
+func (f *Manager) trackSubscriber(feedType bxtypes.FeedType, delta int64) {
 	if subscribers, tracked := f.subscriberCounts[feedType]; tracked {
 		subscribers.Add(delta)
 	}
@@ -638,7 +601,7 @@ func (f *Manager) addToShard(subscriptionID string, clientSub ClientSubscription
 }
 
 // removeFromShard drops a subscription from the shard that owns it, if its feed type has a pool.
-func (f *Manager) removeFromShard(subscriptionID string, feedType types.FeedType) {
+func (f *Manager) removeFromShard(subscriptionID string, feedType bxtypes.FeedType) {
 	shard := f.shardFor(feedType, subscriptionID)
 	if shard == nil {
 		return
@@ -667,7 +630,7 @@ func (f *Manager) deliver(notification types.Notification, subs map[string]Clien
 			notificationToSend = customNotification.ApplyAccountLogic(string(clientSub.AccountID))
 		}
 
-		if (clientSub.feedConnectionType == types.WebSocketFeed || clientSub.feedConnectionType == types.GRPCFeed) && clientSub.feedType == notification.NotificationType() {
+		if (clientSub.feedConnectionType == bxtypes.WebSocketFeed || clientSub.feedConnectionType == bxtypes.GRPCFeed) && clientSub.feedType == notification.NotificationType() {
 			select {
 			case clientSub.feed <- notificationToSend:
 				f.metricsExporter.PushIncrFeedNotificationDelivered(uint32(f.networkNum), string(notification.NotificationType()), string(clientSub.AccountID))
@@ -750,7 +713,7 @@ func (f *Manager) sendErrorMsgToClient(errNotification ErrorNotification) {
 	defer f.lock.RUnlock()
 
 	for uid, clientSub := range f.idToClientSubscription {
-		if (clientSub.feedConnectionType == types.WebSocketFeed || clientSub.feedConnectionType == types.GRPCFeed) && clientSub.feedType == errNotification.FeedType {
+		if (clientSub.feedConnectionType == bxtypes.WebSocketFeed || clientSub.feedConnectionType == bxtypes.GRPCFeed) && clientSub.feedType == errNotification.FeedType {
 			select {
 			case clientSub.errMsgChan <- errNotification.ErrorMsg:
 			default:
@@ -844,8 +807,8 @@ func (f *Manager) SubscriptionsSnapshotLoop(ctx context.Context) {
 	}
 }
 
-func (f *Manager) currentSubscriptions() map[bxtypes.AccountID]map[types.FeedType]int {
-	subscriptions := make(map[bxtypes.AccountID]map[types.FeedType]int)
+func (f *Manager) currentSubscriptions() map[bxtypes.AccountID]map[bxtypes.FeedType]int {
+	subscriptions := make(map[bxtypes.AccountID]map[bxtypes.FeedType]int)
 
 	f.lock.RLock()
 	defer f.lock.RUnlock()
@@ -853,7 +816,7 @@ func (f *Manager) currentSubscriptions() map[bxtypes.AccountID]map[types.FeedTyp
 	for i := range f.idToClientSubscription {
 		infos, exists := subscriptions[f.idToClientSubscription[i].AccountID]
 		if !exists {
-			subscriptions[f.idToClientSubscription[i].AccountID] = map[types.FeedType]int{
+			subscriptions[f.idToClientSubscription[i].AccountID] = map[bxtypes.FeedType]int{
 				f.idToClientSubscription[i].feedType: 1,
 			}
 			continue

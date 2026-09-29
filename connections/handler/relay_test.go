@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/bloXroute-Labs/bxcommon-go/v2/clock"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk"
 	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	"github.com/stretchr/testify/assert"
@@ -13,7 +14,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // semi integration test: in general, sleep should be avoided, but these closing tests cases are checking that we are closing goroutines correctly
@@ -86,7 +86,7 @@ func relayConn() (*connections.MockTLS, *Relay) {
 	port := int64(3000)
 
 	tls := connections.NewMockTLS(ip, port, "", bxtypes.ExternalGateway, "")
-	certs := utils.TestCerts()
+	certs := sdnsdk.SetupTestCerts()
 	r := NewRelay(bxmock.MockBxListener{},
 		func() (connections.Socket, error) {
 			return tls, nil

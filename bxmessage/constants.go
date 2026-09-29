@@ -8,8 +8,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/types"
 )
 
-// StartingBytesLen is the byte length of the starting bytes of bloxroute messages
-const StartingBytesLen = 4
 
 // ControlByteLen is the byte length of the control byte
 const ControlByteLen = 1
@@ -49,27 +47,25 @@ const BeaconMessageTypeLen = 4
 
 // Message type constants
 const (
-	HelloType                    = "hello"
-	AckType                      = "ack"
-	TxType                       = "tx"
-	PingType                     = "ping"
-	PongType                     = "pong"
-	BroadcastType                = "broadcast"
-	BlockTxsType                 = "blocktxs"
-	TxCleanupType                = "txclnup"
-	SyncTxsType                  = "txtxs"
-	SyncReqType                  = "txstart"
-	SyncDoneType                 = "txdone"
-	DropRelayType                = "droprelay"
+	HelloType     = "hello"
+	AckType       = "ack"
+	TxType        = "tx"
+	PingType      = "ping"
+	PongType      = "pong"
+	BroadcastType = "broadcast"
+	BlockTxsType  = "blocktxs"
+	TxCleanupType = "txclnup"
+	SyncTxsType   = "txtxs"
+	SyncReqType   = "txstart"
+	SyncDoneType  = "txdone"
 	RefreshBlockchainNetworkType = "blkntwrk"
 	BlockConfirmationType        = "blkcnfrm"
-	GetTransactionsType          = "gettxs"
-	TransactionsType             = "txs"
-	BDNPerformanceStatsType      = "bdnstats"
-	ValidatorUpdatesType         = "validator"
-	MEVBundleType                = "mevbundle"
-	ErrorNotificationType        = "notify"
-	BeaconMessageType            = "beaconmsg"
+	TransactionsType        = "txs"
+	BDNPerformanceStatsType = "bdnstats"
+	ValidatorUpdatesType    = "validator"
+	MEVBundleType           = "mevbundle"
+	ErrorNotificationType   = "notify"
+	BeaconMessageType       = "beaconmsg"
 )
 
 // SenderLen is the byte length of sender
@@ -108,33 +104,16 @@ const BundleBlocksCountAndDroppingTxs = 52
 // BundlesUpdatedProtocol is the minimum protocol version that stops supporting legacy bundle messages
 const BundlesUpdatedProtocol = 51
 
-// QuotesProtocol is the minimum protocol version that supports intent quotes
-const QuotesProtocol = 50
-
-// SolutionSenderAddressProtocol is the minimum protocol version that supports solution sender address
-// in the intent solution broadcast message
-const SolutionSenderAddressProtocol = 49
-
 // BundleRefundProtocol is the minimum protocol version that supports bundle refund recipient address
 const BundleRefundProtocol = 48
 
-// IntentSolutionProtocol is the minimum protocol version that supports dApp address in intent solutions
-const IntentSolutionProtocol = 47
-
-// BlobCompressionProtocol is the minimum protocol version that supports blob compression
-const BlobCompressionProtocol = 46
 
 // BundlePriorityFeeRefundProtocol is the minimum protocol version that supports bundle priority fee refund
 const BundlePriorityFeeRefundProtocol = 45
 
-// BeaconMessagesProtocol is the minimum protocol version that supports beacon messages
-const BeaconMessagesProtocol = 44
 
 // AvoidMixedBundleProtocol is the minimum protocol version that supports avoiding mixed bundles
 const AvoidMixedBundleProtocol = 43
-
-// IntentsWithAnySenderProtocol is the minimum protocol version that supports Intents with any intent sender
-const IntentsWithAnySenderProtocol = 42
 
 // BundlesOverBDNOriginalSenderTierProtocol is the minimum protocol version that supports bundles over BDN with original tier
 const BundlesOverBDNOriginalSenderTierProtocol = 41
@@ -142,17 +121,11 @@ const BundlesOverBDNOriginalSenderTierProtocol = 41
 // BundlesOverBDNOriginalSenderAccountProtocol is the minimum protocol version that supports bundles over BDN with original sender account
 const BundlesOverBDNOriginalSenderAccountProtocol = 40
 
-// IntentsProtocol is the minimum protocol version that supports Intents
-const IntentsProtocol = 39
-
 // BundlesOverBDNPayoutProtocol is the minimum protocol version that supports bundles over BDN with payout
 const BundlesOverBDNPayoutProtocol = 38
 
 // BundlesOverBDNProtocol is the minimum protocol version that supports bundles over BDN
 const BundlesOverBDNProtocol = 37
-
-// ShanghaiProtocol is the minimum protocol version that supports Capella blocks
-const ShanghaiProtocol = 36
 
 // NextValidatorMultipleProtocol is an enhancement to NextValidatorProtocol
 const NextValidatorMultipleProtocol = 35

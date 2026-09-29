@@ -41,11 +41,6 @@ var (
 		Usage:       "Ethereum websockets endpoint",
 		DefaultText: "",
 	}
-	BSCWSUriFlag = &cli.StringFlag{
-		Name:        "bsc-ws-uri",
-		Usage:       "Ethereum websockets endpoint",
-		DefaultText: "",
-	}
 	BeaconAPIUriFlag = &cli.StringFlag{
 		Name:     "beacon-api-uri",
 		Usage:    "Beacon API endpoints. Expected format: IP:PORT",

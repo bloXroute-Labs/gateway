@@ -56,7 +56,7 @@ func TestNewBlocks(t *testing.T) {
 	require.NoError(t, err)
 	blockNotification, err := types.NewEthBlockNotification(bxtypes.Mainnet, common.Hash(bxBlock.ExecutionHash()), block.(*bxcommoneth.BlockInfo).Block, nil)
 	require.NoError(t, err)
-	blockNotification.SetNotificationType(types.NewBlocksFeed)
+	blockNotification.SetNotificationType(bxtypes.NewBlocksFeed)
 
 	// notify the feed manager about the new transaction
 	testServer.gatewayServer.(*server).params.feedManager.Notify(blockNotification)
@@ -104,7 +104,7 @@ func TestBdnBlocks(t *testing.T) {
 	require.NoError(t, err)
 	blockNotification, err := types.NewEthBlockNotification(bxtypes.Mainnet, common.Hash(bxBlock.ExecutionHash()), block.(*bxcommoneth.BlockInfo).Block, nil)
 	require.NoError(t, err)
-	blockNotification.SetNotificationType(types.BDNBlocksFeed)
+	blockNotification.SetNotificationType(bxtypes.BDNBlocksFeed)
 
 	// notify the feed manager about the new transaction
 	testServer.gatewayServer.(*server).params.feedManager.Notify(blockNotification)

@@ -11,10 +11,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/bloXroute-Labs/bxcommon-go/v2/cert"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 const connectionTimeout = 200 * time.Millisecond
@@ -119,8 +119,8 @@ func (m *MockTLS) RemoteAddr() net.Addr {
 }
 
 // Properties is a filler implementation that returns the data this mock was constructed with
-func (m *MockTLS) Properties() (utils.BxSSLProperties, error) {
-	return utils.BxSSLProperties{
+func (m *MockTLS) Properties() (cert.BxSSLProperties, error) {
+	return cert.BxSSLProperties{
 		NodeType:  m.nodeType,
 		NodeID:    m.nodeID,
 		AccountID: m.accountID,

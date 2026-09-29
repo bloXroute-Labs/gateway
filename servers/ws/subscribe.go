@@ -33,7 +33,7 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *conn, req Req
 		return
 	}
 
-	if len(h.nodeWSManager.Providers()) == 0 && feed == types.NewBlocksFeed &&
+	if len(h.nodeWSManager.Providers()) == 0 && feed == bxtypes.NewBlocksFeed &&
 		h.networkNum != bxtypes.MainnetNum && h.networkNum != bxtypes.HoleskyNum {
 		errMsg := fmt.Sprintf("%v Feed requires a websockets endpoint to be specifed via either --eth-ws-uri or --multi-node startup parameter", feed)
 		sendErrorMsg(ctx, jsonrpc.InvalidParams, errMsg, conn, req.ID)
@@ -48,7 +48,7 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *conn, req Req
 		return
 	}
 
-	if request.MultiTxs && feed != types.NewTxsFeed && feed != types.PendingTxsFeed {
+	if request.MultiTxs && feed != bxtypes.NewTxsFeed && feed != bxtypes.PendingTxsFeed {
 		log.Debugf("multi tx support only in new txs or pending txs, account id %v, remote addr %v", h.connectionAccount.AccountID, h.remoteAddress)
 		sendErrorMsg(ctx, jsonrpc.InvalidParams, "multi tx support only in new txs or pending txs", conn, req.ID)
 		return
@@ -56,7 +56,7 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *conn, req Req
 
 	ci, ro := h.createClientInfoAndRequestOpts(request)
 
-	sub, errSubscribe := h.feedManager.Subscribe(feed, types.WebSocketFeed, conn, ci, ro, false)
+	sub, errSubscribe := h.feedManager.Subscribe(feed, bxtypes.WebSocketFeed, conn, ci, ro, false)
 	if errSubscribe != nil {
 		sendErrorMsg(ctx, jsonrpc.InvalidParams, errSubscribe.Error(), conn, req.ID)
 		return
@@ -99,7 +99,7 @@ func (h *handlerObj) handleRPCSubscribe(ctx context.Context, conn *conn, req Req
 }
 
 func (h *handlerObj) handleRPCSubscribeNotify(ctx context.Context, conn *conn,
-	reqID ID, sub *feed.ClientSubscriptionHandlingInfo, subscriptionID string, feedName types.FeedType, request *ClientReq) {
+	reqID ID, sub *feed.ClientSubscriptionHandlingInfo, subscriptionID string, feedName bxtypes.FeedType, request *ClientReq) {
 
 	for {
 		select {
@@ -117,25 +117,25 @@ func (h *handlerObj) handleRPCSubscribeNotify(ctx context.Context, conn *conn,
 			}
 
 			switch feedName {
-			case types.NewTxsFeed:
+			case bxtypes.NewTxsFeed:
 				tx := (notification).(*types.NewTransactionNotification)
 				if h.sendTxNotification(ctx, subscriptionID, request, conn, tx) != nil {
 					return
 				}
-			case types.PendingTxsFeed:
+			case bxtypes.PendingTxsFeed:
 				tx := (notification).(*types.PendingTransactionNotification)
 				if h.sendTxNotification(ctx, subscriptionID, request, conn, &tx.NewTransactionNotification) != nil {
 					return
 				}
-			case types.BDNBlocksFeed, types.NewBlocksFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed:
+			case bxtypes.BDNBlocksFeed, bxtypes.NewBlocksFeed, bxtypes.NewBeaconBlocksFeed, bxtypes.BDNBeaconBlocksFeed:
 				if h.sendNotification(ctx, subscriptionID, request, conn, notification) != nil {
 					return
 				}
-			case types.TxReceiptsFeed:
+			case bxtypes.TxReceiptsFeed:
 				if h.sendTxReceiptNotification(ctx, subscriptionID, request, conn, notification) != nil {
 					return
 				}
-			case types.OnBlockFeed:
+			case bxtypes.OnBlockFeed:
 				block := notification.(*types.EthBlockNotification)
 
 				sendEthOnBlockWsNotification := func(notification *types.OnBlockNotification) error {
@@ -212,7 +212,7 @@ func (h *handlerObj) sendTxReceiptNotification(ctx context.Context, subscription
 	return nil
 }
 
-func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan types.Notification, subscriptionID string, clientReq *ClientReq, conn *conn, req Request, feedName types.FeedType) error {
+func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan types.Notification, subscriptionID string, clientReq *ClientReq, conn *conn, req Request, feedName bxtypes.FeedType) error {
 	for {
 		select {
 		case <-conn.DisconnectNotify():
@@ -229,13 +229,13 @@ func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan types.
 			multiTxsResponse := MultiTransactions{Subscription: subscriptionID}
 
 			switch feedName {
-			case types.NewTxsFeed:
+			case bxtypes.NewTxsFeed:
 				tx := (notification).(*types.NewTransactionNotification)
 				response := filterAndIncludeTx(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
 				if response != nil {
 					multiTxsResponse.Result = append(multiTxsResponse.Result, *response)
 				}
-			case types.PendingTxsFeed:
+			case bxtypes.PendingTxsFeed:
 				tx := (notification).(*types.PendingTransactionNotification)
 				response := filterAndIncludeTx(clientReq, &tx.NewTransactionNotification, h.remoteAddress, h.connectionAccount.AccountID)
 				if response != nil {
@@ -254,13 +254,13 @@ func (h *handlerObj) subscribeMultiTxs(ctx context.Context, feedChan chan types.
 						return errReadingNotification
 					}
 					switch feedName {
-					case types.NewTxsFeed:
+					case bxtypes.NewTxsFeed:
 						tx := (notification).(*types.NewTransactionNotification)
 						response := filterAndIncludeTx(clientReq, tx, h.remoteAddress, h.connectionAccount.AccountID)
 						if response != nil {
 							multiTxsResponse.Result = append(multiTxsResponse.Result, *response)
 						}
-					case types.PendingTxsFeed:
+					case bxtypes.PendingTxsFeed:
 						tx := (notification).(*types.PendingTransactionNotification)
 						response := filterAndIncludeTx(clientReq, &tx.NewTransactionNotification, h.remoteAddress, h.connectionAccount.AccountID)
 						if response != nil {

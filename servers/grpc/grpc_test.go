@@ -41,8 +41,6 @@ const (
 	testGatewayUserAuthHeader                    = "dXNlcjpwYXNzd29yZA==" // encoded testGatewayAccountID and testGatewaySecretHash
 	testGatewayAccountID2                        = "user2"
 	testGatewaySecretHash2                       = "password2"
-	testWalletID                                 = "0x00112233445566778899AABBCCDDEEFFGGHHIIJJ"
-	testWalletID2                                = "0xAABBCCDDEEFFGGHHIIJJ00112233445566778899"
 )
 
 var (

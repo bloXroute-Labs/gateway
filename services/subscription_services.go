@@ -1,19 +1,16 @@
 package services
 
 import (
-	"maps"
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
 
-	"github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
-
-	"github.com/bloXroute-Labs/gateway/v2/types"
 	baseutils "github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // SubscriptionServices provides interface to core subscription management functions
 type SubscriptionServices interface {
-	SendSubscribeNotification(*types.SubscriptionModel) (bool, string, chan *types.SubscriptionPermissionMessage)
-	SendUnsubscribeNotification(*types.SubscriptionModel)
-	SendSubscriptionResetNotification([]types.SubscriptionModel)
+	SendSubscribeNotification(*sdnmessage.SubscriptionModel) (bool, string, chan *sdnmessage.SubscriptionPermissionMessage)
+	SendUnsubscribeNotification(*sdnmessage.SubscriptionModel)
+	SendSubscriptionResetNotification([]sdnmessage.SubscriptionModel)
 	GenerateSubscriptionID(bool) string
 	Close(reason string) error
 }
@@ -28,17 +25,17 @@ func NewNoOpSubscriptionServices() SubscriptionServices {
 }
 
 // SendSubscribeNotification approves all requests
-func (n NoOpSubscriptionServices) SendSubscribeNotification(*types.SubscriptionModel) (bool, string, chan *types.SubscriptionPermissionMessage) {
+func (n NoOpSubscriptionServices) SendSubscribeNotification(*sdnmessage.SubscriptionModel) (bool, string, chan *sdnmessage.SubscriptionPermissionMessage) {
 	return true, "", nil
 }
 
 // SendUnsubscribeNotification - no-op
-func (n NoOpSubscriptionServices) SendUnsubscribeNotification(*types.SubscriptionModel) {
+func (n NoOpSubscriptionServices) SendUnsubscribeNotification(*sdnmessage.SubscriptionModel) {
 	return
 }
 
 // SendSubscriptionResetNotification - no-op
-func (n NoOpSubscriptionServices) SendSubscriptionResetNotification([]types.SubscriptionModel) {
+func (n NoOpSubscriptionServices) SendSubscriptionResetNotification([]sdnmessage.SubscriptionModel) {
 	return
 }
 
@@ -59,10 +56,4 @@ func generateSubscriptionID(ethSubscribe bool) string {
 	}
 
 	return baseutils.GenerateUUID()
-}
-
-func cloneInternalGateway(state *message.InternalGateway) message.InternalGateway {
-	return message.InternalGateway{
-		AccountSubscriptionCounts: maps.Clone(state.AccountSubscriptionCounts),
-	}
 }

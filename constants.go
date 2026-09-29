@@ -15,9 +15,6 @@ const AllInterfaces = "0.0.0.0"
 // MicroSecTimeFormat - use for representing tx "time" in feed
 const MicroSecTimeFormat = "2006-01-02 15:04:05.000000"
 
-// MillisecondsToNanosecondsMultiplier used to convert milliseconds to nanoseconds
-const MillisecondsToNanosecondsMultiplier = 1000000
-
 // SlowPingPong - ping/pong delay above it is considered a problem
 const SlowPingPong = int64(100000) // 100 ms
 
@@ -26,12 +23,6 @@ const SyncChunkSize = 500 * 1024
 
 // TxStoreMaxSize - If number of Txs in TxStore is above TxStoreMaxSize cleanup will bring it back to TxStoreMaxSize (per network)
 const TxStoreMaxSize = 200000
-
-// ConnectionDisabledDuration - the duration for which an invalid connection is disabled before closing
-const ConnectionDisabledDuration = 15 * time.Minute
-
-// TimeDateLayoutISO - used to parse ISO time date format string
-const TimeDateLayoutISO = "2006-01-02"
 
 // TimeLayoutISO - used to parse ISO time format string
 const TimeLayoutISO = "2006-01-02 15:04:05-0700"
@@ -78,14 +69,8 @@ const BDNBlocksMaxBlocksAway = 50
 // MaxOldBDNBlocksToSkipPublish is the max number of blocks beyond BDNBlocksMaxBlocksAway to skip publishing to BDNBlocks feed
 const MaxOldBDNBlocksToSkipPublish = 3
 
-// CleanedShortIDsChannelSize is the size of cleaned short ids channel
-const CleanedShortIDsChannelSize = 100
-
 // WSConnectionID - special node ID to identify the websocket connection
 const WSConnectionID = "WSConnectionID"
-
-// DefaultRoutingConfigFileName - routingConfig cache file name
-const DefaultRoutingConfigFileName = "defaultRoutingConfig.json"
 
 // MaxAnnouncementFromNode restrict the size of the announcment message from the node
 const MaxAnnouncementFromNode = 100
@@ -96,28 +81,9 @@ const ParallelQueueChannelSize = 2000
 // BloomFilterQueueSize - size of bloom filter queue
 const BloomFilterQueueSize = 10000
 
-// TimeToWaitBeforeClosing - set time to wait before closing the connection
-const TimeToWaitBeforeClosing = 500 * time.Millisecond
-
 // WSProviderTimeout - sets timeout duration used by WSProvider
 const WSProviderTimeout = 10 * time.Second
 
-// SDNAccountRequestTimeout - duration after which SDN account requests are deleted if no response received
-const SDNAccountRequestTimeout = time.Minute * 2
-
-const (
-	// BloxrouteBuilderName - set bloxroute mev builder name
-	BloxrouteBuilderName = "bloxroute"
-
-	// FlashbotsBuilderName - set flashbots mev builder name
-	FlashbotsBuilderName = "flashbots"
-
-	// AllBuilderName - set all other external mev builders name
-	AllBuilderName = "all"
-
-	// ExternalBeaverBuilderName - set beaverbuild external mev builders name
-	ExternalBeaverBuilderName = "beaverbuild"
-)
 
 type contextKey string
 

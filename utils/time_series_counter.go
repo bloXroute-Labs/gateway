@@ -95,19 +95,6 @@ func (ts *TimeSeriesCounter) Count() int {
 	return ts.total
 }
 
-// Recompute forces revaluation of the tracked total. Typically, this property is cached so the cost of calculating the total is amortized over the lifetime of each Track call. Recompute is usually not necessary.
-func (ts *TimeSeriesCounter) Recompute() {
-	ts.mu.Lock()
-	defer ts.mu.Unlock()
-
-	ts.pruneFront(ts.clock.Now())
-	total := 0
-	for _, e := range ts.entries {
-		total += e.counter
-	}
-	ts.total = total
-}
-
 func (ts *TimeSeriesCounter) pruneFront(now time.Time) {
 	if len(ts.entries) == 0 {
 		return

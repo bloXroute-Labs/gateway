@@ -1,13 +1,13 @@
 package grpc
 
 import (
-	"context"
 	"encoding/hex"
 	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -45,7 +45,7 @@ func (g *server) NewBlocks(req *pb.BlocksRequest, stream pb.Gateway_NewBlocksSer
 		req.ParsedTxs = &wrapperspb.BoolValue{Value: true}
 	}
 
-	return g.handleBlocks(req, stream, types.NewBlocksFeed, *accountModel)
+	return g.handleBlocks(req, stream, bxtypes.NewBlocksFeed, *accountModel)
 }
 
 // BdnBlocks subscribe to bdn blocks feed
@@ -60,7 +60,7 @@ func (g *server) BdnBlocks(req *pb.BlocksRequest, stream pb.Gateway_BdnBlocksSer
 		req.ParsedTxs = &wrapperspb.BoolValue{Value: true}
 	}
 
-	return g.handleBlocks(req, stream, types.BDNBlocksFeed, *accountModel)
+	return g.handleBlocks(req, stream, bxtypes.BDNBlocksFeed, *accountModel)
 }
 
 // EthOnBlock handler for stream of changes in the EVM state when a new block is mined
@@ -80,14 +80,14 @@ func (g *server) EthOnBlock(req *pb.EthOnBlockRequest, stream pb.Gateway_EthOnBl
 	return g.ethOnBlock(req, stream, *accountModel)
 }
 
-func (g *server) handleBlocks(req *pb.BlocksRequest, stream pb.Gateway_BdnBlocksServer, feedType types.FeedType, account sdnmessage.Account) error {
+func (g *server) handleBlocks(req *pb.BlocksRequest, stream pb.Gateway_BdnBlocksServer, feedType bxtypes.FeedType, account sdnmessage.Account) error {
 	ci := types.ClientInfo{
 		AccountID:     account.AccountID,
 		MetaInfo:      types.SDKMetaFromContext(stream.Context()),
 		RemoteAddress: getPeerAddr(stream.Context()),
 	}
 
-	sub, err := g.params.feedManager.Subscribe(feedType, types.GRPCFeed, nil, ci, types.ReqOptions{}, false)
+	sub, err := g.params.feedManager.Subscribe(feedType, bxtypes.GRPCFeed, nil, ci, types.ReqOptions{}, false)
 	if err != nil {
 		return status.Error(codes.InvalidArgument, fmt.Sprintf("failed to subscribe to gRPC %v Feed", feedType))
 	}
@@ -264,7 +264,7 @@ func (g *server) ethOnBlock(req *pb.EthOnBlockRequest, stream pb.Gateway_EthOnBl
 		RemoteAddress: getPeerAddr(stream.Context()),
 	}
 
-	sub, err := g.params.feedManager.Subscribe(types.OnBlockFeed, types.GRPCFeed, nil, ci, types.ReqOptions{}, false)
+	sub, err := g.params.feedManager.Subscribe(bxtypes.OnBlockFeed, bxtypes.GRPCFeed, nil, ci, types.ReqOptions{}, false)
 	if err != nil {
 		return status.Error(codes.InvalidArgument, "failed to subscribe to gRPC ethOnBlock")
 	}
@@ -272,7 +272,7 @@ func (g *server) ethOnBlock(req *pb.EthOnBlockRequest, stream pb.Gateway_EthOnBl
 	defer func() {
 		err = g.params.feedManager.Unsubscribe(sub.SubscriptionID, false, "")
 		if err != nil {
-			log.Errorf("failed to unsubscribe from gRPC %s feed: %v", types.OnBlockFeed, err)
+			log.Errorf("failed to unsubscribe from gRPC %s feed: %v", bxtypes.OnBlockFeed, err)
 		}
 	}()
 
@@ -311,19 +311,5 @@ func (g *server) ethOnBlock(req *pb.EthOnBlockRequest, stream pb.Gateway_EthOnBl
 		if err != nil {
 			return status.Error(codes.Internal, err.Error())
 		}
-	}
-}
-
-func (g *server) validateAuthHeaderWithContext(ctx context.Context, authHeader string, required bool, allowAccessToInternalGateway bool) (*sdnmessage.Account, error) {
-	accountModel, err := g.validateAuthHeader(authHeader, required, allowAccessToInternalGateway, getPeerAddr(ctx))
-	if err != nil {
-		return accountModel, err
-	}
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	default:
-		return accountModel, err
 	}
 }

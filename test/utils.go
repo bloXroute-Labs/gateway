@@ -77,19 +77,6 @@ func ToSnakeCase(str string) string {
 	return strings.ToLower(snake)
 }
 
-// MapsEqual util function to check if two maps are equal
-func MapsEqual(a, b map[string]string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k, v := range a {
-		if b[k] != v {
-			return false
-		}
-	}
-	return true
-}
-
 // WaitUntilTrueOrFail waits until the condition is true or fails the test after a second
 func WaitUntilTrueOrFail(t *testing.T, condition func() bool) {
 	timeout := time.NewTimer(time.Second)

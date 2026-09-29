@@ -9,8 +9,6 @@ import (
 	"github.com/bloXroute-Labs/bxcommon-go/v2/cert"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
-
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 // Socket represents an in between interface between connection objects and network sockets
@@ -23,7 +21,7 @@ type Socket interface {
 	SetReadDeadline(t time.Time) error
 	LocalAddr() net.Addr
 	RemoteAddr() net.Addr
-	Properties() (utils.BxSSLProperties, error)
+	Properties() (cert.BxSSLProperties, error)
 }
 
 const dialTimeout = 30 * time.Second
@@ -55,20 +53,16 @@ func NewTLS(ip string, port int, certs *cert.SSLCerts) (*TLS, error) {
 	return &TLS{Conn: tlsClient}, nil
 }
 
-// NewTLSFromConn creates a new TLS wrapper on an existing TLS connection
-func NewTLSFromConn(conn *tls.Conn) *TLS {
-	return &TLS{Conn: conn}
-}
 
 // Properties returns the SSL properties embedded in TLS certificates
-func (t TLS) Properties() (utils.BxSSLProperties, error) {
+func (t TLS) Properties() (cert.BxSSLProperties, error) {
 	state := t.Conn.ConnectionState()
 	var (
 		err             error
-		bxSSLExtensions utils.BxSSLProperties
+		bxSSLExtensions cert.BxSSLProperties
 	)
 	for _, peerCertificate := range state.PeerCertificates {
-		bxSSLExtensions, err = utils.ParseBxCertificate(peerCertificate)
+		bxSSLExtensions, err = cert.ParseBxCertificate(peerCertificate)
 		if err == nil {
 			break
 		}

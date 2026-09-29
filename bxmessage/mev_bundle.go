@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -78,43 +77,6 @@ type MEVBundle struct {
 	EndOfBlock bool `json:"end_of_block"`
 }
 
-// NewMEVBundle creates a new MEVBundle
-func NewMEVBundle(
-	transaction []string,
-	uuid string,
-	blockNumber string,
-	minTimestamp int,
-	maxTimestamp int,
-	revertingHashes []string,
-	mevBuilders MEVBundleBuilders,
-	bundleHash string,
-	avoidMixedBundles bool,
-	priorityFeeRefund bool,
-	incomingRefundRecipient string,
-	blocksCount int,
-	droppingTxHashes []string,
-	endOfBlock bool,
-) (MEVBundle, error) {
-	if len(uuid) != 0 && len(uuid) != 36 {
-		return MEVBundle{}, errors.New("invalid uuid len")
-	}
-	return MEVBundle{
-		Transactions:            transaction,
-		UUID:                    uuid,
-		BlockNumber:             blockNumber,
-		MinTimestamp:            minTimestamp,
-		MaxTimestamp:            maxTimestamp,
-		RevertingHashes:         revertingHashes,
-		MEVBuilders:             mevBuilders,
-		BundleHash:              bundleHash,
-		AvoidMixedBundles:       avoidMixedBundles,
-		PriorityFeeRefund:       priorityFeeRefund,
-		IncomingRefundRecipient: incomingRefundRecipient,
-		BlocksCount:             blocksCount,
-		DroppingTxHashes:        droppingTxHashes,
-		EndOfBlock:              endOfBlock,
-	}, nil
-}
 
 // String returns a string representation of the MEVBundle
 func (m MEVBundle) String() string {
