@@ -169,14 +169,6 @@ func (bs *BdnPerformanceStats) LogNewBlockMessageFromNode(node types.NodeEndpoin
 	nodeStats.NewBlockMessagesFromBlockchainNode++
 }
 
-// LogNewBlockAnnouncementFromNode logs a new block announcement from a blockchain node in the stats for a specified node
-func (bs *BdnPerformanceStats) LogNewBlockAnnouncementFromNode(node types.NodeEndpoint) {
-	bs.lock.Lock()
-	defer bs.lock.Unlock()
-	nodeStats := bs.getOrCreateNodeStats(node)
-	nodeStats.NewBlockAnnouncementsFromBlockchainNode++
-}
-
 // LogNewTxFromNode logs new tx from blockchain in stats for a specified node, from BDN for other nodes
 func (bs *BdnPerformanceStats) LogNewTxFromNode(node types.NodeEndpoint) {
 	bs.lock.Lock()

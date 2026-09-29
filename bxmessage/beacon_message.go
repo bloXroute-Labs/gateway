@@ -73,11 +73,6 @@ func (m *BeaconMessage) BlockHash() types.SHA256Hash {
 	return m.blockHash
 }
 
-// BeaconMessageType returns the beacon message type
-func (m *BeaconMessage) BeaconMessageType() types.BxBeaconMessageType {
-	return m.Type()
-}
-
 // Data returns the data
 func (m *BeaconMessage) Data() []byte {
 	return m.data

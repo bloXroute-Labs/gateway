@@ -587,11 +587,6 @@ func (c *Chain) BlockAtDepth(chainDepth int) (*bxethcommon.Block, error) {
 	return block, nil
 }
 
-// HeadHeight returns head height
-func (c *Chain) HeadHeight() uint64 {
-	return c.chainState.head().Height
-}
-
 // should be called with c.chainLock held
 func (c *Chain) updateChainState(height uint64, hash ethcommon.Hash, parentHash ethcommon.Hash) int {
 	if len(c.chainState) == 0 {

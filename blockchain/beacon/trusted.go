@@ -5,6 +5,7 @@ import (
 	"os"
 	"sync"
 
+	bxfile "github.com/bloXroute-Labs/bxcommon-go/v2/file"
 	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
 	"github.com/libp2p/go-libp2p/core/network"
 	libp2pPeer "github.com/libp2p/go-libp2p/core/peer"
@@ -59,7 +60,7 @@ func (t *trustedPeers) contains(id libp2pPeer.ID) bool {
 }
 
 func (n *Node) reloadTrustedPeers(filename string) {
-	utils.TriggerOnFileChanged(n.ctx, filename, func() {
+	bxfile.TriggerOnFileChanged(n.ctx, filename, func() {
 		peerIDs, err := readPeerIDsFromFile(n.log, filename)
 		if err != nil {
 			log.Errorf("Failed to read peer IDs from file: %s", err)

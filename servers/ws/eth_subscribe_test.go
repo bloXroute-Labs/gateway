@@ -28,7 +28,7 @@ func (s *wsSuite) TestEthSubscribe() {
 	unsubscribeFilter, subscriptionID := s.assertEthSubscribe(`{"id": "1", "method": "eth_subscribe", "params": ["newHeads"]}`)
 	ethBlock := bxmock.NewEthBlock(10, common.Hash{})
 	feedNotification, _ := types.NewEthBlockNotification(bxtypes.Mainnet, ethBlock.Hash(), ethBlock, nil)
-	feedNotification.SetNotificationType(types.NewBlocksFeed)
+	feedNotification.SetNotificationType(bxtypes.NewBlocksFeed)
 	sourceEndpoint := types.NodeEndpoint{IP: s.blockchainPeers[0].IP, Port: s.blockchainPeers[0].Port, BlockchainNetwork: bxtypes.Mainnet}
 	feedNotification.SetSource(&sourceEndpoint)
 	s.Assert().True(s.nodeWSManager.Synced())

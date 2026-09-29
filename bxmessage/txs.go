@@ -19,12 +19,6 @@ type Txs struct {
 	items []TxsItem
 }
 
-// NewTxs returns a new Txs message for packing
-func NewTxs(items []TxsItem) *Txs {
-	return &Txs{
-		items: items,
-	}
-}
 
 // Items returns all the requested transaction info
 func (m *Txs) Items() []TxsItem {

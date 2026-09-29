@@ -201,17 +201,6 @@ func (bn *Bx) HandleMsg(msg bxmessage.Message, source connections.Conn) error {
 	return nil
 }
 
-// DisconnectConn - disconnect a specific connection
-func (bn *Bx) DisconnectConn(id bxtypes.NodeID) {
-	bn.ConnectionsLock.Lock()
-	for _, conn := range bn.Connections {
-		if id == conn.GetNodeID() {
-			// closing in a new go routine in order to avoid deadlock while Close method acquiring ConnectionsLock
-			go conn.Close("disconnect requested by bxapi")
-		}
-	}
-	bn.ConnectionsLock.Unlock()
-}
 
 // Peers provides a list of current peers for the requested type
 func (bn *Bx) Peers(peerType string) []bxmessage.PeerInfo {

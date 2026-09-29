@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"time"
 
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/enr"
@@ -21,9 +22,6 @@ const BSCMainnetChainID = 56
 
 // BSCTestnetChainID BSC testnet chain ID
 const BSCTestnetChainID = 97
-
-// HoleskyChainID Holesky testnet chain ID
-const HoleskyChainID = 17000
 
 var networkMapping = map[string]EthConfig{
 	"Mainnet":     newEthereumMainnetConfig(),
@@ -166,7 +164,7 @@ func newHoleskyConfig() EthConfig {
 	ttd, _ := big.NewInt(0).SetString("0", 0)
 
 	return EthConfig{
-		Network:                 HoleskyChainID,
+		Network:                 bxtypes.HoleskyChainID,
 		TotalDifficulty:         td,
 		TerminalTotalDifficulty: ttd,
 		Head:                    common.HexToHash("0xb5f7f912443c940f21fd611f12828d75b534364ed9e95ca4e307729a4661bde4"),

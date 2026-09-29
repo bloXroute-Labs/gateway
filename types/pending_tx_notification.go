@@ -1,5 +1,7 @@
 package types
 
+import bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
+
 // PendingTransactionNotification represents a pending transaction notification.
 type PendingTransactionNotification struct {
 	NewTransactionNotification
@@ -18,6 +20,6 @@ func CreatePendingTransactionNotification(hash SHA256Hash, flags TxFlags, ethTx 
 }
 
 // NotificationType - returns the feed name notification
-func (pendingTransactionNotification *PendingTransactionNotification) NotificationType() FeedType {
-	return PendingTxsFeed
+func (pendingTransactionNotification *PendingTransactionNotification) NotificationType() bxtypes.FeedType {
+	return bxtypes.PendingTxsFeed
 }

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bloXroute-Labs/bxcommon-go/v2/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
@@ -57,7 +58,7 @@ type Connector interface {
 type feedManager interface {
 	Notify(notification types.Notification)
 	GetGrpcSubscriptionReply() []feed.ClientSubscriptionFullInfo
-	Subscribe(feedName types.FeedType, feedConnectionType types.FeedConnectionType, conn io.Closer, ci types.ClientInfo, ro types.ReqOptions, ethSubscribe bool) (*feed.ClientSubscriptionHandlingInfo, error)
+	Subscribe(feedName bxtypes.FeedType, feedConnectionType bxtypes.FeedConnectionType, conn io.Closer, ci types.ClientInfo, ro types.ReqOptions, ethSubscribe bool) (*feed.ClientSubscriptionHandlingInfo, error)
 	Unsubscribe(subscriptionID string, closeClientConnection bool, errMsg string) error
 }
 
@@ -92,28 +93,28 @@ func NewGRPCServer(
 	senderExtractor *services.SenderExtractor,
 ) *Server {
 	params := grpcParams{
-		node:                  node,
-		sdn:                   sdn,
-		accService:            accService,
-		bridge:                bridge,
-		blockchainPeers:       blockchainPeers,
-		wsManager:             wsManager,
-		bdnStats:              bdnStats,
-		timeStarted:           timeStarted,
-		gatewayPublicKey:      gatewayPublicKey,
-		connector:             connector,
-		txFromFieldIncludable: txFromFieldIncludable,
-		feedManager:           feedManager,
-		txStore:               txStore,
-		chainID:               bxtypes.NetworkNumToChainID[sdn.NetworkNum()],
-		senderExtractor:       senderExtractor,
+		node:                           node,
+		sdn:                            sdn,
+		accService:                     accService,
+		bridge:                         bridge,
+		blockchainPeers:                blockchainPeers,
+		wsManager:                      wsManager,
+		bdnStats:                       bdnStats,
+		timeStarted:                    timeStarted,
+		gatewayPublicKey:               gatewayPublicKey,
+		connector:                      connector,
+		txFromFieldIncludable:          txFromFieldIncludable,
+		feedManager:                    feedManager,
+		txStore:                        txStore,
+		chainID:                        bxtypes.NetworkNumToChainID[sdn.NetworkNum()],
+		senderExtractor:                senderExtractor,
 	}
 
 	grpcHostPort := fmt.Sprintf("%v:%v", config.Host, config.Port)
 
 	var encodedAuth string
 	if config.User != "" && config.Password != "" {
-		encodedAuth = rpc.EncodeUserSecret(config.User, config.Password)
+		encodedAuth = auth.EncodeUserSecret(config.User, config.Password)
 	} else {
 		encodedAuth = ""
 	}
@@ -213,7 +214,7 @@ func (gs *Server) sdkStat(md metadata.MD, method string, start time.Time) {
 	}
 
 	// blockchain, method, Feed, sourceCode string, start, end time.Time, count int
-	gs.stats.LogSDKInfo(blockchain, method, sourceCode, version, gs.serverAccountID, types.GRPCFeed, start, time.Now())
+	gs.stats.LogSDKInfo(blockchain, method, sourceCode, version, gs.serverAccountID, bxtypes.GRPCFeed, start, time.Now())
 }
 
 // getPeerAddr returns the address of the gRPC connected client given its context

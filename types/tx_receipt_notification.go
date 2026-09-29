@@ -3,6 +3,8 @@ package types
 import (
 	"encoding/json"
 	"fmt"
+
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 )
 
 const nullAddressStr = "0x"
@@ -235,6 +237,6 @@ func (r *TxReceiptsNotification) GetHash() string {
 }
 
 // NotificationType - feed name
-func (r *TxReceiptsNotification) NotificationType() FeedType {
-	return TxReceiptsFeed
+func (r *TxReceiptsNotification) NotificationType() bxtypes.FeedType {
+	return bxtypes.TxReceiptsFeed
 }

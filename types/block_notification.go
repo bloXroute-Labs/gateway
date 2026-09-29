@@ -76,7 +76,7 @@ type ElectraBlockNotification struct {
 
 	Hash string `json:"hash"`
 
-	notificationType FeedType
+	notificationType types.FeedType
 	source           *NodeEndpoint
 }
 
@@ -142,12 +142,12 @@ func (e *ElectraBlockNotification) GetHash() string {
 }
 
 // NotificationType returns feed name
-func (e *ElectraBlockNotification) NotificationType() FeedType {
+func (e *ElectraBlockNotification) NotificationType() types.FeedType {
 	return e.notificationType
 }
 
 // SetNotificationType sets feed name
-func (e *ElectraBlockNotification) SetNotificationType(feedType FeedType) {
+func (e *ElectraBlockNotification) SetNotificationType(feedType types.FeedType) {
 	e.notificationType = feedType
 }
 
@@ -173,7 +173,7 @@ type DenebBlockNotification struct {
 
 	Hash string `json:"hash"`
 
-	notificationType FeedType
+	notificationType types.FeedType
 	source           *NodeEndpoint
 }
 
@@ -239,12 +239,12 @@ func (e *DenebBlockNotification) GetHash() string {
 }
 
 // SetNotificationType - set feed name
-func (e *DenebBlockNotification) SetNotificationType(feedName FeedType) {
+func (e *DenebBlockNotification) SetNotificationType(feedName types.FeedType) {
 	e.notificationType = feedName
 }
 
 // NotificationType - feed name
-func (e *DenebBlockNotification) NotificationType() FeedType {
+func (e *DenebBlockNotification) NotificationType() types.FeedType {
 	return e.notificationType
 }
 
@@ -275,7 +275,7 @@ type FuluBlockNotification struct {
 
 	Hash string `json:"hash"`
 
-	notificationType FeedType
+	notificationType types.FeedType
 	source           *NodeEndpoint
 }
 
@@ -341,12 +341,12 @@ func (e *FuluBlockNotification) GetHash() string {
 }
 
 // NotificationType returns feed name
-func (e *FuluBlockNotification) NotificationType() FeedType {
+func (e *FuluBlockNotification) NotificationType() types.FeedType {
 	return e.notificationType
 }
 
 // SetNotificationType sets feed name
-func (e *FuluBlockNotification) SetNotificationType(feedType FeedType) {
+func (e *FuluBlockNotification) SetNotificationType(feedType types.FeedType) {
 	e.notificationType = feedType
 }
 
@@ -376,7 +376,7 @@ type EthBlockNotification struct {
 	ValidatorInfo    []*FutureValidatorInfo   `json:"future_validator_info,omitempty"`
 	Withdrawals      ethtypes.Withdrawals     `json:"withdrawals,omitempty"`
 	RawTransactions  [][]byte                 `json:"raw_transactions,omitempty"`
-	notificationType FeedType
+	notificationType types.FeedType
 	source           *NodeEndpoint
 	rawTxsMu         *sync.RWMutex
 	txsMu            *sync.RWMutex
@@ -463,13 +463,6 @@ func (ethBlockNotification *EthBlockNotification) GetRawTransactions() [][]byte 
 	ethBlockNotification.rawTxsMu.RLock()
 	defer ethBlockNotification.rawTxsMu.RUnlock()
 	return ethBlockNotification.RawTransactions
-}
-
-// GetParsedTransactions returns parsed transactions
-func (ethBlockNotification *EthBlockNotification) GetParsedTransactions() []map[string]interface{} {
-	ethBlockNotification.txsMu.RLock()
-	defer ethBlockNotification.txsMu.RUnlock()
-	return ethBlockNotification.Transactions
 }
 
 func (ethBlockNotification *EthBlockNotification) parseTransactionsWithSenders(senders map[string]Sender) []map[string]interface{} {
@@ -628,10 +621,6 @@ func (h *Header) GetNumber() uint64 {
 	return h.hexNumber
 }
 
-// UpdateNumber updates the block number from the header in uint64
-func (h *Header) UpdateNumber(number uint64) {
-	h.hexNumber = number
-}
 
 // ConvertEthHeaderToBlockNotificationHeader converts Ethereum header to bloxroute Ethereum Header
 func ConvertEthHeaderToBlockNotificationHeader(blockchainNetwork string, ethHeader *ethtypes.Header) *Header {
@@ -739,12 +728,12 @@ func (ethBlockNotification *EthBlockNotification) GetHash() string {
 }
 
 // SetNotificationType - set feed name
-func (ethBlockNotification *EthBlockNotification) SetNotificationType(feedName FeedType) {
+func (ethBlockNotification *EthBlockNotification) SetNotificationType(feedName types.FeedType) {
 	ethBlockNotification.notificationType = feedName
 }
 
 // NotificationType - feed name
-func (ethBlockNotification *EthBlockNotification) NotificationType() FeedType {
+func (ethBlockNotification *EthBlockNotification) NotificationType() types.FeedType {
 	return ethBlockNotification.notificationType
 }
 
@@ -779,9 +768,3 @@ func (ethBlockNotification *EthBlockNotification) GetRawTxByIndex(index int) []b
 	return raws[index]
 }
 
-// SetLocks sets mutex locks for transactions and raw transactions
-func (ethBlockNotification *EthBlockNotification) SetLocks() {
-	ethBlockNotification.rawTxsMu = &sync.RWMutex{}
-	ethBlockNotification.txsMu = &sync.RWMutex{}
-	ethBlockNotification.rawTxsCache = new([][]byte)
-}

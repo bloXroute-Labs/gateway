@@ -33,16 +33,6 @@ func (vu *ValidatorUpdates) size() uint32 {
 	return vu.Header.Size() + uint32(types.UInt32Len+types.UInt16Len+common.AddressLength*vu.onlineListLength)
 }
 
-// GetOnlineLength is accessor for online length
-func (vu *ValidatorUpdates) GetOnlineLength() int {
-	return int(vu.onlineListLength)
-}
-
-// GetOnlineList is accessor for online list
-func (vu *ValidatorUpdates) GetOnlineList() []string {
-	return vu.onlineList
-}
-
 // Pack serializes a validator updates into a buffer for sending
 func (vu *ValidatorUpdates) Pack(protocol Protocol) ([]byte, error) {
 	if len(vu.onlineList) != int(vu.onlineListLength) {

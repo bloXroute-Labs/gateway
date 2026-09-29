@@ -107,11 +107,6 @@ func (b Broadcast) BlockType() types.BxBlockType {
 	}
 }
 
-// Encrypted returns the encrypted byte
-func (b Broadcast) Encrypted() bool {
-	return b.encrypted
-}
-
 // Block returns the block
 func (b Broadcast) Block() []byte {
 	return b.block
@@ -122,22 +117,6 @@ func (b Broadcast) ShortIDs() types.ShortIDList {
 	return b.sids
 }
 
-// SetBroadcastType sets the broadcast type
-func (b *Broadcast) SetBroadcastType(bType types.BxBlockType) {
-	var t [BroadcastTypeLen]byte
-	copy(t[:], blockToBroadcastType(bType))
-	b.broadcastType = t
-}
-
-// SetEncrypted sets the encrypted byte
-func (b *Broadcast) SetEncrypted(encrypted bool) {
-	b.encrypted = encrypted
-}
-
-// SetBlock sets the block
-func (b *Broadcast) SetBlock(block []byte) {
-	b.block = block
-}
 
 // SetBeaconHash sets the beacon block hash
 func (b *Broadcast) SetBeaconHash(hash types.SHA256Hash) {
@@ -149,10 +128,6 @@ func (b *Broadcast) BeaconHash() (hash types.SHA256Hash) {
 	return b.beaconHash
 }
 
-// SetSids sets the sids
-func (b *Broadcast) SetSids(sids types.ShortIDList) {
-	b.sids = sids
-}
 
 // Pack serializes a Broadcast into a buffer for sending
 func (b *Broadcast) Pack(protocol Protocol) ([]byte, error) {

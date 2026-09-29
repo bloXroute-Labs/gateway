@@ -25,7 +25,6 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/struCoder/pidusage v0.2.1
 	github.com/urfave/cli/v2 v2.27.7
-	github.com/wk8/go-ordered-map/v2 v2.1.8
 	go.uber.org/mock v0.6.0
 	golang.org/x/crypto v0.57.0
 	golang.org/x/sync v0.23.0
@@ -41,13 +40,11 @@ require (
 	github.com/VictoriaMetrics/fastcache v1.13.0 // indirect
 	github.com/allegro/bigcache v1.2.1 // indirect
 	github.com/aristanetworks/goarista v0.0.0-20200805130819-fd197cf57d96 // indirect
-	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/bazelbuild/rules_go v0.23.2 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bits-and-blooms/bitset v1.24.2 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4 // indirect
-	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/consensys/gnark-crypto v0.18.1 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect

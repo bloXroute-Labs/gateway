@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bloXroute-Labs/bxcommon-go/v2/clock"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,7 +16,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/connections"
 	"github.com/bloXroute-Labs/gateway/v2/test"
 	"github.com/bloXroute-Labs/gateway/v2/test/bxmock"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 type testHandler struct {
@@ -129,12 +129,12 @@ func bxConn(handler connections.ConnHandler) (*connections.MockTLS, *BxConn) {
 	port := int64(3000)
 
 	tls := connections.NewMockTLS(ip, port, "", bxtypes.ExternalGateway, "")
-	certs := utils.TestCerts()
+	certs := sdnsdk.SetupTestCerts()
 	b := NewBxConn(bxmock.MockBxListener{},
 		func() (connections.Socket, error) {
 			return tls, nil
 		},
-		handler, certs, ip, port, "", bxtypes.RelayProxy, false, true, false, connections.LocalInitiatedPort, clock.RealClock{},
+		handler, certs, ip, port, "", bxtypes.RelayProxy, false, true, false, sdnsdk.LocalInitiatedPort, clock.RealClock{},
 		false)
 	return tls, b
 }

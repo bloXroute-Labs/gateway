@@ -10,38 +10,37 @@ TESTPKGS = $(shell env GO111MODULE=on $(GO) list -f \
 BIN      = $(CURDIR)/bin
 
 GO ?= go
-TIMEOUT = 15
+TIMEOUT = 60
 V = 0
 Q = $(if $(filter 1,$V),,@)
 M = $(shell printf "\033[34;1m▶\033[0m")
 
-GOLANGCI_LINT_VERSION=v1.64.5
-GOLANGCI_LINT_VERSION_COMMAND = golangci-lint --version
-GOLANGCI_LINT_VERSION_PRINT = $(shell $(GOLANGCI_LINT_VERSION_COMMAND) | sed -n 's/.*version \([0-9.]*\).*/\1/p')
+GOLANGCI_LINT_VERSION=v2.13.2
 
 .PHONY: all
 all: check-go-mod gateway
 
 check-go-mod: ; $(info $(M) checking if go.mod and go.sum are up-to-date...)
-	$Q $(GO) mod tidy
+	$Q GOWORK=off $(GO) mod tidy
 	$Q git diff --quiet --exit-code go.mod go.sum || { echo "go.mod or go.sum is not up-to-date"; exit 1; }
 
-gateway: fmt | $(BIN); $(info $(M) building gateway executable) @ ## Build program binary
-	$Q $(GO) build \
+.PHONY: tidy
+tidy: ; $(info $(M) running go mod tidy...) @ ## Run go mod tidy
+	$Q GOWORK=off $(GO) mod tidy
+
+gateway: fmt | $(BIN) ; $(info $(M) building gateway executable) @ ## Build program binary
+	$Q GOWORK=off $(GO) build \
 		-tags release \
 		-ldflags '-X $(MODULE)/version.BuildVersion=$(VERSION) -X $(MODULE)/version.BuildDate=$(DATE)' \
 		-o $(BIN) ./cmd/...
 
 $(BIN):
 	@mkdir -p $@
-$(BIN)/%: | $(BIN) ; $(info $(M) building $(PACKAGE))
-	$Q tmp=$$(mktemp -d); \
-	   env GO111MODULE=off GOPATH=$$tmp GOBIN=$(BIN) $(GO) get $(PACKAGE) \
-		|| ret=$$?; \
-	   rm -rf $$tmp ; exit $$ret
+$(BIN)/%: | $(BIN) ; $(info $(M) installing $(PACKAGE)...)
+	$Q env GOBIN=$(BIN) $(GO) install $(PACKAGE)@latest
 
 GOCOV = $(BIN)/gocov
-$(BIN)/gocov: PACKAGE=github.com/axw/gocov/...
+$(BIN)/gocov: PACKAGE=github.com/axw/gocov/gocov
 
 GOCOVXML = $(BIN)/gocov-xml
 $(BIN)/gocov-xml: PACKAGE=github.com/AlekSi/gocov-xml
@@ -61,7 +60,7 @@ test-integration: ARGS=-tags="integration" ./...
 $(TEST_TARGETS): NAME=$(MAKECMDGOALS:test-%=%)
 $(TEST_TARGETS): test
 check test tests: fmt lint ; $(info $(M) running $(NAME:%=% )tests) @ ## Run tests
-	$Q $(GO) test -timeout $(TIMEOUT)s $(ARGS) $(TESTPKGS)
+	$Q GOWORK=off $(GO) test -timeout $(TIMEOUT)s $(ARGS) $(TESTPKGS)
 
 test-xml: fmt lint | $(GO2XUNIT) ; $(info $(M) running xUnit tests) @ ## Run tests with xUnit output
 	$Q mkdir -p test
@@ -87,23 +86,17 @@ test-coverage: fmt lint test-coverage-tools ; $(info $(M) running coverage tests
 	$Q $(GOCOV) convert $(COVERAGE_PROFILE) | $(GOCOVXML) > $(COVERAGE_XML)
 
 .PHONY: lint
-lint: golangci-lint
-	@golangci-lint run --timeout 10m0s
+lint: golangci-lint ## Run golangci-lint
+	@GOWORK=off golangci-lint run --timeout 10m0s
 
 .PHONY: golangci-lint
-golangci-lint: ## # !!IMPORTANT!! force to install it once on the CI when go version is changed
-	@if ! command -v golangci-lint@${GOLANGCI_LINT_VERSION} >/dev/null 2>&1; then \
-		echo "golangci-lint not found, installing..."; \
-		$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}; \
-	else \
-		echo "using golangci-lint version $(GOLANGCI_LINT_VERSION_PRINT)"; \
-	fi
+golangci-lint: ## Install golangci-lint (version pinned in GOLANGCI_LINT_VERSION)
+	@echo "installing golangci-lint $(GOLANGCI_LINT_VERSION)..."
+	@curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $$($(GO) env GOPATH)/bin $(GOLANGCI_LINT_VERSION)
 
 .PHONY: fmt
-fmt: ; $(info $(M) running gofmt) @ ## Run gofmt on all source files except protobuf
-	$Q for pkg in $$(echo $(PKGS) | tr ' ' '\n' | grep -v '/protobuf' || true); do \
-		test -n "$$pkg" && $(GO) fmt "$$pkg"; \
-	done
+fmt: ; $(info $(M) running gofmt) @ ## Run gofmt on all source files
+	$Q GOWORK=off $(GO) fmt ./...
 
 # Misc
 

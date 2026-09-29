@@ -10,21 +10,15 @@ import (
 
 	"github.com/bloXroute-Labs/bxcommon-go/v2/cert"
 	"github.com/bloXroute-Labs/bxcommon-go/v2/clock"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 const (
-	// RemoteInitiatedPort is a special constant used to indicate connections initiated from the remote
-	RemoteInitiatedPort = 0
-
-	// LocalInitiatedPort is a special constant used to indicate connections initiated locally
-	LocalInitiatedPort = 0
-
 	packetSize = 20 * 1024
 )
 
@@ -47,7 +41,7 @@ type SSLConn struct {
 	sendChannelSize int
 	buf             bytes.Buffer
 	logMessages     bool
-	extensions      utils.BxSSLProperties
+	extensions      cert.BxSSLProperties
 	packet          []byte
 	log             *log.Entry
 	clock           clock.Clock
@@ -145,7 +139,7 @@ func (s *SSLConn) GetPeerIP() string { return s.ip }
 func (s *SSLConn) GetPeerPort() int64 { return s.port }
 
 // GetLocalPort return local port
-func (s *SSLConn) GetLocalPort() int64 { return LocalInitiatedPort }
+func (s *SSLConn) GetLocalPort() int64 { return sdnsdk.LocalInitiatedPort }
 
 // GetConnectedAt gets ttime of connection
 func (s *SSLConn) GetConnectedAt() time.Time { return s.connectedAt }
@@ -319,7 +313,7 @@ func (s *SSLConn) String() string {
 
 // IsInitiator returns whether this node initiated the connection
 func (s *SSLConn) IsInitiator() bool {
-	return s.port != RemoteInitiatedPort
+	return s.port != sdnsdk.RemoteInitiatedPort
 }
 
 // close should only be called when s.lock is already held

@@ -8,12 +8,10 @@ import (
 
 	"github.com/bloXroute-Labs/gateway/v2/bxmessage"
 	"github.com/bloXroute-Labs/gateway/v2/connections"
-	"github.com/bloXroute-Labs/gateway/v2/utils/orderedmap"
 )
 
 // Manager manages the next validators and their status
 type Manager struct {
-	nextValidatorMap                    *orderedmap.OrderedMap[uint64, string]
 	validatorStatusMap                  *syncmap.SyncMap[string, bool]
 	validatorListMap                    *syncmap.SyncMap[uint64, List]
 	pendingBSCNextValidatorTxHashToInfo map[string]PendingNextValidatorTxInfo
@@ -41,21 +39,6 @@ func NewManager(validatorStatusMap *syncmap.SyncMap[string, bool], validatorList
 		validatorListMap:                    validatorListMap,
 		pendingBSCNextValidatorTxHashToInfo: make(map[string]PendingNextValidatorTxInfo),
 	}
-}
-
-// GetPendingNextValidatorTxs returns map of pending next validator transactions
-func (m *Manager) GetPendingNextValidatorTxs() map[string]PendingNextValidatorTxInfo {
-	return m.pendingBSCNextValidatorTxHashToInfo
-}
-
-// GetNextValidatorMap returns an ordered map of next validators
-func (m *Manager) GetNextValidatorMap() *orderedmap.OrderedMap[uint64, string] {
-	return m.nextValidatorMap
-}
-
-// GetValidatorStatusMap returns a synced map validators status
-func (m *Manager) GetValidatorStatusMap() *syncmap.SyncMap[string, bool] {
-	return m.validatorStatusMap
 }
 
 // Lock activates mutex lock

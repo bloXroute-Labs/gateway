@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"time"
 
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 )
@@ -23,9 +22,6 @@ const UInt8Len = 1
 
 // TxFlagsLen represents the byte length of transaction flag
 const TxFlagsLen = 2
-
-// WalletIDLen represents the bytes length of the wallet id
-const WalletIDLen = 42
 
 // NodeEndpoint - represent the node endpoint struct sent in BxStatus
 type NodeEndpoint struct {
@@ -118,6 +114,3 @@ const ErrorNotificationCodeLen = 4
 
 // UUIDv4Len is the byte length of UUID V4
 const UUIDv4Len = 16
-
-// RelayMonitorInterval is interval for relay monitor
-const RelayMonitorInterval = time.Minute

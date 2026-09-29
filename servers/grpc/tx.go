@@ -122,7 +122,7 @@ func (g *server) NewTxs(req *pb.TxsRequest, stream pb.Gateway_NewTxsServer) erro
 		return status.Error(codes.PermissionDenied, err.Error())
 	}
 
-	return g.handleTransactions(req, stream, types.NewTxsFeed, *accountModel)
+	return g.handleTransactions(req, stream, bxtypes.NewTxsFeed, *accountModel)
 }
 
 // PendingTxs subscribe to pending txs feed
@@ -133,7 +133,7 @@ func (g *server) PendingTxs(req *pb.TxsRequest, stream pb.Gateway_PendingTxsServ
 		return status.Error(codes.PermissionDenied, err.Error())
 	}
 
-	return g.handleTransactions(req, stream, types.PendingTxsFeed, *accountModel)
+	return g.handleTransactions(req, stream, bxtypes.PendingTxsFeed, *accountModel)
 }
 
 // TxReceipts handler for stream of all transaction receipts in each newly mined block
@@ -209,14 +209,14 @@ func (g *server) txReceipts(req *pb.TxReceiptsRequest, stream pb.Gateway_TxRecei
 		RemoteAddress: getPeerAddr(stream.Context()),
 	}
 
-	sub, err := g.params.feedManager.Subscribe(types.TxReceiptsFeed, types.GRPCFeed, nil, ci, types.ReqOptions{}, false)
+	sub, err := g.params.feedManager.Subscribe(bxtypes.TxReceiptsFeed, bxtypes.GRPCFeed, nil, ci, types.ReqOptions{}, false)
 	if err != nil {
 		return status.Error(codes.InvalidArgument, "failed to subscribe to gRPC txReceipts")
 	}
 	defer func() {
 		err = g.params.feedManager.Unsubscribe(sub.SubscriptionID, false, "")
 		if err != nil {
-			log.Errorf("failed to unsubscribe from gRPC %s feed: %v", types.TxReceiptsFeed, err)
+			log.Errorf("failed to unsubscribe from gRPC %s feed: %v", bxtypes.TxReceiptsFeed, err)
 		}
 	}()
 
@@ -246,7 +246,7 @@ func (g *server) txReceipts(req *pb.TxReceiptsRequest, stream pb.Gateway_TxRecei
 	}
 }
 
-func (g *server) handleTransactions(req *pb.TxsRequest, stream pb.Gateway_NewTxsServer, feedType types.FeedType, account sdnmessage.Account) error {
+func (g *server) handleTransactions(req *pb.TxsRequest, stream pb.Gateway_NewTxsServer, feedType bxtypes.FeedType, account sdnmessage.Account) error {
 	var expr *filter.Expression
 	if req.GetFilters() != "" {
 		var err error
@@ -271,7 +271,7 @@ func (g *server) handleTransactions(req *pb.TxsRequest, stream pb.Gateway_NewTxs
 		Filters: req.GetFilters(),
 	}
 
-	sub, err := g.params.feedManager.Subscribe(feedType, types.GRPCFeed, nil, ci, ro, false)
+	sub, err := g.params.feedManager.Subscribe(feedType, bxtypes.GRPCFeed, nil, ci, ro, false)
 	if err != nil {
 		return status.Error(codes.InvalidArgument, fmt.Sprintf("failed to subscribe to gRPC %v feed", feedType))
 	}
@@ -349,12 +349,12 @@ func generateTxReceiptReply(n *types.TxReceipt) *pb.TxReceiptsReply {
 	return txReceiptsReply
 }
 
-func processTx(clientReq *ws.ClientReq, notification types.Notification, multiTxsResponse *[]*pb.Tx, remoteAddress string, accountID bxtypes.AccountID, feedType types.FeedType, txFromFieldIncludable bool) {
+func processTx(clientReq *ws.ClientReq, notification types.Notification, multiTxsResponse *[]*pb.Tx, remoteAddress string, accountID bxtypes.AccountID, feedType bxtypes.FeedType, txFromFieldIncludable bool) {
 	var transaction *types.NewTransactionNotification
 	switch feedType {
-	case types.NewTxsFeed:
+	case bxtypes.NewTxsFeed:
 		transaction = (notification).(*types.NewTransactionNotification)
-	case types.PendingTxsFeed:
+	case bxtypes.PendingTxsFeed:
 		tx := (notification).(*types.PendingTransactionNotification)
 		transaction = &tx.NewTransactionNotification
 	}

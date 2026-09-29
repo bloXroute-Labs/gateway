@@ -1,6 +1,7 @@
 package types
 
 import (
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 )
 
@@ -23,7 +24,7 @@ type NewHeadsBlock struct {
 	Timestamp        string             `json:"timestamp,omitempty"`
 	MilliTimestamp   string             `json:"milliTimestamp,omitempty"`
 
-	notificationType FeedType
+	notificationType bxtypes.FeedType
 	source           *NodeEndpoint
 }
 
@@ -72,12 +73,12 @@ func (newHeadsBlock *NewHeadsBlock) GetHash() string {
 }
 
 // SetNotificationType - set feed name
-func (newHeadsBlock *NewHeadsBlock) SetNotificationType(feedName FeedType) {
+func (newHeadsBlock *NewHeadsBlock) SetNotificationType(feedName bxtypes.FeedType) {
 	newHeadsBlock.notificationType = feedName
 }
 
 // NotificationType - feed name
-func (newHeadsBlock *NewHeadsBlock) NotificationType() FeedType {
+func (newHeadsBlock *NewHeadsBlock) NotificationType() bxtypes.FeedType {
 	return newHeadsBlock.notificationType
 }
 

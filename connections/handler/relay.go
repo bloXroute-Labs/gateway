@@ -5,6 +5,7 @@ import (
 
 	"github.com/bloXroute-Labs/bxcommon-go/v2/cert"
 	"github.com/bloXroute-Labs/bxcommon-go/v2/clock"
+	"github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
@@ -32,23 +33,10 @@ func NewOutboundRelay(node connections.BxListener,
 		func() (connections.Socket, error) {
 			return connections.NewTLS(relayIP, int(relayPort), sslCerts)
 		},
-		sslCerts, relayIP, relayPort, nodeID, relayType, networks, localGEO, privateNetwork, connections.LocalInitiatedPort, clock,
+		sslCerts, relayIP, relayPort, nodeID, relayType, networks, localGEO, privateNetwork, sdnsdk.LocalInitiatedPort, clock,
 		sameRegion)
 }
 
-// NewInboundRelay builds a relay connection from a socket event initiated by a remote relay node
-func NewInboundRelay(node connections.BxListener,
-	socket connections.Socket, sslCerts *cert.SSLCerts, relayIP string, nodeID bxtypes.NodeID,
-	relayType bxtypes.NodeType, networks *sdnmessage.BlockchainNetworks,
-	localGEO bool, privateNetwork bool, localPort int64, clock clock.Clock,
-	sameRegion bool) *Relay {
-	return NewRelay(node,
-		func() (connections.Socket, error) {
-			return socket, nil
-		},
-		sslCerts, relayIP, connections.RemoteInitiatedPort, nodeID, relayType, networks, localGEO, privateNetwork, localPort, clock,
-		sameRegion)
-}
 
 // NewRelay should only be called from test cases or NewOutboundRelay. It allows specifying a particular connect function for the SSL socket. However, in essentially all usages this should not be necessary as any node will initiate a connection to the relay, and as such should just use the default connect function to open a new socket.
 func NewRelay(node connections.BxListener,

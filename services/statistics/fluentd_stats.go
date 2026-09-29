@@ -5,8 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -42,12 +40,12 @@ type Stats interface {
 		startTime time.Time, priority bxmessage.SendPriority, debugData interface{})
 	AddGatewayBlockEvent(name string, source connections.Conn, blockHash, beaconBlockHash types.SHA256Hash, networkNum bxtypes.NetworkNum,
 		sentPeers int, startTime time.Time, sentGatewayPeers int, originalSize int, compressSize int, shortIDsCount int, txsCount int, recoveredTxsCount int, block *types.BxBlock)
-	LogSubscribeStats(subscriptionID string, accountID bxtypes.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
+	LogSubscribeStats(subscriptionID string, accountID bxtypes.AccountID, feedName bxtypes.FeedType, tierName sdnmessage.AccountTier,
 		ip string, networkNum bxtypes.NetworkNum, feedInclude []string, feedFilter string)
-	LogUnsubscribeStats(subscriptionID string, feedName types.FeedType, networkNum bxtypes.NetworkNum, accountID bxtypes.AccountID)
-	LogSubscriptionsStats(accountID bxtypes.AccountID, feedName types.FeedType, count int, networkNum bxtypes.NetworkNum)
-	LogSubscriptionsSnapshot(accountID bxtypes.AccountID, feedName types.FeedType, count int, networkNum bxtypes.NetworkNum, network string)
-	LogSDKInfo(blockchain, method, sourceCode, version string, accountID bxtypes.AccountID, feed types.FeedConnectionType, start, end time.Time)
+	LogUnsubscribeStats(subscriptionID string, feedName bxtypes.FeedType, networkNum bxtypes.NetworkNum, accountID bxtypes.AccountID)
+	LogSubscriptionsStats(accountID bxtypes.AccountID, feedName bxtypes.FeedType, count int, networkNum bxtypes.NetworkNum)
+	LogSubscriptionsSnapshot(accountID bxtypes.AccountID, feedName bxtypes.FeedType, count int, networkNum bxtypes.NetworkNum, network string)
+	LogSDKInfo(blockchain, method, sourceCode, version string, accountID bxtypes.AccountID, feed bxtypes.FeedConnectionType, start, end time.Time)
 	AddBlobEvent(name, eventSubjectID string, sourceID bxtypes.NodeID, networkNum bxtypes.NetworkNum, startTime, endTime time.Time, originalSize, compressSize int, blobIndex uint32, blockHash string)
 }
 
@@ -67,23 +65,23 @@ func (NoStats) AddTxsByShortIDsEvent(string, connections.Conn, *types.BxTransact
 }
 
 // LogSubscribeStats does nothing
-func (NoStats) LogSubscribeStats(string, bxtypes.AccountID, types.FeedType, sdnmessage.AccountTier, string, bxtypes.NetworkNum, []string, string) {
+func (NoStats) LogSubscribeStats(string, bxtypes.AccountID, bxtypes.FeedType, sdnmessage.AccountTier, string, bxtypes.NetworkNum, []string, string) {
 }
 
 // LogUnsubscribeStats does nothing
-func (NoStats) LogUnsubscribeStats(string, types.FeedType, bxtypes.NetworkNum, bxtypes.AccountID) {
+func (NoStats) LogUnsubscribeStats(string, bxtypes.FeedType, bxtypes.NetworkNum, bxtypes.AccountID) {
 }
 
 // LogSubscriptionsStats does nothing
-func (NoStats) LogSubscriptionsStats(bxtypes.AccountID, types.FeedType, int, bxtypes.NetworkNum) {
+func (NoStats) LogSubscriptionsStats(bxtypes.AccountID, bxtypes.FeedType, int, bxtypes.NetworkNum) {
 }
 
 // LogSubscriptionsSnapshot does nothing
-func (NoStats) LogSubscriptionsSnapshot(bxtypes.AccountID, types.FeedType, int, bxtypes.NetworkNum, string) {
+func (NoStats) LogSubscriptionsSnapshot(bxtypes.AccountID, bxtypes.FeedType, int, bxtypes.NetworkNum, string) {
 }
 
 // LogSDKInfo does nothing
-func (NoStats) LogSDKInfo(_, _, _, _ string, _ bxtypes.AccountID, _ types.FeedConnectionType, _, _ time.Time) {
+func (NoStats) LogSDKInfo(_, _, _, _ string, _ bxtypes.AccountID, _ bxtypes.FeedConnectionType, _, _ time.Time) {
 }
 
 // AddBlobEvent does nothing
@@ -326,7 +324,7 @@ func (s FluentdStats) getLogPercentageByHash(networkNum bxtypes.NetworkNum) floa
 }
 
 // LogSubscribeStats generates a fluentd STATS event
-func (s FluentdStats) LogSubscribeStats(subscriptionID string, accountID bxtypes.AccountID, feedName types.FeedType, tierName sdnmessage.AccountTier,
+func (s FluentdStats) LogSubscribeStats(subscriptionID string, accountID bxtypes.AccountID, feedName bxtypes.FeedType, tierName sdnmessage.AccountTier,
 	ip string, networkNum bxtypes.NetworkNum, feedInclude []string, feedFilter string,
 ) {
 	now := time.Now()
@@ -346,7 +344,7 @@ func (s FluentdStats) LogSubscribeStats(subscriptionID string, accountID bxtypes
 }
 
 // LogUnsubscribeStats generates a fluentd STATS event
-func (s FluentdStats) LogUnsubscribeStats(subscriptionID string, feedName types.FeedType, networkNum bxtypes.NetworkNum, accountID bxtypes.AccountID) {
+func (s FluentdStats) LogUnsubscribeStats(subscriptionID string, feedName bxtypes.FeedType, networkNum bxtypes.NetworkNum, accountID bxtypes.AccountID) {
 	now := time.Now()
 	record := unsubscribeRecord{
 		Type:           "subscriptions",
@@ -360,7 +358,7 @@ func (s FluentdStats) LogUnsubscribeStats(subscriptionID string, feedName types.
 }
 
 // LogSubscriptionsStats generates a fluentd STATS event with the current subscriptions of an account
-func (s FluentdStats) LogSubscriptionsStats(accountID bxtypes.AccountID, feed types.FeedType, count int, networkNum bxtypes.NetworkNum) {
+func (s FluentdStats) LogSubscriptionsStats(accountID bxtypes.AccountID, feed bxtypes.FeedType, count int, networkNum bxtypes.NetworkNum) {
 	now := time.Now()
 	record := Record{
 		Type: "AccountSubscriptions",
@@ -376,7 +374,7 @@ func (s FluentdStats) LogSubscriptionsStats(accountID bxtypes.AccountID, feed ty
 }
 
 // LogSubscriptionsSnapshot generates a fluentd STATS event with a periodic snapshot of active subscriptions per account and feed
-func (s FluentdStats) LogSubscriptionsSnapshot(accountID bxtypes.AccountID, feed types.FeedType, count int, networkNum bxtypes.NetworkNum, network string) {
+func (s FluentdStats) LogSubscriptionsSnapshot(accountID bxtypes.AccountID, feed bxtypes.FeedType, count int, networkNum bxtypes.NetworkNum, network string) {
 	// data.timestamp makes each emit unique so the data-etl dedup cache keeps it
 	now := time.Now()
 	record := Record{
@@ -395,7 +393,7 @@ func (s FluentdStats) LogSubscriptionsSnapshot(accountID bxtypes.AccountID, feed
 }
 
 // LogSDKInfo generates a fluentd STATS event
-func (s FluentdStats) LogSDKInfo(blockchain, method, sourceCode, version string, accountID bxtypes.AccountID, feed types.FeedConnectionType, start, end time.Time) {
+func (s FluentdStats) LogSDKInfo(blockchain, method, sourceCode, version string, accountID bxtypes.AccountID, feed bxtypes.FeedConnectionType, start, end time.Time) {
 	now := time.Now()
 	record := sdkInfoRecord{
 		Blockchain: blockchain,
@@ -408,13 +406,6 @@ func (s FluentdStats) LogSDKInfo(blockchain, method, sourceCode, version string,
 		End:        end.Format(DateFormat),
 	}
 	s.LogToFluentD(record, now, "stats.sdk.events")
-}
-
-// hex2int64 takes a hex string and returns the parsed integer value.
-// It handles hex strings with or without the "0x" prefix.
-func hex2int64(hexStr string) (int64, error) {
-	// Ensure the prefix is uniformly lowercase for comparison and remove it if present.
-	return strconv.ParseInt(strings.TrimPrefix(strings.ToLower(hexStr), "0x"), 16, 64)
 }
 
 // AddBlobEvent generates a fluentd STATS event

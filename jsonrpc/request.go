@@ -12,28 +12,14 @@ type RPCRequestType string
 const (
 	RPCSubscribe                  RPCRequestType = "subscribe"
 	RPCUnsubscribe                RPCRequestType = "unsubscribe"
-	RPCPrivateTxBalance           RPCRequestType = "private_tx_balance"
-	RPCPrivateTx                  RPCRequestType = "blxr_private_tx"
 	RPCTx                         RPCRequestType = "blxr_tx"
 	RPCPing                       RPCRequestType = "ping"
 	RPCBatchTx                    RPCRequestType = "blxr_batch_tx"
 	RPCQuotaUsage                 RPCRequestType = "quota_usage"
-	RPCBundleSubmission           RPCRequestType = "blxr_submit_bundle"
-	RPCBundleSimulation           RPCRequestType = "blxr_simulate_bundle"
 	RPCChangeNewPendingTxFromNode RPCRequestType = "new_pending_txs_source_from_node"
 	RPCEthSubscribe               RPCRequestType = "eth_subscribe"
 	RPCEthSendRawTransaction      RPCRequestType = "eth_sendRawTransaction"
 	RPCEthUnsubscribe             RPCRequestType = "eth_unsubscribe"
-)
-
-// External RPCRequestType enumeration
-const (
-	RPCEthSendBundle           RPCRequestType = "eth_sendBundle"
-	RPCEthCallBundle           RPCRequestType = "eth_callBundle"
-	RPCEthSendArbOnlyBundle    RPCRequestType = "eth_sendArbOnlyBundle"
-	RPCEstimateGas             RPCRequestType = "eth_estimateGas"
-	RPCETHCall                 RPCRequestType = "eth_call"
-	RPCEthSendEndOfBlockBundle RPCRequestType = "eth_sendEndOfBlockBundle"
 )
 
 // RPCMethodToRPCRequestType maps gRPC methods to RPCRequestType
@@ -41,10 +27,6 @@ var RPCMethodToRPCRequestType = map[string]RPCRequestType{
 	"/gateway.Gateway/BlxrTx": RPCTx,
 }
 
-// BLXRMetadata is the metadata included for bloxroute RPC calls
-type BLXRMetadata struct {
-	OriginalSenderAccountID string `json:"original_sender_account_id"`
-}
 
 // RPCTxPayload is the payload of blxr_tx requests
 type RPCTxPayload struct {

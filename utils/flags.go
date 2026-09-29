@@ -40,16 +40,6 @@ var (
 		Usage:  "SDN URL",
 		Hidden: true,
 	}
-	SDNSocketIPFlag = &cli.StringFlag{
-		Name:  "sdn-socket-ip",
-		Usage: "SDN socket broker IP address",
-		Value: "127.0.0.1",
-	}
-	SDNSocketPortFlag = &cli.IntFlag{
-		Name:  "sdn-socket-port",
-		Usage: "SDN socket broker port",
-		Value: 1800,
-	}
 	WSFlag = &cli.BoolFlag{
 		Name:  "ws",
 		Usage: "starts a websocket RPC server",
@@ -104,11 +94,6 @@ var (
 		Usage: "true to disable the pprof http server (for relays, where profiling is enabled by default)",
 		Value: false,
 	}
-	EnableUnpaidTxsRateLimit = &cli.BoolFlag{
-		Name:  "enable-unpaid-txs-rate-limit",
-		Usage: "true to enable the rate limit for unpaid transactions",
-		Value: false,
-	}
 	DataDirFlag = &cli.StringFlag{
 		Name:  "data-dir",
 		Usage: "directory for storing various persistent files (e.g. private SSL certs)",
@@ -140,36 +125,6 @@ var (
 		Usage: "maximum number of old log files to retain",
 		Value: 10,
 	}
-	RedisFlag = &cli.BoolFlag{
-		Name:  "redis",
-		Usage: "optionally enable Redis for extended caching support for tx trace",
-		Value: false,
-	}
-	RedisHostFlag = &cli.StringFlag{
-		Name:  "redis-host",
-		Usage: "redis connection host address",
-		Value: "127.0.0.1",
-	}
-	RedisPortFlag = &cli.IntFlag{
-		Name:  "redis-port",
-		Usage: "redis connection port",
-		Value: 6379,
-	}
-	ContinentFlag = &cli.StringFlag{
-		Name:     "continent",
-		Usage:    "override value for continent current node is running in (otherwise autodetected from IP address)",
-		Required: false,
-	}
-	CountryFlag = &cli.StringFlag{
-		Name:     "country",
-		Usage:    "override value for country current node is running in (otherwise autodetected from IP address)",
-		Required: false,
-	}
-	RegionFlag = &cli.StringFlag{
-		Name:     "region",
-		Usage:    "override value for datacenter region current node is running in (otherwise autodetected from IP address)",
-		Required: false,
-	}
 	GRPCFlag = &cli.BoolFlag{
 		Name:  "grpc",
 		Usage: "starts the GRPC server",
@@ -199,29 +154,10 @@ var (
 		Name:  "auth-header",
 		Usage: "raw authentication header for GRPC ",
 	}
-	PeerFileFlag = &cli.StringFlag{
-		Name:  "peer-file",
-		Usage: "peer file containing the ip:port list of potential peers for the node to connect to",
-		Value: "proxypeers",
-	}
 	BlockchainNetworkFlag = &cli.StringFlag{
 		Name:  "blockchain-network",
 		Usage: "determine the blockchain network (Mainnet or BSC-Mainnet)",
 		Value: "Mainnet",
-	}
-	SyncPeerIPFlag = &cli.StringFlag{
-		Name:  "sync-peer-ip",
-		Usage: "the ip address of the node that should sync this node. if not provided the ATR will be used",
-	}
-	PlatformProviderFlag = &cli.StringFlag{
-		Name:     "platform-provider",
-		Usage:    "override value for current node platform provider",
-		Required: false,
-	}
-	DisableTxStoreCleanupFlag = &cli.BoolFlag{
-		Name:  "disable-txstore-cleanup",
-		Usage: "if true, relay would NOT be responsible for the txs cleanup",
-		Value: false,
 	}
 	BlocksOnlyFlag = &cli.BoolFlag{
 		Name:    "blocks-only",
@@ -249,20 +185,10 @@ var (
 		Usage: "for gateways only, sets max number of backup tx trace log files retained (0 enables unlimited backups)",
 		Value: 3,
 	}
-	TxCheckerPoolCapacity = &cli.IntFlag{
-		Name:  "tx-checker-pool-capacity",
-		Usage: "for relays only, sets max number of workers that check transaction if it is valid (0 disable checks)",
-		Value: 2,
-	}
 	NodeTypeFlag = &cli.StringFlag{
 		Name:  "node-type",
 		Usage: "set node type",
 		Value: "external_gateway",
-	}
-	SSLFlag = &cli.BoolFlag{
-		Name:  "ssl",
-		Usage: "Opens a http/websocket server with TLS",
-		Value: false,
 	}
 	ManageWSServer = &cli.BoolFlag{
 		Name:  "manage-ws-server",
@@ -327,3 +253,4 @@ var (
 		Value:  true,
 	}
 )
+

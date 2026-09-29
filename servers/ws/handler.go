@@ -79,9 +79,6 @@ func (h *handlerObj) Handle(ctx context.Context, conn *conn, req Request) {
 		if err = conn.Reply(ctx, req.ID, response); err != nil {
 			h.log.Errorf("error replying to %v, method %v: %v", h.remoteAddress, req.Method, err)
 		}
-	case jsonrpc.RPCBundleSubmission:
-	// Do nothing. Bundle propagation no longer accepted as of
-	// https://bloxroute.atlassian.net/browse/BP-3153
 	case jsonrpc.RPCChangeNewPendingTxFromNode:
 		h.handleRPCNewPendingTxsSourceFromNode(ctx, conn, req)
 	default:
@@ -134,7 +131,7 @@ func (h *handlerObj) Handle(ctx context.Context, conn *conn, req Request) {
 
 func (h *handlerObj) buildNotificationContent(notification types.Notification, includes []string) types.Notification {
 	switch notification.NotificationType() {
-	case types.NewBlocksFeed, types.BDNBlocksFeed, types.NewBeaconBlocksFeed, types.BDNBeaconBlocksFeed:
+	case bxtypes.NewBlocksFeed, bxtypes.BDNBlocksFeed, bxtypes.NewBeaconBlocksFeed, bxtypes.BDNBeaconBlocksFeed:
 		content := notification.WithFields(includes)
 		if blockContent, ok := content.(*types.EthBlockNotification); ok {
 			senders := h.senderExtractor.GetSendersFromBlockTxs(blockContent.Block)

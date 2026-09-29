@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"github.com/bloXroute-Labs/bxcommon-go/v2/clock"
-	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
-	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 )
 
 // RateLimiter represents any struct that can be used to limit the amount of calls per time period
@@ -89,53 +87,3 @@ func (l *leakyBucketRateLimiter) String() string {
 		l.bucket.limit, l.bucket.counter, l.interval, l.lastCall.Format(time.RFC3339Nano), l.refillRate)
 }
 
-// rateLimitType specifies the time period the txToolsLeakyBucketRateLimiter manages the rate over (should match the `interval` in rateLimiter)
-type rateLimitType string
-
-// Daily means that the rate limiter manages the rate over a day
-// PerSecond means that the rate limiter manages the rate over a second
-// PerMillisecond means that the rate limiter manages the rate over a millisecond
-const (
-	Daily          rateLimitType = "day"
-	PerMinute      rateLimitType = "minute"
-	PerHalfMinute  rateLimitType = "halfMinute"
-	PerSecond      rateLimitType = "second"
-	PerMillisecond rateLimitType = "millisecond"
-)
-
-var rateLimitTypeToIntervalDuration = map[rateLimitType]time.Duration{
-	Daily:          time.Hour * 24,
-	PerMinute:      time.Minute,
-	PerHalfMinute:  time.Second * 30,
-	PerSecond:      time.Second,
-	PerMillisecond: time.Millisecond,
-}
-
-// txToolsLeakyBucketRateLimiter adds extra logging during Take as a sanity check when running the txtrace API
-type txToolsLeakyBucketRateLimiter struct {
-	*leakyBucketRateLimiter
-	accountID     bxtypes.AccountID
-	rateLimitType rateLimitType
-}
-
-// Take specifies if the call is allowed to be made, logs the counter, and returns the counter left in the bucket
-func (t *txToolsLeakyBucketRateLimiter) Take() (bool, float32) {
-	res, counter := t.leakyBucketRateLimiter.Take()
-
-	log.Debugf("Account ID %v has %v / %v tx trace calls left per %s", t.accountID, t.leakyBucketRateLimiter.bucket.counter,
-		t.leakyBucketRateLimiter.bucket.limit, t.rateLimitType)
-
-	return res, counter
-}
-
-// NewTxToolsLeakyBucketRateLimiter creates a RateLimiter using the leaky bucket rate algorithm; it has logging during `Take()` compared to the leakyBucketRateLimiter
-func NewTxToolsLeakyBucketRateLimiter(clock clock.Clock, limit uint64, rateLimitType rateLimitType, accountID bxtypes.AccountID) RateLimiter {
-	interval := rateLimitTypeToIntervalDuration[rateLimitType]
-	rateLimiter := NewLeakyBucketRateLimiter(clock, limit, interval).(*leakyBucketRateLimiter)
-
-	return &txToolsLeakyBucketRateLimiter{
-		leakyBucketRateLimiter: rateLimiter,
-		accountID:              accountID,
-		rateLimitType:          rateLimitType,
-	}
-}

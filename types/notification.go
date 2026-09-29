@@ -1,12 +1,14 @@
 package types
 
+import bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
+
 // Notification represents a generic notification that allows filtering its fields
 type Notification interface {
 	WithFields(fields []string) Notification
 	Filters() (map[string]interface{}, error)
 	LocalRegion() bool
 	GetHash() string
-	NotificationType() FeedType
+	NotificationType() bxtypes.FeedType
 }
 
 // CustomNotification represents a notification that can apply account-specific logic
@@ -21,7 +23,7 @@ type CustomNotification interface {
 type BlockNotification interface {
 	Notification
 
-	SetNotificationType(FeedType)
+	SetNotificationType(bxtypes.FeedType)
 	SetSource(*NodeEndpoint)
 	IsNil() bool
 	Clone() BlockNotification

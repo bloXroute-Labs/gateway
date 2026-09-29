@@ -503,10 +503,6 @@ func (b *BxConn) read(ctx context.Context, isInitiator bool) bool {
 	return true
 }
 
-// IsBloxroute detect if the peer belongs to bloxroute
-func (b *BxConn) IsBloxroute() bool {
-	return b.accountID == bxtypes.BloxrouteAccountID
-}
 
 // String represents a string conversion of this connection
 func (b *BxConn) String() string {

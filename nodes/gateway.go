@@ -139,6 +139,7 @@ type gateway struct {
 	ignoredRelays   *syncmap.SyncMap[string, bxtypes.RelayInfo]
 	relaysToSwitch  *syncmap.SyncMap[string, bool]
 	senderExtractor *services.SenderExtractor
+
 }
 
 // GeneratePeers generate string peers separated by comma
@@ -417,6 +418,7 @@ func (g *gateway) Run() error {
 		feedFanOutWorkers,
 	)
 
+
 	txFromFieldIncludable := blockchainNetwork.EnableCheckSenderNonce || g.txIncludeSenderInFeed
 
 	// start feed manager and servers if websocket or gRPC is enabled
@@ -561,7 +563,7 @@ func (g *gateway) connectRelay(instruction sdnsdk.RelayInstruction, sslCerts *ce
 }
 
 func (g *gateway) monitorConnection(cancel context.CancelFunc, relay *handler.Relay, relayInstructions chan sdnsdk.RelayInstruction) {
-	ticker := time.NewTicker(types.RelayMonitorInterval)
+	ticker := time.NewTicker(bxtypes.RelayMonitorInterval)
 	defer ticker.Stop()
 
 	for {
@@ -575,10 +577,10 @@ func (g *gateway) monitorConnection(cancel context.CancelFunc, relay *handler.Re
 				return
 			}
 			if !relay.BxConn.IsOpen() {
-				log.Tracef("Relay %v connection down, waiting an additional %v to confirm.", relay.GetPeerIP(), types.RelayMonitorInterval)
+				log.Tracef("Relay %v connection down, waiting an additional %v to confirm.", relay.GetPeerIP(), bxtypes.RelayMonitorInterval)
 
 				// Reset the timer to wait an additional interval for reconnection attempt
-				<-time.After(types.RelayMonitorInterval)
+				<-time.After(bxtypes.RelayMonitorInterval)
 				if g.isRelaySwitched(relay.GetPeerIP()) {
 					return
 				}
@@ -931,13 +933,13 @@ func (g *gateway) notifyBlockFeeds(bxBlock *types.BxBlock, nodeSource *connectio
 		if addedBdnBlock {
 			// Send beacon notifications to BDN feed even if source is blockchain
 			notification := beaconNotification.Clone()
-			notification.SetNotificationType(types.BDNBeaconBlocksFeed)
+			notification.SetNotificationType(bxtypes.BDNBeaconBlocksFeed)
 			g.notify(notification)
 		}
 
 		if addedNewBlock {
 			notification := beaconNotification.Clone()
-			notification.SetNotificationType(types.NewBeaconBlocksFeed)
+			notification.SetNotificationType(bxtypes.NewBeaconBlocksFeed)
 			g.notify(notification)
 		}
 
@@ -973,7 +975,7 @@ func (g *gateway) notifyEthBlockFeeds(addedNewBlock, addedBdnBlock bool, bxBlock
 	if addedBdnBlock {
 		// Send ETH notifications to BDN feed even if source is blockchain
 		notification := ethNotification.Clone()
-		notification.SetNotificationType(types.BDNBlocksFeed)
+		notification.SetNotificationType(bxtypes.BDNBlocksFeed)
 		g.notify(notification)
 
 		// Waits response from node WS provider
@@ -991,7 +993,7 @@ func (g *gateway) notifyEthBlockFeeds(addedNewBlock, addedBdnBlock bool, bxBlock
 		g.bdnBlocksSkipCount.Store(0)
 
 		notification := ethNotification.Clone()
-		notification.SetNotificationType(types.NewBlocksFeed)
+		notification.SetNotificationType(bxtypes.NewBlocksFeed)
 		g.notify(notification)
 	} else {
 		g.log.WithFields(log.Fields{
@@ -1013,22 +1015,22 @@ func (g *gateway) notifyTxReceiptsAndOnBlockFeeds(nodeSource *connections.Blockc
 	wsProvider, err := g.wsManager.ProviderWithBlock(nodeEndpoint, ethNotification.Header.GetNumber())
 	if err != nil {
 		log.Warn(err)
-		g.notifyError(feed.ErrorNotification{ErrorMsg: err.Error(), FeedType: types.TxReceiptsFeed})
-		g.notifyError(feed.ErrorNotification{ErrorMsg: err.Error(), FeedType: types.OnBlockFeed})
+		g.notifyError(feed.ErrorNotification{ErrorMsg: err.Error(), FeedType: bxtypes.TxReceiptsFeed})
+		g.notifyError(feed.ErrorNotification{ErrorMsg: err.Error(), FeedType: bxtypes.OnBlockFeed})
 		return
 	}
 
 	sourceEndpoint := wsProvider.BlockchainPeerEndpoint()
 
 	notification := ethNotification.Clone()
-	notification.SetNotificationType(types.OnBlockFeed)
+	notification.SetNotificationType(bxtypes.OnBlockFeed)
 	notification.SetSource(&sourceEndpoint)
 	g.notify(notification)
 
 	notification = ethNotification.Clone()
 	notification.SetSource(&sourceEndpoint)
 
-	if g.feedManager.SubscriptionTypeExists(types.TxReceiptsFeed) {
+	if g.feedManager.SubscriptionTypeExists(bxtypes.TxReceiptsFeed) {
 		receipts, err := handler2.HandleTxReceipts(g.wsManager, notification.(*types.EthBlockNotification))
 		if err != nil {
 			log.Printf("failed to handle tx receipts: %v", err)
@@ -1555,8 +1557,6 @@ func (g *gateway) shouldSendTxFromBDNToNodes(connectionType bxtypes.NodeType, tx
 
 	return
 }
-
-const maxBlockAgeSinceNow = time.Minute * 10
 
 // feedFanOutWorkers is the number of fan-out shards the feed manager runs per feed type. The
 // gateway keeps it at 1 (fan-out stays inline on the feed type's consumer) because gateways show no

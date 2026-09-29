@@ -1,7 +1,7 @@
 package ws
 
 import (
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler"
 	"github.com/bloXroute-Labs/gateway/v2/servers/handler/filter"
@@ -29,15 +29,6 @@ type TxResult struct {
 	RawTx       *string     `json:"rawTx,omitempty"`
 }
 
-// TxResultWithEthTx - request of jsonrpc params with an eth type transaction
-type TxResultWithEthTx struct {
-	TxHash      *string               `json:"txHash,omitempty"`
-	TxContents  *ethtypes.Transaction `json:"txContents,omitempty"`
-	LocalRegion *bool                 `json:"localRegion,omitempty"`
-	Time        *string               `json:"time,omitempty"`
-	RawTx       *string               `json:"rawTx,omitempty"`
-}
-
 // BlockResponse - response of the jsonrpc params
 type BlockResponse struct {
 	Subscription string             `json:"subscription"`
@@ -52,7 +43,7 @@ type txReceiptResponse struct {
 // ClientReq represent client request
 type ClientReq struct {
 	Includes  []string
-	Feed      types.FeedType
+	Feed      bxtypes.FeedType
 	Expr      *filter.Expression
 	calls     *map[string]*handler.RPCCall
 	MultiTxs  bool
@@ -60,7 +51,7 @@ type ClientReq struct {
 }
 
 type subscriptionRequest struct {
-	feed    types.FeedType
+	feed    bxtypes.FeedType
 	options subscriptionOptions
 }
 

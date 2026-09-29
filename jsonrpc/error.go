@@ -5,8 +5,6 @@ type RPCErrorCode int64
 
 // RPCErrorCode types
 const (
-	// ParseError - json parse error
-	ParseError RPCErrorCode = -32700
 
 	// InvalidRequest - invalid request
 	InvalidRequest RPCErrorCode = -32600

@@ -52,12 +52,6 @@ var (
 	errProtocolVersionMismatch = errors.New("protocol version mismatch")
 )
 
-// Packet represents a p2p message in the `bsc` protocol.
-type Packet interface {
-	Name() string // Name returns a string corresponding to the message type.
-	Kind() byte   // Kind returns the message type.
-}
-
 // CapPacket is the network packet for bsc capability message.
 type CapPacket struct {
 	ProtocolVersion uint

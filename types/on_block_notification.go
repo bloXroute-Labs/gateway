@@ -1,5 +1,7 @@
 package types
 
+import bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
+
 // OnBlockNotification - represents the result of an RPC call on published block
 type OnBlockNotification struct {
 	Name        string `json:"name,omitempty"`
@@ -54,6 +56,6 @@ func (n *OnBlockNotification) GetHash() string {
 }
 
 // NotificationType - feed name
-func (n *OnBlockNotification) NotificationType() FeedType {
-	return OnBlockFeed
+func (n *OnBlockNotification) NotificationType() bxtypes.FeedType {
+	return bxtypes.OnBlockFeed
 }

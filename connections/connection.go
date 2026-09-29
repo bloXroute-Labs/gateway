@@ -82,44 +82,14 @@ func (b ConnDetails) IsSameRegion() bool { return false }
 // IsPrivateNetwork indicates of the peer connection is over a private network (CEN)
 func (b ConnDetails) IsPrivateNetwork() bool { return false }
 
-// IsCustomerGateway indicates whether the connected gateway belongs to a customer
-func IsCustomerGateway(connectionType bxtypes.NodeType, accountID bxtypes.AccountID) bool {
-	return connectionType&bxtypes.ExternalGateway != 0 && accountID != bxtypes.BloxrouteAccountID
-}
-
-// IsBloxrouteGateway indicates if the connected gateway belongs to bloxroute
-func IsBloxrouteGateway(connectionType bxtypes.NodeType, accountID bxtypes.AccountID) bool {
-	return connectionType&bxtypes.Gateway != 0 && accountID == bxtypes.BloxrouteAccountID
-}
-
 // IsGateway indicates if the connection is a gateway
 func IsGateway(connectionType bxtypes.NodeType) bool {
 	return connectionType&bxtypes.Gateway != 0
 }
 
-// IsBlockchainRPCEnabled indicates if the connection is enabled web3 bridge
-func IsBlockchainRPCEnabled(capabilities types.CapabilityFlags) bool {
-	return capabilities&types.CapabilityBlockchainRPCEnabled != 0
-}
-
-// IsNoBlocks indicates if the connection has no blocks flag enabled
-func IsNoBlocks(capabilities types.CapabilityFlags) bool {
-	return capabilities&types.CapabilityNoBlocks != 0
-}
-
 // IsCloudAPI indicates if the connection is a cloud-api
 func IsCloudAPI(connectionType bxtypes.NodeType) bool {
 	return connectionType&bxtypes.CloudAPI != 0
-}
-
-// IsLocalRegion indicates if the connection is a GW or a cloud-api
-func IsLocalRegion(connectionType bxtypes.NodeType) bool {
-	return IsCloudAPI(connectionType) || IsGateway(connectionType)
-}
-
-// IsAPISocket indicates if the connection is api-socket
-func IsAPISocket(connectionType bxtypes.NodeType) bool {
-	return connectionType&bxtypes.APISocket != 0
 }
 
 // IsRelay indicates if the connection is a relay type

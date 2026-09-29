@@ -58,22 +58,6 @@ type blockExtraData struct {
 	MoreInfo string `json:"more_info,omitempty"`
 }
 
-// BundleSentToBuilderRecord is still used by cloudservices
-type BundleSentToBuilderRecord struct {
-	EstimatedBundleReceivedTime string                 `json:"estimated_bundle_received_time"`
-	BundleHash                  string                 `json:"bundle_hash"`
-	BlockNumber                 int64                  `json:"block_number"`
-	UUID                        string                 `json:"uuid"`
-	UserSetUUID                 bool                   `json:"user_set_UUID"`
-	BuilderName                 string                 `json:"builder_name"`
-	NetworkNum                  bxtypes.NetworkNum     `json:"network_num"`
-	AccountID                   bxtypes.AccountID      `json:"account_id"`
-	AccountTier                 sdnmessage.AccountTier `json:"account_tier"`
-	BuilderURL                  string                 `json:"builder_url"`
-	StatusCode                  int                    `json:"status_code"`
-	ErrorMessage                string                 `json:"error_message"`
-}
-
 // LogRecord represents a log message to be sent to FluentD
 type LogRecord struct {
 	Level     string         `json:"level"`
@@ -81,12 +65,6 @@ type LogRecord struct {
 	Instance  bxtypes.NodeID `json:"instance"`
 	Msg       interface{}    `json:"msg"`
 	Timestamp string         `json:"timestamp"`
-}
-
-// LogRecordWithNetwork represents a log message to be sent to FluentD with network number
-type LogRecordWithNetwork struct {
-	LogRecord
-	NetworkNum bxtypes.NetworkNum `json:"network_num"`
 }
 
 type txRecord struct {
@@ -119,7 +97,7 @@ type subscribeRecord struct {
 	IP             string                 `json:"ip"`
 	AccountID      bxtypes.AccountID      `json:"account_id"`
 	Tier           sdnmessage.AccountTier `json:"tier"`
-	FeedName       types.FeedType         `json:"feed_name"`
+	FeedName       bxtypes.FeedType       `json:"feed_name"`
 	FeedInclude    []string               `json:"feed_include"`
 	NetworkNum     bxtypes.NetworkNum     `json:"network_num"`
 }
@@ -128,7 +106,7 @@ type unsubscribeRecord struct {
 	SubscriptionID string             `json:"subscription_id"`
 	Type           string             `json:"type"`
 	Event          string             `json:"event"`
-	FeedName       types.FeedType     `json:"feed_name"`
+	FeedName       bxtypes.FeedType   `json:"feed_name"`
 	NetworkNum     bxtypes.NetworkNum `json:"network_num"`
 	AccountID      bxtypes.AccountID  `json:"account_id"`
 }
@@ -136,7 +114,7 @@ type unsubscribeRecord struct {
 // SubscriptionsRecord represents the number of subscriptions for an account
 type SubscriptionsRecord struct {
 	AccountID  bxtypes.AccountID  `json:"account_id"`
-	FeedName   types.FeedType     `json:"feed_name"`
+	FeedName   bxtypes.FeedType   `json:"feed_name"`
 	Count      int                `json:"count"`
 	NetworkNum bxtypes.NetworkNum `json:"network_num"`
 }
@@ -145,7 +123,7 @@ type SubscriptionsRecord struct {
 type GatewaySubscriptionsSnapshotRecord struct {
 	Timestamp  string             `json:"timestamp"`
 	AccountID  bxtypes.AccountID  `json:"account_id"`
-	FeedName   types.FeedType     `json:"feed_name"`
+	FeedName   bxtypes.FeedType   `json:"feed_name"`
 	Count      int                `json:"count"`
 	NetworkNum bxtypes.NetworkNum `json:"network_num"`
 	Network    string             `json:"network"`

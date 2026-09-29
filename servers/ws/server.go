@@ -8,8 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
-
+	"github.com/bloXroute-Labs/bxcommon-go/v2/cert"
 	bxtypes "github.com/bloXroute-Labs/bxcommon-go/v2/types"
 	"github.com/gorilla/websocket"
 
@@ -26,7 +25,6 @@ import (
 	"github.com/bloXroute-Labs/gateway/v2/services/feed"
 	"github.com/bloXroute-Labs/gateway/v2/services/statistics"
 	"github.com/bloXroute-Labs/gateway/v2/types"
-	"github.com/bloXroute-Labs/gateway/v2/utils"
 )
 
 const localhost = "127.0.0.1"
@@ -150,34 +148,6 @@ func (s *Server) Shutdown() {
 	}
 }
 
-// fastJSONStream implements jsonrpc2.ObjectStream but uses json-iterator for WriteObject.
-type fastJSONStream struct {
-	Conn *websocket.Conn
-}
-
-func newFastJSONStream(conn *websocket.Conn) fastJSONStream {
-	return fastJSONStream{Conn: conn}
-}
-
-// ReadObject delegate to the normal ReadJSON
-func (s fastJSONStream) ReadObject(v interface{}) error {
-	return s.Conn.ReadJSON(v)
-}
-
-// WriteObject override it to use json-iterator
-func (s fastJSONStream) WriteObject(obj interface{}) error {
-	b, err := jsoniter.ConfigCompatibleWithStandardLibrary.Marshal(obj)
-	if err != nil {
-		return err
-	}
-	return s.Conn.WriteMessage(websocket.TextMessage, b)
-}
-
-// Close delegate to the normal Close
-func (s fastJSONStream) Close() error {
-	return s.Conn.Close()
-}
-
 func (s *Server) wsHandler(w http.ResponseWriter, r *http.Request) {
 	// if enable client handler - skip authorization
 	serverAccountID := s.sdn.AccountModel().AccountID
@@ -199,7 +169,7 @@ func (s *Server) wsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		case s.cfg.WebsocketTLSEnabled:
 			if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
-				accountID, err = utils.GetAccountIDFromBxCertificate(r.TLS.PeerCertificates[0].Extensions)
+				accountID, err = cert.GetAccountIDFromBxCertificate(r.TLS.PeerCertificates[0].Extensions)
 				if err != nil {
 					s.errorWithDelay(w, r, fmt.Errorf("failed to get account_id extension, %w", err).Error())
 					return

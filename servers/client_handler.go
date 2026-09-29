@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	sdnmessage "github.com/bloXroute-Labs/bxcommon-go/v2/sdnsdk/message"
 	"golang.org/x/sync/errgroup"
 
 	log "github.com/bloXroute-Labs/bxcommon-go/v2/logger"
@@ -120,7 +121,7 @@ func (ch *ClientHandler) ManageServers(ctx context.Context, activeManagement boo
 						ch.log.Errorf("error running ws server: %v", err)
 					}
 				}
-				ch.subscriptionServices.SendSubscriptionResetNotification(make([]types.SubscriptionModel, 0))
+				ch.subscriptionServices.SendSubscriptionResetNotification(make([]sdnmessage.SubscriptionModel, 0))
 			}
 		}
 	}
