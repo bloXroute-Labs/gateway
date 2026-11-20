@@ -368,7 +368,11 @@ func (f *Manager) Unsubscribe(subscriptionID string, closeClientConnection bool,
 	}).Infof("unsubscribing from feed, closing the connection: %v", closeClientConnection)
 
 	if errMsg != "" {
-		clientSub.errMsgChan <- errMsg
+		select {
+		case clientSub.errMsgChan <- errMsg:
+		default:
+			f.log.Warnf("can't send error %v to channel %v without blocking, channel full", clientSub.feedType, subscriptionID)
+		}
 	}
 
 	if clientSub.AccountID != bxtypes.BloxrouteAccountID {
@@ -473,7 +477,6 @@ func (f *Manager) GetGrpcSubscriptionReply() []ClientSubscriptionFullInfo {
 
 	return resp
 }
-
 
 // CloseAllClientConnections - unsubscribes all client subscriptions and closes all client ws connections
 func (f *Manager) CloseAllClientConnections() {

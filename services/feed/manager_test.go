@@ -398,3 +398,29 @@ func TestFullClientChannelUnsubscribesOnce(t *testing.T) {
 		return !f.SubscriptionExists(subscriptionID)
 	}, 5*time.Second, 5*time.Millisecond, "the dropped client must be unsubscribed")
 }
+
+func TestUnsubscribeDoesNotBlockOnFullErrMsgChan(t *testing.T) {
+	f := newTestManager(t, []bxtypes.FeedType{bxtypes.NewTxsFeed}, 1)
+	subscriptionID, _ := subscribeTestClient(t, f, bxtypes.NewTxsFeed, 0)
+
+	f.lock.RLock()
+	clientSub := f.idToClientSubscription[subscriptionID]
+	f.lock.RUnlock()
+
+	// Pre-fill the error channel (capacity 1)
+	clientSub.errMsgChan <- "first error"
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		err := f.Unsubscribe(subscriptionID, false, "second error")
+		assert.NoError(t, err)
+	}()
+
+	select {
+	case <-done:
+		// success: Unsubscribe completed without blocking
+	case <-time.After(2 * time.Second):
+		t.Fatal("Unsubscribe blocked on full errMsgChan")
+	}
+}

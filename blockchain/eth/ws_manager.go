@@ -20,7 +20,7 @@ import (
 // WSManager implements the blockchain.WSManager interface for Ethereum
 type WSManager struct {
 	wsProviders  map[string]blockchain.WSProvider
-	lock         sync.Mutex
+	lock         sync.RWMutex
 	syncStatus   blockchain.NodeSyncStatus
 	syncStatusCh chan blockchain.NodeSyncStatus
 	log          *log.Entry
@@ -60,6 +60,8 @@ func NewEthWSManager(blockchainPeersInfo []network.PeerInfo, newWS func(string, 
 
 // Synced indicates if any ws provider nodes are synced
 func (m *WSManager) Synced() bool {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
 	return m.syncStatus == blockchain.Synced
 }
 
@@ -192,7 +194,14 @@ func (m *WSManager) Providers() map[string]blockchain.WSProvider {
 
 // SetBlockchainPeer sets the blockchain peer for corresponding ws provider
 func (m *WSManager) SetBlockchainPeer(peer interface{}) bool {
-	peerEndpoint := peer.(*eth2.Peer).IPEndpoint().IPPort()
+	if peer == nil {
+		return false
+	}
+	ethPeer, ok := peer.(*eth2.Peer)
+	if !ok || ethPeer == nil {
+		return false
+	}
+	peerEndpoint := ethPeer.IPEndpoint().IPPort()
 	m.log.Debugf("WSManager: SetBlockchainPeer %v  process %v", peerEndpoint, utils.GetGID())
 	for endpoint, ws := range m.wsProviders {
 		if endpoint == peerEndpoint {
@@ -269,12 +278,13 @@ func (m *WSManager) UpdateNodeSyncStatus(nodeEndpoint types.NodeEndpoint, syncSt
 	}
 	wsProvider.UpdateSyncStatus(syncStatus)
 
-	peer := wsProvider.BlockchainPeer().(*eth2.Peer)
-	if peer != nil {
-		if wsProvider.SyncStatus() == blockchain.Synced {
-			peer.RequestConfirmations = false
-		} else {
-			peer.RequestConfirmations = true
+	if p := wsProvider.BlockchainPeer(); p != nil {
+		if peer, ok := p.(*eth2.Peer); ok && peer != nil {
+			if wsProvider.SyncStatus() == blockchain.Synced {
+				peer.RequestConfirmations = false
+			} else {
+				peer.RequestConfirmations = true
+			}
 		}
 	}
 
