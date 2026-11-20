@@ -87,7 +87,7 @@ func marshallJSONToMapArray(v interface{}) ([]map[string]interface{}, error) {
 }
 
 func TestContractCreationTxReceipt(t *testing.T) {
-	contractCreationReceiptMap := txReceiptMap
+	contractCreationReceiptMap := make(map[string]interface{}, len(txReceiptMap))
 	for k, v := range txReceiptMap {
 		contractCreationReceiptMap[k] = v
 	}
@@ -109,4 +109,43 @@ func TestContractCreationTxReceipt(t *testing.T) {
 	assert.Equal(t, true, ok)
 	assert.Equal(t, nil, to)
 	assert.Equal(t, "0x13cf158e1766ca6bdbe2719dace440121b4603b1", receiptJSON[0]["from"])
+}
+
+func TestTxReceiptNotificationWithNullFields(t *testing.T) {
+	receiptMap := map[string]interface{}{
+		"to":                "0x18cf158e1766ca6bdbe2719dace440121b4603b3",
+		"transactionHash":   "0x4df870e552898df04761d6ea87ac848e3c60bfa35a9036b2b4d53ac64730a5b6",
+		"blockHash":         "0x5df870e552898df04761d6ea87ac848e3c60bfa35a9036b2b4d53ac64730a5b7",
+		"blockNumber":       "0xd1d827",
+		"contractAddress":   nil,
+		"cumulativeGasUsed": "0xf9389e",
+		"effectiveGasPrice": "0x1c298e1cb9",
+		"from":              "0x13cf158e1766ca6bdbe2719dace440121b4603b1",
+		"gasUsed":           "0x5208",
+		"logs":              nil,
+		"logsBloom":         "0x3df870e552898df04761d6ea87ac848e3c60bfa35a9036b2b4d53ac64730a5b4",
+		"status":            nil,
+		"transactionIndex":  "0x64",
+		"type":              "0x2",
+		"blobGasUsed":       nil,
+		"blobGasPrice":      nil,
+	}
+
+	assert.NotPanics(t, func() {
+		txReceipt := NewTxReceipt(receiptMap, "0x1")
+		assert.NotNil(t, txReceipt)
+		assert.Equal(t, "", txReceipt.BlobGasUsed)
+		assert.Equal(t, "", txReceipt.BlobGasPrice)
+		assert.Equal(t, "", txReceipt.Status)
+		assert.Nil(t, txReceipt.ContractAddress)
+		assert.Nil(t, txReceipt.Logs)
+
+		notification := NewTxReceiptsNotification([]*TxReceipt{txReceipt, nil})
+		data, err := notification.MarshalJSON()
+		assert.NoError(t, err)
+		assert.NotEmpty(t, data)
+
+		filtered := notification.WithFields([]string{"blob_gas_used", "status", "contract_address"})
+		assert.NotNil(t, filtered)
+	})
 }
